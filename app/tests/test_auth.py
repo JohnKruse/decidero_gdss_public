@@ -4,7 +4,14 @@ from fastapi.testclient import TestClient
 from app.data.user_manager import UserManager
 from app.models.user import UserRole
 from app.schemas.schemas import Permission
-from app.auth.auth import has_permission, ROLE_PERMISSIONS
+from app.auth.auth import (
+    has_permission,
+    ROLE_PERMISSIONS,
+    SECRET_KEY,
+    ALGORITHM,
+    JWT_ISSUER,
+)
+from jose import jwt
 import os
 
 # client = TestClient(app) # Removed module-level client
@@ -70,6 +77,19 @@ def test_login_with_admin(
     if cookie_value.startswith('"') and cookie_value.endswith('"'):
         cookie_value = cookie_value[1:-1]  # Strip surrounding quotes
     assert cookie_value.startswith("Bearer ")
+    token = cookie_value.split(" ", 1)[1]
+    claims = jwt.decode(
+        token,
+        SECRET_KEY,
+        algorithms=[ALGORITHM],
+        issuer=JWT_ISSUER,
+        options={"verify_aud": False},
+    )
+    assert claims.get("sub") == ADMIN_LOGIN_FOR_TEST
+    assert claims.get("iss") == JWT_ISSUER
+    assert "exp" in claims
+    assert "iat" in claims
+    assert response.headers.get("cache-control") == "no-store"
 
 
 def test_invalid_login(
@@ -82,7 +102,7 @@ def test_invalid_login(
     data = response.json()
     # For an invalid login, login_successful might not be present or false, or detail provided
     assert (
-        data.get("detail") == "Incorrect email or password"
+        data.get("detail") == "Incorrect username or password"
     )  # Based on /api/auth/token endpoint
     assert "access_token" not in response.cookies
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Response
 from datetime import timedelta
 from typing import Dict
 from pydantic import BaseModel
+import logging
 
 # Moved from below
 from app.utils.password_validation import validate_password
@@ -20,6 +21,7 @@ from app.schemas.user import UserCreate
 from app.config.loader import get_secure_cookies_enabled
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
+logger = logging.getLogger("auth_router")
 
 
 class TokenRequest(BaseModel):
@@ -46,13 +48,12 @@ async def login_for_access_token(
     username = token_request.username
     password = token_request.password
 
-    print(f"Attempting login for username: {username}")
-    print(f"Password provided: {'********' if password else 'No password provided'}")
+    logger.info("Login attempt for username '%s'", username)
     user = user_manager.verify_user_credentials(username, password)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -77,6 +78,8 @@ async def login_for_access_token(
         samesite="lax",
         path="/",
     )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
 
     return LoginResponse(
         login_successful=True,
@@ -175,4 +178,6 @@ async def logout(response: Response):
         secure=get_secure_cookies_enabled(),
         samesite="lax",
     )
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
     return {"message": "Logout successful"}

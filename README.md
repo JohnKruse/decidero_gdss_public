@@ -54,7 +54,9 @@ For plain local HTTP development, keep it `false`.
 - Same LAN meeting: run `./start_local.sh`; if needed, bind app to LAN IP.
 - Remote meeting: run `./start_remote_tunnel.sh` and share the HTTPS tunnel URL.
 - Keep `.env` private and never commit it.
-- Set `DECIDERO_JWT_SECRET_KEY` in `.env` before any internet-exposed usage.
+- For any internet-exposed usage, set:
+  - `DECIDERO_ENV=production`
+  - `DECIDERO_JWT_SECRET_KEY=<long-random-secret>`
 
 ## Remote Tunnel Reliability Knobs
 `start_remote_tunnel.sh` supports environment overrides:

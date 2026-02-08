@@ -50,6 +50,11 @@ def validate_secret_key(key: str) -> bool:
     return True
 
 
+def _is_production_mode() -> bool:
+    env = os.getenv("DECIDERO_ENV", "development").strip().lower()
+    return env in {"production", "prod"}
+
+
 def _get_access_token_expire_minutes(default: int = 30) -> int:
     """
     Source the access token expiration time from config.yaml, falling back to
@@ -87,11 +92,17 @@ def _get_access_token_expire_minutes(default: int = 30) -> int:
 
 SECRET_KEY = os.getenv("DECIDERO_JWT_SECRET_KEY")
 ALGORITHM = "HS256"
+JWT_ISSUER = os.getenv("DECIDERO_JWT_ISSUER", "decidero")
 ACCESS_TOKEN_EXPIRE_MINUTES = _get_access_token_expire_minutes()
 
 # Validate and set up the secret key
 if not SECRET_KEY:
-    # Development mode - generate a secure random key
+    # In production, require an explicit secret key instead of generating ephemeral keys.
+    if _is_production_mode():
+        raise RuntimeError(
+            "Missing DECIDERO_JWT_SECRET_KEY while DECIDERO_ENV is set to production. "
+            + "Configure a strong static secret before startup."
+        )
     SECRET_KEY = generate_dev_key()
 elif not validate_secret_key(SECRET_KEY):
     raise RuntimeError(
@@ -127,7 +138,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
             f"Token expiration set with default minutes: {ACCESS_TOKEN_EXPIRE_MINUTES}"
         )
 
-    to_encode.update({"exp": expire})
+    to_encode.update(
+        {
+            "exp": expire,
+            "iat": datetime.now(UTC),
+            "iss": JWT_ISSUER,
+        }
+    )
 
     try:
         encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -155,8 +172,8 @@ async def get_token_from_cookie(request: Request) -> Optional[str]:
         return None
 
     logger.debug(
-        f"Raw 'access_token' cookie value: '{token_with_prefix[:30]}...'"
-    )  # Log a snippet
+        "Found access token cookie in request."
+    )
 
     if token_with_prefix.startswith("Bearer "):
         token = token_with_prefix.split(" ", 1)[1]
@@ -194,7 +211,13 @@ async def get_current_user(
 
     try:
         logger.debug("Attempting to decode JWT token for get_current_user.")
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            issuer=JWT_ISSUER,
+            options={"verify_aud": False},
+        )
         login: Optional[str] = payload.get("sub")
 
         if login is None:
@@ -229,7 +252,13 @@ async def _get_current_user_model_optional(
         return None
 
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=[ALGORITHM],
+            issuer=JWT_ISSUER,
+            options={"verify_aud": False},
+        )
         login: Optional[str] = payload.get("sub")
         if login is None:
             logger.warning(
@@ -256,9 +285,7 @@ async def _get_current_user_model_optional(
             )
         return user
     except JWTError:
-        logger.warning(
-            f"_get_current_user_model_optional: JWTError decoding token '{token[:10]}...'. Invalid or expired."
-        )
+        logger.warning("_get_current_user_model_optional: JWT decode failure.")
         return None
     except Exception as e:
         logger.error(
@@ -618,4 +645,5 @@ __all__ = [
     "ACCESS_TOKEN_EXPIRE_MINUTES",
     "SECRET_KEY",  # Exporting for potential use elsewhere, though generally encapsulated
     "ALGORITHM",
+    "JWT_ISSUER",
 ]

@@ -81,8 +81,11 @@ Typical stack:
 Always set a strong secret for any internet-exposed deployment:
 
 ```bash
+export DECIDERO_ENV=production
 export DECIDERO_JWT_SECRET_KEY="<long-random-secret>"
 ```
+
+When `DECIDERO_ENV=production`, app startup now fails fast if `DECIDERO_JWT_SECRET_KEY` is missing.
 
 ### Long Sessions
 
