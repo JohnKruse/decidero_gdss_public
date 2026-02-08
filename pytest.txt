@@ -1,0 +1,94 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.3, pytest-8.3.5, pluggy-1.6.0
+rootdir: /Users/john/Documents/Python/decidero_gdss
+configfile: pytest.ini
+testpaths: app/tests
+plugins: anyio-4.9.0, Faker-37.3.0
+collected 31 items
+
+app/tests/test_auth.py ..........                                        [ 32%]
+app/tests/test_ideas_manager.py .....                                    [ 48%]
+app/tests/test_meeting_manager.py ......                                 [ 67%]
+app/tests/test_pages.py ......                                           [ 87%]
+app/tests/test_user_manager.py ....                                      [100%]
+
+=============================== warnings summary ===============================
+app/database.py:16
+  /Users/john/Documents/Python/decidero_gdss/app/database.py:16: MovedIn20Warning: The ``declarative_base()`` function is now available as sqlalchemy.orm.declarative_base(). (deprecated since: 2.0) (Background on SQLAlchemy 2.0 at: https://sqlalche.me/e/b8d9)
+    Base = declarative_base()
+
+app/schemas/schemas.py:38
+  /Users/john/Documents/Python/decidero_gdss/app/schemas/schemas.py:38: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    @validator('password')
+
+app/schemas/schemas.py:52
+  /Users/john/Documents/Python/decidero_gdss/app/schemas/schemas.py:52: PydanticDeprecatedSince20: Pydantic V1 style `@validator` validators are deprecated. You should migrate to Pydantic V2 style `@field_validator` validators, see the migration guide for more details. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    @validator('password')
+
+venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323
+venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323
+  /Users/john/Documents/Python/decidero_gdss/venv/lib/python3.13/site-packages/pydantic/_internal/_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+venv/lib/python3.13/site-packages/pydantic/fields.py:1076: 10 warnings
+  /Users/john/Documents/Python/decidero_gdss/venv/lib/python3.13/site-packages/pydantic/fields.py:1076: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'example'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warn(
+
+app/main.py:36
+  /Users/john/Documents/Python/decidero_gdss/app/main.py:36: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    @app.on_event("startup")
+
+venv/lib/python3.13/site-packages/fastapi/applications.py:4495
+  /Users/john/Documents/Python/decidero_gdss/venv/lib/python3.13/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+          on_event is deprecated, use lifespan event handlers instead.
+  
+          Read more about it in the
+          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+          
+    return self.router.on_event(event_type)
+
+venv/lib/python3.13/site-packages/_pytest/config/__init__.py:1441
+  /Users/john/Documents/Python/decidero_gdss/venv/lib/python3.13/site-packages/_pytest/config/__init__.py:1441: PytestConfigWarning: Unknown config option: env
+  
+    self._warn_or_fail_if_strict(f"Unknown config option: {key}\n")
+
+app/tests/test_auth.py::test_login_with_admin
+app/tests/test_auth.py::test_protected_endpoint_with_auth
+app/tests/test_pages.py::test_get_dashboard_authenticated
+app/tests/test_pages.py::test_get_profile_page_authenticated
+  /Users/john/Documents/Python/decidero_gdss/app/auth/auth.py:75: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    expire = datetime.utcnow() + expires_delta
+
+app/tests/test_auth.py::test_protected_endpoint_with_auth
+app/tests/test_auth.py::test_protected_endpoint_with_auth
+app/tests/test_pages.py::test_get_dashboard_authenticated
+app/tests/test_pages.py::test_get_dashboard_authenticated
+app/tests/test_pages.py::test_get_profile_page_authenticated
+app/tests/test_pages.py::test_get_profile_page_authenticated
+  /Users/john/Documents/Python/decidero_gdss/venv/lib/python3.13/site-packages/jose/jwt.py:311: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = timegm(datetime.utcnow().utctimetuple())
+
+app/tests/test_auth.py::test_protected_endpoint_with_auth
+app/tests/test_pages.py::test_get_login_page
+app/tests/test_pages.py::test_get_register_page
+app/tests/test_pages.py::test_get_dashboard_authenticated
+app/tests/test_pages.py::test_get_profile_page_authenticated
+  /Users/john/Documents/Python/decidero_gdss/venv/lib/python3.13/site-packages/starlette/templating.py:178: DeprecationWarning: The `name` is not the first parameter anymore. The first parameter should be the `Request` instance.
+  Replace `TemplateResponse(name, {"request": request})` by `TemplateResponse(request, name)`.
+    warnings.warn(
+
+app/tests/test_meeting_manager.py::test_add_meeting
+  /Users/john/Documents/Python/decidero_gdss/app/tests/test_meeting_manager.py:47: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "start_time": datetime.utcnow() + timedelta(days=1),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 31 passed, 38 warnings in 8.62s ========================

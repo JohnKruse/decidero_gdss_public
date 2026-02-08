@@ -1,0 +1,48 @@
+/* Shared layout patterns for standardizing page structure */
+
+/* Standard two-column layout using Flexbox for robustness */
+.page-grid-sidebar-right {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: start;
+  width: 100%;
+}
+
+/* Main content column */
+.page-grid-sidebar-right > :first-child {
+  flex: 1; /* Grow to fill space */
+  min-width: 0; /* Prevent overflow blowout */
+}
+
+/* Sidebar column */
+.page-grid-sidebar-right > :last-child {
+  flex: 0 0 350px; /* Fixed width, no grow/shrink */
+  width: 350px;
+  min-width: 350px;
+}
+
+/* Mobile/Tablet: Stack columns */
+@media (max-width: 1024px) {
+  .page-grid-sidebar-right {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .page-grid-sidebar-right > :first-child,
+  .page-grid-sidebar-right > :last-child {
+    flex: auto;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
+/* Single column utility */
+.page-grid-single {
+  display: block;
+  width: 100%;
+}
+
+.page-shell {
+  width: 100%;
+}

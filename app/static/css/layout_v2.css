@@ -1,0 +1,86 @@
+/* Decidero Layout V2 - Standardization System */
+
+:root {
+  --page-max-width: 1400px;
+  --page-gutter: 1rem;
+  --card-radius: 12px;
+  --gap-size: 1.5rem;
+  --sidebar-width: 350px;
+}
+
+/* 
+   The Main Container 
+   Ensures consistent max-width and gutters for the whole page.
+*/
+.layout-container {
+  width: 100%;
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: var(--page-gutter);
+  box-sizing: border-box;
+}
+
+/* 
+   The Header Card
+   Matches the width of content cards below it.
+*/
+.layout-header {
+  width: 100%;
+  background: var(--white);
+  border-radius: var(--card-radius);
+  box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
+  padding: 1rem;
+  margin-bottom: var(--gap-size);
+}
+
+/* 
+   The Content Area 
+   No extra padding! This fixes the width mismatch.
+*/
+.layout-content {
+  width: 100%;
+}
+
+/* 
+   Grid System 
+   Standardizes 1-column and 2-column layouts.
+*/
+
+/* Single Column (Default) */
+.layout-grid {
+  display: grid;
+  gap: var(--gap-size);
+  grid-template-columns: 1fr;
+}
+
+/* Sidebar Layout (Main + Right Sidebar) */
+.layout-grid.with-sidebar {
+  grid-template-columns: 1fr var(--sidebar-width);
+  align-items: start;
+}
+
+/* Responsive Collapse */
+@media (max-width: 1024px) {
+  .layout-grid.with-sidebar {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 
+   Card Standardization
+   Ensures all cards look consistent.
+*/
+.layout-card {
+  background: var(--white);
+  border-radius: var(--card-radius);
+  padding: 1.5rem;
+  border: 1px solid rgba(11, 61, 145, 0.1);
+  box-shadow: 0 8px 22px rgba(11, 61, 145, 0.08);
+  width: 100%; /* Force full width in grid cell */
+}
+
+.layout-card[data-panel-width="narrow"] {
+  max-width: min(960px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}

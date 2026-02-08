@@ -1,0 +1,60 @@
+{% extends "_base.html" %}
+
+{% block title %}DECIDERO GDSS - Dashboard{% endblock %}
+
+{% block content %}
+<div class="layout-grid">
+    <!-- Quick Actions -->
+    {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
+    {% grab id="dashboard-quick-actions" %}
+    <section class="layout-card quick-actions">
+        <h2>QUICK ACTIONS</h2>
+        <div class="action-buttons">
+            {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
+                <button
+                    class="action-btn create-meeting"
+                    type="button"
+                    data-requires-role="facilitator"
+                    onclick="navigateTo('/meeting/create')"
+                >
+                    NEW MEETING
+                </button>
+                <button
+                    class="action-btn import-meeting"
+                    type="button"
+                    data-requires-role="facilitator"
+                    id="importMeetingButton"
+                >
+                    IMPORT MEETING
+                </button>
+                <input
+                    type="file"
+                    id="importMeetingFile"
+                    accept=".zip,application/zip"
+                    hidden
+                />
+            {% endif %}
+            {% if current_user.role in ['admin', 'super_admin'] %}
+                <button
+                    class="action-btn manage-users"
+                    type="button"
+                    data-requires-role="admin"
+                    onclick="navigateTo('/admin/users')"
+                >
+                    MANAGE USERS
+                </button>
+            {% endif %}
+        </div>
+    </section>
+    {% endgrab %}
+    {% endif %}
+
+    {% include "dashboard/_panel_participant.html" %}
+</div>
+
+    <div class="error-banner" id="dashboardError" hidden></div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="/static/js/dashboard.js?v=5"></script>
+{% endblock %}

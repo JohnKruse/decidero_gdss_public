@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Register</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/images/favicon_io/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/assets/images/favicon_io/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/assets/images/favicon_io/favicon-16x16.png">
+    <link rel="shortcut icon" href="/static/assets/images/favicon_io/favicon.ico">
+    <link rel="manifest" href="/static/assets/images/favicon_io/site.webmanifest">
+    <link rel="stylesheet" href="/static/css/login.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="terminal-effect"></div>
+        <div class="loading"></div>
+        
+        {% grab id="register-header" %}
+        <div class="login-header">
+            <img src="/static/assets/images/DecideroLogo.svg" alt="Decidero Logo" class="decidero-logo">
+            <h1>DECIDERO</h1>
+            <p>GROUP DECISION SUPPORT SYSTEM</p>
+        </div>
+        {% endgrab %}
+        {% grab id="register-form" %}
+        <form class="login-form" id="register-form">
+            {% if is_initial_setup %}
+            {% grab id="register-initial-setup-message" %}
+            <div class="initial-setup-message">
+                To initialize Decidero, please create the first account with Admin privileges.
+            </div>
+            {% endgrab %}
+            {% endif %}
+            <div class="form-group">
+                <label for="login">Username</label>
+                <input type="text" id="login" name="login" required
+                       autocomplete="username" spellcheck="false">
+                <p class="field-hint">Use 3-50 characters. Letters, numbers, dots, dashes, underscores, plus, and @ are allowed.</p>
+            </div>
+            <div class="form-group">
+                <label for="first_name">First Name</label>
+                <input type="text" id="first_name" name="first_name" required
+                       autocomplete="given-name" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label for="last_name">Last Name</label>
+                <input type="text" id="last_name" name="last_name" required
+                       autocomplete="family-name" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label for="email">Email (optional)</label>
+                <input type="email" id="email" name="email">
+            </div>
+            <div class="form-group">
+                <label for="organization">Organization (optional)</label>
+                <input type="text" id="organization" name="organization" autocomplete="organization">
+            </div>
+            <div class="form-group password-field">
+                <label for="password">PASSWORD</label>
+                <input type="password" id="password" name="password" required
+                       autocomplete="new-password">
+                <button type="button" class="password-toggle" data-target="password" aria-label="Show password">
+                    <span class="password-toggle-icon" aria-hidden="true"></span>
+                </button>
+            </div>
+            <div class="password-requirements" id="passwordRequirements" aria-live="polite">
+                <div class="requirement" data-rule="length"><span class="indicator"></span>At least 8 characters</div>
+                <div class="requirement" data-rule="uppercase"><span class="indicator"></span>Contains an uppercase letter</div>
+                <div class="requirement" data-rule="lowercase"><span class="indicator"></span>Contains a lowercase letter</div>
+                <div class="requirement" data-rule="number"><span class="indicator"></span>Contains a number</div>
+                <div class="requirement" data-rule="special"><span class="indicator"></span>Contains a special character (!@#$…)</div>
+            </div>
+            <div class="form-group password-field">
+                <label for="password_confirmation">CONFIRM PASSWORD</label>
+                <input type="password" id="password_confirmation" name="password_confirmation" required
+                       autocomplete="new-password">
+                <button type="button" class="password-toggle" data-target="password_confirmation" aria-label="Show password confirmation">
+                    <span class="password-toggle-icon" aria-hidden="true"></span>
+                </button>
+            </div>
+            <input type="hidden" name="role" value="{{ initial_role }}">
+            <button type="submit" class="submit-btn">
+                {% if is_initial_setup %}
+                Create Admin Account
+                {% else %}
+                Register
+                {% endif %}
+            </button>
+        </form>
+        {% endgrab %}
+        <div id="server-errors" class="errors" style="margin-top: 15px;">
+            {% if errors %}
+            <ul>
+                {% for error in errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+        <div id="js-errors" class="errors" style="color: red; margin-top: 10px;"></div>
+    </div>
+    <script>
+        const form = document.getElementById('register-form');
+        const jsErrorsDiv = document.getElementById('js-errors');
+        const serverErrorsDiv = document.getElementById('server-errors');
+        const loginInput = document.getElementById('login');
+        const firstNameInput = document.getElementById('first_name');
+        const lastNameInput = document.getElementById('last_name');
+        const emailInput = document.getElementById('email');
+        const organizationInput = document.getElementById('organization');
+        const passwordInput = document.getElementById('password');
+        const confirmInput = document.getElementById('password_confirmation');
+        const submitButton = form.querySelector('.submit-btn');
+        const passwordRequirementItems = document.querySelectorAll('#passwordRequirements .requirement');
+        const loginPattern = /^[A-Za-z0-9._@+-]{3,50}$/;
+
+        const passwordValidators = {
+            length: (value) => value.length >= 8,
+            uppercase: (value) => /[A-Z]/.test(value),
+            lowercase: (value) => /[a-z]/.test(value),
+            number: (value) => /\d/.test(value),
+            special: (value) => /[!@#$%^&*(),.?":{}|<>]/.test(value),
+        };
+
+        function updatePasswordRequirements(value) {
+            passwordRequirementItems.forEach((item) => {
+                const rule = item.dataset.rule;
+                const validator = passwordValidators[rule];
+                const passed = validator ? validator(value) : false;
+                item.classList.toggle('is-met', passed);
+            });
+        }
+
+        function passwordMeetsAllRules(value) {
+            return Object.values(passwordValidators).every((fn) => fn(value));
+        }
+
+        updatePasswordRequirements(passwordInput.value || '');
+
+        passwordInput.addEventListener('input', () => {
+            updatePasswordRequirements(passwordInput.value);
+        });
+
+        const passwordToggles = document.querySelectorAll('.password-toggle');
+        passwordToggles.forEach((toggle) => {
+            toggle.addEventListener('click', () => {
+                const targetId = toggle.dataset.target;
+                const targetInput = document.getElementById(targetId);
+                if (!targetInput) {
+                    return;
+                }
+                const isHidden = targetInput.type === 'password';
+                targetInput.type = isHidden ? 'text' : 'password';
+                toggle.classList.toggle('is-visible', isHidden);
+                toggle.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+            });
+        });
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            jsErrorsDiv.textContent = '';
+            serverErrorsDiv.innerHTML = '';
+
+            const login = loginInput.value.trim();
+            const firstName = firstNameInput.value.trim();
+            const lastName = lastNameInput.value.trim();
+            const email = emailInput.value.trim();
+            const organization = organizationInput.value.trim();
+            const password = passwordInput.value;
+            const passwordConfirmation = confirmInput.value;
+            const role = document.querySelector('input[name="role"]').value || 'participant';
+
+            if (!loginPattern.test(login)) {
+                jsErrorsDiv.textContent = 'Username may only contain letters, numbers, dots, dashes, underscores, plus signs, and @.';
+                return;
+            }
+
+            if (!passwordMeetsAllRules(password)) {
+                jsErrorsDiv.textContent = 'Password must meet all the listed requirements.';
+                return;
+            }
+
+            if (password !== passwordConfirmation) {
+                jsErrorsDiv.textContent = 'Passwords do not match.';
+                return;
+            }
+
+            const formData = {
+                login,
+                first_name: firstName,
+                last_name: lastName,
+                email: email ? email : null,
+                organization: organization ? organization : null,
+                password,
+                role,
+            };
+
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Registering…';
+            }
+
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify(formData),
+                });
+
+                if (response.ok) {
+                    window.location.href = '/login';
+                    return;
+                }
+
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch (e) {
+                    jsErrorsDiv.textContent = `An error occurred: ${response.statusText}`;
+                    return;
+                }
+
+                let errorMessage = `Error ${response.status}: `;
+                if (errorData.detail) {
+                    if (typeof errorData.detail === 'string') {
+                        errorMessage += errorData.detail;
+                    } else if (Array.isArray(errorData.detail)) {
+                        errorMessage += errorData.detail
+                            .map((err) => `${err.loc ? err.loc.join(' -> ') + ': ' : ''}${err.msg}`)
+                            .join(', ');
+                    } else {
+                        errorMessage += JSON.stringify(errorData.detail);
+                    }
+                } else {
+                    errorMessage += response.statusText;
+                }
+                jsErrorsDiv.textContent = errorMessage;
+            } catch (error) {
+                console.error('Registration error:', error);
+                jsErrorsDiv.textContent = 'An unexpected network error occurred. Please try again.';
+            } finally {
+                if (submitButton) {
+                    submitButton.disabled = false;
+                    submitButton.textContent = form.dataset.initialSubmitLabel || 'Register';
+                }
+            }
+        });
+
+        if (submitButton) {
+            form.dataset.initialSubmitLabel = submitButton.textContent;
+        }
+    </script>
+{% if grab_enabled() %}
+<script src="/static/grab.js"></script>
+{% endif %}
+</body>
+</html>

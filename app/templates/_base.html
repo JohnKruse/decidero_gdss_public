@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}DECIDERO GDSS{% endblock %}</title>
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/assets/images/favicon_io/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/assets/images/favicon_io/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/assets/images/favicon_io/favicon-16x16.png">
+    <link rel="shortcut icon" href="/static/assets/images/favicon_io/favicon.ico">
+    <link rel="manifest" href="/static/assets/images/favicon_io/site.webmanifest">
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/layout_v2.css">
+    {% block extra_css %}{% endblock %}
+</head>
+<body data-auth="{{ 'true' if current_user else 'false' }}">
+    <div class="layout-container"
+         data-user-role="{{ (current_user.role.value if current_user and current_user.role.value is defined else (current_user.role if current_user else 'guest'))|lower }}"
+         data-ui-refresh-enabled="{{ 'true' if ui_refresh and ui_refresh.get('enabled', True) else 'false' }}"
+         data-ui-refresh-dashboard-interval-seconds="{{ ui_refresh.get('dashboard_interval_seconds', '') if ui_refresh else '' }}"
+         data-ui-refresh-admin-users-interval-seconds="{{ ui_refresh.get('admin_users_interval_seconds', '') if ui_refresh else '' }}"
+         data-ui-refresh-hidden-interval-seconds="{{ ui_refresh.get('hidden_interval_seconds', '') if ui_refresh else '' }}"
+         data-ui-refresh-failure-backoff-seconds="{{ ui_refresh.get('failure_backoff_seconds', '') if ui_refresh else '' }}">
+        <header class="layout-header top-nav">
+            <div class="logo-section">
+                <img src="/static/assets/images/DecideroLogo.svg" alt="Decidero Logo" class="decidero-logo">
+                <div>
+                    <h1>DECIDERO GDSS</h1>
+                    <p style="margin:0; color: var(--silver); font-size: 0.9rem;">Collaborative Decision Platform</p>
+                </div>
+            </div>
+            <div class="user-section">
+                {% if current_user %}
+                    <span class="user-name">Welcome, {{ current_user.first_name or current_user.login }}</span>
+                    <a href="/profile" class="profile-link">My Profile</a>
+                    <button class="logout-btn" onclick="(window.logout ? window.logout() : (async () => { try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) { console.error(e); } finally { localStorage.clear(); sessionStorage.clear(); window.location.href = '/'; } })())">LOGOUT</button>
+                {% else %}
+                    <a href="/login" class="profile-link">Sign in</a>
+                {% endif %}
+                {% block top_nav_right %}{% endblock %}
+            </div>
+        </header>
+
+        <main class="layout-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+
+    <div class="error-banner" id="pageError" hidden></div>
+    <script src="/static/js/page_utils.js"></script>
+    {% block extra_js %}{% endblock %}
+    {% if grab_enabled() %}
+    <style>
+        .grab-selection-box {
+            border: 2px dashed #2b6cb0;
+            background-color: rgba(43, 108, 176, 0.15);
+        }
+    </style>
+    <script src="/static/grab.js"></script>
+    {% endif %}
+</body>
+</html>

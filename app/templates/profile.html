@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Profile - Decidero</title>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Navigation Header -->
+        {% grab id="profile-top-nav" %}
+        <header class="top-nav">
+            <div class="logo-section">
+                <img src="/static/assets/images/DecideroLogo.svg" alt="Decidero Logo" class="decidero-logo">
+                <h1>DECIDERO GDSS</h1>
+            </div>
+            <div class="user-section">
+                <span class="user-name">Welcome, {{ current_user.first_name }}</span>
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/profile" class="profile-link">My Profile</a>
+                <button class="logout-btn" onclick="window.logout ? window.logout() : (async () => { try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) { console.error(e); } finally { localStorage.clear(); sessionStorage.clear(); window.location.href = '/'; } })()">LOGOUT</button>
+            </div>
+        </header>
+        {% endgrab %}
+
+        {% block content %}
+        <div class="layout-grid">
+            <section class="layout-card">
+                <h1 style="margin-bottom: 1.5rem; color: var(--navy-blue);">My Profile</h1>
+                
+                {% grab id="profile-view-card" %}
+                <div id="profile-view">
+                    <div id="profile-svg-container" style="margin-bottom: 1rem;"></div>
+                    <div style="display: grid; gap: 0.5rem; margin-bottom: 1.5rem;">
+                        <p><strong>Display Name:</strong> <span id="profile-display-name">Loading...</span></p>
+                        <p><strong>Email:</strong> <span id="profile-email">Loading...</span></p>
+                        <p><strong>First Name:</strong> <span id="profile-first-name">Loading...</span></p>
+                        <p><strong>Last Name:</strong> <span id="profile-last-name">Loading...</span></p>
+                        <p><strong>Organization:</strong> <span id="profile-organization">Loading...</span></p>
+                        <p><strong>About Me:</strong> <span id="profile-about-me">Loading...</span></p>
+                    </div>
+                    <button id="edit-profile-button" class="action-btn">Edit Profile</button>
+                </div>
+                {% endgrab %}
+                
+                {% grab id="profile-edit-card" %}
+                <div id="profile-edit" style="display: none;">
+                    <h2 style="margin-bottom: 1rem;">Edit Profile</h2>
+                    <form id="profile-form" style="display: grid; gap: 1rem;">
+                        <div>
+                            <label style="display:block; margin-bottom:0.5rem; font-weight:500;">Avatar:</label>
+                            <div id="edit-avatar-preview" style="margin-bottom: 0.75rem;"></div>
+                            <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+                                <button type="button" id="generate-avatar-button" class="view-btn">Generate new avatar</button>
+                                <button type="button" id="generate-avatar-color-button" class="view-btn">Generate new color</button>
+                            </div>
+                        </div>
+                        <div>
+                            <label for="edit-display-name" style="display:block; margin-bottom:0.5rem; font-weight:500;">
+                                Display Name (shown in activities):
+                            </label>
+                            <input
+                                type="text"
+                                id="edit-display-name"
+                                name="first_name"
+                                maxlength="200"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"
+                            >
+                        </div>
+                        <div>
+                            <label for="edit-organization" style="display:block; margin-bottom:0.5rem; font-weight:500;">Organization:</label>
+                            <input type="text" id="edit-organization" name="organization" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;">
+                        </div>
+                        <div>
+                            <label for="edit-about-me" style="display:block; margin-bottom:0.5rem; font-weight:500;">About Me:</label>
+                            <textarea id="edit-about-me" name="about_me" rows="4" style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"></textarea>
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button type="submit" class="action-btn">Save Changes</button>
+                            <button type="button" id="cancel-edit-button" class="view-btn">Cancel</button>
+                        </div>
+                    </form>
+                    <div id="profile-message" style="margin-top: 1rem;"></div>
+                </div>
+                {% endgrab %}
+
+                {% grab id="profile-password-card" %}
+                <div id="profile-password" style="margin-top: 2rem;">
+                    <h2 style="margin-bottom: 1rem;">Change Password</h2>
+                    <form id="password-form" style="display: grid; gap: 1rem;">
+                        <div>
+                            <label for="current-password" style="display:block; margin-bottom:0.5rem; font-weight:500;">Current Password:</label>
+                            <input
+                                type="password"
+                                id="current-password"
+                                name="current_password"
+                                autocomplete="current-password"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"
+                                required
+                            >
+                        </div>
+                        <div>
+                            <label for="new-password" style="display:block; margin-bottom:0.5rem; font-weight:500;">New Password:</label>
+                            <input
+                                type="password"
+                                id="new-password"
+                                name="new_password"
+                                autocomplete="new-password"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"
+                                required
+                            >
+                        </div>
+                        <div>
+                            <label for="confirm-password" style="display:block; margin-bottom:0.5rem; font-weight:500;">Confirm New Password:</label>
+                            <input
+                                type="password"
+                                id="confirm-password"
+                                name="confirm_password"
+                                autocomplete="new-password"
+                                style="width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;"
+                                required
+                            >
+                        </div>
+                        <div style="display: flex; gap: 1rem;">
+                            <button type="submit" class="action-btn">Update Password</button>
+                        </div>
+                    </form>
+                    <div id="password-message" style="margin-top: 1rem;"></div>
+                </div>
+                {% endgrab %}
+            </section>
+        </div>
+        {% endblock %}    <!-- Link to JS file (will be created later) -->
+    <script src="/static/js/profile.js"></script>
+    {% if grab_enabled() %}
+    <script src="/static/grab.js"></script>
+    {% endif %}
+</body>
+</html>

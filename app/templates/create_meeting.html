@@ -1,0 +1,1495 @@
+{% extends "_base.html" %}
+{% set mode = page_mode if page_mode is defined else 'create' %}
+{% set is_edit_mode = mode == 'edit' %}
+{% set form_heading = 'Meeting Settings' if is_edit_mode else 'Create a New Meeting' %}
+{% set form_subtitle = 'Update the meeting details, agenda, and participant list for this session.' if is_edit_mode else
+'Keep it simple: give your session a clear name, set when it starts, and add context. Agenda items and participants can
+be managed in their own panels.' %}
+{% set submit_label = 'Save Settings' if is_edit_mode else 'Create Meeting' %}
+
+{% block title %}{{ 'Configure Meeting - Decidero GDSS' if is_edit_mode else 'Create Meeting - Decidero GDSS' }}{%
+endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/create_meeting.css">
+{% endblock %}
+
+{% block top_nav_right %}
+{% if is_edit_mode and meeting_id %}
+<a href="/meeting/{{ meeting_id }}" class="profile-link" id="meetingBackLink">Back to Meeting</a>
+{% endif %}
+<a href="/dashboard" class="profile-link">Back to Dashboard</a>
+{% endblock %}
+
+{% block content %}
+{% from "components/macros.html" import form_section %}
+<div class="layout-grid" data-mode="{{ 'edit' if is_edit_mode else 'create' }}"
+    data-meeting-id="{{ meeting_id or '' }}">
+    {% grab id="create-meeting-card" %}
+    <section class="layout-card">
+        {% call form_section(form_heading, form_subtitle) %}
+        <form id="createMeetingForm" class="form-grid">
+            <div>
+                <label for="title">Meeting Title <span style="color:var(--error-color);">*</span></label>
+                <input type="text" id="title" name="title" required placeholder="e.g. Q3 Planning Roundtable">
+            </div>
+
+            <div>
+                <label for="scheduled_datetime">Scheduled Date &amp; Time</label>
+                <div class="date-input-row">
+                    <input type="text" id="scheduled_datetime_text" name="scheduled_datetime_text"
+                        placeholder="YYYY-MM-DD or YYYY-MM-DD HH:MM" inputmode="numeric" autocomplete="off"
+                        aria-label="Scheduled date in YYYY-MM-DD (optional time HH:MM)">
+                    <button type="button" class="secondary-btn sm" id="clearScheduledDate">Clear</button>
+                </div>
+                <p class="muted-note">Optional. Enter YYYY-MM-DD, with optional 24-hour time (HH:MM).</p>
+                <div id="scheduledDateFeedback" class="control-feedback" data-variant="muted"></div>
+            </div>
+
+            <div>
+                <label for="description">Description</label>
+                <textarea id="description" name="description"
+                    placeholder="What should participants know before joining?"></textarea>
+            </div>
+
+            <div class="tab-buttons">
+                <button type="button" class="tab-button active" data-tab="agenda-tab">Agenda</button>
+                <button type="button" class="tab-button" data-tab="participants-tab">Participants</button>
+            </div>
+            <div id="formFeedback" class="feedback"></div>
+
+            {% grab id="create-meeting-agenda-tab" %}
+            <div id="agenda-tab" class="tab-panel active">
+                <p style="margin-bottom:1rem; color:#555;">Outline the flow of your session. Agenda items are optional
+                    and help guide facilitation.</p>
+                <div id="agendaBuilderNotice" class="agenda-notice" hidden></div>
+                <div id="agendaItems" class="agenda-items"></div>
+                <div class="agenda-actions">
+                    <button type="button" class="secondary-btn" id="addAgendaItem">+ Add Agenda Activity</button>
+                </div>
+            </div>
+            {% endgrab %}
+            {% grab id="create-meeting-participants-tab" %}
+            <div id="participants-tab" class="tab-panel">
+                <p style="margin-bottom:1rem; color:#555;">
+                    Use the directory to move people between the available and selected lists. Double-click or use the
+                    arrows to transfer participants. Everyone on the right inherits access to every activity.
+                </p>
+                <div class="participant-selection-grid">
+                    <div class="participant-column">
+                        <div class="participant-column-header">
+                            <h4>Available Users</h4>
+                            <div class="participant-column-actions">
+                                <button type="button" class="secondary-btn" id="participantDirectoryRefresh">
+                                    Refresh
+                                </button>
+                                <button type="button" class="secondary-btn" id="availableSelectAllButton" disabled>
+                                    Select All
+                                </button>
+                            </div>
+                        </div>
+                        <div class="participant-directory-panel">
+                            <div class="participant-directory-search">
+                                <input type="text" id="participantDirectorySearch" class="form-input"
+                                    placeholder="Search name, login, or email…" maxlength="120">
+                            </div>
+                            <div id="participantDirectoryStatus" class="control-feedback" aria-live="polite"></div>
+                            <div id="participantDirectoryList" class="participant-directory-list" role="listbox"
+                                aria-multiselectable="true">
+                                <div class="participant-directory-empty">
+                                    Start typing above to search the directory.
+                                </div>
+                            </div>
+                            <div class="participant-directory-footer">
+                                <div class="participant-directory-pagination">
+                                    <button type="button" class="secondary-btn"
+                                        id="participantDirectoryPrev">Previous</button>
+                                    <span id="participantDirectoryPageLabel">Page 1 of 1</span>
+                                    <button type="button" class="secondary-btn"
+                                        id="participantDirectoryNext">Next</button>
+                                </div>
+                                <div class="participant-directory-actions">
+                                    <button type="button" class="secondary-btn" id="participantDirectoryClearButton"
+                                        disabled>
+                                        Clear Selection
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="participant-transfer-controls">
+                        <button type="button" class="transfer-btn" id="moveToSelectedButton" disabled
+                            aria-label="Move to meeting">
+                            →
+                        </button>
+                        <button type="button" class="transfer-btn" id="moveToAvailableButton" disabled
+                            aria-label="Remove from meeting">
+                            ←
+                        </button>
+                    </div>
+
+                    <div class="participant-column">
+                        <div class="participant-column-header">
+                            <h4>Selected Participants</h4>
+                            <div class="participant-column-actions">
+                                <button type="button" class="secondary-btn" id="selectedSelectAllButton" disabled>
+                                    Select All
+                                </button>
+                            </div>
+                        </div>
+                        <div class="participant-directory-panel participant-directory-panel--selected">
+                            <div class="participant-directory-status">
+                                <span id="selectedParticipantsStatus" class="muted-note">No participants
+                                    selected.</span>
+                            </div>
+                            <div id="selectedParticipantsList"
+                                class="participant-directory-list participant-directory-list--selected" role="listbox"
+                                aria-multiselectable="true">
+                                <div class="participant-directory-empty">No participants selected yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            {% endgrab %}
+
+            <div class="actions-row">
+                <button type="submit" class="primary-btn" id="submitBtn">{{ submit_label }}</button>
+                <button type="button" class="secondary-btn" onclick="window.location.href='/dashboard'">Cancel</button>
+            </div>
+        </form>
+        {% endcall %}
+    </section>
+    {% endgrab %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (() => {
+        const tabs = document.querySelectorAll('.tab-button');
+        const panels = document.querySelectorAll('.tab-panel');
+        tabs.forEach((btn) => {
+            btn.addEventListener('click', () => {
+                tabs.forEach((b) => b.classList.remove('active'));
+                panels.forEach((panel) => panel.classList.remove('active'));
+                btn.classList.add('active');
+                const panel = document.getElementById(btn.dataset.tab);
+                if (panel) { panel.classList.add('active'); }
+                if (btn.dataset.tab === 'participants-tab') {
+                    initialiseParticipantDirectory();
+                }
+            });
+        });
+
+        const DEFAULT_MODULES = [
+            {
+                tool_type: 'brainstorming',
+                label: 'Brainstorming',
+                description: 'Capture ideas quickly and surface them to the group in real-time.',
+                default_config: {
+                    allow_anonymous: false,
+                    allow_subcomments: false,
+                    auto_jump_new_ideas: true,
+                    prompt: '',
+                },
+            },
+            {
+                tool_type: 'voting',
+                label: 'Dot Voting',
+                description: 'Let participants distribute multiple picks across ideas to prioritise options.',
+                default_config: {
+                    vote_type: 'dot',
+                    max_votes: 5,
+                    max_votes_per_option: 5,
+                    allow_retract: true,
+                    show_results_immediately: false,
+                    randomize_participant_order: false,
+                    options: ['Edit vote option here'],
+                },
+            },
+        ];
+
+        let moduleCatalog = [...DEFAULT_MODULES];
+        let moduleCatalogMap = new Map(moduleCatalog.map((entry) => [entry.tool_type.toLowerCase(), entry]));
+        const agendaState = [];
+
+        const agendaContainer = document.getElementById('agendaItems');
+        const agendaNotice = document.getElementById('agendaBuilderNotice');
+        const addAgendaButton = document.getElementById('addAgendaItem');
+        const feedback = document.getElementById('formFeedback');
+        const submitBtn = document.getElementById('submitBtn');
+        const form = document.getElementById('createMeetingForm');
+        const layoutRoot = document.querySelector('.layout-grid');
+        const pageMode = layoutRoot?.dataset.mode || 'create';
+        const meetingId = layoutRoot?.dataset.meetingId || '';
+        const isEditMode = pageMode === 'edit' && Boolean(meetingId);
+        const submitIdleLabel = (submitBtn?.textContent || '').trim() || (isEditMode ? 'Save Settings' : 'Create Meeting');
+        const scheduledTextInput = document.getElementById('scheduled_datetime_text');
+        const clearScheduledBtn = document.getElementById('clearScheduledDate');
+        const scheduledDateFeedback = document.getElementById('scheduledDateFeedback');
+        const participantDirectoryList = document.getElementById('participantDirectoryList');
+        const participantDirectoryStatus = document.getElementById('participantDirectoryStatus');
+        const participantDirectorySearch = document.getElementById('participantDirectorySearch');
+        const participantDirectoryRefresh = document.getElementById('participantDirectoryRefresh');
+        const participantDirectoryClearButton = document.getElementById('participantDirectoryClearButton');
+        const participantDirectoryPrev = document.getElementById('participantDirectoryPrev');
+        const participantDirectoryNext = document.getElementById('participantDirectoryNext');
+        const participantDirectoryPageLabel = document.getElementById('participantDirectoryPageLabel');
+        const availableSelectAllButton = document.getElementById('availableSelectAllButton');
+        const selectedSelectAllButton = document.getElementById('selectedSelectAllButton');
+        const moveToSelectedButton = document.getElementById('moveToSelectedButton');
+        const moveToAvailableButton = document.getElementById('moveToAvailableButton');
+        const selectedParticipantsList = document.getElementById('selectedParticipantsList');
+        const selectedParticipantsStatus = document.getElementById('selectedParticipantsStatus');
+
+        const selectedParticipants = new Map();
+        const participantDirectoryState = {
+            items: [],
+            page: 1,
+            pages: 1,
+            total: 0,
+            searchTerm: '',
+            highlighted: new Set(),
+            loading: false,
+            debounce: null,
+        };
+        const selectedParticipantHighlights = new Set();
+        let participantDirectoryInitialised = false;
+
+        function showAgendaNotice(message, variant = 'info') {
+            if (!agendaNotice) return;
+            if (!message) { agendaNotice.hidden = true; agendaNotice.textContent = ''; agendaNotice.removeAttribute('data-variant'); return; }
+            agendaNotice.hidden = false; agendaNotice.textContent = message; agendaNotice.dataset.variant = variant;
+        }
+
+        async function loadModuleCatalog() {
+            try {
+                const response = await fetch('/api/meetings/modules', { credentials: 'include' });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (Array.isArray(data) && data.length > 0) {
+                        moduleCatalog = data;
+                        moduleCatalogMap = new Map(moduleCatalog.map((entry) => [entry.tool_type.toLowerCase(), entry]));
+                        showAgendaNotice('', 'info');
+                        return;
+                    }
+                }
+                moduleCatalog = [...DEFAULT_MODULES];
+                moduleCatalogMap = new Map(moduleCatalog.map((entry) => [entry.tool_type.toLowerCase(), entry]));
+                showAgendaNotice('Using default activity list. Saved agendas will still work.', 'info');
+            } catch (error) {
+                moduleCatalog = [...DEFAULT_MODULES];
+                moduleCatalogMap = new Map(moduleCatalog.map((entry) => [entry.tool_type.toLowerCase(), entry]));
+                showAgendaNotice('Unable to reach the activity catalog. Loaded defaults instead.', 'error');
+            }
+        }
+
+        const CONFIG_LABEL_MAP = {
+            'allow_anonymous': 'Maintain Anonymity',
+            'allow_subcomments': 'Allow Subcomments',
+            'auto_jump_new_ideas': 'Auto-jump to newest idea',
+            'max_votes': 'Total dots per participant',
+            'max_votes_per_option': 'Dots per idea (1-9)',
+            'show_results_immediately': 'Show results to participants before submission',
+            'options': 'Vote candidates',
+            'randomize_participant_order': 'Randomize participant idea order',
+        };
+        function formatConfigLabel(key) {
+            if (CONFIG_LABEL_MAP[key]) return CONFIG_LABEL_MAP[key];
+            return key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+        }
+
+        function collectConfigValues(rowState) {
+            const result = {}; if (!rowState.configInputs) return result;
+            Object.entries(rowState.configInputs).forEach(([key, meta]) => {
+                if (!meta || !meta.input) return;
+                if (meta.type === 'boolean') { result[key] = meta.input.checked; }
+                else if (meta.type === 'number') { const v = Number(meta.input.value); result[key] = Number.isNaN(v) ? 0 : v; }
+                else if (meta.type === 'json') { const raw = meta.input.value.trim(); try { result[key] = raw ? JSON.parse(raw) : {}; } catch { result[key] = raw || {}; } }
+                else { result[key] = meta.input.value; }
+            });
+            return result;
+        }
+
+        function countVotingOptionsFromInput(input) {
+            if (!input) return 0;
+            return input.value
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => line.length > 0)
+                .length;
+        }
+
+        function syncVotingMaxVotesCap(rowState) {
+            const optionsMeta = rowState?.configInputs?.options;
+            const maxVotesMeta = rowState?.configInputs?.max_votes;
+            if (!optionsMeta?.input || !maxVotesMeta?.input || !maxVotesMeta?.field) return;
+            const optionsCount = countVotingOptionsFromInput(optionsMeta.input);
+            const labelSpan = maxVotesMeta.field.querySelector('span');
+            if (optionsCount <= 0) {
+                maxVotesMeta.input.removeAttribute('max');
+                if (labelSpan) labelSpan.textContent = formatConfigLabel('max_votes');
+                return;
+            }
+            const maxTotal = Math.max(1, Math.ceil(optionsCount / 2));
+            maxVotesMeta.input.max = String(maxTotal);
+            if (labelSpan) {
+                labelSpan.textContent = `${formatConfigLabel('max_votes')} (max ${maxTotal} = ideas/2, rounded up)`;
+            }
+            const current = Number(maxVotesMeta.input.value);
+            if (Number.isFinite(current) && current > maxTotal) {
+                maxVotesMeta.input.value = String(maxTotal);
+            }
+        }
+
+        function renderConfig(rowState, moduleDef, overrideConfig = {}) {
+            rowState.configContainer.innerHTML = ''; rowState.configInputs = {};
+            const defaults = moduleDef && moduleDef.default_config && typeof moduleDef.default_config === 'object' ? moduleDef.default_config : {};
+            const toolType = (moduleDef?.tool_type || '').toLowerCase();
+            if (toolType === 'voting') {
+                rowState.configContainer.classList.add('agenda-config-stack');
+            } else {
+                rowState.configContainer.classList.remove('agenda-config-stack');
+            }
+            const entries = Object.entries(defaults);
+            if (entries.length === 0) { const empty = document.createElement('p'); empty.className = 'agenda-row-description'; empty.textContent = 'No additional configuration required for this activity.'; rowState.configContainer.appendChild(empty); return; }
+
+            // Separate boolean fields (checkboxes) from other fields
+            const booleanEntries = entries.filter(([, val]) => typeof val === 'boolean');
+            const otherEntries = entries.filter(([, val]) => typeof val !== 'boolean');
+            const numberEntries = otherEntries.filter(([, val]) => typeof val === 'number');
+            const nonNumberEntries = otherEntries.filter(([, val]) => typeof val !== 'number');
+
+            // Render boolean checkboxes in a horizontal row
+            if (booleanEntries.length > 0) {
+                const checkboxRow = document.createElement('div');
+                checkboxRow.style.display = 'flex';
+                checkboxRow.style.flexWrap = 'nowrap';
+                checkboxRow.style.gap = '1.25rem';
+                checkboxRow.style.marginBottom = '0.75rem';
+                checkboxRow.style.overflowX = 'auto';
+                checkboxRow.style.whiteSpace = 'nowrap';
+
+                booleanEntries.forEach(([key, defaultValue]) => {
+                    const field = document.createElement('label');
+                    field.innerHTML = `<span>${formatConfigLabel(key)}</span>`;
+                    field.style.display = 'flex';
+                    field.style.alignItems = 'center';
+                    field.style.gap = '0.5rem';
+                    field.style.cursor = 'pointer';
+                    field.style.whiteSpace = 'nowrap';
+
+                    const input = document.createElement('input');
+                    input.type = 'checkbox';
+                    const valueOverride = overrideConfig[key];
+                    input.checked = valueOverride !== undefined ? Boolean(valueOverride) : Boolean(defaultValue);
+                    input.style.width = 'auto';
+                    input.style.order = '-1';
+                    input.dataset.configKey = key;
+
+                    field.appendChild(input);
+                    checkboxRow.appendChild(field);
+                    rowState.configInputs[key] = { input, type: 'boolean', parseAsJson: false, requireValues: false, field };
+                });
+
+                rowState.configContainer.appendChild(checkboxRow);
+            }
+
+            const renderEntries = (entryList) => {
+                entryList.forEach(([key, defaultValue]) => {
+                    if (toolType === 'voting' && key === 'vote_type') {
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.value = String(defaultValue ?? 'dot');
+                        hidden.dataset.configKey = key;
+                        rowState.configInputs[key] = { input: hidden, type: 'string', parseAsJson: false, requireValues: false, field: null };
+                        return;
+                    }
+                    const field = document.createElement('label');
+                    const labelSpan = document.createElement('span');
+                    labelSpan.textContent = formatConfigLabel(key);
+                    field.appendChild(labelSpan);
+                    const valueOverride = overrideConfig[key]; let input; let metaType = typeof defaultValue; let parseAsJson = false;
+                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); let source = valueOverride; if (!Array.isArray(source)) { if (typeof source === 'string') { source = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { source = defaultValue; } } input.value = Array.isArray(source) ? source.join('\n') : ''; metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${lines.length} candidate${lines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
+                    else if (metaType === 'number') {
+                        input = document.createElement('input');
+                        input.type = 'number';
+                        input.step = Number.isInteger(defaultValue) ? '1' : '0.1';
+                        const numericValue = valueOverride !== undefined ? Number(valueOverride) : Number(defaultValue);
+                        input.value = Number.isNaN(numericValue) ? '' : numericValue;
+                        if (toolType === 'voting') {
+                            if (key === 'max_votes_per_option') {
+                                input.min = '1';
+                                input.max = '9';
+                                input.step = '1';
+                                const current = Number(input.value);
+                                if (!Number.isFinite(current) || current < 1) input.value = '1';
+                                if (current > 9) input.value = '9';
+                                labelSpan.textContent = `${formatConfigLabel(key)} (max 9)`;
+                            }
+                            if (key === 'max_votes') {
+                                input.min = '1';
+                                input.step = '1';
+                                const optionsCount = Array.isArray(overrideConfig.options)
+                                    ? overrideConfig.options.length
+                                    : Array.isArray(defaults.options)
+                                        ? defaults.options.length
+                                        : 0;
+                                if (optionsCount > 0) {
+                                    const maxTotal = Math.max(1, Math.ceil(optionsCount / 2));
+                                    input.max = String(maxTotal);
+                                    labelSpan.textContent = `${formatConfigLabel(key)} (max ${maxTotal} = ideas/2, rounded up)`;
+                                    const current = Number(input.value);
+                                    if (valueOverride === undefined) {
+                                        const suggested = Math.max(1, Math.round(optionsCount / 4));
+                                        input.value = String(Math.min(suggested, maxTotal));
+                                    } else if (!Number.isFinite(current) || current <= 0) {
+                                        const suggested = Math.max(1, Math.round(optionsCount / 4));
+                                        input.value = String(Math.min(suggested, maxTotal));
+                                    } else if (current > maxTotal) {
+                                        input.value = String(maxTotal);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else if (metaType === 'object' && defaultValue !== null) { input = document.createElement('textarea'); input.rows = 3; input.value = valueOverride !== undefined ? JSON.stringify(valueOverride, null, 0) : JSON.stringify(defaultValue, null, 0); metaType = 'json'; parseAsJson = true; }
+                    else if (metaType === 'string' && key === 'prompt') { input = document.createElement('textarea'); input.rows = 2; input.value = valueOverride !== undefined ? String(valueOverride) : (defaultValue !== undefined && defaultValue !== null ? String(defaultValue) : ''); }
+                    else { input = document.createElement('input'); input.type = 'text'; input.value = valueOverride !== undefined ? String(valueOverride) : (defaultValue !== undefined && defaultValue !== null ? String(defaultValue) : ''); metaType = 'string'; }
+                    input.dataset.configKey = key; field.appendChild(input); rowState.configContainer.appendChild(field);
+                    const requiresValues = key === 'options' && (moduleDef?.tool_type || '').toLowerCase() !== 'voting';
+                    rowState.configInputs[key] = { input, type: metaType, parseAsJson, requireValues: requiresValues, field };
+                });
+            };
+
+            // Render other fields normally
+            if (toolType === 'voting') {
+                const nonNumberGrid = document.createElement('div');
+                nonNumberGrid.className = 'agenda-config-grid';
+                rowState.configContainer.appendChild(nonNumberGrid);
+                const prevContainer = rowState.configContainer;
+                rowState.configContainer = nonNumberGrid;
+                renderEntries(nonNumberEntries.filter(([key]) => key !== 'vote_type'));
+                rowState.configContainer = prevContainer;
+                if (numberEntries.length > 0) {
+                    const numberRow = document.createElement('div');
+                    numberRow.className = 'agenda-config-grid agenda-config-grid--numbers';
+                    rowState.configContainer.appendChild(numberRow);
+                    const prevContainer = rowState.configContainer;
+                    rowState.configContainer = numberRow;
+                    renderEntries(numberEntries);
+                    rowState.configContainer = prevContainer;
+                }
+            } else {
+                renderEntries(otherEntries);
+            }
+
+            if (toolType === 'voting') {
+                const maxVotesInput = rowState.configInputs?.max_votes?.input;
+                const perOptionInput = rowState.configInputs?.max_votes_per_option?.input;
+                if (maxVotesInput && perOptionInput) {
+                    const syncPerOptionCap = () => {
+                        const maxVotes = Math.floor(Number(maxVotesInput.value));
+                        if (!Number.isFinite(maxVotes) || maxVotes <= 0) {
+                            perOptionInput.max = '9';
+                            return;
+                        }
+                        const perOptionMax = Math.min(9, maxVotes);
+                        perOptionInput.max = String(perOptionMax);
+                        const current = Number(perOptionInput.value);
+                        if (Number.isFinite(current) && current > perOptionMax) {
+                            perOptionInput.value = String(perOptionMax);
+                        }
+                    };
+                    maxVotesInput.addEventListener('input', syncPerOptionCap);
+                    perOptionInput.addEventListener('input', syncPerOptionCap);
+                    syncPerOptionCap();
+                }
+                syncVotingMaxVotesCap(rowState);
+            }
+        }
+
+
+        function setParticipantDirectoryStatus(message, variant = 'muted') {
+            if (!participantDirectoryStatus) return;
+            if (!message) {
+                participantDirectoryStatus.textContent = '';
+                participantDirectoryStatus.dataset.variant = '';
+                return;
+            }
+            participantDirectoryStatus.textContent = message;
+            participantDirectoryStatus.dataset.variant = variant;
+        }
+
+        function updateParticipantDirectoryPagination() {
+            if (!participantDirectoryPageLabel) return;
+            const totalPages = Math.max(1, participantDirectoryState.pages || 1);
+            const currentPage = Math.min(participantDirectoryState.page, totalPages);
+            participantDirectoryPageLabel.textContent = `Page ${currentPage} of ${totalPages}`;
+        }
+
+        function updateAvailableListButtons() {
+            const selectableCount = participantDirectoryState.items.filter(
+                (user) => !selectedParticipants.has(user.user_id),
+            ).length;
+            if (participantDirectoryClearButton) {
+                participantDirectoryClearButton.disabled = participantDirectoryState.highlighted.size === 0;
+            }
+            if (availableSelectAllButton) {
+                availableSelectAllButton.disabled = selectableCount === 0;
+            }
+            if (participantDirectoryPrev) {
+                participantDirectoryPrev.disabled =
+                    participantDirectoryState.loading || participantDirectoryState.page <= 1;
+            }
+            if (participantDirectoryNext) {
+                const totalPages = participantDirectoryState.pages || 1;
+                participantDirectoryNext.disabled =
+                    participantDirectoryState.loading || participantDirectoryState.page >= totalPages;
+            }
+        }
+
+        function updateSelectedListButtons() {
+            if (selectedSelectAllButton) {
+                selectedSelectAllButton.disabled = selectedParticipants.size === 0;
+            }
+            if (selectedParticipantsStatus) {
+                selectedParticipantsStatus.textContent = selectedParticipants.size
+                    ? `${selectedParticipants.size} participant${selectedParticipants.size === 1 ? '' : 's'} selected.`
+                    : 'No participants selected.';
+            }
+        }
+
+        function updateTransferControls() {
+            if (moveToSelectedButton) {
+                moveToSelectedButton.disabled = participantDirectoryState.highlighted.size === 0;
+            }
+            if (moveToAvailableButton) {
+                moveToAvailableButton.disabled = selectedParticipantHighlights.size === 0;
+            }
+        }
+
+        function getFriendlyName(user) {
+            return [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.login || user.user_id;
+        }
+
+        function getRoleLabel(user) {
+            const roleLabel = (user.role || 'participant').toString();
+            return roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1);
+        }
+
+        function getRoleSortRank(user) {
+            const role = (user?.role || 'participant').toString().toLowerCase();
+            if (role === 'super_admin') return 0;
+            if (role === 'admin') return 1;
+            if (role === 'facilitator') return 2;
+            if (role === 'participant') return 3;
+            return 4;
+        }
+
+        function normaliseSortText(value) {
+            return (value || '').toString().trim().toLowerCase();
+        }
+
+        function compareUsersByRoleAndName(a, b) {
+            const roleDelta = getRoleSortRank(a) - getRoleSortRank(b);
+            if (roleDelta !== 0) return roleDelta;
+
+            const aLast = normaliseSortText(a?.last_name);
+            const bLast = normaliseSortText(b?.last_name);
+            if (aLast !== bLast) return aLast.localeCompare(bLast);
+
+            const aFirst = normaliseSortText(a?.first_name);
+            const bFirst = normaliseSortText(b?.first_name);
+            if (aFirst !== bFirst) return aFirst.localeCompare(bFirst);
+
+            const aLogin = normaliseSortText(a?.login || a?.user_id);
+            const bLogin = normaliseSortText(b?.login || b?.user_id);
+            return aLogin.localeCompare(bLogin);
+        }
+
+        function getUserInitials(user) {
+            const safeFirst = (user.first_name || '').trim();
+            const safeLast = (user.last_name || '').trim();
+            const candidate = `${safeFirst.charAt(0)}${safeLast.charAt(0)}`.trim();
+            if (candidate) return candidate.toUpperCase();
+            const fallback = (user.login || user.email || user.user_id || '').replace(/[^A-Za-z0-9]/g, '');
+            return fallback.slice(0, 2).toUpperCase() || '•';
+        }
+
+        function normalizeAvatarColor(value) {
+            const normalized = String(value || '').trim();
+            return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized : '#6B7280';
+        }
+
+        function normalizeAvatarPath(value) {
+            if (!value) return null;
+            const normalized = String(value).trim();
+            if (!normalized.startsWith('/static/avatars/fluent/icons/')) {
+                return null;
+            }
+            return normalized;
+        }
+
+        function createParticipantAvatar(user) {
+            const avatar = document.createElement('div');
+            avatar.className = 'participant-directory-avatar';
+            avatar.style.backgroundColor = normalizeAvatarColor(user?.avatar_color);
+            const safePath = normalizeAvatarPath(user?.avatar_icon_path);
+            if (safePath) {
+                const img = document.createElement('img');
+                img.src = safePath;
+                img.alt = '';
+                img.decoding = 'async';
+                img.loading = 'lazy';
+                avatar.appendChild(img);
+            } else {
+                avatar.textContent = getUserInitials(user);
+            }
+            avatar.setAttribute('aria-hidden', 'true');
+            return avatar;
+        }
+
+        function renderParticipantDirectory() {
+            if (!participantDirectoryList) return;
+            participantDirectoryList.innerHTML = '';
+
+            if (participantDirectoryState.loading) {
+                const loading = document.createElement('div');
+                loading.className = 'participant-directory-empty';
+                loading.textContent = 'Loading directory…';
+                participantDirectoryList.appendChild(loading);
+                updateAvailableListButtons();
+                updateParticipantDirectoryPagination();
+                updateTransferControls();
+                return;
+            }
+
+            if (participantDirectoryState.items.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'participant-directory-empty';
+                empty.textContent = participantDirectoryState.searchTerm
+                    ? 'No users matched your search.'
+                    : 'Start typing above to search the directory.';
+                participantDirectoryList.appendChild(empty);
+                updateAvailableListButtons();
+                updateParticipantDirectoryPagination();
+                updateTransferControls();
+                return;
+            }
+
+            const sortedDirectoryItems = [...participantDirectoryState.items].sort(compareUsersByRoleAndName);
+            sortedDirectoryItems.forEach((user) => {
+                const row = document.createElement('div');
+                row.className = 'participant-directory-row';
+                row.tabIndex = 0;
+                row.setAttribute('role', 'option');
+                const alreadySelected = selectedParticipants.has(user.user_id);
+                const highlighted = participantDirectoryState.highlighted.has(user.user_id);
+                const friendlyName = getFriendlyName(user);
+                const roleLabel = getRoleLabel(user);
+                row.title = `${friendlyName}${user.login && friendlyName !== user.login ? ` (${user.login})` : ''} • ${roleLabel}`;
+
+                if (alreadySelected) {
+                    row.setAttribute('aria-disabled', 'true');
+                    row.setAttribute('aria-selected', 'false');
+                } else {
+                    row.removeAttribute('aria-disabled');
+                    row.setAttribute('aria-selected', highlighted ? 'true' : 'false');
+                    row.classList.toggle('is-highlighted', highlighted);
+                }
+
+                const body = document.createElement('div');
+                body.className = 'participant-directory-body';
+                const infoLine = document.createElement('div');
+                infoLine.className = 'participant-directory-line';
+                const name = document.createElement('span');
+                name.className = 'participant-directory-name';
+                name.textContent = friendlyName;
+                const role = document.createElement('span');
+                role.className = 'participant-directory-role';
+                role.textContent = roleLabel;
+
+                infoLine.appendChild(name);
+                infoLine.appendChild(role);
+                body.appendChild(infoLine);
+
+                const avatar = createParticipantAvatar(user);
+                row.appendChild(avatar);
+                row.appendChild(body);
+
+                if (!alreadySelected) {
+                    row.addEventListener('click', () => toggleAvailableHighlight(user.user_id));
+                    row.addEventListener('dblclick', (event) => {
+                        event.preventDefault();
+                        addParticipantsFromDirectorySelection([user.user_id]);
+                    });
+                    row.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            toggleAvailableHighlight(user.user_id);
+                        }
+                        if (event.key === 'Enter' && event.metaKey) {
+                            addParticipantsFromDirectorySelection([user.user_id]);
+                        }
+                    });
+                }
+
+                participantDirectoryList.appendChild(row);
+            });
+
+            updateAvailableListButtons();
+            updateParticipantDirectoryPagination();
+            updateTransferControls();
+        }
+
+        function renderSelectedParticipants() {
+            if (!selectedParticipantsList) return;
+            selectedParticipantsList.innerHTML = '';
+
+            if (selectedParticipants.size === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'participant-directory-empty';
+                empty.textContent = 'No participants selected yet.';
+                selectedParticipantsList.appendChild(empty);
+            } else {
+                const sortedSelectedParticipants = Array.from(selectedParticipants.values()).sort(compareUsersByRoleAndName);
+                sortedSelectedParticipants.forEach((participant) => {
+                    const row = document.createElement('div');
+                    row.className = 'participant-directory-row participant-directory-row--selected';
+                    row.dataset.userId = participant.user_id;
+                    row.tabIndex = 0;
+                    row.setAttribute('role', 'option');
+                    const isHighlighted = selectedParticipantHighlights.has(participant.user_id);
+                    row.classList.toggle('is-highlighted', isHighlighted);
+                    row.setAttribute('aria-selected', isHighlighted ? 'true' : 'false');
+
+                    const body = document.createElement('div');
+                    body.className = 'participant-directory-body';
+                    const infoLine = document.createElement('div');
+                    infoLine.className = 'participant-directory-line';
+                    const name = document.createElement('span');
+                    name.className = 'participant-directory-name';
+                    const friendlyName = getFriendlyName(participant);
+                    name.textContent = friendlyName;
+
+                    const role = document.createElement('span');
+                    role.className = 'participant-directory-role';
+                    role.textContent = getRoleLabel(participant);
+
+                    infoLine.appendChild(name);
+                    infoLine.appendChild(role);
+                    body.appendChild(infoLine);
+
+                    const avatar = createParticipantAvatar(participant);
+                    row.appendChild(avatar);
+                    row.appendChild(body);
+
+                    row.addEventListener('click', () => toggleSelectedHighlight(participant.user_id));
+                    row.addEventListener('dblclick', (event) => {
+                        event.preventDefault();
+                        removeParticipantsFromSelection([participant.user_id]);
+                    });
+                    row.addEventListener('keydown', (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            toggleSelectedHighlight(participant.user_id);
+                        }
+                    });
+
+                    selectedParticipantsList.appendChild(row);
+                });
+            }
+
+            updateSelectedListButtons();
+            updateTransferControls();
+        }
+
+        function toggleAvailableHighlight(userId) {
+            if (participantDirectoryState.highlighted.has(userId)) {
+                participantDirectoryState.highlighted.delete(userId);
+            } else {
+                participantDirectoryState.highlighted.add(userId);
+            }
+            renderParticipantDirectory();
+        }
+
+        function toggleSelectedHighlight(userId) {
+            if (selectedParticipantHighlights.has(userId)) {
+                selectedParticipantHighlights.delete(userId);
+            } else {
+                selectedParticipantHighlights.add(userId);
+            }
+            renderSelectedParticipants();
+        }
+
+        function selectAllAvailable() {
+            const selectable = participantDirectoryState.items
+                .filter((user) => !selectedParticipants.has(user.user_id))
+                .map((user) => user.user_id);
+            participantDirectoryState.highlighted = new Set(selectable);
+            renderParticipantDirectory();
+        }
+
+        function selectAllSelected() {
+            selectedParticipantHighlights.clear();
+            selectedParticipants.forEach((_, userId) => selectedParticipantHighlights.add(userId));
+            renderSelectedParticipants();
+        }
+
+        async function loadParticipantDirectory({ resetPage = false } = {}) {
+            if (!participantDirectoryList) {
+                return;
+            }
+            if (resetPage) {
+                participantDirectoryState.page = 1;
+            }
+            participantDirectoryState.loading = true;
+            setParticipantDirectoryStatus('Loading directory…', 'info');
+            renderParticipantDirectory();
+            try {
+                const params = new URLSearchParams({
+                    draft: 'true',
+                    page: String(participantDirectoryState.page),
+                    page_size: '25',
+                    sort: 'name',
+                });
+                if (participantDirectoryState.searchTerm) {
+                    params.set('q', participantDirectoryState.searchTerm);
+                }
+                const response = await fetch(`/api/users/directory?${params.toString()}`, { credentials: 'include' });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err?.detail || 'Unable to load directory.');
+                }
+                const payload = await response.json();
+                participantDirectoryState.items = Array.isArray(payload?.items) ? payload.items : [];
+                participantDirectoryState.pages = payload?.pagination?.pages || 1;
+                participantDirectoryState.total = payload?.pagination?.total || participantDirectoryState.items.length;
+                participantDirectoryState.highlighted.clear();
+                setParticipantDirectoryStatus(
+                    participantDirectoryState.items.length === 0
+                        ? 'No users matched your search.'
+                        : 'Select users and use the arrow to add them.',
+                    participantDirectoryState.items.length === 0 ? 'muted' : 'success',
+                );
+            } catch (error) {
+                console.error('Directory load failed:', error);
+                participantDirectoryState.items = [];
+                setParticipantDirectoryStatus(error.message || 'Unable to load directory.', 'error');
+            } finally {
+                participantDirectoryState.loading = false;
+                renderParticipantDirectory();
+            }
+        }
+
+        function handleParticipantDirectorySearchInput(term) {
+            participantDirectoryState.searchTerm = (term || '').trim();
+            if (participantDirectoryState.debounce) {
+                clearTimeout(participantDirectoryState.debounce);
+            }
+            participantDirectoryState.debounce = setTimeout(() => {
+                participantDirectoryState.highlighted.clear();
+                loadParticipantDirectory({ resetPage: true });
+            }, 300);
+        }
+
+        function changeParticipantDirectoryPage(delta) {
+            const next = participantDirectoryState.page + delta;
+            if (next < 1) return;
+            const totalPages = participantDirectoryState.pages || 1;
+            if (next > totalPages) return;
+            participantDirectoryState.page = next;
+            loadParticipantDirectory();
+        }
+
+        function clearParticipantDirectorySelection() {
+            participantDirectoryState.highlighted.clear();
+            renderParticipantDirectory();
+            setParticipantDirectoryStatus('Selection cleared.', 'muted');
+        }
+
+        function addParticipantsFromDirectorySelection(userIds = null) {
+            const ids = Array.isArray(userIds) && userIds.length > 0
+                ? userIds
+                : Array.from(participantDirectoryState.highlighted);
+            if (ids.length === 0) return;
+
+            ids.forEach((userId) => {
+                const entry =
+                    participantDirectoryState.items.find((item) => item.user_id === userId) ||
+                    selectedParticipants.get(userId);
+                if (entry) {
+                    selectedParticipants.set(userId, entry);
+                }
+            });
+            participantDirectoryState.highlighted.clear();
+            selectedParticipantHighlights.clear();
+            renderSelectedParticipants();
+            renderParticipantDirectory();
+            setParticipantDirectoryStatus('Participants added.', 'success');
+        }
+
+        function removeParticipantsFromSelection(userIds = null) {
+            const ids = Array.isArray(userIds) && userIds.length > 0
+                ? userIds
+                : Array.from(selectedParticipantHighlights);
+            if (ids.length === 0) return;
+            ids.forEach((userId) => selectedParticipants.delete(userId));
+            selectedParticipantHighlights.clear();
+            renderSelectedParticipants();
+            renderParticipantDirectory();
+            setParticipantDirectoryStatus('Participants removed.', 'muted');
+        }
+
+        function setupParticipantDirectoryControls() {
+            if (participantDirectorySearch) {
+                participantDirectorySearch.addEventListener('input', (event) =>
+                    handleParticipantDirectorySearchInput(event.target.value || ''),
+                );
+            }
+            if (participantDirectoryRefresh) {
+                participantDirectoryRefresh.addEventListener('click', () => {
+                    participantDirectoryState.searchTerm = '';
+                    if (participantDirectorySearch) {
+                        participantDirectorySearch.value = '';
+                    }
+                    loadParticipantDirectory({ resetPage: true });
+                });
+            }
+            if (participantDirectoryClearButton) {
+                participantDirectoryClearButton.addEventListener('click', clearParticipantDirectorySelection);
+            }
+            if (availableSelectAllButton) {
+                availableSelectAllButton.addEventListener('click', selectAllAvailable);
+            }
+            if (selectedSelectAllButton) {
+                selectedSelectAllButton.addEventListener('click', selectAllSelected);
+            }
+            if (moveToSelectedButton) {
+                moveToSelectedButton.addEventListener('click', () => addParticipantsFromDirectorySelection());
+            }
+            if (moveToAvailableButton) {
+                moveToAvailableButton.addEventListener('click', () => removeParticipantsFromSelection());
+            }
+            if (participantDirectoryPrev) {
+                participantDirectoryPrev.addEventListener('click', () => changeParticipantDirectoryPage(-1));
+            }
+            if (participantDirectoryNext) {
+                participantDirectoryNext.addEventListener('click', () => changeParticipantDirectoryPage(1));
+            }
+        }
+
+        function initialiseParticipantDirectory() {
+            if (participantDirectoryInitialised) return;
+            participantDirectoryInitialised = true;
+            renderSelectedParticipants();
+            loadParticipantDirectory({ resetPage: true });
+        }
+
+        function applyModule(rowState, toolType, options = {}) {
+            const toolKey = (toolType || '').toLowerCase();
+            const nextModule = moduleCatalogMap.get(toolKey) || moduleCatalog[0] || DEFAULT_MODULES[0];
+            const previousModule = rowState.module; rowState.module = nextModule; rowState.select.value = nextModule.tool_type;
+            if (rowState.description) { rowState.description.textContent = nextModule.description || 'No description available for this activity.'; }
+            const preserveTitle = options.preserveTitle ?? rowState.titleEdited; if (!preserveTitle) { rowState.titleInput.value = nextModule.label; }
+            const existingConfig = options.configOverride || (previousModule && previousModule.tool_type === nextModule.tool_type ? collectConfigValues(rowState) : {});
+            renderConfig(rowState, nextModule, existingConfig);
+        }
+
+        function updateOrders() { agendaState.forEach((rowState, i) => { if (rowState.orderLabel) rowState.orderLabel.textContent = String(i + 1); rowState.container.dataset.orderIndex = String(i + 1); }); }
+        function moveRow(rowState, offset) { const currentIndex = agendaState.indexOf(rowState); if (currentIndex === -1) return; const nextIndex = currentIndex + offset; if (nextIndex < 0 || nextIndex >= agendaState.length) return; agendaState.splice(currentIndex, 1); agendaState.splice(nextIndex, 0, rowState); agendaState.forEach((s) => agendaContainer.appendChild(s.container)); updateOrders(); }
+        function removeRow(rowState) { const index = agendaState.indexOf(rowState); if (index !== -1) agendaState.splice(index, 1); rowState.container.remove(); updateOrders(); if (agendaState.length === 0) addAgendaItem(); }
+
+        function createAgendaRow(prefill) {
+            const rowState = { module: null, titleEdited: Boolean(prefill && prefill.title), configInputs: {}, activityId: prefill?.activity_id || null, hasData: Boolean(prefill?.has_data), lockedToolType: prefill?.tool_type || null };
+            const row = document.createElement('div'); row.className = 'agenda-row'; rowState.container = row;
+            if (rowState.activityId) {
+                row.dataset.activityId = rowState.activityId;
+            }
+            const header = document.createElement('div'); header.className = 'agenda-row-header';
+            const orderLabel = document.createElement('span'); orderLabel.className = 'agenda-row-order'; orderLabel.textContent = String(agendaState.length + 1); rowState.orderLabel = orderLabel;
+            const moduleSelect = document.createElement('select'); moduleSelect.className = 'agenda-module-select'; moduleCatalog.forEach((m) => { const option = document.createElement('option'); option.value = m.tool_type; option.textContent = m.label; moduleSelect.appendChild(option); }); rowState.select = moduleSelect;
+            if (rowState.hasData) { moduleSelect.disabled = true; moduleSelect.title = 'Activity type cannot be changed once ideas or votes exist.'; moduleSelect.classList.add('agenda-module-select--locked'); }
+            const actions = document.createElement('div'); actions.className = 'agenda-row-actions';
+            const upBtn = document.createElement('button'); upBtn.type = 'button'; upBtn.textContent = '▲'; upBtn.title = 'Move activity up'; upBtn.addEventListener('click', () => moveRow(rowState, -1));
+            const downBtn = document.createElement('button'); downBtn.type = 'button'; downBtn.textContent = '▼'; downBtn.title = 'Move activity down'; downBtn.addEventListener('click', () => moveRow(rowState, 1));
+            const removeBtn = document.createElement('button'); removeBtn.type = 'button'; removeBtn.textContent = 'Remove'; removeBtn.addEventListener('click', () => removeRow(rowState));
+            actions.append(upBtn, downBtn, removeBtn);
+            header.append(orderLabel, moduleSelect, actions);
+            const body = document.createElement('div'); body.className = 'agenda-row-body';
+            const titleGroup = document.createElement('div'); titleGroup.className = 'field-group'; const titleLabel = document.createElement('label'); titleLabel.textContent = 'Activity Title'; const titleInput = document.createElement('input'); titleInput.type = 'text'; titleInput.placeholder = 'Name this activity'; titleInput.value = prefill?.title || ''; titleInput.addEventListener('input', () => { rowState.titleEdited = titleInput.value.trim().length > 0; }); titleGroup.append(titleLabel, titleInput); rowState.titleInput = titleInput;
+            const instructionsGroup = document.createElement('div'); instructionsGroup.className = 'field-group'; const instructionsLabel = document.createElement('label'); instructionsLabel.textContent = 'Facilitator Instructions'; const instructionsInput = document.createElement('textarea'); instructionsInput.rows = 3; instructionsInput.placeholder = 'Brief notes or prompts for this activity (optional)'; instructionsInput.value = prefill?.instructions || ''; instructionsGroup.append(instructionsLabel, instructionsInput); rowState.instructionsInput = instructionsInput;
+            const description = document.createElement('p'); description.className = 'agenda-row-description'; rowState.description = description;
+            const configContainer = document.createElement('div'); configContainer.className = 'agenda-config-grid'; rowState.configContainer = configContainer;
+            body.append(titleGroup, instructionsGroup, description, configContainer);
+            row.append(header, body);
+            moduleSelect.addEventListener('change', () => { if (rowState.hasData) { moduleSelect.value = rowState.lockedToolType || moduleSelect.value; return; } const values = collectConfigValues(rowState); applyModule(rowState, moduleSelect.value, { preserveTitle: rowState.titleEdited, configOverride: values }); });
+            const initialToolType = (prefill && prefill.tool_type) || moduleSelect.value || (moduleCatalog[0] && moduleCatalog[0].tool_type) || DEFAULT_MODULES[0].tool_type;
+            if (!rowState.lockedToolType) { rowState.lockedToolType = initialToolType; }
+            applyModule(rowState, initialToolType, { initial: true, preserveTitle: Boolean(prefill?.title), configOverride: prefill?.config || {} });
+            if (prefill) { rowState.titleInput.value = prefill.title || rowState.titleInput.value; if (prefill.instructions) { rowState.instructionsInput.value = prefill.instructions; } }
+            return rowState;
+        }
+
+        function addAgendaItem(prefill) { if (!agendaContainer) return; const rowState = createAgendaRow(prefill); agendaState.push(rowState); agendaContainer.appendChild(rowState.container); updateOrders(); }
+        function collectSelectedParticipantIds() { return Array.from(selectedParticipants.keys()); }
+
+        function clearAgendaValidationMarkers() {
+            agendaState.forEach((rowState) => {
+                if (rowState.container) {
+                    rowState.container.classList.remove('agenda-row--error');
+                }
+                Object.values(rowState.configInputs || {}).forEach((meta) => {
+                    if (meta?.field) {
+                        meta.field.classList.remove('agenda-config-error');
+                    }
+                });
+            });
+        }
+
+        function applyAgendaValidationError(issue) {
+            if (!issue || !issue.rowState) return;
+            const agendaTab = document.querySelector('.tab-button[data-tab="agenda-tab"]');
+            if (agendaTab && !agendaTab.classList.contains('active')) {
+                agendaTab.click();
+            }
+            const rowState = issue.rowState;
+            if (rowState.container) {
+                rowState.container.classList.add('agenda-row--error');
+            }
+            const fieldMeta = issue.fieldKey ? rowState.configInputs?.[issue.fieldKey] : null;
+            if (fieldMeta?.field) {
+                fieldMeta.field.classList.add('agenda-config-error');
+            }
+            const target = fieldMeta?.input || rowState.container;
+            if (target && target.scrollIntoView) {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function collectAgendaPayload() {
+            const errors = [];
+            const validationIssues = [];
+            clearAgendaValidationMarkers();
+            const activities = agendaState.map((rowState, index) => {
+                const selectedKey = (rowState.select.value || '').toLowerCase();
+                const moduleDef = rowState.module || moduleCatalogMap.get(selectedKey) || moduleCatalog[0];
+                const toolType = moduleDef.tool_type; const title = rowState.titleInput.value.trim();
+                const instructions = rowState.instructionsInput.value.trim();
+                const config = {};
+                Object.entries(rowState.configInputs || {}).forEach(([key, meta]) => {
+                    if (!meta || !meta.input) return;
+                    if (meta.type === 'boolean') config[key] = meta.input.checked;
+                    else if (meta.type === 'number') { const numericValue = Number(meta.input.value); config[key] = Number.isNaN(numericValue) ? 0 : numericValue; }
+                    else if (meta.type === 'json' && meta.parseAsJson) { const raw = meta.input.value.trim(); if (!raw) config[key] = {}; else { try { config[key] = JSON.parse(raw); } catch (e) { errors.push(`Configuration "${formatConfigLabel(key)}" must be valid JSON.`); } } }
+                    else if (meta.type === 'array') { const values = meta.input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); if (meta.requireValues && values.length === 0) { errors.push(`${moduleDef.label || toolType} requires at least one ${formatConfigLabel(key)} value.`); } config[key] = values; }
+                    else config[key] = meta.input.value;
+                });
+                if (toolType === 'voting') {
+                    const hasOptionsField = Boolean(rowState.configInputs && rowState.configInputs.options);
+                    const hasOptions = Array.isArray(config.options) && config.options.length > 0;
+                    if (hasOptionsField && !hasOptions) {
+                        const activityName = title || moduleDef.label || `Activity ${index + 1}`;
+                        const fieldLabel = formatConfigLabel('options');
+                        validationIssues.push({
+                            rowState,
+                            fieldKey: 'options',
+                            message: `Activity ${index + 1} "${activityName}": ${fieldLabel} needs at least one idea or vote candidate.`,
+                        });
+                    } else if (!hasOptionsField) {
+                        const activityName = title || moduleDef.label || `Activity ${index + 1}`;
+                        const fieldLabel = formatConfigLabel('options');
+                        validationIssues.push({
+                            rowState,
+                            fieldKey: 'options',
+                            message: `Activity ${index + 1} "${activityName}": ${fieldLabel} needs at least one idea or vote candidate.`,
+                        });
+                    }
+                    const optionsCount = Array.isArray(config.options) ? config.options.length : 0;
+                    const maxTotalAllowed = optionsCount > 0 ? Math.max(1, Math.ceil(optionsCount / 2)) : null;
+                    let parsedMax = Number(config.max_votes);
+                    if (!Number.isFinite(parsedMax) || parsedMax <= 0) {
+                        parsedMax = optionsCount > 0 ? Math.max(1, Math.round(optionsCount / 4)) : 1;
+                    }
+                    if (maxTotalAllowed) {
+                        parsedMax = Math.min(parsedMax, maxTotalAllowed);
+                    }
+                    config.max_votes = Math.max(1, Math.floor(parsedMax));
+
+                    let parsedPerOption = Number(config.max_votes_per_option);
+                    if (!Number.isFinite(parsedPerOption) || parsedPerOption <= 0) {
+                        parsedPerOption = 1;
+                    }
+                    parsedPerOption = Math.min(9, Math.floor(parsedPerOption));
+                    parsedPerOption = Math.min(parsedPerOption, config.max_votes);
+                    config.max_votes_per_option = parsedPerOption;
+                    config.show_results_immediately = Boolean(config.show_results_immediately);
+                }
+                return { tool_type: toolType, title: title || moduleDef.label || `Activity ${index + 1}`, instructions: instructions || null, order_index: index + 1, config };
+            }).filter((item) => item && item.title);
+            if (validationIssues.length > 0) {
+                const issue = validationIssues[0];
+                applyAgendaValidationError(issue);
+                throw new Error(issue.message);
+            }
+            if (errors.length > 0) { throw new Error(errors[0]); }
+            return activities;
+        }
+
+        function setFeedback(message, variant = 'error') {
+            if (!feedback) return;
+            if (!message) { feedback.className = 'feedback'; feedback.style.display = 'none'; feedback.textContent = ''; return; }
+            const variantClass = variant === 'success' ? 'success' : variant === 'info' ? 'info' : 'error';
+            feedback.className = `feedback ${variantClass}`; feedback.textContent = message; feedback.style.display = 'block';
+        }
+
+        function normaliseAgendaItem(prefill) {
+            if (!prefill || typeof prefill !== 'object') return null;
+            return {
+                tool_type: prefill.tool_type || prefill.type || 'brainstorming',
+                title: prefill.title || '',
+                instructions: prefill.instructions || '',
+                config: prefill.config || prefill.activity_config || {},
+                activity_id: prefill.activity_id || null,
+                order_index: prefill.order_index || null,
+                has_data: Boolean(prefill.has_data),
+            };
+        }
+
+        function focusAgendaRowByActivityId(activityId) {
+            if (!activityId) return;
+            const target = agendaState.find((rowState) => rowState.activityId === activityId);
+            if (!target || !target.container) return;
+            target.container.classList.add('agenda-row--focus');
+            target.container.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (target.titleInput) {
+                target.titleInput.focus();
+            }
+            setTimeout(() => target.container.classList.remove('agenda-row--focus'), 3000);
+        }
+
+        async function initAgendaBuilder(prefillAgenda = null) {
+            if (!agendaContainer) return;
+            await loadModuleCatalog();
+            agendaContainer.innerHTML = '';
+            agendaState.splice(0, agendaState.length);
+
+            const agendaItems = Array.isArray(prefillAgenda)
+                ? [...prefillAgenda].sort(
+                    (first, second) => (first.order_index || 0) - (second.order_index || 0),
+                )
+                : [];
+
+            if (agendaItems.length > 0) {
+                agendaItems.forEach((item) => {
+                    const normalized = normaliseAgendaItem(item);
+                    addAgendaItem(normalized || undefined);
+                });
+            } else {
+                addAgendaItem();
+            }
+
+            if (addAgendaButton) { addAgendaButton.addEventListener('click', () => addAgendaItem()); }
+        }
+
+        function formatLocalDisplay(date) {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+        }
+
+        function parseScheduledInput(value) {
+            const trimmed = (value || '').trim();
+            if (!trimmed) return null;
+            const match = /^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2}))?$/.exec(trimmed);
+            if (!match) return null;
+            const year = Number(match[1]);
+            const month = Number(match[2]);
+            const day = Number(match[3]);
+            const hasTime = match[4] !== undefined;
+            const hour = hasTime ? Number(match[4]) : 0;
+            const minute = hasTime ? Number(match[5]) : 0;
+            if (hasTime && (hour < 0 || hour > 23 || minute < 0 || minute > 59)) {
+                return null;
+            }
+            const candidate = new Date(year, month - 1, day, hour, minute, 0, 0);
+            if (Number.isNaN(candidate.getTime())) return null;
+            if (
+                candidate.getFullYear() !== year ||
+                candidate.getMonth() + 1 !== month ||
+                candidate.getDate() !== day ||
+                candidate.getHours() !== hour ||
+                candidate.getMinutes() !== minute
+            ) {
+                return null;
+            }
+            return { date: candidate, hasTime };
+        }
+
+        function setTextValueFromDate(date) {
+            if (!scheduledTextInput) return;
+            scheduledTextInput.value = formatLocalDisplay(date);
+        }
+
+        function setScheduledValidation(message, variant = 'error') {
+            if (scheduledTextInput) {
+                scheduledTextInput.classList.toggle('input-invalid', Boolean(message));
+            }
+            if (!scheduledDateFeedback) return;
+            if (!message) {
+                scheduledDateFeedback.textContent = '';
+                scheduledDateFeedback.dataset.variant = 'muted';
+                return;
+            }
+            scheduledDateFeedback.textContent = message;
+            scheduledDateFeedback.dataset.variant = variant;
+        }
+
+        function isPartialScheduledInput(value) {
+            const trimmed = (value || '').trim();
+            if (!trimmed) return true;
+            return /^\d{0,4}(-\d{0,2}(-\d{0,2}(\s+\d{0,2}(:\d{0,2})?)?)?)?$/.test(trimmed);
+        }
+
+        function validateScheduledInput(strict = false) {
+            if (!scheduledTextInput) return true;
+            const raw = scheduledTextInput.value.trim();
+            if (!raw) {
+                setScheduledValidation('');
+                return true;
+            }
+            const parsed = parseScheduledInput(raw);
+            if (parsed) {
+                if (strict) {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const dateOnly = new Date(parsed.date.getTime());
+                    dateOnly.setHours(0, 0, 0, 0);
+                    if (dateOnly < today) {
+                        setScheduledValidation('Date must be today or later.');
+                        return false;
+                    }
+                }
+                setScheduledValidation('');
+                return true;
+            }
+            if (!strict && isPartialScheduledInput(raw)) {
+                setScheduledValidation('');
+                return true;
+            }
+            setScheduledValidation('Use YYYY-MM-DD or YYYY-MM-DD HH:MM.');
+            return false;
+        }
+
+        function computeScheduledDatetime() {
+            const parsed = scheduledTextInput
+                ? parseScheduledInput(scheduledTextInput.value)
+                : null;
+            if (parsed && parsed.date) {
+                return parsed.date.toISOString();
+            }
+            return null;
+        }
+
+        function toLocalDate(value) {
+            if (!value) return null;
+            const parsed = new Date(value);
+            if (Number.isNaN(parsed.getTime())) return null;
+            return parsed;
+        }
+
+        function applyMeetingPrefill(meeting) {
+            if (!meeting || typeof meeting !== 'object') return;
+            const titleInput = document.getElementById('title'); const descriptionInput = document.getElementById('description');
+            if (titleInput) { titleInput.value = meeting.title || ''; }
+            if (descriptionInput) { descriptionInput.value = meeting.description || ''; }
+
+            const startValue = meeting.start_time || meeting.started_at;
+            const localDate = toLocalDate(startValue);
+            if (localDate) {
+                setPickerValueFromDate(localDate);
+                setTextValueFromDate(localDate);
+            }
+
+            selectedParticipants.clear();
+            const participantRoster = Array.isArray(meeting.participants) ? meeting.participants : [];
+            const participantIds = Array.isArray(meeting.participant_ids) ? meeting.participant_ids : [];
+            const roster = participantRoster.length > 0
+                ? participantRoster
+                : participantIds.map((id) => ({ user_id: id }));
+
+            roster.forEach((entry) => {
+                const userId = entry.user_id || entry.id || entry.login;
+                if (!userId) return;
+                selectedParticipants.set(userId, {
+                    user_id: userId,
+                    first_name: entry.first_name || '',
+                    last_name: entry.last_name || '',
+                    login: entry.login || entry.email || userId,
+                    email: entry.email || '',
+                    role: entry.role || 'participant',
+                });
+            });
+            renderSelectedParticipants();
+        }
+
+        async function hydrateSelectedParticipantsFromMeeting() {
+            if (!isEditMode || !meetingId) return;
+            try {
+                const response = await fetch(`/api/meetings/${meetingId}/participants`, { credentials: 'include' });
+                const payload = await response.json().catch(() => []);
+                if (!response.ok || !Array.isArray(payload)) return;
+
+                selectedParticipants.clear();
+                payload.forEach((entry) => {
+                    const userId = entry.user_id || entry.id || entry.login;
+                    if (!userId) return;
+                    selectedParticipants.set(userId, {
+                        user_id: userId,
+                        first_name: entry.first_name || '',
+                        last_name: entry.last_name || '',
+                        login: entry.login || entry.email || userId,
+                        email: entry.email || '',
+                        role: entry.role || 'participant',
+                    });
+                });
+                renderSelectedParticipants();
+            } catch (error) {
+                console.warn('Unable to hydrate selected participants from meeting roster:', error);
+            }
+        }
+
+        async function fetchMeetingForEdit() {
+            if (!isEditMode || !meetingId) return null;
+            setFeedback('Loading meeting settings...', 'info');
+            const response = await fetch(`/api/meetings/${meetingId}`, { credentials: 'include' });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const detail = typeof payload.detail === 'string' ? payload.detail : 'Unable to load meeting settings.';
+                throw new Error(detail);
+            }
+            setFeedback(null);
+            return payload;
+        }
+
+        async function handleSubmit(event) {
+            event.preventDefault(); setFeedback(null); submitBtn.disabled = true; submitBtn.textContent = isEditMode ? 'Saving...' : 'Creating...';
+            try {
+                const activityParam = new URLSearchParams(window.location.search).get('activity_id');
+                if (isEditMode && activityParam) {
+                    const targetIndex = agendaState.findIndex((rowState) => rowState.activityId === activityParam);
+                    if (targetIndex === -1) {
+                        throw new Error('Selected activity not found in this agenda.');
+                    }
+                    const agendaPayload = collectAgendaPayload();
+                    const targetItem = agendaPayload[targetIndex];
+                    if (!targetItem) {
+                        throw new Error('Unable to build the activity payload.');
+                    }
+                    const response = await fetch(
+                        `/api/meetings/${meetingId}/agenda/${activityParam}`,
+                        {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({
+                                tool_type: targetItem.tool_type,
+                                title: targetItem.title,
+                                instructions: targetItem.instructions,
+                                config: targetItem.config,
+                            }),
+                        },
+                    );
+                    const result = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        const detail = typeof result.detail === 'string' ? result.detail : 'Failed to save activity.';
+                        throw new Error(detail);
+                    }
+                    setFeedback('Activity settings saved.', 'success');
+                    setTimeout(() => {
+                        window.location.href = `/meeting/${meetingId}?activity_id=${encodeURIComponent(activityParam)}`;
+                    }, 900);
+                    return;
+                }
+                const titleInput = document.getElementById('title'); const descriptionInput = document.getElementById('description');
+                const title = (titleInput?.value || '').trim(); const description = (descriptionInput?.value || '').trim();
+                if (!title) { throw new Error('A meeting title is required.'); }
+                const agendaPayload = collectAgendaPayload(); const participantIds = collectSelectedParticipantIds(); const scheduledDatetime = computeScheduledDatetime();
+                if (!validateScheduledInput(true)) {
+                    throw new Error('Scheduled date must be YYYY-MM-DD with optional HH:MM.');
+                }
+                const payload = { title, description, scheduled_datetime: scheduledDatetime, agenda: agendaPayload, agenda_items: agendaPayload.map((item) => item.title), participant_ids: participantIds, co_facilitator_ids: [] };
+                const endpoint = isEditMode ? `/api/meetings/${meetingId}/configuration` : '/api/meetings';
+                const method = isEditMode ? 'PUT' : 'POST';
+                const response = await fetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    const detail = typeof result.detail === 'string' ? result.detail : Array.isArray(result.detail) ? result.detail.join(', ') : 'Failed to save meeting.';
+                    throw new Error(detail);
+                }
+                setFeedback(isEditMode ? 'Meeting settings saved.' : 'Meeting created successfully.', 'success');
+                setTimeout(() => { window.location.href = '/dashboard'; }, 1100);
+            } catch (error) {
+                setFeedback(error.message || 'An unexpected error occurred while saving the meeting.', 'error'); submitBtn.disabled = false; submitBtn.textContent = submitIdleLabel; return;
+            }
+        }
+
+        async function initialize() {
+            setupParticipantDirectoryControls();
+            let meetingPrefill = null;
+            const activityParam = new URLSearchParams(window.location.search).get('activity_id');
+            const backLink = document.getElementById('meetingBackLink');
+            if (backLink && activityParam) {
+                backLink.href = `${backLink.href}?activity_id=${encodeURIComponent(activityParam)}`;
+            }
+
+            if (isEditMode) {
+                try {
+                    meetingPrefill = await fetchMeetingForEdit();
+                } catch (error) {
+                    setFeedback(error.message || 'Unable to load meeting settings.', 'error');
+                    if (submitBtn) { submitBtn.disabled = true; }
+                    return;
+                }
+            }
+
+            await initAgendaBuilder(
+                Array.isArray(meetingPrefill?.agenda) ? meetingPrefill.agenda : null,
+            );
+
+            if (meetingPrefill) {
+                applyMeetingPrefill(meetingPrefill);
+                await hydrateSelectedParticipantsFromMeeting();
+            }
+            if (activityParam) {
+                focusAgendaRowByActivityId(activityParam);
+            }
+
+            if (clearScheduledBtn) {
+                clearScheduledBtn.addEventListener('click', () => {
+                    if (scheduledTextInput) scheduledTextInput.value = '';
+                    if (scheduledTextInput) scheduledTextInput.focus();
+                    setScheduledValidation('');
+                });
+            }
+
+            if (scheduledTextInput) {
+                scheduledTextInput.addEventListener('input', () => validateScheduledInput(false));
+                scheduledTextInput.addEventListener('blur', () => validateScheduledInput(true));
+            }
+
+            initialiseParticipantDirectory();
+            if (submitBtn) { submitBtn.textContent = submitIdleLabel; }
+            if (form) { form.addEventListener('submit', handleSubmit); }
+        }
+        initialize();
+    })();
+</script>
+{% endblock %}

@@ -1,0 +1,9 @@
+fastapi==0.111
+uvicorn
+sqlalchemy
+httpx
+passlib
+python-jose[cryptography]==3.3.0
+cryptography
+bcrypt
+python-multipart

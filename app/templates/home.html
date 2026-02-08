@@ -1,0 +1,24 @@
+{% extends "_base.html" %}
+
+{% block title %}Welcome · Decidero{% endblock %}
+
+{% block content %}
+    {% grab id="hero" %}
+    <section class="hero">
+        <h2>Collaborate with clarity</h2>
+        <p>
+            Use the grab tool (press <kbd>G</kbd>) to highlight UI regions and copy their originating templates.
+        </p>
+    </section>
+    {% endgrab %}
+
+    {% grab %}
+    <section class="callout">
+        <h3>Why this matters</h3>
+        <ul>
+            <li>Faster triage between QA and engineers.</li>
+            <li>Precise, file-backed bug reports.</li>
+        </ul>
+    </section>
+    {% endgrab %}
+{% endblock %}

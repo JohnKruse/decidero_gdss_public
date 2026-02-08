@@ -1,0 +1,44 @@
+data_directory: "data"
+backup_interval_seconds: 300  # Periodicity of data storage
+database_url: "sqlite:///./decidero.db"  # Path to the SQLite database file
+autosave_seconds: 10  # Default activity autosave interval
+sqlite:
+  journal_mode: "WAL"
+  synchronous: "NORMAL"
+  busy_timeout_ms: 30000
+  write_retries: 5
+  retry_backoff_ms: 200
+# Allow participants to join multiple concurrent activities (disable exclusivity checks)
+activity_participant_exclusivity: false
+default_meeting_settings:
+  max_participants: 100
+  recording_enabled: true
+default_user_password: "TempPass123!"
+auth:
+  # Keep sessions alive for longer workshops (48 hours here; adjust as needed)
+  access_token_expire_minutes: 2880
+  # Set true when serving via HTTPS (tunnel or reverse proxy) so auth cookies use Secure.
+  secure_cookies: true
+  # Guest join toggle: keep false for strict auth-only meetings.
+  # Flip to true to allow unauthenticated join flow (/meeting/join + /api/meetings/join).
+  allow_guest_join: false
+brainstorming:
+  idea_character_limit: 500
+  max_ideas_per_user: 50
+  # Default activity configuration (can be overridden per activity)
+  default_maintain_anonymity: false
+  default_allow_subcomments: false
+  default_auto_jump_new_ideas: true
+meeting_refresh:
+  enabled: true
+  interval_seconds: 8
+  hidden_interval_seconds: 45
+  failure_backoff_seconds: 60
+meeting_activity_log:
+  max_items: 100
+ui_refresh:
+  enabled: true
+  dashboard_interval_seconds: 10
+  admin_users_interval_seconds: 5
+  hidden_interval_seconds: 15
+  failure_backoff_seconds: 90

@@ -1,0 +1,279 @@
+Okay, I have reviewed the provided text and will now generate a Product Requirements Document (PRD) for the "Decidero" Group Decision Support System (GDSS) open-source project.
+
+---
+
+**Product Requirements Document: Decidero - Group Decision Support System**
+
+**Version:** 1.0
+**Date:** 2025-04-19 (as per input document)
+**Project:** Decidero Open Source GDSS
+
+**1. Introduction and Overview**
+This document outlines the comprehensive requirements for *Decidero*, an open-source Group Decision Support System (GDSS) platform. Decidero aims to facilitate collaborative decision-making processes through both real-time (synchronous) and asynchronous interactions. The system will employ a client-server architecture, enabling users (clients) to interact with a central system (server) for seamless meeting management, tool utilization, and data persistence.
+
+**2. Goals and Objectives**
+* To provide a robust platform for structured group decision-making.
+* To support diverse collaborative activities through a suite of extensible tools.
+* To enable effective meeting facilitation and participant engagement.
+* To ensure secure, reliable, and scalable system performance.
+* To offer an intuitive user experience for all roles (Admin, Facilitator, Participant).
+* To build an open-source system that can be customized and extended by the community.
+
+**3. Target Users**
+* **Administrators:** Technical users responsible for system-wide setup, user management, and maintenance.
+* **Facilitators:** Users who plan, manage, and guide meetings, configure agendas, and oversee participant interaction.
+* **Participants:** Users who engage in meeting activities, contribute ideas, vote, and utilize collaborative tools.
+
+**4. Functional Requirements**
+
+**4.1. User Management**
+    * **4.1.1. User Registration and Authentication:**
+        * Secure account creation (First Name, Last Name, User/Screen Name, Email, Organization, Password). Email verification required.
+        * Secure login with username/password and "Remember Me" option.
+        * Password reset functionality.
+        * Users can select a predefined icon; random assignment if none chosen.
+        * Authentication via JSON Web Tokens (JWTs).
+        * Passwords hashed using bcrypt (or equivalent) with salt.
+    * **4.1.2. Session Roles and Permissions (RBAC):**
+        * Predefined roles: `admin`, `facilitator`, `participant`.
+        * Roles must be flexible and extensible, with clearly defined permissions.
+    * **4.1.3. User Profile Management (All Roles):**
+        * Editable fields: email address, screen name.
+        * Future: "About Me" paragraph, selection of predefined icon, custom profile photo upload.
+    * **4.1.4. Administrator-Specific Functions:**
+        * **User & System Management:** Create, view, edit, delete any user; assign/modify roles (including promoting others to admin); batch create users; manage inactive users.
+        * **System Customization:** Customize system-wide settings (logo, colors).
+        * **Meeting & Agenda Management (System-Wide):** Create, view, edit, delete any meeting; manage settings and participants; load, create, edit, manage agenda templates.
+        * **Data Management:** Export/import meetings and associated data.
+        * **Facilitator & Role Management (System-Wide):** Assign/remove any user as facilitator for any meeting; promote/demote facilitators; modify user roles/permissions; create new roles.
+        * **System Oversight:** Access system logs and activity reports; monitor system performance/resource usage; configure system-wide settings; manage database connections.
+    * **4.1.5. Future Development - Setup & Registration:**
+        * Single registration page (`register.html`) for initial admin setup and regular user self-registration.
+        * Conditional display of "Initial Admin Setup" if no admin exists.
+        * First registered user automatically assigned `ADMIN` role; subsequent users assigned `PARTICIPANT`.
+        * Required fields: First Name, Last Name, Email (login), Password. "Screen Name" removed.
+        * Successful registration returns JSON; client-side redirect via JavaScript.
+        * Password complexity validation and email uniqueness checks.
+
+**4.2. Meeting Management**
+    * **4.2.1. Facilitator-Specific Functions:**
+        * **Meeting Creation & Setup:** Create meetings with title, description, start time, duration; invite participants (email, in-app, URL); select decision-making processes (Agendas).
+        * **Agenda Management:** Load agenda templates (JSON); define tool sequence and settings; create, save, edit, delete, share agenda templates with version control.
+        * **Data Loading:** Load previously generated meeting data (linked via unique meeting IDs), with data versioning and change tracking.
+        * **In-Meeting Facilitation:** Monitor participant attendance/activity; manage participants (mute, restrict access, breakout rooms); control meeting flow (start/stop activities, time limits, direct focus); force participants into activities; "nudge" inactive users; end activities; monitor/moderate contributions; display aggregated results.
+        * **Role Promotion:** Promote other users to facilitators within their own meetings; demote users.
+        * **Post-Meeting:** Generate/export reports; archive data; share results.
+        * **System Customization (Limited):** Default logo loading/changing; logon page welcome message customization; color customization (saved in config).
+        * **User Creation (Limited):** Batch user creation (prefix + number pattern or CSV).
+    * **4.2.2. Meeting Types:**
+        * Support `public` (discoverable, open) and `private` (invitation-only) meetings with access control.
+    * **4.2.3. Multi-Session Capability:**
+        * Allow multiple concurrent meeting sessions with appropriate resource management.
+
+**4.3. Group Decision Process**
+    * **4.3.1. Process Definition (Agenda):**
+        * Facilitators define the sequence of collaborative tools.
+        * Provide a library of tools (brainstorming, voting, clustering, etc.).
+    * **4.3.2. Process Adaptation:**
+        * Allow addition, removal, or reordering of tools during a meeting, with real-time communication of changes.
+    * **4.3.3. Process Templates (Agendas):**
+        * Save predefined Agendas for reuse; allow save, delete, edit, share, with permission levels for modification.
+    * **4.3.4. Breakout Rooms (Child Meetings):**
+        * Move selected users to sub-meetings with separate tools.
+        * Inherit data from parent meetings as needed; define data flow and synchronization.
+        * Manage users across multiple sessions.
+    * **4.3.5. Participant Control & Monitoring:**
+        * Facilitators control participant access to tools (start/stop).
+        * Features: muting, restricting tool access.
+        * Optional auto start/stop of activities based on time (primarily manual).
+        * Facilitator dashboard: meeting/activity states, participant info (status, time, page views, submissions).
+        * "All Stop" option for facilitators.
+    * **4.3.6. Participant Focus:**
+        * Direct participants’ attention using overlays or prompts. Define overlay management and UX impact.
+
+**4.4. Collaborative Tools**
+    * **4.4.1. Brainstorming:** Real-time idea submission and visibility; easy submission, editing (facilitator-controlled), display.
+    * **4.4.2. Commenting:** Hierarchical (threaded) comments; unlimited depth unless specified; notifications for new comments.
+    * **4.4.3. 5 Star Voting:** Various methods (single/multiple-choice, 1-5 star rating scales); anonymous or identified voting; real-time results display.
+    * **4.4.4. Clustering (Bucketing):** Group similar ideas via drag-and-drop (unsorted -> buckets, between buckets); manual or algorithm-assisted; facilitator tools for cluster management.
+    * **4.4.5. Consensus Building:** Summarize results, highlight agreement/disagreement; facilitate further discussion or voting rounds.
+    * **4.4.6. Reporting:** Automatic report generation (PDF, Word); customizable reports (summaries, charts, contributions).
+    * **4.4.7. Anonymity:** Optional anonymous contributions (facilitators may view identities unless fully anonymized).
+    * **4.4.8. Timestamps:** All actions timestamped: `YYYYMMDD_HH:MM:SS.mmm`. Consistent time zone handling.
+    * **4.4.9. Copy/Paste Functionality:** Copy/paste ideas and comment trees, with defined rules for data ownership/visibility.
+    * **4.4.10. Forced Ranking Tool:** Participants rank items in order of preference.
+    * **4.4.11. Dotmocracy Tool:** Participants distribute a limited number of votes (dots) across options.
+
+**4.5. Real-time Interaction and Updates**
+    * **4.5.1. Synchronous/Asynchronous Modes:** Support both real-time and delayed collaboration; smooth transitions with state saving and notifications; data synchronization for asynchronous participants.
+    * **4.5.2. Live Tool Changes:** Facilitators can modify tools/access during sessions with immediate updates to participants; define impact on in-progress activities.
+
+**4.6. User Experience (UX) Requirements**
+    * **4.6.1. Common Dashboard Elements (All Roles):**
+        * Personalized dashboard (`/dashboard`) upon login.
+        * Accessible "My Profile" link.
+        * Clean, navigable, responsive design.
+        * "Notifications/Alerts" section: invitations, reminders, updates, announcements; unread notifications visually distinct with count.
+    * **4.6.2. Participant-Specific Dashboard View:**
+        * "My Meetings" section: Lists meetings with Title, Status (In Progress, Upcoming, Completed), Brief Description, Facilitator Name.
+        * Quick Access Icons/Buttons: "Enter Meeting," "View Results."
+        * Visual cues for Active vs. Upcoming meetings.
+        * Sortable/filterable meeting list.
+        * Optional: summary of recent activity/contributions.
+        * Clear visual separation of dashboard sections.
+        * Optimized performance for quick loading.
+    * **4.6.3. Participant In-Meeting Workflow:**
+        * Landing: Clear "Meeting Overview" screen (title, description, facilitator).
+        * Status Indication: Current meeting phase/activity clearly shown.
+        * Navigation: Automatic direction to active activity; clear navigation if multiple activities accessible.
+        * Facilitator Control: Automatic transition to new activities started by facilitator. Upon completion, move to next activity or waiting/summary screen.
+        * Activity Interaction: Progress indicators for time-boxed activities; clear instructions; view other contributions (per anonymity); submit individual contributions; real-time interaction (chat, if enabled).
+        * Participant Choice: Free navigation between "open" activities.
+        * Visual Cues: Differentiate active, upcoming, completed (viewable) activities.
+        * Consistent Navigation Menu: Easy switching between authorized activities.
+        * Context: View instructions/context for each activity.
+        * Resources: View meeting-level documents/resources.
+        * Contribution Status: Clear indication (e.g., "Submitted").
+        * Exit: Always available "Leave Meeting" option, returning to dashboard.
+        * Results: Access to results/reports (if enabled by facilitator post-meeting).
+
+**5. Non-Functional Requirements**
+
+**5.1. Scalability**
+    * Handle high concurrency without significant performance degradation.
+    * Identify and address potential bottlenecks (data storage, processing).
+    * Design for vertical and horizontal scalability.
+    * Future-proof by structuring for easy integration of advanced databases; use design patterns like separate data access logic.
+**5.2. Extensibility**
+    * Implement a plugin architecture for new collaborative tools.
+    * Define clear APIs for plugin integration; provide developer documentation.
+**5.3. Performance**
+    * Minimize latency using WebSockets for real-time interactions.
+    * Ensure infrastructure supports many WebSocket connections (e.g., connection pooling).
+    * Implement load balancing.
+**5.4. Reliability**
+    * Comprehensive error detection and handling with user-friendly messages and recovery.
+    * Session recovery with reconnection strategies for dropped WebSockets and state preservation.
+**5.5. Modularity**
+    * Organize code into modules/packages (e.g., separate `.py` files for tools, components).
+    * Adhere to coding standards.
+**5.6. Security**
+    * **User Authentication:** Secure authentication (hashed passwords like bcrypt with salt); JWTs for session management (secure transmission, token refresh, secure storage).
+    * **Data Privacy:** Encrypt data in transit (HTTPS, WSS); implement access controls and permissions; encrypt sensitive data at rest where applicable.
+    * **Regulatory Compliance:** Comply with data protection laws (e.g., GDPR); clear privacy policies, user consent.
+**5.7. User Management Strategies (Operational)**
+    * **User Types:** Persistent (Admins, Facilitators, Registered Participants); Anonymous/Temporary (one-time meetings, removed afterward).
+    * **Meeting Templates:** Save configurations and participant lists.
+    * **User Groups:** Collections for recurring series (bulk additions, role-based permissions).
+    * **Alias Assignment:** Facilitators assign custom aliases to anonymous users.
+    * **Clean-Up Mechanism:** Tool to manage/remove inactive users.
+**5.8. Permissions and Relationships (Summary)**
+    * System (1:*) Admin: Global permissions.
+    * System (1:*) Meeting: System manages multiple meetings.
+    * Meeting (1:1) MeetingData: Each meeting has associated data.
+    * Meeting (1:*) User (Participants).
+    * Meeting (1:*) User (Facilitators): At least one per meeting.
+    * Facilitator Capabilities: Manage *their* meetings, participants, roles within those meetings. Cannot access/edit meetings they don’t facilitate.
+    * Admin Overrides: Full control over all meetings, users, roles.
+    * User (1:*) Meeting (Facilitator/Participant): Users can have multiple roles across different meetings.
+
+**6. Architectural Requirements**
+
+**6.1. Web Application Framework**
+    * **Backend (Server-Side):** Python with FastAPI. SQLAlchemy as ORM.
+    * **Frontend (Client-Side):** React or Vue.js. UI libraries (Material-UI, Bootstrap). Modular, maintainable CSS.
+**6.2. Client-Server Communication**
+    * **WebSockets:** For real-time, two-way communication; clear message protocol; secure connections (WSS).
+    * **REST API:** For asynchronous operations/data retrieval; clear endpoints; OpenAPI (Swagger) for documentation.
+**6.3. Data Management Strategy**
+    * **Persistent Storage:** SQLite as primary database for users, meetings, configurations, contributions.
+    * **Data Access Layer (DAL):** Abstract database interactions (CRUD) using ORM (SQLAlchemy), decoupling business logic.
+    * **Data Modeling:** Clear database schemas via ORM for Users, Meetings, Agendas, Tools, Contributions, etc.
+    * **Backup and Recovery:** Regular, secure backups of SQLite database file; defined strategy (frequency, location, retention).
+**6.4. Real-time Tool Interactions**
+    * Dynamic loading, unloading, configuration of tools at runtime.
+    * State consistency during tool modification.
+    * Feedback to participants on tool changes/availability.
+**6.5. Security (Architectural)**
+    * Encrypted Communication: HTTPS for all client-server traffic; SSL/TLS certificate management.
+    * Regular updates to security dependencies.
+
+**7. System Design & Implementation Notes (Recommended Classes)**
+The system design will be object-oriented, utilizing classes to represent key entities and manage logic.
+    * **User Class:** Manages user information (email, name, login, hashed_password, role), authentication, and role-specific methods (is_facilitator, is_admin, verify_password).
+    * **Meeting Class:** Manages meeting details (topic, description, timestamps, duration, facilitator, participants, process, publicity), participant management, and lifecycle methods (start_meeting, end_meeting).
+    * **Process Class (Agenda):** Defines the sequence of tools in a meeting (title, list of Tools, visibility), and methods for tool manipulation (add, remove, reorder).
+    * **Tool Class (Abstract Base):** Represents collaborative tools (name, order, settings), with methods for execution and configuration. Specific tools (BrainstormingTool, VotingTool, etc.) will inherit from this.
+    * **MeetingData Class:** Handles storage/retrieval of meeting-specific contributions via the DAL (meeting_id, structured data), interacting with DAL for load/save operations.
+    * **Session Class:** Orchestrates meeting execution and tool transitions (current_meeting, current_tool, status), with methods to advance tools and get current state.
+    * **AuthManager Class:** Manages user authentication, token generation/validation (hash_password, verify_password, create_token, refresh_token).
+    * **WebSocketManager Class:** Manages WebSocket connections and messaging (mapping meeting IDs to active connections), with methods to connect, disconnect, and broadcast messages.
+
+**8. User Stories (Focus: Facilitator - Meeting Setup & Conduct; Participant - Tool Usage)**
+
+**8.1. Facilitator: Meeting Initialization & Agenda Building**
+    * **Create New Meeting:** As a facilitator, I want to create a new meeting session to organize participants and tools.
+    * **Set Meeting Metadata:** As a facilitator, I want to define meeting title, description, and objective for participant clarity.
+    * **Configure Meeting Schedule:** As a facilitator, I want to set date, time, and duration for participant planning.
+    * **Invite Participants:** As a facilitator, I want to invite participants via email or link with appropriate permissions.
+    * **Select Tools for Agenda Items:** As a facilitator, I want to choose from a list of tools (brainstorming, voting) to match agenda items.
+    * **Build Multi-Stage Agenda:** As a facilitator, I want to define a sequence of agenda items/tools for logical meeting flow.
+    * **Assign Time Estimates:** As a facilitator, I want to assign time estimates to agenda items for pacing.
+    * **Prepopulate Inputs (Optional):** As a facilitator, I want to prepopulate tools with background material for productive starts.
+    * **Save Draft and Resume Later:** As a facilitator, I want to save meeting setup as a draft to complete later.
+    * **Preview Meeting Agenda:** As a facilitator, I want to preview the full agenda/flow/tools for final adjustments.
+
+**8.2. Facilitator: Conducting Facilitated Meeting**
+    * **Launch Meeting:** As a facilitator, I want to launch the meeting for participant interaction.
+    * **Control Participant Flow:** As a facilitator, I want to start/stop participant engagement with tools to guide attention.
+    * **Move Participants Between Activities:** As a facilitator, I want to move participants to next/previous items to adapt to needs.
+    * **Broadcast Instructions/Alerts:** As a facilitator, I want to send real-time messages for guidance/updates.
+    * **Manage Subgroups:** As a facilitator, I want to divide participants into subgroups for parallel tasks.
+    * **Monitor Participation:** As a facilitator, I want to observe activity levels/tool usage to intervene if needed.
+    * **Pause and Resume Tools:** As a facilitator, I want to pause/extend activities to respond to group dynamics.
+    * **Override Tool States:** As a facilitator, I want to override default tool behavior in exceptional cases.
+    * **Facilitate Real-Time Q&A/Chat:** As a facilitator, I want to enable/moderate discussion for clarification.
+
+**8.3. Participant: Group Decision Tools**
+    * **Brainstorming Tool:** As a participant, I want to submit many ideas (anonymously or attributed) for broad creative input.
+
+---
+
+Work In Progress – User Management Enhancements (2025-10-29)
+
+- Batch User Creation
+  - API `POST /api/users/batch/pattern`: create users with pattern `prefix + NN` (e.g., `user_00..user_99`), optional `email_domain`, validated default password, role selection.
+  - API `POST /api/users/batch/emails`: create users from a list of emails, login from local-part, validated default password, role selection.
+  - Returns counts and lists of created/skipped identifiers.
+
+- Manage Users Admin Page
+  - Route `/admin/users` rendering `templates/admin/users.html`.
+  - Displays user list; filter by login/email; actions for delete and reset password.
+  - Batch creation forms for pattern and emails integrated with the above APIs.
+
+- Admin Operations
+  - API `DELETE /api/users/{identifier}`: delete by login or email.
+  - API `POST /api/users/{identifier}/reset_password`: validate and set new password, mark `password_changed=false`.
+
+- Tests
+  - Added `test_api_batch_users.py` to verify batch creation and password reset.
+  - Added `test_admin_users_page.py` to verify admin page renders for authenticated admin.
+
+Notes
+- All admin operations require `Permission.MANAGE_USERS`.
+- Default names for batch-created users are `first_name="User"`, `last_name="Auto"` and can be extended later.
+    * **Clustering/Bucketing Tool (View/Input):** As a participant (if allowed), I want to contribute to sorting ideas into thematic clusters.
+    * **Voting Tool:** As a participant, I want to rate/vote on ideas to democratically identify favored options.
+    * **Forced Ranking Tool:** As a participant, I want to rank items by preference for group prioritization.
+    * **Dotmocracy Tool:** As a participant, I want to distribute limited votes (dots) to express preference strength.
+    * **Commenting and Annotation Tool:** As a participant, I want to comment/ask questions on ideas to deepen understanding.
+
+**9. Future Considerations (From Input)**
+* Consolidated Initial Setup & User Registration page (`register.html`) as detailed in section 4.1.5.
+
+**10. Open Issues / Assumptions**
+* Specific algorithms for features like "algorithm-assisted clustering" will be defined during detailed design.
+* Details of "version control for templates" and "data versioning" will require further specification.
+* The exact mechanism for "plugin architecture" and API definition will be a key design task.
+
+---

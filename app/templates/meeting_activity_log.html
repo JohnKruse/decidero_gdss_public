@@ -1,0 +1,35 @@
+{% extends "_base.html" %}
+
+{% block title %}{{ meeting.title }} – Activity Log - Decidero GDSS{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/meeting.css?v=20260115a">
+{% endblock %}
+
+{% block content %}
+<div class="meeting-activity-log-page page-shell" data-meeting-activity-log data-meeting-id="{{ meeting_id }}"
+     data-user-id="{{ current_user.user_id if current_user else '' }}"
+     data-max-items="{{ activity_log_settings.max_items }}">
+    <section class="content-card activity-log-card">
+        <div class="section-header">
+            <div>
+                <h2>Recent Activity</h2>
+                <div class="section-description">Realtime updates for this meeting.</div>
+            </div>
+            <span class="connection-indicator" id="activityLogConnectionStatus" data-status-variant="pending">
+                Connecting...
+            </span>
+        </div>
+        <div class="section-body">
+            <ul id="meetingActivityLog" class="simple-list events-log" data-max-items="{{ activity_log_settings.max_items }}">
+                <li>Waiting for events...</li>
+            </ul>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/realtime_client.js?v=20241215b"></script>
+<script src="/static/js/meeting_activity_log.js?v=20260115a"></script>
+{% endblock %}

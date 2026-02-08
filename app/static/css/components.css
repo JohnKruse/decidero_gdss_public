@@ -1,0 +1,84 @@
+/* Shared UI components styles */
+
+/* Error banner shown via page_utils.showBanner */
+.error-banner {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 1rem;
+  background: rgba(255, 0, 0, 0.12);
+  color: #b00020;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
+  z-index: 1000;
+}
+
+/* Generic section header with optional subtitle */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.section-header h2 {
+  margin: 0;
+}
+.overview-subtitle {
+  color: var(--silver);
+  font-size: 0.95rem;
+}
+
+/* Simple badge styling used in notifications */
+.notification-badge {
+  display: inline-block;
+  min-width: 28px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--primary-fade, #0b3d91);
+  color: #fff;
+  text-align: center;
+}
+
+/* Standard page panels used across dashboard flows */
+.page-panel,
+.content-card {
+  width: 100%;
+  background: var(--white);
+  border-radius: 12px;
+  padding: clamp(1.5rem, 2vw, 2.25rem);
+  border: 1px solid rgba(11, 61, 145, 0.08);
+  box-shadow: 0 4px 16px rgba(11, 61, 145, 0.12);
+}
+
+.page-shell {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 0.75rem;
+}
+
+.page-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.page-grid.has-aside {
+  grid-template-columns: minmax(0, 3fr) minmax(320px, 1.25fr);
+}
+
+@media (max-width: 1100px) {
+  .page-grid.has-aside {
+    grid-template-columns: 1fr;
+  }
+}
+
+.page-panel[data-panel-width="narrow"],
+.content-card[data-panel-width="narrow"],
+.page-panel.page-panel--narrow,
+.content-card.page-panel--narrow {
+  max-width: min(960px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+}

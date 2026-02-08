@@ -1,0 +1,335 @@
+/* Import Jost font */
+@import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&display=swap');
+
+:root {
+    /* Primary Colors */
+    --navy-blue: #0B3D91;
+    --white: #FFFFFF;
+    
+    /* Secondary Colors */
+    --nasa-red: #FF0000;
+    --silver: #C0C0C0;
+    
+    /* Accent Colors */
+    --light-blue: #7EC0EE;
+    --gold: #FFD700;
+    
+    /* Functional Colors */
+    --text-color: var(--navy-blue);
+    --background-color: var(--white);
+    --grid-color: rgba(11, 61, 145, 0.1);
+    --error-color: var(--nasa-red);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Jost', sans-serif;
+}
+
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-image: 
+        linear-gradient(var(--grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+.login-container {
+    background: var(--white);
+    padding: 2.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
+    width: 100%;
+    max-width: 420px;
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--silver);
+}
+
+.login-container::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--navy-blue), var(--nasa-red));
+}
+
+.login-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+
+.login-header h1 {
+    font-size: 2.5rem;
+    font-weight: 600;
+    color: var(--navy-blue);
+    margin-bottom: 0.5rem;
+    letter-spacing: 0.1em;
+}
+
+.login-header p {
+    color: var(--silver);
+    font-size: 0.9rem;
+    letter-spacing: 0.2em;
+    font-weight: 500;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.form-group {
+    position: relative;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: var(--navy-blue);
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.15em;
+}
+
+.field-hint {
+    margin-top: 0.4rem;
+    font-size: 0.75rem;
+    color: rgba(11, 61, 145, 0.7);
+    letter-spacing: 0.04em;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 0.875rem;
+    border: 2px solid var(--silver);
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background: var(--white);
+    color: var(--navy-blue);
+    letter-spacing: 0.05em;
+}
+
+.form-group input:focus {
+    border-color: var(--light-blue);
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(126, 192, 238, 0.2);
+}
+
+.password-field {
+    position: relative;
+}
+
+.password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 0.75rem;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--navy-blue);
+}
+
+.password-toggle:focus-visible {
+    outline: 2px solid var(--light-blue);
+    border-radius: 50%;
+}
+
+.password-toggle-icon::before {
+    content: "👁";
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.password-toggle.is-visible .password-toggle-icon::before {
+    content: "🙈";
+}
+
+.password-requirements {
+    display: grid;
+    gap: 0.4rem;
+    margin-top: -0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.75rem 0.5rem;
+    background: rgba(11, 61, 145, 0.04);
+    border: 1px dashed rgba(11, 61, 145, 0.2);
+    border-radius: 6px;
+}
+
+.password-requirements .requirement {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 0.8rem;
+    color: rgba(11, 61, 145, 0.65);
+    letter-spacing: 0.03em;
+}
+
+.password-requirements .indicator {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 2px solid rgba(11, 61, 145, 0.35);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: rgba(11, 61, 145, 0.35);
+}
+
+.password-requirements .indicator::before {
+    content: "•";
+}
+
+.password-requirements .requirement.is-met {
+    color: var(--navy-blue);
+    font-weight: 500;
+}
+
+.password-requirements .requirement.is-met .indicator {
+    background: var(--navy-blue);
+    border-color: var(--navy-blue);
+    color: var(--white);
+}
+
+.password-requirements .requirement.is-met .indicator::before {
+    content: "✔";
+}
+
+.submit-btn {
+    background: var(--navy-blue);
+    color: var(--white);
+    border: none;
+    padding: 1rem;
+    border-radius: 4px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    position: relative;
+    overflow: hidden;
+}
+
+.submit-btn:hover {
+    background: var(--light-blue);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(11, 61, 145, 0.2);
+}
+
+.submit-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+.error-message {
+    color: var(--nasa-red);
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+    display: none;
+    padding: 0.5rem;
+    border-radius: 4px;
+    background: rgba(255, 0, 0, 0.1);
+    border: 1px solid var(--nasa-red);
+}
+
+/* Retro Terminal Effect */
+.terminal-effect {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        0deg,
+        rgba(11, 61, 145, 0.03) 0px,
+        rgba(11, 61, 145, 0.03) 1px,
+        transparent 1px,
+        transparent 2px
+    );
+}
+
+/* Loading Animation */
+.loading {
+    display: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    border: 3px solid var(--silver);
+    border-radius: 50%;
+    border-top-color: var(--gold);
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    100% {
+        transform: translate(-50%, -50%) rotate(360deg);
+    }
+}
+
+.decidero-logo {
+    width: 120px;
+    height: auto;
+    margin-bottom: 1rem;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Input focus state with gold highlight */
+.form-group input:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.2);
+}
+
+/* Success state */
+.form-group.success input {
+    border-color: var(--light-blue);
+}
+
+/* Error state */
+.form-group.error input {
+    border-color: var(--nasa-red);
+}
+
+/* Add retro screen glow effect */
+.login-container {
+    position: relative;
+}
+
+.login-container::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: none;
+    background: radial-gradient(
+        circle at center,
+        rgba(126, 192, 238, 0.1) 0%,
+        rgba(255, 255, 255, 0) 70%
+    );
+}

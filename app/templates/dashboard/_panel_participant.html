@@ -1,0 +1,79 @@
+{% set requires_role = "participant" %}
+{% grab id="dashboard-meetings-panel" %}
+<section
+    class="layout-card meetings-section"
+    data-role-panel="participant"
+    data-requires-role="{{ requires_role }}"
+>
+    <div class="section-header">
+        <div>
+            <h2>MY MEETINGS</h2>
+            <p class="section-subtitle">
+                Track upcoming sessions, active meetings, and completed outcomes.
+            </p>
+        </div>
+    </div>
+
+    <div class="table-container">
+        <table
+            class="meetings-table"
+            id="meetingsTable"
+            aria-label="Meetings you are associated with"
+        >
+            <thead>
+                <tr>
+                    <th scope="col" aria-sort="none">
+                        <button
+                            type="button"
+                            class="sortable-header"
+                            data-sort-role="meetings"
+                            data-sort-key="title"
+                        >
+                            <span>Meeting</span>
+                            <span class="sort-indicator" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col" aria-sort="none">
+                        <button
+                            type="button"
+                            class="sortable-header"
+                            data-sort-role="meetings"
+                            data-sort-key="owner"
+                        >
+                            <span>Owner</span>
+                            <span class="sort-indicator" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col" aria-sort="none">
+                        <button
+                            type="button"
+                            class="sortable-header"
+                            data-sort-role="meetings"
+                            data-sort-key="date"
+                        >
+                            <span>Date</span>
+                            <span class="sort-indicator" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col" aria-sort="none">
+                        <button
+                            type="button"
+                            class="sortable-header"
+                            data-sort-role="meetings"
+                            data-sort-key="status"
+                        >
+                            <span>Status</span>
+                            <span class="sort-indicator" aria-hidden="true"></span>
+                        </button>
+                    </th>
+                    <th scope="col" class="actions-column">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="meetingsBody"></tbody>
+        </table>
+        <p class="empty-state" id="meetingsEmpty">
+            You do not have any meetings yet.
+        </p>
+    </div>
+</section>
+{% endgrab %}

@@ -1,0 +1,48 @@
+{% set requires_role = "admin" %}
+{% grab id="dashboard-admin-panel" %}
+<section
+    class="layout-card meetings-section admin-sections"
+    data-role-panel="admin"
+    data-requires-role="{{ requires_role }}"
+>
+    <h2>ADMIN PANEL</h2>
+    <div class="meetings-grid">
+        <div class="meeting-card admin-card">
+            <h3>System Overview</h3>
+            <div class="stats-container" style="flex-direction: column; gap: 10px; margin-bottom: 0;">
+                <div class="stat-card" style="border: none; padding: 5px 0;">
+                    <strong>Total Users:</strong> {{ total_user_count }}
+                </div>
+                <div class="stat-card" style="border: none; padding: 5px 0;">
+                    <strong>Total Meetings:</strong> {{ meeting_count }}
+                </div>
+            </div>
+        </div>
+
+        <div class="meeting-card admin-card">
+            <h3>User Management</h3>
+            <div class="stats-container" style="flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                <div class="stat-card" style="border: none; padding: 5px 0;">
+                    <strong>Admins:</strong> {{ admin_count }}
+                </div>
+                <div class="stat-card" style="border: none; padding: 5px 0;">
+                    <strong>Facilitators:</strong> {{ facilitator_count }}
+                </div>
+                <div class="stat-card" style="border: none; padding: 5px 0;">
+                    <strong>Participants:</strong> {{ participant_count }}
+                </div>
+            </div>
+            <div class="meeting-actions" style="justify-content: center;">
+                <button
+                    class="action-btn manage-users"
+                    type="button"
+                    data-requires-role="{{ requires_role }}"
+                    onclick="navigateTo('/admin/users')"
+                >
+                    MANAGE USERS
+                </button>
+            </div>
+        </div>
+    </div>
+</section>
+{% endgrab %}

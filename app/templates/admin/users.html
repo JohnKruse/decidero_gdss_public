@@ -1,0 +1,98 @@
+{% extends "_base.html" %}
+
+{% block title %}Manage Users - DECIDERO GDSS{% endblock %}
+
+{% block top_nav_right %}
+    <button class="action-btn" onclick="window.location.href='/dashboard'">Back to Dashboard</button>
+{% endblock %}
+
+{% from "components/macros.html" import section_header %}
+{% block content %}
+    <section class="meetings-section">
+        {{ section_header('Manage Users', 'Admin tools for user accounts') }}
+        <div class="table-container">
+            <div style="margin: 0.5rem 0;">
+                <input type="text" id="filter" placeholder="Filter by login/email" style="width: 320px; padding: 0.5rem;" />
+            </div>
+            <table id="users-table" class="meetings-table">
+                <thead>
+                    <tr>
+                        <th data-sort="login">Login</th>
+                        <th data-sort="email">Email</th>
+                        <th data-sort="first_name">First Name</th>
+                        <th data-sort="last_name">Last Name</th>
+                        <th data-sort="role">Role</th>
+                        <th class="actions-column">Actions</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="dashboard-overview batch-section">
+        <h3>Batch Create by Pattern</h3>
+        <form id="pattern-form" class="batch-form">
+            <div class="form-row form-row--pattern">
+                <div class="form-field">
+                    <label for="batch-pattern-prefix">Prefix</label>
+                    <input id="batch-pattern-prefix" type="text" name="prefix" value="user_" required />
+                </div>
+                <div class="form-field">
+                    <label for="batch-pattern-start">Start</label>
+                    <input id="batch-pattern-start" type="number" name="start" value="1" min="0" required />
+                </div>
+                <div class="form-field">
+                    <label for="batch-pattern-end">End</label>
+                    <input id="batch-pattern-end" type="number" name="end" value="5" min="1" required />
+                </div>
+                <div class="form-field">
+                    <label for="batch-pattern-password">Default Password</label>
+                    <input
+                        id="batch-pattern-password"
+                        type="text"
+                        name="default_password"
+                        value="{{ default_user_password or '' }}"
+                        required
+                        placeholder="Min 8, upper, lower, number, special"
+                    />
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="action-btn">Create Users</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="dashboard-overview batch-section">
+        <h3>Batch Create by Emails</h3>
+        <form id="emails-form" class="batch-form">
+            <div class="form-row form-row--emails">
+                <div class="form-field">
+                    <label for="batch-emails-list">Emails (comma-separated)</label>
+                    <textarea
+                        id="batch-emails-list"
+                        name="emails"
+                        rows="3"
+                        placeholder="a@example.com, b@example.com"
+                    ></textarea>
+                </div>
+                <div class="form-field">
+                    <label for="batch-emails-password">Default Password</label>
+                    <input id="batch-emails-password" type="text" name="default_password" value="{{ default_user_password or '' }}" required />
+                </div>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="action-btn">Create Users</button>
+            </div>
+        </form>
+    </section>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="/static/js/admin_users.js"></script>
+{% endblock %}
+
+{% block extra_css %}
+    <link rel="stylesheet" href="/static/css/admin_users.css">
+{% endblock %}

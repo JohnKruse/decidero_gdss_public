@@ -1,0 +1,57 @@
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.role-pill--super_admin {
+  background: #f3f4f6;
+  color: #111827;
+  border-color: #d1d5db;
+}
+
+.role-pill--admin {
+  background: #e8f0ff;
+  color: #1e3a8a;
+  border-color: #bfdbfe;
+}
+
+.role-pill--facilitator {
+  background: #e6f7f3;
+  color: #0f766e;
+  border-color: #a7f3d0;
+}
+
+.role-pill--participant {
+  background: #fff3df;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.role-pill--unknown {
+  background: #e5e7eb;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.user-login-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.user-color-avatar {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  display: inline-block;
+  flex: 0 0 auto;
+}
