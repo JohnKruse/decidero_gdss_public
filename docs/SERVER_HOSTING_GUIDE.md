@@ -232,7 +232,36 @@ sudo systemctl status decidero --no-pager
 curl -sS http://127.0.0.1:8000/health
 ```
 
-## 7. Configure Caddy (TLS + Reverse Proxy)
+## 7. Publish Access (Choose One Track)
+
+### Track A (Simple/Temporary, No Domain): Cloudflare Quick Tunnel
+
+Use this for short workshops (1-3 days) when you do not have a domain.
+
+Install `cloudflared`:
+
+```bash
+curl -L --fail --output /tmp/cloudflared.deb \
+  https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
+sudo dpkg -i /tmp/cloudflared.deb || sudo apt-get -f install -y
+cloudflared --version
+```
+
+Start tunnel:
+
+```bash
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+
+Share the printed `https://*.trycloudflare.com` URL.
+
+Notes:
+
+- Keep this terminal open; if `cloudflared` stops, the public URL stops.
+- Warnings about missing `config.yml` are expected for quick tunnels.
+- This is best for temporary/demo usage, not long-term production.
+
+### Track B (Production, Domain): Caddy TLS Reverse Proxy
 
 Create `/etc/caddy/Caddyfile`:
 
@@ -354,7 +383,11 @@ sudo systemctl status decidero --no-pager
 Smoke checks:
 
 ```bash
+# Domain (Track B)
 curl -sS https://your-domain.example.com/health
+
+# Quick tunnel (Track A)
+curl -sS https://<your-random>.trycloudflare.com/health
 ```
 
 Then verify login, dashboard, meeting create/join, and realtime meeting updates in browser.
