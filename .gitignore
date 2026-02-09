@@ -124,3 +124,10 @@ decidero.db*
 
 # Local TLS artifacts
 certs/*.pem
+
+# Local planning notes
+docs/LOAD_TESTING_PLAN_LOCAL.md
+
+# Ensure core runtime package is always tracked (overrides broad global ignores like "data")
+!app/data/
+!app/data/*.py
