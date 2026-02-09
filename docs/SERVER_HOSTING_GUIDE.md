@@ -136,9 +136,10 @@ Create `/etc/decidero/decidero.env`:
 ```bash
 sudo mkdir -p /etc/decidero
 sudo chmod 750 /etc/decidero
-sudo tee /etc/decidero/decidero.env >/dev/null <<'EOF'
+DECIDERO_JWT_SECRET_KEY="$(openssl rand -hex 48)"
+sudo tee /etc/decidero/decidero.env >/dev/null <<EOF
 DECIDERO_ENV=production
-DECIDERO_JWT_SECRET_KEY=REPLACE_WITH_A_LONG_RANDOM_SECRET
+DECIDERO_JWT_SECRET_KEY=${DECIDERO_JWT_SECRET_KEY}
 DECIDERO_JWT_ISSUER=decidero
 DECIDERO_SECURE_COOKIES=true
 GRAB_ENABLED=false
@@ -148,6 +149,7 @@ LOG_BACKUP_COUNT=5
 EOF
 sudo chown root:decidero /etc/decidero/decidero.env
 sudo chmod 640 /etc/decidero/decidero.env
+echo "Generated JWT secret length: ${#DECIDERO_JWT_SECRET_KEY}"
 ```
 
 Why this matters:
@@ -158,13 +160,13 @@ Why this matters:
 
 If you skip this and rely on ad-hoc shell exports, reboot/restart drift is very likely.
 
-Generate a strong secret:
+Generate a strong secret manually (optional):
 
 ```bash
 openssl rand -hex 48
 ```
 
-Paste that value into `DECIDERO_JWT_SECRET_KEY`.
+The main command block above already generates and writes this for you.
 
 ## 6. Create systemd Service
 
