@@ -52,6 +52,9 @@ Share the generated `https://<random>.trycloudflare.com` URL.
 Important:
 - Keep terminal open while meeting runs.
 - URL changes if tunnel restarts.
+- Browser-saved credentials are often domain-specific. A new `trycloudflare.com` URL can make saved logins appear "missing."
+- Require all admins/facilitators/participants to record passwords in a password manager entry not tied only to the previous tunnel URL.
+- After any tunnel restart, send the new URL to everyone and have users verify they can still sign in before the session starts.
 - Good for quick remote sessions, not ideal for multi-day critical meetings.
 - Script behavior:
   - forces `DECIDERO_SECURE_COOKIES=true`
@@ -106,6 +109,16 @@ For public tunnel URLs, this is often internet scanner noise. Usually harmless.
 1. Verify credentials work on `http://localhost:8000`.
 2. Try private/incognito window (old cookies can cause JWT warnings).
 3. Confirm host clock is correct (token expiry depends on time).
+4. Confirm users are on the current tunnel URL. `trycloudflare.com` URLs change on restart.
+5. If password manager autofill disappeared after URL rotation, manually enter credentials or use the correct stored password entry.
+
+### Admin password is lost after URL/domain change
+
+This is usually a browser/password-manager lookup issue caused by domain change, not a database wipe.
+
+1. First test admin credentials locally on the server host (`http://localhost:8000`).
+2. If still locked out, reset from server-side access and immediately set a strong replacement password.
+3. Re-share the current URL and have admins sign in once to re-save credentials for the new domain.
 
 ### Tunnel command says "Cannot determine default configuration path"
 

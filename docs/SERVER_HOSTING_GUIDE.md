@@ -255,6 +255,13 @@ cloudflared tunnel --url http://127.0.0.1:8000
 
 Copy/share the printed `https://*.trycloudflare.com` URL.
 
+Important operating note for Quick Tunnel:
+
+- `trycloudflare.com` URLs are ephemeral and usually change when `cloudflared` restarts.
+- Browser-saved credentials are domain-scoped, so users may think passwords are "gone" when the URL changes.
+- Require admins/facilitators/participants to record passwords in a retrievable password manager entry before sessions.
+- After tunnel restart, distribute the new URL and run a quick sign-in check with facilitators/admins before participants join.
+
 Example output (copy the URL on the line with `https://...trycloudflare.com`):
 
 ```text
@@ -421,6 +428,10 @@ Common issues:
   set `DECIDERO_JWT_SECRET_KEY` in `/etc/decidero/decidero.env`.
 - Login cookie problems:
   ensure `DECIDERO_SECURE_COOKIES=true` and use HTTPS domain.
+- Users report missing saved passwords after Quick Tunnel restart:
+  confirm they are on the current `trycloudflare.com` URL; browser autofill may not appear across domain changes, so users must enter recorded credentials manually.
+- Admin login unavailable after domain/tunnel change:
+  this is usually password-manager lookup behavior, not data loss; validate locally first, then perform server-side credential reset only if credentials are truly unknown.
 - 502 from Caddy:
   check `systemctl status decidero` and that app binds `127.0.0.1:8000`.
 
