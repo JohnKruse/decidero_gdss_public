@@ -1,0 +1,3197 @@
+{
+  "schema_version": 1,
+  "provider": "microsoft/fluentui-emoji",
+  "source_repository": "https://github.com/microsoft/fluentui-emoji",
+  "source_commit": "62ecdc0d7ca5c6df32148c169556bc8d3782fca4",
+  "style": "Color",
+  "groups": [
+    "Animals & Nature",
+    "Food & Drink",
+    "Activities"
+  ],
+  "count": 240,
+  "avatars": [
+    {
+      "key": "fluent-1f947",
+      "name": "1st place medal",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f947.svg",
+      "unicode": "1f947",
+      "glyph": "🥇",
+      "keywords": [
+        "1st place medal",
+        "first",
+        "gold",
+        "medal"
+      ]
+    },
+    {
+      "key": "fluent-1f948",
+      "name": "2nd place medal",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f948.svg",
+      "unicode": "1f948",
+      "glyph": "🥈",
+      "keywords": [
+        "2nd place medal",
+        "medal",
+        "second",
+        "silver"
+      ]
+    },
+    {
+      "key": "fluent-1f949",
+      "name": "3rd place medal",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f949.svg",
+      "unicode": "1f949",
+      "glyph": "🥉",
+      "keywords": [
+        "3rd place medal",
+        "bronze",
+        "medal",
+        "third"
+      ]
+    },
+    {
+      "key": "fluent-1f384",
+      "name": "Christmas tree",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f384.svg",
+      "unicode": "1f384",
+      "glyph": "🎄",
+      "keywords": [
+        "celebration",
+        "Christmas",
+        "tree"
+      ]
+    },
+    {
+      "key": "fluent-1f38e",
+      "name": "Japanese dolls",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f38e.svg",
+      "unicode": "1f38e",
+      "glyph": "🎎",
+      "keywords": [
+        "celebration",
+        "doll",
+        "festival",
+        "Japanese",
+        "Japanese dolls"
+      ]
+    },
+    {
+      "key": "fluent-1f39f-fe0f",
+      "name": "admission tickets",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f39f-fe0f.svg",
+      "unicode": "1f39f fe0f",
+      "glyph": "🎟️",
+      "keywords": [
+        "admission",
+        "admission tickets",
+        "ticket"
+      ]
+    },
+    {
+      "key": "fluent-1f3c8",
+      "name": "american football",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3c8.svg",
+      "unicode": "1f3c8",
+      "glyph": "🏈",
+      "keywords": [
+        "american",
+        "ball",
+        "football"
+      ]
+    },
+    {
+      "key": "fluent-1f3a8",
+      "name": "artist palette",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3a8.svg",
+      "unicode": "1f3a8",
+      "glyph": "🎨",
+      "keywords": [
+        "art",
+        "artist palette",
+        "museum",
+        "painting",
+        "palette"
+      ]
+    },
+    {
+      "key": "fluent-1f3f8",
+      "name": "badminton",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3f8.svg",
+      "unicode": "1f3f8",
+      "glyph": "🏸",
+      "keywords": [
+        "badminton",
+        "birdie",
+        "game",
+        "racquet",
+        "shuttlecock"
+      ]
+    },
+    {
+      "key": "fluent-1f388",
+      "name": "balloon",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f388.svg",
+      "unicode": "1f388",
+      "glyph": "🎈",
+      "keywords": [
+        "balloon",
+        "celebration"
+      ]
+    },
+    {
+      "key": "fluent-26be",
+      "name": "baseball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-26be.svg",
+      "unicode": "26be",
+      "glyph": "⚾",
+      "keywords": [
+        "ball",
+        "baseball"
+      ]
+    },
+    {
+      "key": "fluent-1f3c0",
+      "name": "basketball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3c0.svg",
+      "unicode": "1f3c0",
+      "glyph": "🏀",
+      "keywords": [
+        "ball",
+        "basketball",
+        "hoop"
+      ]
+    },
+    {
+      "key": "fluent-1f3b3",
+      "name": "bowling",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3b3.svg",
+      "unicode": "1f3b3",
+      "glyph": "🎳",
+      "keywords": [
+        "ball",
+        "bowling",
+        "game"
+      ]
+    },
+    {
+      "key": "fluent-1f94a",
+      "name": "boxing glove",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f94a.svg",
+      "unicode": "1f94a",
+      "glyph": "🥊",
+      "keywords": [
+        "boxing",
+        "glove"
+      ]
+    },
+    {
+      "key": "fluent-1f3af",
+      "name": "bullseye",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3af.svg",
+      "unicode": "1f3af",
+      "glyph": "🎯",
+      "keywords": [
+        "bullseye",
+        "dart",
+        "direct hit",
+        "game",
+        "hit",
+        "target"
+      ]
+    },
+    {
+      "key": "fluent-1f38f",
+      "name": "carp streamer",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f38f.svg",
+      "unicode": "1f38f",
+      "glyph": "🎏",
+      "keywords": [
+        "carp",
+        "celebration",
+        "streamer"
+      ]
+    },
+    {
+      "key": "fluent-265f-fe0f",
+      "name": "chess pawn",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-265f-fe0f.svg",
+      "unicode": "265f fe0f",
+      "glyph": "♟️",
+      "keywords": [
+        "chess",
+        "chess pawn",
+        "dupe",
+        "expendable"
+      ]
+    },
+    {
+      "key": "fluent-2663-fe0f",
+      "name": "club suit",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-2663-fe0f.svg",
+      "unicode": "2663 fe0f",
+      "glyph": "♣️",
+      "keywords": [
+        "card",
+        "club suit",
+        "game"
+      ]
+    },
+    {
+      "key": "fluent-1f38a",
+      "name": "confetti ball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f38a.svg",
+      "unicode": "1f38a",
+      "glyph": "🎊",
+      "keywords": [
+        "ball",
+        "celebration",
+        "confetti"
+      ]
+    },
+    {
+      "key": "fluent-1f3cf",
+      "name": "cricket game",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3cf.svg",
+      "unicode": "1f3cf",
+      "glyph": "🏏",
+      "keywords": [
+        "ball",
+        "bat",
+        "cricket game",
+        "game"
+      ]
+    },
+    {
+      "key": "fluent-1f52e",
+      "name": "crystal ball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f52e.svg",
+      "unicode": "1f52e",
+      "glyph": "🔮",
+      "keywords": [
+        "ball",
+        "crystal",
+        "fairy tale",
+        "fantasy",
+        "fortune",
+        "tool"
+      ]
+    },
+    {
+      "key": "fluent-1f94c",
+      "name": "curling stone",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f94c.svg",
+      "unicode": "1f94c",
+      "glyph": "🥌",
+      "keywords": [
+        "curling stone",
+        "game",
+        "rock"
+      ]
+    },
+    {
+      "key": "fluent-2666-fe0f",
+      "name": "diamond suit",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-2666-fe0f.svg",
+      "unicode": "2666 fe0f",
+      "glyph": "♦️",
+      "keywords": [
+        "card",
+        "diamond suit",
+        "game"
+      ]
+    },
+    {
+      "key": "fluent-1f93f",
+      "name": "diving mask",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f93f.svg",
+      "unicode": "1f93f",
+      "glyph": "🤿",
+      "keywords": [
+        "diving",
+        "diving mask",
+        "scuba",
+        "snorkeling"
+      ]
+    },
+    {
+      "key": "fluent-1f3d1",
+      "name": "field hockey",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3d1.svg",
+      "unicode": "1f3d1",
+      "glyph": "🏑",
+      "keywords": [
+        "ball",
+        "field",
+        "game",
+        "hockey",
+        "stick"
+      ]
+    },
+    {
+      "key": "fluent-1f9e8",
+      "name": "firecracker",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9e8.svg",
+      "unicode": "1f9e8",
+      "glyph": "🧨",
+      "keywords": [
+        "dynamite",
+        "explosive",
+        "firecracker",
+        "fireworks"
+      ]
+    },
+    {
+      "key": "fluent-1f386",
+      "name": "fireworks",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f386.svg",
+      "unicode": "1f386",
+      "glyph": "🎆",
+      "keywords": [
+        "celebration",
+        "fireworks"
+      ]
+    },
+    {
+      "key": "fluent-1f3a3",
+      "name": "fishing pole",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3a3.svg",
+      "unicode": "1f3a3",
+      "glyph": "🎣",
+      "keywords": [
+        "fish",
+        "fishing pole",
+        "pole"
+      ]
+    },
+    {
+      "key": "fluent-26f3",
+      "name": "flag in hole",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-26f3.svg",
+      "unicode": "26f3",
+      "glyph": "⛳",
+      "keywords": [
+        "flag in hole",
+        "golf",
+        "hole"
+      ]
+    },
+    {
+      "key": "fluent-1f3b4",
+      "name": "flower playing cards",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3b4.svg",
+      "unicode": "1f3b4",
+      "glyph": "🎴",
+      "keywords": [
+        "card",
+        "flower",
+        "flower playing cards",
+        "game",
+        "Japanese",
+        "playing"
+      ]
+    },
+    {
+      "key": "fluent-1f94f",
+      "name": "flying disc",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f94f.svg",
+      "unicode": "1f94f",
+      "glyph": "🥏",
+      "keywords": [
+        "flying disc",
+        "ultimate"
+      ]
+    },
+    {
+      "key": "fluent-1f5bc-fe0f",
+      "name": "framed picture",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f5bc-fe0f.svg",
+      "unicode": "1f5bc fe0f",
+      "glyph": "🖼️",
+      "keywords": [
+        "art",
+        "frame",
+        "framed picture",
+        "museum",
+        "painting",
+        "picture"
+      ]
+    },
+    {
+      "key": "fluent-1f3b2",
+      "name": "game die",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3b2.svg",
+      "unicode": "1f3b2",
+      "glyph": "🎲",
+      "keywords": [
+        "dice",
+        "die",
+        "game"
+      ]
+    },
+    {
+      "key": "fluent-1f945",
+      "name": "goal net",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f945.svg",
+      "unicode": "1f945",
+      "glyph": "🥅",
+      "keywords": [
+        "goal",
+        "net"
+      ]
+    },
+    {
+      "key": "fluent-1faac",
+      "name": "hamsa",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1faac.svg",
+      "unicode": "1faac",
+      "glyph": "🪬",
+      "keywords": [
+        "amulet",
+        "Fatima",
+        "hamsa",
+        "hand",
+        "Mary",
+        "Miriam",
+        "protection"
+      ]
+    },
+    {
+      "key": "fluent-2665-fe0f",
+      "name": "heart suit",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-2665-fe0f.svg",
+      "unicode": "2665 fe0f",
+      "glyph": "♥️",
+      "keywords": [
+        "card",
+        "game",
+        "heart suit"
+      ]
+    },
+    {
+      "key": "fluent-1f3d2",
+      "name": "ice hockey",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3d2.svg",
+      "unicode": "1f3d2",
+      "glyph": "🏒",
+      "keywords": [
+        "game",
+        "hockey",
+        "ice",
+        "puck",
+        "stick"
+      ]
+    },
+    {
+      "key": "fluent-26f8-fe0f",
+      "name": "ice skate",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-26f8-fe0f.svg",
+      "unicode": "26f8 fe0f",
+      "glyph": "⛸️",
+      "keywords": [
+        "ice",
+        "skate"
+      ]
+    },
+    {
+      "key": "fluent-1f383",
+      "name": "jack-o-lantern",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f383.svg",
+      "unicode": "1f383",
+      "glyph": "🎃",
+      "keywords": [
+        "celebration",
+        "halloween",
+        "jack",
+        "jack-o-lantern",
+        "lantern"
+      ]
+    },
+    {
+      "key": "fluent-1f0cf",
+      "name": "joker",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f0cf.svg",
+      "unicode": "1f0cf",
+      "glyph": "🃏",
+      "keywords": [
+        "card",
+        "game",
+        "joker",
+        "wildcard"
+      ]
+    },
+    {
+      "key": "fluent-1f579-fe0f",
+      "name": "joystick",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f579-fe0f.svg",
+      "unicode": "1f579 fe0f",
+      "glyph": "🕹️",
+      "keywords": [
+        "game",
+        "joystick",
+        "video game"
+      ]
+    },
+    {
+      "key": "fluent-1fa81",
+      "name": "kite",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1fa81.svg",
+      "unicode": "1fa81",
+      "glyph": "🪁",
+      "keywords": [
+        "fly",
+        "kite",
+        "soar"
+      ]
+    },
+    {
+      "key": "fluent-1faa2",
+      "name": "knot",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1faa2.svg",
+      "unicode": "1faa2",
+      "glyph": "🪢",
+      "keywords": [
+        "knot",
+        "rope",
+        "tangled",
+        "tie",
+        "twine",
+        "twist"
+      ]
+    },
+    {
+      "key": "fluent-1f94d",
+      "name": "lacrosse",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f94d.svg",
+      "unicode": "1f94d",
+      "glyph": "🥍",
+      "keywords": [
+        "ball",
+        "goal",
+        "lacrosse",
+        "stick"
+      ]
+    },
+    {
+      "key": "fluent-1fa84",
+      "name": "magic wand",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1fa84.svg",
+      "unicode": "1fa84",
+      "glyph": "🪄",
+      "keywords": [
+        "magic",
+        "magic wand",
+        "witch",
+        "wizard"
+      ]
+    },
+    {
+      "key": "fluent-1f004",
+      "name": "mahjong red dragon",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f004.svg",
+      "unicode": "1f004",
+      "glyph": "🀄",
+      "keywords": [
+        "game",
+        "mahjong",
+        "mahjong red dragon",
+        "red"
+      ]
+    },
+    {
+      "key": "fluent-1f94b",
+      "name": "martial arts uniform",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f94b.svg",
+      "unicode": "1f94b",
+      "glyph": "🥋",
+      "keywords": [
+        "judo",
+        "karate",
+        "martial arts",
+        "martial arts uniform",
+        "taekwondo",
+        "uniform"
+      ]
+    },
+    {
+      "key": "fluent-1f396-fe0f",
+      "name": "military medal",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f396-fe0f.svg",
+      "unicode": "1f396 fe0f",
+      "glyph": "🎖️",
+      "keywords": [
+        "celebration",
+        "medal",
+        "military"
+      ]
+    },
+    {
+      "key": "fluent-1faa9",
+      "name": "mirror ball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1faa9.svg",
+      "unicode": "1faa9",
+      "glyph": "🪩",
+      "keywords": [
+        "dance",
+        "disco",
+        "glitter",
+        "mirror ball",
+        "party"
+      ]
+    },
+    {
+      "key": "fluent-1f391",
+      "name": "moon viewing ceremony",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f391.svg",
+      "unicode": "1f391",
+      "glyph": "🎑",
+      "keywords": [
+        "celebration",
+        "ceremony",
+        "moon",
+        "moon viewing ceremony"
+      ]
+    },
+    {
+      "key": "fluent-1f9ff",
+      "name": "nazar amulet",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9ff.svg",
+      "unicode": "1f9ff",
+      "glyph": "🧿",
+      "keywords": [
+        "bead",
+        "charm",
+        "evil-eye",
+        "nazar",
+        "nazar amulet",
+        "talisman"
+      ]
+    },
+    {
+      "key": "fluent-1fa86",
+      "name": "nesting dolls",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1fa86.svg",
+      "unicode": "1fa86",
+      "glyph": "🪆",
+      "keywords": [
+        "doll",
+        "nesting",
+        "nesting dolls",
+        "russia"
+      ]
+    },
+    {
+      "key": "fluent-1f389",
+      "name": "party popper",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f389.svg",
+      "unicode": "1f389",
+      "glyph": "🎉",
+      "keywords": [
+        "celebration",
+        "party",
+        "popper",
+        "tada"
+      ]
+    },
+    {
+      "key": "fluent-1f3ad",
+      "name": "performing arts",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3ad.svg",
+      "unicode": "1f3ad",
+      "glyph": "🎭",
+      "keywords": [
+        "art",
+        "mask",
+        "performing",
+        "performing arts",
+        "theater",
+        "theatre"
+      ]
+    },
+    {
+      "key": "fluent-1f38d",
+      "name": "pine decoration",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f38d.svg",
+      "unicode": "1f38d",
+      "glyph": "🎍",
+      "keywords": [
+        "bamboo",
+        "celebration",
+        "Japanese",
+        "pine",
+        "pine decoration"
+      ]
+    },
+    {
+      "key": "fluent-1f3d3",
+      "name": "ping pong",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3d3.svg",
+      "unicode": "1f3d3",
+      "glyph": "🏓",
+      "keywords": [
+        "ball",
+        "bat",
+        "game",
+        "paddle",
+        "ping pong",
+        "table tennis"
+      ]
+    },
+    {
+      "key": "fluent-1fa85",
+      "name": "piñata",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1fa85.svg",
+      "unicode": "1fa85",
+      "glyph": "🪅",
+      "keywords": [
+        "celebration",
+        "party",
+        "piñata"
+      ]
+    },
+    {
+      "key": "fluent-1f3b1",
+      "name": "pool 8 ball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3b1.svg",
+      "unicode": "1f3b1",
+      "glyph": "🎱",
+      "keywords": [
+        "8",
+        "ball",
+        "billiard",
+        "eight",
+        "game",
+        "pool 8 ball"
+      ]
+    },
+    {
+      "key": "fluent-1f9e9",
+      "name": "puzzle piece",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9e9.svg",
+      "unicode": "1f9e9",
+      "glyph": "🧩",
+      "keywords": [
+        "clue",
+        "interlocking",
+        "jigsaw",
+        "piece",
+        "puzzle"
+      ]
+    },
+    {
+      "key": "fluent-1f9e7",
+      "name": "red envelope",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9e7.svg",
+      "unicode": "1f9e7",
+      "glyph": "🧧",
+      "keywords": [
+        "gift",
+        "good luck",
+        "hóngbāo",
+        "lai see",
+        "money",
+        "red envelope"
+      ]
+    },
+    {
+      "key": "fluent-1f397-fe0f",
+      "name": "reminder ribbon",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f397-fe0f.svg",
+      "unicode": "1f397 fe0f",
+      "glyph": "🎗️",
+      "keywords": [
+        "celebration",
+        "reminder",
+        "ribbon"
+      ]
+    },
+    {
+      "key": "fluent-1f380",
+      "name": "ribbon",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f380.svg",
+      "unicode": "1f380",
+      "glyph": "🎀",
+      "keywords": [
+        "celebration",
+        "ribbon"
+      ]
+    },
+    {
+      "key": "fluent-1f3c9",
+      "name": "rugby football",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3c9.svg",
+      "unicode": "1f3c9",
+      "glyph": "🏉",
+      "keywords": [
+        "ball",
+        "football",
+        "rugby"
+      ]
+    },
+    {
+      "key": "fluent-1f3bd",
+      "name": "running shirt",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3bd.svg",
+      "unicode": "1f3bd",
+      "glyph": "🎽",
+      "keywords": [
+        "athletics",
+        "running",
+        "sash",
+        "shirt"
+      ]
+    },
+    {
+      "key": "fluent-1faa1",
+      "name": "sewing needle",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1faa1.svg",
+      "unicode": "1faa1",
+      "glyph": "🪡",
+      "keywords": [
+        "embroidery",
+        "needle",
+        "sewing",
+        "stitches",
+        "sutures",
+        "tailoring"
+      ]
+    },
+    {
+      "key": "fluent-1f3bf",
+      "name": "skis",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3bf.svg",
+      "unicode": "1f3bf",
+      "glyph": "🎿",
+      "keywords": [
+        "ski",
+        "skis",
+        "snow"
+      ]
+    },
+    {
+      "key": "fluent-1f6f7",
+      "name": "sled",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f6f7.svg",
+      "unicode": "1f6f7",
+      "glyph": "🛷",
+      "keywords": [
+        "sled",
+        "sledge",
+        "sleigh"
+      ]
+    },
+    {
+      "key": "fluent-1f3b0",
+      "name": "slot machine",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3b0.svg",
+      "unicode": "1f3b0",
+      "glyph": "🎰",
+      "keywords": [
+        "game",
+        "slot",
+        "slot machine"
+      ]
+    },
+    {
+      "key": "fluent-26bd",
+      "name": "soccer ball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-26bd.svg",
+      "unicode": "26bd",
+      "glyph": "⚽",
+      "keywords": [
+        "ball",
+        "football",
+        "soccer"
+      ]
+    },
+    {
+      "key": "fluent-1f94e",
+      "name": "softball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f94e.svg",
+      "unicode": "1f94e",
+      "glyph": "🥎",
+      "keywords": [
+        "ball",
+        "glove",
+        "softball",
+        "underarm"
+      ]
+    },
+    {
+      "key": "fluent-2660-fe0f",
+      "name": "spade suit",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-2660-fe0f.svg",
+      "unicode": "2660 fe0f",
+      "glyph": "♠️",
+      "keywords": [
+        "card",
+        "game",
+        "spade suit"
+      ]
+    },
+    {
+      "key": "fluent-1f387",
+      "name": "sparkler",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f387.svg",
+      "unicode": "1f387",
+      "glyph": "🎇",
+      "keywords": [
+        "celebration",
+        "fireworks",
+        "sparkle",
+        "sparkler"
+      ]
+    },
+    {
+      "key": "fluent-2728",
+      "name": "sparkles",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-2728.svg",
+      "unicode": "2728",
+      "glyph": "✨",
+      "keywords": [
+        "*",
+        "sparkle",
+        "sparkles",
+        "star"
+      ]
+    },
+    {
+      "key": "fluent-1f3c5",
+      "name": "sports medal",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3c5.svg",
+      "unicode": "1f3c5",
+      "glyph": "🏅",
+      "keywords": [
+        "medal",
+        "sports medal"
+      ]
+    },
+    {
+      "key": "fluent-1f38b",
+      "name": "tanabata tree",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f38b.svg",
+      "unicode": "1f38b",
+      "glyph": "🎋",
+      "keywords": [
+        "banner",
+        "celebration",
+        "Japanese",
+        "tanabata tree",
+        "tree"
+      ]
+    },
+    {
+      "key": "fluent-1f9f8",
+      "name": "teddy bear",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9f8.svg",
+      "unicode": "1f9f8",
+      "glyph": "🧸",
+      "keywords": [
+        "plaything",
+        "plush",
+        "stuffed",
+        "teddy bear",
+        "toy"
+      ]
+    },
+    {
+      "key": "fluent-1f3be",
+      "name": "tennis",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3be.svg",
+      "unicode": "1f3be",
+      "glyph": "🎾",
+      "keywords": [
+        "ball",
+        "racquet",
+        "tennis"
+      ]
+    },
+    {
+      "key": "fluent-1f9f5",
+      "name": "thread",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9f5.svg",
+      "unicode": "1f9f5",
+      "glyph": "🧵",
+      "keywords": [
+        "needle",
+        "sewing",
+        "spool",
+        "string",
+        "thread"
+      ]
+    },
+    {
+      "key": "fluent-1f3ab",
+      "name": "ticket",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3ab.svg",
+      "unicode": "1f3ab",
+      "glyph": "🎫",
+      "keywords": [
+        "admission",
+        "ticket"
+      ]
+    },
+    {
+      "key": "fluent-1f3c6",
+      "name": "trophy",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3c6.svg",
+      "unicode": "1f3c6",
+      "glyph": "🏆",
+      "keywords": [
+        "prize",
+        "trophy"
+      ]
+    },
+    {
+      "key": "fluent-1f3ae",
+      "name": "video game",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3ae.svg",
+      "unicode": "1f3ae",
+      "glyph": "🎮",
+      "keywords": [
+        "controller",
+        "game",
+        "video game"
+      ]
+    },
+    {
+      "key": "fluent-1f3d0",
+      "name": "volleyball",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f3d0.svg",
+      "unicode": "1f3d0",
+      "glyph": "🏐",
+      "keywords": [
+        "ball",
+        "game",
+        "volleyball"
+      ]
+    },
+    {
+      "key": "fluent-1f390",
+      "name": "wind chime",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f390.svg",
+      "unicode": "1f390",
+      "glyph": "🎐",
+      "keywords": [
+        "bell",
+        "celebration",
+        "chime",
+        "wind"
+      ]
+    },
+    {
+      "key": "fluent-1f381",
+      "name": "wrapped gift",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f381.svg",
+      "unicode": "1f381",
+      "glyph": "🎁",
+      "keywords": [
+        "box",
+        "celebration",
+        "gift",
+        "present",
+        "wrapped"
+      ]
+    },
+    {
+      "key": "fluent-1f9f6",
+      "name": "yarn",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1f9f6.svg",
+      "unicode": "1f9f6",
+      "glyph": "🧶",
+      "keywords": [
+        "ball",
+        "crochet",
+        "knit",
+        "yarn"
+      ]
+    },
+    {
+      "key": "fluent-1fa80",
+      "name": "yo-yo",
+      "category": "Activities",
+      "path": "/static/avatars/fluent/icons/fluent-1fa80.svg",
+      "unicode": "1fa80",
+      "glyph": "🪀",
+      "keywords": [
+        "fluctuate",
+        "toy",
+        "yo-yo"
+      ]
+    },
+    {
+      "key": "fluent-1f996",
+      "name": "T-Rex",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f996.svg",
+      "unicode": "1f996",
+      "glyph": "🦖",
+      "keywords": [
+        "T-Rex",
+        "Tyrannosaurus Rex"
+      ]
+    },
+    {
+      "key": "fluent-1f41c",
+      "name": "ant",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f41c.svg",
+      "unicode": "1f41c",
+      "glyph": "🐜",
+      "keywords": [
+        "ant",
+        "insect"
+      ]
+    },
+    {
+      "key": "fluent-1f424",
+      "name": "baby chick",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f424.svg",
+      "unicode": "1f424",
+      "glyph": "🐤",
+      "keywords": [
+        "baby",
+        "bird",
+        "chick"
+      ]
+    },
+    {
+      "key": "fluent-1f9a1",
+      "name": "badger",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a1.svg",
+      "unicode": "1f9a1",
+      "glyph": "🦡",
+      "keywords": [
+        "badger",
+        "honey badger",
+        "pester"
+      ]
+    },
+    {
+      "key": "fluent-1f987",
+      "name": "bat",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f987.svg",
+      "unicode": "1f987",
+      "glyph": "🦇",
+      "keywords": [
+        "bat",
+        "vampire"
+      ]
+    },
+    {
+      "key": "fluent-1f43b",
+      "name": "bear",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43b.svg",
+      "unicode": "1f43b",
+      "glyph": "🐻",
+      "keywords": [
+        "bear",
+        "face"
+      ]
+    },
+    {
+      "key": "fluent-1f9ab",
+      "name": "beaver",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9ab.svg",
+      "unicode": "1f9ab",
+      "glyph": "🦫",
+      "keywords": [
+        "beaver",
+        "dam"
+      ]
+    },
+    {
+      "key": "fluent-1fab2",
+      "name": "beetle",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab2.svg",
+      "unicode": "1fab2",
+      "glyph": "🪲",
+      "keywords": [
+        "beetle",
+        "bug",
+        "insect"
+      ]
+    },
+    {
+      "key": "fluent-1f426",
+      "name": "bird",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f426.svg",
+      "unicode": "1f426",
+      "glyph": "🐦",
+      "keywords": [
+        "bird"
+      ]
+    },
+    {
+      "key": "fluent-1f9ac",
+      "name": "bison",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9ac.svg",
+      "unicode": "1f9ac",
+      "glyph": "🦬",
+      "keywords": [
+        "bison",
+        "buffalo",
+        "herd",
+        "wisent"
+      ]
+    },
+    {
+      "key": "fluent-1f426-200d-2b1b",
+      "name": "black bird",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f426-200d-2b1b.svg",
+      "unicode": "1f426 200d 2b1b",
+      "glyph": "🐦‍⬛",
+      "keywords": [
+        "bird",
+        "black",
+        "crow",
+        "raven",
+        "rook"
+      ]
+    },
+    {
+      "key": "fluent-1f408-200d-2b1b",
+      "name": "black cat",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f408-200d-2b1b.svg",
+      "unicode": "1f408 200d 2b1b",
+      "glyph": "🐈‍⬛",
+      "keywords": [
+        "black",
+        "cat",
+        "unlucky"
+      ]
+    },
+    {
+      "key": "fluent-1f33c",
+      "name": "blossom",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f33c.svg",
+      "unicode": "1f33c",
+      "glyph": "🌼",
+      "keywords": [
+        "blossom",
+        "flower"
+      ]
+    },
+    {
+      "key": "fluent-1f421",
+      "name": "blowfish",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f421.svg",
+      "unicode": "1f421",
+      "glyph": "🐡",
+      "keywords": [
+        "blowfish",
+        "fish"
+      ]
+    },
+    {
+      "key": "fluent-1f417",
+      "name": "boar",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f417.svg",
+      "unicode": "1f417",
+      "glyph": "🐗",
+      "keywords": [
+        "boar",
+        "pig"
+      ]
+    },
+    {
+      "key": "fluent-1f490",
+      "name": "bouquet",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f490.svg",
+      "unicode": "1f490",
+      "glyph": "💐",
+      "keywords": [
+        "bouquet",
+        "flower"
+      ]
+    },
+    {
+      "key": "fluent-1f41b",
+      "name": "bug",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f41b.svg",
+      "unicode": "1f41b",
+      "glyph": "🐛",
+      "keywords": [
+        "bug",
+        "insect"
+      ]
+    },
+    {
+      "key": "fluent-1f98b",
+      "name": "butterfly",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f98b.svg",
+      "unicode": "1f98b",
+      "glyph": "🦋",
+      "keywords": [
+        "butterfly",
+        "insect",
+        "pretty"
+      ]
+    },
+    {
+      "key": "fluent-1f335",
+      "name": "cactus",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f335.svg",
+      "unicode": "1f335",
+      "glyph": "🌵",
+      "keywords": [
+        "cactus",
+        "plant"
+      ]
+    },
+    {
+      "key": "fluent-1f42a",
+      "name": "camel",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f42a.svg",
+      "unicode": "1f42a",
+      "glyph": "🐪",
+      "keywords": [
+        "camel",
+        "dromedary",
+        "hump"
+      ]
+    },
+    {
+      "key": "fluent-1f408",
+      "name": "cat",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f408.svg",
+      "unicode": "1f408",
+      "glyph": "🐈",
+      "keywords": [
+        "cat",
+        "pet"
+      ]
+    },
+    {
+      "key": "fluent-1f431",
+      "name": "cat face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f431.svg",
+      "unicode": "1f431",
+      "glyph": "🐱",
+      "keywords": [
+        "cat",
+        "face",
+        "pet"
+      ]
+    },
+    {
+      "key": "fluent-1f338",
+      "name": "cherry blossom",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f338.svg",
+      "unicode": "1f338",
+      "glyph": "🌸",
+      "keywords": [
+        "blossom",
+        "cherry",
+        "flower"
+      ]
+    },
+    {
+      "key": "fluent-1f414",
+      "name": "chicken",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f414.svg",
+      "unicode": "1f414",
+      "glyph": "🐔",
+      "keywords": [
+        "bird",
+        "chicken"
+      ]
+    },
+    {
+      "key": "fluent-1f43f-fe0f",
+      "name": "chipmunk",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43f-fe0f.svg",
+      "unicode": "1f43f fe0f",
+      "glyph": "🐿️",
+      "keywords": [
+        "chipmunk",
+        "squirrel"
+      ]
+    },
+    {
+      "key": "fluent-1fab3",
+      "name": "cockroach",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab3.svg",
+      "unicode": "1fab3",
+      "glyph": "🪳",
+      "keywords": [
+        "cockroach",
+        "insect",
+        "pest",
+        "roach"
+      ]
+    },
+    {
+      "key": "fluent-1fab8",
+      "name": "coral",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab8.svg",
+      "unicode": "1fab8",
+      "glyph": "🪸",
+      "keywords": [
+        "coral",
+        "ocean",
+        "reef"
+      ]
+    },
+    {
+      "key": "fluent-1f404",
+      "name": "cow",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f404.svg",
+      "unicode": "1f404",
+      "glyph": "🐄",
+      "keywords": [
+        "cow"
+      ]
+    },
+    {
+      "key": "fluent-1f42e",
+      "name": "cow face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f42e.svg",
+      "unicode": "1f42e",
+      "glyph": "🐮",
+      "keywords": [
+        "cow",
+        "face"
+      ]
+    },
+    {
+      "key": "fluent-1f997",
+      "name": "cricket",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f997.svg",
+      "unicode": "1f997",
+      "glyph": "🦗",
+      "keywords": [
+        "cricket",
+        "grasshopper"
+      ]
+    },
+    {
+      "key": "fluent-1f40a",
+      "name": "crocodile",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f40a.svg",
+      "unicode": "1f40a",
+      "glyph": "🐊",
+      "keywords": [
+        "crocodile"
+      ]
+    },
+    {
+      "key": "fluent-1f333",
+      "name": "deciduous tree",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f333.svg",
+      "unicode": "1f333",
+      "glyph": "🌳",
+      "keywords": [
+        "deciduous",
+        "shedding",
+        "tree"
+      ]
+    },
+    {
+      "key": "fluent-1f98c",
+      "name": "deer",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f98c.svg",
+      "unicode": "1f98c",
+      "glyph": "🦌",
+      "keywords": [
+        "deer"
+      ]
+    },
+    {
+      "key": "fluent-1f9a4",
+      "name": "dodo",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a4.svg",
+      "unicode": "1f9a4",
+      "glyph": "🦤",
+      "keywords": [
+        "dodo",
+        "extinction",
+        "large",
+        "Mauritius"
+      ]
+    },
+    {
+      "key": "fluent-1f415",
+      "name": "dog",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f415.svg",
+      "unicode": "1f415",
+      "glyph": "🐕",
+      "keywords": [
+        "dog",
+        "pet"
+      ]
+    },
+    {
+      "key": "fluent-1f436",
+      "name": "dog face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f436.svg",
+      "unicode": "1f436",
+      "glyph": "🐶",
+      "keywords": [
+        "dog",
+        "face",
+        "pet"
+      ]
+    },
+    {
+      "key": "fluent-1f42c",
+      "name": "dolphin",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f42c.svg",
+      "unicode": "1f42c",
+      "glyph": "🐬",
+      "keywords": [
+        "dolphin",
+        "flipper"
+      ]
+    },
+    {
+      "key": "fluent-1facf",
+      "name": "donkey",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1facf.svg",
+      "unicode": "1facf",
+      "glyph": "🫏",
+      "keywords": [
+        "animal",
+        "ass",
+        "burro",
+        "donkey",
+        "mammal",
+        "mule",
+        "stubborn"
+      ]
+    },
+    {
+      "key": "fluent-1f54a-fe0f",
+      "name": "dove",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f54a-fe0f.svg",
+      "unicode": "1f54a fe0f",
+      "glyph": "🕊️",
+      "keywords": [
+        "bird",
+        "dove",
+        "fly",
+        "peace"
+      ]
+    },
+    {
+      "key": "fluent-1f409",
+      "name": "dragon",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f409.svg",
+      "unicode": "1f409",
+      "glyph": "🐉",
+      "keywords": [
+        "dragon",
+        "fairy tale"
+      ]
+    },
+    {
+      "key": "fluent-1f432",
+      "name": "dragon face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f432.svg",
+      "unicode": "1f432",
+      "glyph": "🐲",
+      "keywords": [
+        "dragon",
+        "face",
+        "fairy tale"
+      ]
+    },
+    {
+      "key": "fluent-1f986",
+      "name": "duck",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f986.svg",
+      "unicode": "1f986",
+      "glyph": "🦆",
+      "keywords": [
+        "bird",
+        "duck"
+      ]
+    },
+    {
+      "key": "fluent-1f985",
+      "name": "eagle",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f985.svg",
+      "unicode": "1f985",
+      "glyph": "🦅",
+      "keywords": [
+        "bird",
+        "eagle"
+      ]
+    },
+    {
+      "key": "fluent-1f418",
+      "name": "elephant",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f418.svg",
+      "unicode": "1f418",
+      "glyph": "🐘",
+      "keywords": [
+        "elephant"
+      ]
+    },
+    {
+      "key": "fluent-1fab9",
+      "name": "empty nest",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab9.svg",
+      "unicode": "1fab9",
+      "glyph": "🪹",
+      "keywords": [
+        "empty nest",
+        "nesting"
+      ]
+    },
+    {
+      "key": "fluent-1f332",
+      "name": "evergreen tree",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f332.svg",
+      "unicode": "1f332",
+      "glyph": "🌲",
+      "keywords": [
+        "evergreen tree",
+        "tree"
+      ]
+    },
+    {
+      "key": "fluent-1f411",
+      "name": "ewe",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f411.svg",
+      "unicode": "1f411",
+      "glyph": "🐑",
+      "keywords": [
+        "ewe",
+        "female",
+        "sheep"
+      ]
+    },
+    {
+      "key": "fluent-1f342",
+      "name": "fallen leaf",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f342.svg",
+      "unicode": "1f342",
+      "glyph": "🍂",
+      "keywords": [
+        "fallen leaf",
+        "falling",
+        "leaf"
+      ]
+    },
+    {
+      "key": "fluent-1fab6",
+      "name": "feather",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab6.svg",
+      "unicode": "1fab6",
+      "glyph": "🪶",
+      "keywords": [
+        "bird",
+        "feather",
+        "flight",
+        "light",
+        "plumage"
+      ]
+    },
+    {
+      "key": "fluent-1f41f",
+      "name": "fish",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f41f.svg",
+      "unicode": "1f41f",
+      "glyph": "🐟",
+      "keywords": [
+        "fish",
+        "Pisces",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f9a9",
+      "name": "flamingo",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a9.svg",
+      "unicode": "1f9a9",
+      "glyph": "🦩",
+      "keywords": [
+        "flamboyant",
+        "flamingo",
+        "tropical"
+      ]
+    },
+    {
+      "key": "fluent-1fab0",
+      "name": "fly",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab0.svg",
+      "unicode": "1fab0",
+      "glyph": "🪰",
+      "keywords": [
+        "disease",
+        "fly",
+        "maggot",
+        "pest",
+        "rotting"
+      ]
+    },
+    {
+      "key": "fluent-1f340",
+      "name": "four leaf clover",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f340.svg",
+      "unicode": "1f340",
+      "glyph": "🍀",
+      "keywords": [
+        "4",
+        "clover",
+        "four",
+        "four-leaf clover",
+        "leaf"
+      ]
+    },
+    {
+      "key": "fluent-1f98a",
+      "name": "fox",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f98a.svg",
+      "unicode": "1f98a",
+      "glyph": "🦊",
+      "keywords": [
+        "face",
+        "fox"
+      ]
+    },
+    {
+      "key": "fluent-1f438",
+      "name": "frog",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f438.svg",
+      "unicode": "1f438",
+      "glyph": "🐸",
+      "keywords": [
+        "face",
+        "frog"
+      ]
+    },
+    {
+      "key": "fluent-1f425",
+      "name": "front-facing baby chick",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f425.svg",
+      "unicode": "1f425",
+      "glyph": "🐥",
+      "keywords": [
+        "baby",
+        "bird",
+        "chick",
+        "front-facing baby chick"
+      ]
+    },
+    {
+      "key": "fluent-1f992",
+      "name": "giraffe",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f992.svg",
+      "unicode": "1f992",
+      "glyph": "🦒",
+      "keywords": [
+        "giraffe",
+        "spots"
+      ]
+    },
+    {
+      "key": "fluent-1f410",
+      "name": "goat",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f410.svg",
+      "unicode": "1f410",
+      "glyph": "🐐",
+      "keywords": [
+        "Capricorn",
+        "goat",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1fabf",
+      "name": "goose",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fabf.svg",
+      "unicode": "1fabf",
+      "glyph": "🪿",
+      "keywords": [
+        "bird",
+        "fowl",
+        "goose",
+        "honk",
+        "silly"
+      ]
+    },
+    {
+      "key": "fluent-1f98d",
+      "name": "gorilla",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f98d.svg",
+      "unicode": "1f98d",
+      "glyph": "🦍",
+      "keywords": [
+        "gorilla"
+      ]
+    },
+    {
+      "key": "fluent-1f9ae",
+      "name": "guide dog",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9ae.svg",
+      "unicode": "1f9ae",
+      "glyph": "🦮",
+      "keywords": [
+        "accessibility",
+        "blind",
+        "guide",
+        "guide dog"
+      ]
+    },
+    {
+      "key": "fluent-1f439",
+      "name": "hamster",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f439.svg",
+      "unicode": "1f439",
+      "glyph": "🐹",
+      "keywords": [
+        "face",
+        "hamster",
+        "pet"
+      ]
+    },
+    {
+      "key": "fluent-1f423",
+      "name": "hatching chick",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f423.svg",
+      "unicode": "1f423",
+      "glyph": "🐣",
+      "keywords": [
+        "baby",
+        "bird",
+        "chick",
+        "hatching"
+      ]
+    },
+    {
+      "key": "fluent-1f994",
+      "name": "hedgehog",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f994.svg",
+      "unicode": "1f994",
+      "glyph": "🦔",
+      "keywords": [
+        "hedgehog",
+        "spiny"
+      ]
+    },
+    {
+      "key": "fluent-1f33f",
+      "name": "herb",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f33f.svg",
+      "unicode": "1f33f",
+      "glyph": "🌿",
+      "keywords": [
+        "herb",
+        "leaf"
+      ]
+    },
+    {
+      "key": "fluent-1f33a",
+      "name": "hibiscus",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f33a.svg",
+      "unicode": "1f33a",
+      "glyph": "🌺",
+      "keywords": [
+        "flower",
+        "hibiscus"
+      ]
+    },
+    {
+      "key": "fluent-1f99b",
+      "name": "hippopotamus",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f99b.svg",
+      "unicode": "1f99b",
+      "glyph": "🦛",
+      "keywords": [
+        "hippo",
+        "hippopotamus"
+      ]
+    },
+    {
+      "key": "fluent-1f41d",
+      "name": "honeybee",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f41d.svg",
+      "unicode": "1f41d",
+      "glyph": "🐝",
+      "keywords": [
+        "bee",
+        "honeybee",
+        "insect"
+      ]
+    },
+    {
+      "key": "fluent-1f40e",
+      "name": "horse",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f40e.svg",
+      "unicode": "1f40e",
+      "glyph": "🐎",
+      "keywords": [
+        "equestrian",
+        "horse",
+        "racehorse",
+        "racing"
+      ]
+    },
+    {
+      "key": "fluent-1f434",
+      "name": "horse face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f434.svg",
+      "unicode": "1f434",
+      "glyph": "🐴",
+      "keywords": [
+        "face",
+        "horse"
+      ]
+    },
+    {
+      "key": "fluent-1fabb",
+      "name": "hyacinth",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fabb.svg",
+      "unicode": "1fabb",
+      "glyph": "🪻",
+      "keywords": [
+        "bluebonnet",
+        "flower",
+        "hyacinth",
+        "lavender",
+        "lupine",
+        "snapdragon"
+      ]
+    },
+    {
+      "key": "fluent-1fabc",
+      "name": "jellyfish",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fabc.svg",
+      "unicode": "1fabc",
+      "glyph": "🪼",
+      "keywords": [
+        "burn",
+        "invertebrate",
+        "jelly",
+        "jellyfish",
+        "marine",
+        "ouch",
+        "stinger"
+      ]
+    },
+    {
+      "key": "fluent-1f998",
+      "name": "kangaroo",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f998.svg",
+      "unicode": "1f998",
+      "glyph": "🦘",
+      "keywords": [
+        "Australia",
+        "joey",
+        "jump",
+        "kangaroo",
+        "marsupial"
+      ]
+    },
+    {
+      "key": "fluent-1f428",
+      "name": "koala",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f428.svg",
+      "unicode": "1f428",
+      "glyph": "🐨",
+      "keywords": [
+        "koala",
+        "face",
+        "marsupial"
+      ]
+    },
+    {
+      "key": "fluent-1f41e",
+      "name": "lady beetle",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f41e.svg",
+      "unicode": "1f41e",
+      "glyph": "🐞",
+      "keywords": [
+        "beetle",
+        "insect",
+        "lady beetle",
+        "ladybird",
+        "ladybug"
+      ]
+    },
+    {
+      "key": "fluent-1f343",
+      "name": "leaf fluttering in wind",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f343.svg",
+      "unicode": "1f343",
+      "glyph": "🍃",
+      "keywords": [
+        "blow",
+        "flutter",
+        "leaf",
+        "leaf fluttering in wind",
+        "wind"
+      ]
+    },
+    {
+      "key": "fluent-1f406",
+      "name": "leopard",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f406.svg",
+      "unicode": "1f406",
+      "glyph": "🐆",
+      "keywords": [
+        "leopard"
+      ]
+    },
+    {
+      "key": "fluent-1f981",
+      "name": "lion",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f981.svg",
+      "unicode": "1f981",
+      "glyph": "🦁",
+      "keywords": [
+        "face",
+        "Leo",
+        "lion",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f98e",
+      "name": "lizard",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f98e.svg",
+      "unicode": "1f98e",
+      "glyph": "🦎",
+      "keywords": [
+        "lizard",
+        "reptile"
+      ]
+    },
+    {
+      "key": "fluent-1f999",
+      "name": "llama",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f999.svg",
+      "unicode": "1f999",
+      "glyph": "🦙",
+      "keywords": [
+        "alpaca",
+        "guanaco",
+        "llama",
+        "vicuña",
+        "wool"
+      ]
+    },
+    {
+      "key": "fluent-1fab7",
+      "name": "lotus",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab7.svg",
+      "unicode": "1fab7",
+      "glyph": "🪷",
+      "keywords": [
+        "Buddhism",
+        "flower",
+        "Hinduism",
+        "India",
+        "lotus",
+        "purity",
+        "Vietnam"
+      ]
+    },
+    {
+      "key": "fluent-1f9a3",
+      "name": "mammoth",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a3.svg",
+      "unicode": "1f9a3",
+      "glyph": "🦣",
+      "keywords": [
+        "extinction",
+        "large",
+        "mammoth",
+        "tusk",
+        "woolly"
+      ]
+    },
+    {
+      "key": "fluent-1f341",
+      "name": "maple leaf",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f341.svg",
+      "unicode": "1f341",
+      "glyph": "🍁",
+      "keywords": [
+        "falling",
+        "leaf",
+        "maple"
+      ]
+    },
+    {
+      "key": "fluent-1f9a0",
+      "name": "microbe",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a0.svg",
+      "unicode": "1f9a0",
+      "glyph": "🦠",
+      "keywords": [
+        "amoeba",
+        "bacteria",
+        "microbe",
+        "virus"
+      ]
+    },
+    {
+      "key": "fluent-1f412",
+      "name": "monkey",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f412.svg",
+      "unicode": "1f412",
+      "glyph": "🐒",
+      "keywords": [
+        "monkey"
+      ]
+    },
+    {
+      "key": "fluent-1f435",
+      "name": "monkey face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f435.svg",
+      "unicode": "1f435",
+      "glyph": "🐵",
+      "keywords": [
+        "face",
+        "monkey"
+      ]
+    },
+    {
+      "key": "fluent-1face",
+      "name": "moose",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1face.svg",
+      "unicode": "1face",
+      "glyph": "🫎",
+      "keywords": [
+        "animal",
+        "antlers",
+        "elk",
+        "mammal",
+        "moose"
+      ]
+    },
+    {
+      "key": "fluent-1f99f",
+      "name": "mosquito",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f99f.svg",
+      "unicode": "1f99f",
+      "glyph": "🦟",
+      "keywords": [
+        "disease",
+        "fever",
+        "malaria",
+        "mosquito",
+        "pest",
+        "virus"
+      ]
+    },
+    {
+      "key": "fluent-1f401",
+      "name": "mouse",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f401.svg",
+      "unicode": "1f401",
+      "glyph": "🐁",
+      "keywords": [
+        "mouse"
+      ]
+    },
+    {
+      "key": "fluent-1f42d",
+      "name": "mouse face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f42d.svg",
+      "unicode": "1f42d",
+      "glyph": "🐭",
+      "keywords": [
+        "face",
+        "mouse"
+      ]
+    },
+    {
+      "key": "fluent-1faba",
+      "name": "nest with eggs",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1faba.svg",
+      "unicode": "1faba",
+      "glyph": "🪺",
+      "keywords": [
+        "nest with eggs",
+        "nesting"
+      ]
+    },
+    {
+      "key": "fluent-1f419",
+      "name": "octopus",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f419.svg",
+      "unicode": "1f419",
+      "glyph": "🐙",
+      "keywords": [
+        "octopus"
+      ]
+    },
+    {
+      "key": "fluent-1f9a7",
+      "name": "orangutan",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a7.svg",
+      "unicode": "1f9a7",
+      "glyph": "🦧",
+      "keywords": [
+        "ape",
+        "orangutan"
+      ]
+    },
+    {
+      "key": "fluent-1f9a6",
+      "name": "otter",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a6.svg",
+      "unicode": "1f9a6",
+      "glyph": "🦦",
+      "keywords": [
+        "fishing",
+        "otter",
+        "playful"
+      ]
+    },
+    {
+      "key": "fluent-1f989",
+      "name": "owl",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f989.svg",
+      "unicode": "1f989",
+      "glyph": "🦉",
+      "keywords": [
+        "bird",
+        "owl",
+        "wise"
+      ]
+    },
+    {
+      "key": "fluent-1f402",
+      "name": "ox",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f402.svg",
+      "unicode": "1f402",
+      "glyph": "🐂",
+      "keywords": [
+        "bull",
+        "ox",
+        "Taurus",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f334",
+      "name": "palm tree",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f334.svg",
+      "unicode": "1f334",
+      "glyph": "🌴",
+      "keywords": [
+        "palm",
+        "tree"
+      ]
+    },
+    {
+      "key": "fluent-1f43c",
+      "name": "panda",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43c.svg",
+      "unicode": "1f43c",
+      "glyph": "🐼",
+      "keywords": [
+        "face",
+        "panda"
+      ]
+    },
+    {
+      "key": "fluent-1f99c",
+      "name": "parrot",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f99c.svg",
+      "unicode": "1f99c",
+      "glyph": "🦜",
+      "keywords": [
+        "bird",
+        "parrot",
+        "pirate",
+        "talk"
+      ]
+    },
+    {
+      "key": "fluent-1f43e",
+      "name": "paw prints",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43e.svg",
+      "unicode": "1f43e",
+      "glyph": "🐾",
+      "keywords": [
+        "feet",
+        "paw",
+        "paw prints",
+        "print"
+      ]
+    },
+    {
+      "key": "fluent-1f99a",
+      "name": "peacock",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f99a.svg",
+      "unicode": "1f99a",
+      "glyph": "🦚",
+      "keywords": [
+        "bird",
+        "ostentatious",
+        "peacock",
+        "peahen",
+        "proud"
+      ]
+    },
+    {
+      "key": "fluent-1f427",
+      "name": "penguin",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f427.svg",
+      "unicode": "1f427",
+      "glyph": "🐧",
+      "keywords": [
+        "bird",
+        "penguin"
+      ]
+    },
+    {
+      "key": "fluent-1f426-200d-1f525",
+      "name": "phoenix",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f426-200d-1f525.svg",
+      "unicode": "1f426 200d 1f525",
+      "glyph": "🐦‍🔥",
+      "keywords": [
+        "fantasy",
+        "firebird",
+        "phoenix",
+        "rebirth",
+        "reincarnation"
+      ]
+    },
+    {
+      "key": "fluent-1f416",
+      "name": "pig",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f416.svg",
+      "unicode": "1f416",
+      "glyph": "🐖",
+      "keywords": [
+        "pig",
+        "sow"
+      ]
+    },
+    {
+      "key": "fluent-1f437",
+      "name": "pig face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f437.svg",
+      "unicode": "1f437",
+      "glyph": "🐷",
+      "keywords": [
+        "face",
+        "pig"
+      ]
+    },
+    {
+      "key": "fluent-1f43d",
+      "name": "pig nose",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43d.svg",
+      "unicode": "1f43d",
+      "glyph": "🐽",
+      "keywords": [
+        "face",
+        "nose",
+        "pig"
+      ]
+    },
+    {
+      "key": "fluent-1f43b-200d-2744-fe0f",
+      "name": "polar bear",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43b-200d-2744-fe0f.svg",
+      "unicode": "1f43b 200d 2744 fe0f",
+      "glyph": "🐻‍❄️",
+      "keywords": [
+        "arctic",
+        "bear",
+        "polar bear",
+        "white"
+      ]
+    },
+    {
+      "key": "fluent-1f429",
+      "name": "poodle",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f429.svg",
+      "unicode": "1f429",
+      "glyph": "🐩",
+      "keywords": [
+        "dog",
+        "poodle"
+      ]
+    },
+    {
+      "key": "fluent-1fab4",
+      "name": "potted plant",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab4.svg",
+      "unicode": "1fab4",
+      "glyph": "🪴",
+      "keywords": [
+        "boring",
+        "grow",
+        "house",
+        "nurturing",
+        "plant",
+        "potted plant",
+        "useless"
+      ]
+    },
+    {
+      "key": "fluent-1f407",
+      "name": "rabbit",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f407.svg",
+      "unicode": "1f407",
+      "glyph": "🐇",
+      "keywords": [
+        "bunny",
+        "pet",
+        "rabbit"
+      ]
+    },
+    {
+      "key": "fluent-1f430",
+      "name": "rabbit face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f430.svg",
+      "unicode": "1f430",
+      "glyph": "🐰",
+      "keywords": [
+        "bunny",
+        "face",
+        "pet",
+        "rabbit"
+      ]
+    },
+    {
+      "key": "fluent-1f99d",
+      "name": "raccoon",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f99d.svg",
+      "unicode": "1f99d",
+      "glyph": "🦝",
+      "keywords": [
+        "curious",
+        "raccoon",
+        "sly"
+      ]
+    },
+    {
+      "key": "fluent-1f40f",
+      "name": "ram",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f40f.svg",
+      "unicode": "1f40f",
+      "glyph": "🐏",
+      "keywords": [
+        "Aries",
+        "male",
+        "ram",
+        "sheep",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f400",
+      "name": "rat",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f400.svg",
+      "unicode": "1f400",
+      "glyph": "🐀",
+      "keywords": [
+        "rat"
+      ]
+    },
+    {
+      "key": "fluent-1f98f",
+      "name": "rhinoceros",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f98f.svg",
+      "unicode": "1f98f",
+      "glyph": "🦏",
+      "keywords": [
+        "rhinoceros"
+      ]
+    },
+    {
+      "key": "fluent-1f413",
+      "name": "rooster",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f413.svg",
+      "unicode": "1f413",
+      "glyph": "🐓",
+      "keywords": [
+        "bird",
+        "rooster"
+      ]
+    },
+    {
+      "key": "fluent-1f339",
+      "name": "rose",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f339.svg",
+      "unicode": "1f339",
+      "glyph": "🌹",
+      "keywords": [
+        "flower",
+        "rose"
+      ]
+    },
+    {
+      "key": "fluent-1f3f5-fe0f",
+      "name": "rosette",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f3f5-fe0f.svg",
+      "unicode": "1f3f5 fe0f",
+      "glyph": "🏵️",
+      "keywords": [
+        "plant",
+        "rosette"
+      ]
+    },
+    {
+      "key": "fluent-1f995",
+      "name": "sauropod",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f995.svg",
+      "unicode": "1f995",
+      "glyph": "🦕",
+      "keywords": [
+        "brachiosaurus",
+        "brontosaurus",
+        "diplodocus",
+        "sauropod"
+      ]
+    },
+    {
+      "key": "fluent-1f982",
+      "name": "scorpion",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f982.svg",
+      "unicode": "1f982",
+      "glyph": "🦂",
+      "keywords": [
+        "scorpio",
+        "Scorpio",
+        "scorpion",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f9ad",
+      "name": "seal",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9ad.svg",
+      "unicode": "1f9ad",
+      "glyph": "🦭",
+      "keywords": [
+        "sea lion",
+        "seal"
+      ]
+    },
+    {
+      "key": "fluent-1f331",
+      "name": "seedling",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f331.svg",
+      "unicode": "1f331",
+      "glyph": "🌱",
+      "keywords": [
+        "seedling",
+        "young"
+      ]
+    },
+    {
+      "key": "fluent-1f415-200d-1f9ba",
+      "name": "service dog",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f415-200d-1f9ba.svg",
+      "unicode": "1f415 200d 1f9ba",
+      "glyph": "🐕‍🦺",
+      "keywords": [
+        "accessibility",
+        "assistance",
+        "dog",
+        "service"
+      ]
+    },
+    {
+      "key": "fluent-2618-fe0f",
+      "name": "shamrock",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-2618-fe0f.svg",
+      "unicode": "2618 fe0f",
+      "glyph": "☘️",
+      "keywords": [
+        "plant",
+        "shamrock"
+      ]
+    },
+    {
+      "key": "fluent-1f988",
+      "name": "shark",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f988.svg",
+      "unicode": "1f988",
+      "glyph": "🦈",
+      "keywords": [
+        "fish",
+        "shark"
+      ]
+    },
+    {
+      "key": "fluent-1f33e",
+      "name": "sheaf of rice",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f33e.svg",
+      "unicode": "1f33e",
+      "glyph": "🌾",
+      "keywords": [
+        "ear",
+        "grain",
+        "rice",
+        "sheaf of rice"
+      ]
+    },
+    {
+      "key": "fluent-1f9a8",
+      "name": "skunk",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a8.svg",
+      "unicode": "1f9a8",
+      "glyph": "🦨",
+      "keywords": [
+        "skunk",
+        "stink"
+      ]
+    },
+    {
+      "key": "fluent-1f9a5",
+      "name": "sloth",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a5.svg",
+      "unicode": "1f9a5",
+      "glyph": "🦥",
+      "keywords": [
+        "lazy",
+        "sloth",
+        "slow"
+      ]
+    },
+    {
+      "key": "fluent-1f40c",
+      "name": "snail",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f40c.svg",
+      "unicode": "1f40c",
+      "glyph": "🐌",
+      "keywords": [
+        "snail"
+      ]
+    },
+    {
+      "key": "fluent-1f40d",
+      "name": "snake",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f40d.svg",
+      "unicode": "1f40d",
+      "glyph": "🐍",
+      "keywords": [
+        "bearer",
+        "Ophiuchus",
+        "serpent",
+        "snake",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f577-fe0f",
+      "name": "spider",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f577-fe0f.svg",
+      "unicode": "1f577 fe0f",
+      "glyph": "🕷️",
+      "keywords": [
+        "insect",
+        "spider"
+      ]
+    },
+    {
+      "key": "fluent-1f578-fe0f",
+      "name": "spider web",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f578-fe0f.svg",
+      "unicode": "1f578 fe0f",
+      "glyph": "🕸️",
+      "keywords": [
+        "spider",
+        "web"
+      ]
+    },
+    {
+      "key": "fluent-1f41a",
+      "name": "spiral shell",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f41a.svg",
+      "unicode": "1f41a",
+      "glyph": "🐚",
+      "keywords": [
+        "shell",
+        "spiral"
+      ]
+    },
+    {
+      "key": "fluent-1f433",
+      "name": "spouting whale",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f433.svg",
+      "unicode": "1f433",
+      "glyph": "🐳",
+      "keywords": [
+        "face",
+        "spouting",
+        "whale"
+      ]
+    },
+    {
+      "key": "fluent-1f33b",
+      "name": "sunflower",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f33b.svg",
+      "unicode": "1f33b",
+      "glyph": "🌻",
+      "keywords": [
+        "flower",
+        "sun",
+        "sunflower"
+      ]
+    },
+    {
+      "key": "fluent-1f9a2",
+      "name": "swan",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f9a2.svg",
+      "unicode": "1f9a2",
+      "glyph": "🦢",
+      "keywords": [
+        "bird",
+        "cygnet",
+        "swan",
+        "ugly duckling"
+      ]
+    },
+    {
+      "key": "fluent-1f405",
+      "name": "tiger",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f405.svg",
+      "unicode": "1f405",
+      "glyph": "🐅",
+      "keywords": [
+        "tiger"
+      ]
+    },
+    {
+      "key": "fluent-1f42f",
+      "name": "tiger face",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f42f.svg",
+      "unicode": "1f42f",
+      "glyph": "🐯",
+      "keywords": [
+        "face",
+        "tiger"
+      ]
+    },
+    {
+      "key": "fluent-1f420",
+      "name": "tropical fish",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f420.svg",
+      "unicode": "1f420",
+      "glyph": "🐠",
+      "keywords": [
+        "fish",
+        "tropical"
+      ]
+    },
+    {
+      "key": "fluent-1f337",
+      "name": "tulip",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f337.svg",
+      "unicode": "1f337",
+      "glyph": "🌷",
+      "keywords": [
+        "flower",
+        "tulip"
+      ]
+    },
+    {
+      "key": "fluent-1f983",
+      "name": "turkey",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f983.svg",
+      "unicode": "1f983",
+      "glyph": "🦃",
+      "keywords": [
+        "bird",
+        "turkey"
+      ]
+    },
+    {
+      "key": "fluent-1f422",
+      "name": "turtle",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f422.svg",
+      "unicode": "1f422",
+      "glyph": "🐢",
+      "keywords": [
+        "terrapin",
+        "tortoise",
+        "turtle"
+      ]
+    },
+    {
+      "key": "fluent-1f42b",
+      "name": "two-hump camel",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f42b.svg",
+      "unicode": "1f42b",
+      "glyph": "🐫",
+      "keywords": [
+        "bactrian",
+        "camel",
+        "hump",
+        "two-hump camel"
+      ]
+    },
+    {
+      "key": "fluent-1f984",
+      "name": "unicorn",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f984.svg",
+      "unicode": "1f984",
+      "glyph": "🦄",
+      "keywords": [
+        "face",
+        "unicorn"
+      ]
+    },
+    {
+      "key": "fluent-1f403",
+      "name": "water buffalo",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f403.svg",
+      "unicode": "1f403",
+      "glyph": "🐃",
+      "keywords": [
+        "buffalo",
+        "water"
+      ]
+    },
+    {
+      "key": "fluent-1f40b",
+      "name": "whale",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f40b.svg",
+      "unicode": "1f40b",
+      "glyph": "🐋",
+      "keywords": [
+        "whale"
+      ]
+    },
+    {
+      "key": "fluent-1f4ae",
+      "name": "white flower",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f4ae.svg",
+      "unicode": "1f4ae",
+      "glyph": "💮",
+      "keywords": [
+        "flower",
+        "white flower"
+      ]
+    },
+    {
+      "key": "fluent-1f940",
+      "name": "wilted flower",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f940.svg",
+      "unicode": "1f940",
+      "glyph": "🥀",
+      "keywords": [
+        "flower",
+        "wilted"
+      ]
+    },
+    {
+      "key": "fluent-1fabd",
+      "name": "wing",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fabd.svg",
+      "unicode": "1fabd",
+      "glyph": "🪽",
+      "keywords": [
+        "angelic",
+        "aviation",
+        "bird",
+        "flying",
+        "mythology",
+        "wing"
+      ]
+    },
+    {
+      "key": "fluent-1f43a",
+      "name": "wolf",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f43a.svg",
+      "unicode": "1f43a",
+      "glyph": "🐺",
+      "keywords": [
+        "face",
+        "wolf"
+      ]
+    },
+    {
+      "key": "fluent-1fab1",
+      "name": "worm",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1fab1.svg",
+      "unicode": "1fab1",
+      "glyph": "🪱",
+      "keywords": [
+        "annelid",
+        "earthworm",
+        "parasite",
+        "worm"
+      ]
+    },
+    {
+      "key": "fluent-1f993",
+      "name": "zebra",
+      "category": "Animals & Nature",
+      "path": "/static/avatars/fluent/icons/fluent-1f993.svg",
+      "unicode": "1f993",
+      "glyph": "🦓",
+      "keywords": [
+        "stripe",
+        "zebra"
+      ]
+    },
+    {
+      "key": "fluent-1f3fa",
+      "name": "amphora",
+      "category": "Food & Drink",
+      "path": "/static/avatars/fluent/icons/fluent-1f3fa.svg",
+      "unicode": "1f3fa",
+      "glyph": "🏺",
+      "keywords": [
+        "amphora",
+        "Aquarius",
+        "cooking",
+        "drink",
+        "jug",
+        "zodiac"
+      ]
+    },
+    {
+      "key": "fluent-1f951",
+      "name": "avocado",
+      "category": "Food & Drink",
+      "path": "/static/avatars/fluent/icons/fluent-1f951.svg",
+      "unicode": "1f951",
+      "glyph": "🥑",
+      "keywords": [
+        "avocado",
+        "food",
+        "fruit"
+      ]
+    }
+  ]
+}
