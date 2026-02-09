@@ -73,6 +73,8 @@ Why these choices:
 - `OpenSSH`: keeps remote admin access available.
 - UTC timezone: avoids confusion when correlating auth/session/log timestamps.
 
+Simple firewall mode (recommended for this runbook): configure firewall on-server with `ufw` only.
+
 Firewall:
 
 ```bash
@@ -83,10 +85,12 @@ sudo ufw enable
 sudo ufw status
 ```
 
-Is it a problem if you skip firewall setup?
+If your cloud provider firewall is already set up, you can keep it, but this guide does not require it.
+
+Is it a problem if you skip firewall setup entirely?
 
 - Not always an immediate outage risk, but it increases blast radius if any service accidentally binds publicly.
-- Cloud-provider firewalls can help, but host firewall is a second control layer and catches mistakes.
+- Cloud/provider firewalls can help, but host firewall is usually simpler to keep in sync with this guide.
 - In practice, skipping this is a common reason internal-only services become internet-exposed.
 
 ## 3. Create App User + Directories
