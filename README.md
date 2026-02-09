@@ -5,6 +5,12 @@ Decidero GDSS is a group decision support system for facilitated meetings with a
 Admin hosting runbook: `docs/ADMIN_HOSTING_GUIDE.md`  
 Server production runbook: `docs/SERVER_HOSTING_GUIDE.md`
 
+## About
+Decidero GDSS is maintained by John Kruse.
+
+- Project repository: `https://github.com/JohnKruse/decidero_gdss_public`
+- License: Apache License 2.0 (`LICENSE`)
+
 ## Quick Start (Local Host)
 1. Create and activate a virtual environment.
 2. Install dependencies.

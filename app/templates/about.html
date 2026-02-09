@@ -1,0 +1,23 @@
+{% extends "_base.html" %}
+
+{% block title %}About · Decidero{% endblock %}
+
+{% block content %}
+<section class="layout-grid">
+    <article class="layout-card">
+        <h2>About Decidero</h2>
+        <p style="margin-top: 0.6rem;">
+            Decidero GDSS is a group decision support system for facilitated, activity-driven collaboration.
+            It is maintained by John Kruse.
+        </p>
+        <p style="margin-top: 0.9rem;">
+            Source code:
+            <a href="{{ project_github_url }}" target="_blank" rel="noopener noreferrer">{{ project_github_url }}</a>
+        </p>
+        <p style="margin-top: 0.5rem;">
+            License:
+            <a href="{{ project_license_url }}" target="_blank" rel="noopener noreferrer">Apache License 2.0</a>
+        </p>
+    </article>
+</section>
+{% endblock %}

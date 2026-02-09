@@ -33,8 +33,10 @@ body {
     color: var(--text-color);
     min-height: 100vh;
     display: flex;
+    flex-direction: column;
     justify-content: center;
     align-items: center;
+    padding: 1rem;
     background-image: 
         linear-gradient(var(--grid-color) 1px, transparent 1px),
         linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
@@ -51,6 +53,28 @@ body {
     position: relative;
     overflow: hidden;
     border: 1px solid var(--silver);
+}
+
+.auth-site-footer {
+    position: fixed;
+    bottom: 0.75rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.82rem;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(11, 61, 145, 0.15);
+    border-radius: 999px;
+    padding: 0.35rem 0.8rem;
+    color: rgba(11, 61, 145, 0.85);
+}
+
+.auth-site-footer a {
+    color: var(--navy-blue);
+    text-decoration: none;
+}
+
+.auth-site-footer a:hover {
+    text-decoration: underline;
 }
 
 .login-container::before {

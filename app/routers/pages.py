@@ -52,6 +52,8 @@ def _load_default_user_password() -> str:
 
 
 DEFAULT_USER_PASSWORD = _load_default_user_password()
+PROJECT_GITHUB_URL = "https://github.com/JohnKruse/decidero_gdss_public"
+PROJECT_LICENSE_URL = f"{PROJECT_GITHUB_URL}/blob/main/LICENSE"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -63,6 +65,24 @@ async def root(
     if current_user:
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
     return RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/about", response_class=HTMLResponse, response_model=None)
+async def about(
+    request: Request,
+    current_user: User = Depends(get_optional_user_model_dependency),
+):
+    """Public about page with project attribution and licensing links."""
+    return templates.TemplateResponse(
+        request,
+        "about.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "project_github_url": PROJECT_GITHUB_URL,
+            "project_license_url": PROJECT_LICENSE_URL,
+        },
+    )
 
 
 @router.get("/dashboard", response_class=HTMLResponse, response_model=None)
