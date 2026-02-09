@@ -253,7 +253,17 @@ Start tunnel:
 cloudflared tunnel --url http://127.0.0.1:8000
 ```
 
-Share the printed `https://*.trycloudflare.com` URL.
+Copy/share the printed `https://*.trycloudflare.com` URL.
+
+Example output (copy the URL on the line with `https://...trycloudflare.com`):
+
+```text
+2026-02-09T14:34:49Z INF Requesting new quick Tunnel on trycloudflare.com...
+2026-02-09T14:34:53Z INF +--------------------------------------------------------------------------------------------+
+2026-02-09T14:34:53Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+2026-02-09T14:34:53Z INF |  https://colours-mercy-sections-analysts.trycloudflare.com                                 |
+2026-02-09T14:34:53Z INF +--------------------------------------------------------------------------------------------+
+```
 
 Notes:
 
