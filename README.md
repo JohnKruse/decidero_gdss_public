@@ -3,7 +3,7 @@
 Decidero GDSS is a group decision support system for facilitated meetings with activity-based workflows (brainstorming, voting, transfer/curation).
 
 Admin hosting runbook: `docs/ADMIN_HOSTING_GUIDE.md`  
-VPS production runbook: `docs/VPS_HOSTING_GUIDE.md`
+Server production runbook: `docs/SERVER_HOSTING_GUIDE.md`
 
 ## Quick Start (Local Host)
 1. Create and activate a virtual environment.
