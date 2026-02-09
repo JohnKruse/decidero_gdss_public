@@ -127,6 +127,8 @@ sudo -u decidero /opt/decidero/venv/bin/pip install --upgrade pip
 sudo -u decidero /opt/decidero/venv/bin/pip install -r /opt/decidero/app/requirements.txt
 ```
 
+Note: this installs code + dependencies only. The app is started in Step 6 when `systemd` is enabled.
+
 ## 5. Runtime Environment File
 
 This app reads environment variables directly. It does **not** auto-load `.env` by default in production startup, so use a systemd `EnvironmentFile`.
@@ -215,6 +217,14 @@ sudo systemctl status decidero --no-pager
 Health check:
 
 ```bash
+curl -sS http://127.0.0.1:8000/health
+```
+
+After any later code update (`git pull` / `deploy_decidero.sh`), restart the service:
+
+```bash
+sudo systemctl restart decidero
+sudo systemctl status decidero --no-pager
 curl -sS http://127.0.0.1:8000/health
 ```
 
