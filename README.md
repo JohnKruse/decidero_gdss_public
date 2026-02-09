@@ -6,8 +6,14 @@
 
 Decidero GDSS is a group decision support system for facilitated meetings with activity-based workflows (brainstorming, voting, transfer/curation).
 
-Admin hosting runbook: `docs/ADMIN_HOSTING_GUIDE.md`  
-Server production runbook: `docs/SERVER_HOSTING_GUIDE.md`
+> [!IMPORTANT]
+> **READ THESE RUNBOOKS BEFORE USING QUICK START FOR HOSTING/DEPLOYMENT.**
+>
+> Start here:
+> 1. **Admin hosting runbook:** [`docs/ADMIN_HOSTING_GUIDE.md`](docs/ADMIN_HOSTING_GUIDE.md)
+> 2. **Server production runbook:** [`docs/SERVER_HOSTING_GUIDE.md`](docs/SERVER_HOSTING_GUIDE.md)
+>
+> `Quick Start (Local Host)` below is for local development, not production hosting.
 
 ## About
 Decidero GDSS is maintained by John Kruse.
