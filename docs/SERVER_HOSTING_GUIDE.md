@@ -172,7 +172,8 @@ The main command block above already generates and writes this for you.
 
 Create `/etc/systemd/system/decidero.service`:
 
-```ini
+```bash
+sudo tee /etc/systemd/system/decidero.service >/dev/null <<'EOF'
 [Unit]
 Description=Decidero FastAPI Service
 After=network.target
@@ -191,6 +192,7 @@ TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
+EOF
 ```
 
 Why `systemd` instead of running in a shell:
