@@ -108,8 +108,15 @@ If you run as `root`, a code or dependency exploit has full-system write access.
 Deploy code:
 
 ```bash
-sudo -u decidero git clone <YOUR_REPO_URL> /opt/decidero/app
+# Public repo (direct copy/paste)
+sudo -u decidero git clone https://github.com/JohnKruse/decidero_gdss_public.git /opt/decidero/app
 cd /opt/decidero/app
+```
+
+If you are deploying a fork or private copy instead, replace the URL with your repo:
+
+```bash
+sudo -u decidero git clone <YOUR_REPO_URL> /opt/decidero/app
 ```
 
 ## 4. Python Environment
