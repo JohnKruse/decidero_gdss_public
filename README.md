@@ -1,5 +1,9 @@
 # Decidero GDSS
 
+<p align="center">
+  <img src="app/static/assets/images/DecideroLogo.svg" alt="Decidero logo" width="240" />
+</p>
+
 Decidero GDSS is a group decision support system for facilitated meetings with activity-based workflows (brainstorming, voting, transfer/curation).
 
 Admin hosting runbook: `docs/ADMIN_HOSTING_GUIDE.md`  
