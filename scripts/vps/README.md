@@ -1,7 +1,7 @@
 # VPS Automation Scripts
 
 <p align="center">
-  <img src="../../app/static/assets/images/DecideroLogo.svg" alt="Decidero logo" width="220" />
+  <img src="../../app/static/assets/images/logo-360.png" alt="Decidero logo" width="220" />
 </p>
 
 Deploy Decidero on a fresh Ubuntu/Debian Linux server in a predictable, production-minded way without turning setup into a weekend project. These scripts automate the manual runbook in `docs/SERVER_HOSTING_GUIDE.md` so you get repeatability, safer defaults, and a cleaner path from "new server" to "live workshop."

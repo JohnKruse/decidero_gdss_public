@@ -24,7 +24,12 @@
          data-ui-refresh-failure-backoff-seconds="{{ ui_refresh.get('failure_backoff_seconds', '') if ui_refresh else '' }}">
         <header class="layout-header top-nav">
             <div class="logo-section">
-                <img src="/static/assets/images/DecideroLogo.svg" alt="Decidero Logo" class="decidero-logo">
+                <img
+                    src="/static/assets/images/logo-180.png"
+                    srcset="/static/assets/images/logo-180.png 1x, /static/assets/images/logo-360.png 2x, /static/assets/images/logo-720.png 4x"
+                    alt="Decidero Logo"
+                    class="decidero-logo"
+                >
                 <div>
                     <h1>DECIDERO GDSS</h1>
                     <p style="margin:0; color: var(--silver); font-size: 0.9rem;">Collaborative Decision Platform</p>
