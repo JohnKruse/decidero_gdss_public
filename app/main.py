@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.staticfiles import StaticFiles  # For serving static files
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from app.database import engine, Base, SessionLocal
 from app.database import ensure_sqlite_schema
@@ -244,7 +245,7 @@ async def health_check():
     try:
         db = SessionLocal()
         # Simple query to check DB connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         return {"status": "healthy", "database": "connected"}
     except Exception as e:
