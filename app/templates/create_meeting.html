@@ -210,6 +210,20 @@ endblock %}
                     options: ['Edit vote option here'],
                 },
             },
+            {
+                tool_type: 'categorization',
+                label: 'Bucketing / Categorization',
+                description: 'Sort ideas into facilitator-defined buckets with an always-available Unsorted lane.',
+                default_config: {
+                    mode: 'FACILITATOR_LIVE',
+                    items: ['Edit item here'],
+                    buckets: ['Category 1', 'Category 2'],
+                    agreement_threshold: 0.6,
+                    minimum_ballots: 1,
+                    private_until_reveal: true,
+                    allow_unsorted_submission: true,
+                },
+            },
         ];
 
         let moduleCatalog = [...DEFAULT_MODULES];
@@ -296,6 +310,13 @@ endblock %}
             'show_results_immediately': 'Show results to participants before submission',
             'options': 'Vote candidates',
             'randomize_participant_order': 'Randomize participant idea order',
+            'mode': 'Categorization mode',
+            'items': 'Ideas to categorize',
+            'buckets': 'Buckets',
+            'agreement_threshold': 'Agreement threshold',
+            'minimum_ballots': 'Minimum ballots',
+            'private_until_reveal': 'Private until facilitator reveal',
+            'allow_unsorted_submission': 'Allow unsorted submission',
         };
         function formatConfigLabel(key) {
             if (CONFIG_LABEL_MAP[key]) return CONFIG_LABEL_MAP[key];
@@ -413,7 +434,7 @@ endblock %}
                     labelSpan.textContent = formatConfigLabel(key);
                     field.appendChild(labelSpan);
                     const valueOverride = overrideConfig[key]; let input; let metaType = typeof defaultValue; let parseAsJson = false;
-                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); let source = valueOverride; if (!Array.isArray(source)) { if (typeof source === 'string') { source = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { source = defaultValue; } } input.value = Array.isArray(source) ? source.join('\n') : ''; metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${lines.length} candidate${lines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
+                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); let source = valueOverride; if (!Array.isArray(source)) { if (typeof source === 'string') { source = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { source = defaultValue; } } input.value = Array.isArray(source) ? source.join('\n') : ''; metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${lines.length} candidate${lines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } if (toolType === 'categorization' && (key === 'items' || key === 'buckets')) { input.placeholder = key === 'items' ? 'One idea per line.' : 'One bucket/category per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = input.placeholder; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); const noun = key === 'items' ? 'idea' : 'bucket'; count.textContent = `${lines.length} ${noun}${lines.length === 1 ? '' : 's'}`; }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
                     else if (metaType === 'number') {
                         input = document.createElement('input');
                         input.type = 'number';

@@ -25,6 +25,7 @@ DEFAULT_ACTIVITY_PREFIX = "ACTVT"
 ACTIVITY_TYPE_PREFIXES = {
     "brainstorming": "BRAINS",
     "voting": "RANKVT",
+    "categorization": "CATGRY",
     "prioritization": "PRIORI",
     "discussion": "DISCUS",
 }

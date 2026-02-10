@@ -79,6 +79,20 @@
                     options: ["Edit vote option here"],
                 },
             },
+            {
+                tool_type: "categorization",
+                label: "Bucketing / Categorization",
+                description: "Sort ideas into facilitator-defined buckets.",
+                default_config: {
+                    mode: "FACILITATOR_LIVE",
+                    items: ["Edit item here"],
+                    buckets: ["Category 1", "Category 2"],
+                    agreement_threshold: 0.6,
+                    minimum_ballots: 1,
+                    private_until_reveal: true,
+                    allow_unsorted_submission: true,
+                },
+            },
         ];
 
         const CONFIG_LABEL_MAP = {
@@ -90,6 +104,13 @@
             show_results_immediately: "Show results to participants before submission",
             options: "Vote candidates",
             randomize_participant_order: "Randomize participant idea order",
+            mode: "Categorization mode",
+            items: "Ideas to categorize",
+            buckets: "Buckets",
+            agreement_threshold: "Agreement threshold",
+            minimum_ballots: "Minimum ballots",
+            private_until_reveal: "Private until facilitator reveal",
+            allow_unsorted_submission: "Allow unsorted submission",
         };
 
         const ui = {

@@ -55,6 +55,7 @@ def load_builtin_plugins() -> Iterable[ActivityPlugin]:
     modules = [
         "app.plugins.builtin.brainstorming_plugin",
         "app.plugins.builtin.voting_plugin",
+        "app.plugins.builtin.categorization_plugin",
     ]
     plugins: List[ActivityPlugin] = []
     for module_name in modules:
