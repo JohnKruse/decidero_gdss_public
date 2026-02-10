@@ -15,6 +15,7 @@ from sqlalchemy import text
 
 from app.database import engine, Base, SessionLocal
 from app.database import ensure_sqlite_schema
+import app.models  # noqa: F401  # Ensure all SQLAlchemy models are registered
 from app.routers import auth as auth_router
 from app.routers import pages as pages_router
 from app.routers import users as users_router
@@ -22,6 +23,7 @@ from app.routers import meetings as meetings_router
 from app.routers import brainstorming as brainstorming_router
 from app.routers import transfer as transfer_router
 from app.routers import voting as voting_router
+from app.routers import categorization as categorization_router
 from app.routers import realtime as realtime_router
 from app.auth.auth import auth_middleware  # Updated middleware name
 from app.models.meeting import meeting_facilitators_table
@@ -198,6 +200,7 @@ app.include_router(realtime_router.router)
 app.include_router(brainstorming_router.brainstorming_router)
 app.include_router(transfer_router.transfer_router)
 app.include_router(voting_router.router)
+app.include_router(categorization_router.router)
 
 
 @app.exception_handler(Exception)

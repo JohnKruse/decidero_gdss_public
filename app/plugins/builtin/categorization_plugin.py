@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
+from app.services.categorization_manager import CategorizationManager
 
 
 class CategorizationPlugin(ActivityPlugin):
@@ -16,30 +17,45 @@ class CategorizationPlugin(ActivityPlugin):
             "mode": "FACILITATOR_LIVE",
             "items": [],
             "buckets": [],
+            "single_assignment_only": True,
             "agreement_threshold": 0.60,
+            "margin_threshold": 0.15,
             "minimum_ballots": 1,
+            "tie_policy": "TIE_UNRESOLVED",
+            "missing_vote_handling": "ignore",
             "private_until_reveal": True,
             "allow_unsorted_submission": True,
         },
     )
 
     def open_activity(self, context, input_bundle=None) -> None:
-        if not input_bundle:
-            return None
-
         config = dict(context.activity.config or {})
+        seeded_from_bundle = False
+
         existing_items = config.get("items")
-        if isinstance(existing_items, list) and existing_items:
-            return None
+        if input_bundle and not (isinstance(existing_items, list) and existing_items):
+            seeded_items = self._seed_items_from_bundle(input_bundle)
+            if seeded_items:
+                config["items"] = seeded_items
+                seeded_from_bundle = True
 
-        seeded_items = self._seed_items_from_bundle(input_bundle)
-        if not seeded_items:
-            return None
+        if seeded_from_bundle:
+            CategorizationManager(context.db).reset_activity_state(
+                context.meeting.meeting_id,
+                context.activity.activity_id,
+                clear_bundles=True,
+            )
 
-        config["items"] = seeded_items
         context.activity.config = config
         context.db.add(context.activity)
         context.db.commit()
+        context.db.refresh(context.activity)
+
+        CategorizationManager(context.db).seed_activity(
+            meeting_id=context.meeting.meeting_id,
+            activity=context.activity,
+            actor_user_id=getattr(getattr(context, "user", None), "user_id", None),
+        )
         return None
 
     def close_activity(self, context) -> Optional[Dict[str, Any]]:
@@ -72,10 +88,28 @@ class CategorizationPlugin(ActivityPlugin):
         metadata = dict(getattr(input_bundle, "bundle_metadata", {}) or {})
         include_comments = bool(metadata.get("include_comments", False))
         comments_by_parent = metadata.get("comments_by_parent", {}) or {}
+        if not isinstance(comments_by_parent, dict):
+            comments_by_parent = {}
+
+        # Fallback: derive parent->comments map from item rows when metadata is missing.
+        if include_comments and not comments_by_parent:
+            derived: Dict[str, List[Dict[str, Any]]] = {}
+            for row in items:
+                if not isinstance(row, dict):
+                    continue
+                parent_id = row.get("parent_id")
+                if parent_id is None:
+                    continue
+                parent_key = str(parent_id)
+                derived.setdefault(parent_key, []).append(row)
+            comments_by_parent = derived
 
         seeded: List[Dict[str, Any]] = []
         for entry in items:
             if not isinstance(entry, dict):
+                continue
+            # Categorization consumes idea rows only; comments are folded into parent content.
+            if entry.get("parent_id") is not None:
                 continue
             content = str(entry.get("content", "")).strip()
             if not content:
