@@ -20,6 +20,7 @@ from app.services import meeting_state_manager
 from app.services.activity_catalog import get_activity_definition
 from app.services.transfer_source import build_transfer_items
 from app.services.voting_manager import VotingManager
+from app.services.categorization_manager import CategorizationManager
 from app.utils.transfer_metadata import append_transfer_history, ensure_transfer_metadata
 from app.utils.websocket_manager import websocket_manager
 
@@ -482,6 +483,40 @@ async def commit_transfer(
                     payload.include_comments,
                     bool(comments_by_parent)
                 )
+    if target_tool == "categorization":
+        incoming_items = config.get("items")
+        items_missing = not isinstance(incoming_items, list) or not incoming_items
+        if not items_missing:
+            normalized_existing = [
+                str(value).strip().lower()
+                for value in incoming_items
+                if str(value).strip()
+            ]
+            if normalized_existing in (
+                ["edit item here"],
+                ["one idea per line."],
+            ):
+                items_missing = True
+        if items_missing:
+            mapped_items = []
+            for entry in ideas:
+                if not isinstance(entry, dict):
+                    continue
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                if payload.include_comments and comments_by_parent:
+                    content = _append_comments_to_content(entry, comments_by_parent)
+                mapped_items.append(content)
+            if mapped_items:
+                config["items"] = mapped_items
+                logger.info(
+                    "transfer commit created categorization items: count=%d include_comments=%s has_comments=%s",
+                    len(mapped_items),
+                    payload.include_comments,
+                    bool(comments_by_parent),
+                )
+        config.setdefault("mode", "FACILITATOR_LIVE")
     agenda_payload = AgendaActivityCreate(
         tool_type=target_tool or target.tool_type,
         title=title,
@@ -495,6 +530,16 @@ async def commit_transfer(
     if target_tool == "voting":
         VotingManager(meeting_manager.db).reset_activity_state(
             meeting_id, created.activity_id, clear_bundles=True
+        )
+    if target_tool == "categorization":
+        cat_manager = CategorizationManager(meeting_manager.db)
+        cat_manager.reset_activity_state(
+            meeting_id, created.activity_id, clear_bundles=True
+        )
+        cat_manager.seed_activity(
+            meeting_id=meeting_id,
+            activity=created,
+            actor_user_id=current_user.user_id,
         )
 
     bundle_metadata = dict(payload.metadata or {})

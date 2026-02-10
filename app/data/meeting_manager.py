@@ -10,6 +10,12 @@ from ..models.idea import Idea
 from ..models.voting import VotingVote
 from ..models.activity_bundle import ActivityBundle
 from ..models.user import User, UserRole
+from ..models.categorization import (
+    CategorizationAssignment,
+    CategorizationAuditEvent,
+    CategorizationBallot,
+    CategorizationFinalAssignment,
+)
 from ..schemas.meeting import MeetingCreate, AgendaActivityCreate, AgendaActivityUpdate
 from ..database import get_db
 from ..utils.identifiers import (
@@ -171,6 +177,25 @@ class MeetingManager:
                 )
             )
 
+        # Keep categorization runtime state in sync with agenda config immediately.
+        if created:
+            from ..services.categorization_manager import CategorizationManager
+
+            manager = CategorizationManager(self.db)
+            for activity in created:
+                if (activity.tool_type or "").lower() != "categorization":
+                    continue
+                manager.reset_activity_state(
+                    meeting_id=meeting.meeting_id,
+                    activity_id=activity.activity_id,
+                    clear_bundles=True,
+                )
+                manager.seed_activity(
+                    meeting_id=meeting.meeting_id,
+                    activity=activity,
+                    actor_user_id=None,
+                )
+
         return created
 
     # ------------------------------------------------------------------ #
@@ -208,7 +233,73 @@ class MeetingManager:
             .distinct()
             .all()
         }
-        data_ids = {activity_id for activity_id in (idea_ids | vote_ids | bundle_ids) if activity_id}
+        categorization_ballot_ids = {
+            row[0]
+            for row in self.db.query(CategorizationBallot.activity_id)
+            .filter(
+                CategorizationBallot.meeting_id == meeting_id,
+                CategorizationBallot.activity_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        }
+        categorization_final_ids = {
+            row[0]
+            for row in self.db.query(CategorizationFinalAssignment.activity_id)
+            .filter(
+                CategorizationFinalAssignment.meeting_id == meeting_id,
+                CategorizationFinalAssignment.activity_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        }
+        categorization_moved_ids = {
+            row[0]
+            for row in self.db.query(CategorizationAssignment.activity_id)
+            .filter(
+                CategorizationAssignment.meeting_id == meeting_id,
+                CategorizationAssignment.activity_id.isnot(None),
+                CategorizationAssignment.is_unsorted.is_(False),
+            )
+            .distinct()
+            .all()
+        }
+        categorization_audit_ids = {
+            row[0]
+            for row in self.db.query(CategorizationAuditEvent.activity_id)
+            .filter(
+                CategorizationAuditEvent.meeting_id == meeting_id,
+                CategorizationAuditEvent.activity_id.isnot(None),
+                CategorizationAuditEvent.actor_user_id.isnot(None),
+                CategorizationAuditEvent.event_type.in_(
+                    [
+                        "bucket_created",
+                        "bucket_updated",
+                        "bucket_deleted",
+                        "bucket_reordered",
+                        "item_moved",
+                        "ballot_submitted",
+                        "ballot_unsubmitted",
+                        "final_assignment_set",
+                    ]
+                ),
+            )
+            .distinct()
+            .all()
+        }
+        data_ids = {
+            activity_id
+            for activity_id in (
+                idea_ids
+                | vote_ids
+                | bundle_ids
+                | categorization_ballot_ids
+                | categorization_final_ids
+                | categorization_moved_ids
+                | categorization_audit_ids
+            )
+            if activity_id
+        }
         return {activity_id: True for activity_id in data_ids}
 
     def get_activity_transfer_counts(self, meeting_id: str) -> Dict[str, Dict[str, Any]]:
@@ -334,6 +425,22 @@ class MeetingManager:
             if activity.tool_type == "voting":
                 self._enforce_voting_limits(updated_config)
             activity.config = updated_config
+            if activity.tool_type == "categorization":
+                refreshed_seed_keys = {"items", "buckets"}
+                if refreshed_seed_keys.intersection(set(payload.config.keys())):
+                    from ..services.categorization_manager import CategorizationManager
+
+                    manager = CategorizationManager(self.db)
+                    manager.reset_activity_state(
+                        meeting_id=meeting_id,
+                        activity_id=activity_id,
+                        clear_bundles=True,
+                    )
+                    manager.seed_activity(
+                        meeting_id=meeting_id,
+                        activity=activity,
+                        actor_user_id=None,
+                    )
         ordered_sequence: Optional[List[AgendaActivity]] = None
         if payload.order_index is not None:
             desired_position = max(1, payload.order_index)

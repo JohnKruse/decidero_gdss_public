@@ -80,6 +80,29 @@ It translates current Decidero contracts into concrete acceptance criteria for t
 - Broadcast a categorization refresh event after mutations (example type: `categorization_update`).
 - Broadcast payload should contain refresh context (`activity_id`) and avoid leaking private ballot contents.
 
+## API Surface (Current)
+
+- Base path: `/api/meetings/{meeting_id}/categorization`
+- Read:
+  - `GET /state?activity_id=...`
+  - `GET /ballot?activity_id=...` (parallel mode participant ballot view)
+  - `GET /disputed?activity_id=...` (facilitator, parallel mode)
+- Facilitator-live mutations:
+  - `POST /buckets`
+  - `PATCH /buckets/{category_id}`
+  - `DELETE /buckets/{category_id}`
+  - `POST /buckets/reorder`
+  - `POST /assignments`
+- Parallel mutations:
+  - `POST /ballot/assignments`
+  - `POST /ballot/submit`
+  - `POST /ballot/unsubmit`
+  - `POST /reveal`
+  - `POST /final-assignments`
+- Lock:
+  - `POST /lock`
+  - Once locked, mutation endpoints return conflict/forbidden responses.
+
 ## Lock / Finalize
 
 - Facilitator can lock/finalize activity.

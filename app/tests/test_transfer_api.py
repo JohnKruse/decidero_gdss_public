@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
+from app.models.categorization import CategorizationItem
 from app.models.idea import Idea
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
@@ -911,6 +912,110 @@ def test_transfer_commit_to_voting_preserves_option_labels(
         assert options_resp.status_code == 200, options_resp.json()
         labels = [opt["label"] for opt in options_resp.json().get("options", [])]
         assert set(labels) == set(idea_texts)
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_commit_to_categorization_populates_items(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Categorization Seed Test",
+            description="Ensure categorization items are seeded from transfer ideas.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Ideas",
+                config={"allow_subcomments": True},
+            )
+        ],
+    )
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_id,
+                    "agendaItemId": activity_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        parent_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Campus parking is limited"},
+        )
+        assert parent_resp.status_code == 201, parent_resp.json()
+        parent = parent_resp.json()
+        comment_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Especially during peak classes", "parent_id": parent["id"]},
+        )
+        assert comment_resp.status_code == 201, comment_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": activity_id, "include_comments": "true"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": activity_id,
+                "include_comments": True,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"tool_type": "categorization"},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+        new_activity = commit_resp.json()["new_activity"]
+        new_activity_id = new_activity["activity_id"]
+
+        refreshed = meeting_manager.get_meeting(meeting.meeting_id)
+        created = next(
+            item
+            for item in refreshed.agenda_activities
+            if item.activity_id == new_activity_id
+        )
+        seeded_items = created.config.get("items") or []
+        assert seeded_items
+        assert any("Campus parking is limited" in str(value) for value in seeded_items)
+        assert any("Comments:" in str(value) for value in seeded_items)
+        assert created.config.get("mode") == "FACILITATOR_LIVE"
+        seeded_rows = (
+            db_session.query(CategorizationItem)
+            .filter(
+                CategorizationItem.meeting_id == meeting.meeting_id,
+                CategorizationItem.activity_id == new_activity_id,
+            )
+            .all()
+        )
+        assert seeded_rows
+        assert any("Campus parking is limited" in (row.content or "") for row in seeded_rows)
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 

@@ -49,7 +49,7 @@ def test_categorization_models_roundtrip(db_session):
         meeting_id=meeting_id,
         activity_id=activity_id,
         category_id="UNSORTED",
-        title="Unsorted",
+        title="Unsorted Ideas",
         order_index=0,
         created_by=user_id,
     )
@@ -100,7 +100,7 @@ def test_categorization_models_roundtrip(db_session):
         .filter_by(meeting_id=meeting_id, activity_id=activity_id, category_id="UNSORTED")
         .one()
     )
-    assert stored_bucket.title == "Unsorted"
+    assert stored_bucket.title == "Unsorted Ideas"
 
 
 def test_categorization_item_unique_key_constraint(db_session):

@@ -14,7 +14,7 @@ FACILITATOR_LIVE_CONFIG = {
         "Idea B",
     ],
     "buckets": [
-        {"category_id": "UNSORTED", "title": "Unsorted", "order_index": 0},
+        {"category_id": "UNSORTED", "title": "Unsorted Ideas", "order_index": 0},
         {"category_id": "CAT-1", "title": "Category 1", "order_index": 1},
     ],
     "single_assignment_only": True,
@@ -36,7 +36,7 @@ PARALLEL_STATE = {
     "buckets": [
         {
             "category_id": "UNSORTED",
-            "title": "Unsorted",
+            "title": "Unsorted Ideas",
             "order_index": 0,
             "status": "active",
         },
@@ -74,7 +74,7 @@ FINAL_OUTPUT = {
     "meeting_id": "MTG20260210-0001",
     "activity_id": "MTG20260210-0001-CATGRY-0001",
     "categories": [
-        {"category_id": "UNSORTED", "title": "Unsorted", "item_ids": []},
+        {"category_id": "UNSORTED", "title": "Unsorted Ideas", "item_ids": []},
         {"category_id": "CAT-1", "title": "Category 1", "item_ids": ["item-1"]},
         {"category_id": "CAT-2", "title": "Category 2", "item_ids": ["item-2"]},
     ],

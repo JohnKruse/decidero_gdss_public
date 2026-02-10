@@ -18,7 +18,7 @@ from app.models.meeting import AgendaActivity
 
 
 UNSORTED_CATEGORY_ID = "UNSORTED"
-UNSORTED_TITLE = "Unsorted"
+UNSORTED_TITLE = "Unsorted Ideas"
 
 
 class CategorizationManager:
@@ -88,6 +88,12 @@ class CategorizationManager:
             .first()
         )
         if bucket:
+            if bucket.title != UNSORTED_TITLE or int(bucket.order_index or 0) != 0:
+                bucket.title = UNSORTED_TITLE
+                bucket.order_index = 0
+                self.db.add(bucket)
+                self.db.commit()
+                self.db.refresh(bucket)
             return bucket
 
         bucket = CategorizationBucket(
@@ -345,7 +351,30 @@ class CategorizationManager:
             .first()
         )
         next_order = int(max_order[0]) + 1 if max_order else 1
-        category_id = str(category_id or "").strip() or f"{activity_id}:bucket-{next_order}"
+        category_id = str(category_id or "").strip()
+        if not category_id:
+            prefix = f"{activity_id}:bucket-"
+            existing_ids = {
+                str(row[0] or "")
+                for row in self.db.query(CategorizationBucket.category_id)
+                .filter(
+                    CategorizationBucket.meeting_id == meeting_id,
+                    CategorizationBucket.activity_id == activity_id,
+                )
+                .all()
+            }
+            max_suffix = 0
+            for existing_id in existing_ids:
+                if not existing_id.startswith(prefix):
+                    continue
+                suffix = existing_id[len(prefix):]
+                if suffix.isdigit():
+                    max_suffix = max(max_suffix, int(suffix))
+            next_suffix = max_suffix + 1
+            category_id = f"{prefix}{next_suffix}"
+            while category_id in existing_ids:
+                next_suffix += 1
+                category_id = f"{prefix}{next_suffix}"
 
         existing = (
             self.db.query(CategorizationBucket)
@@ -495,7 +524,8 @@ class CategorizationManager:
         bucket_by_id = {bucket.category_id: bucket for bucket in buckets}
 
         normalized = [str(value).strip() for value in ordered_category_ids if str(value).strip()]
-        if UNSORTED_CATEGORY_ID in bucket_by_id and UNSORTED_CATEGORY_ID not in normalized:
+        normalized = [value for value in normalized if value != UNSORTED_CATEGORY_ID]
+        if UNSORTED_CATEGORY_ID in bucket_by_id:
             normalized = [UNSORTED_CATEGORY_ID, *normalized]
         for category_id in bucket_by_id:
             if category_id not in normalized:
@@ -556,7 +586,78 @@ class CategorizationManager:
                 for item in items
             ],
             "assignments": assignment_map,
+            "agreement_metrics": {},
         }
+
+    def compute_agreement_metrics(
+        self,
+        *,
+        meeting_id: str,
+        activity_id: str,
+        agreement_threshold: float,
+        minimum_ballots: int,
+    ) -> Dict[str, Dict[str, Any]]:
+        items = self.list_items(meeting_id, activity_id)
+        ballots = (
+            self.db.query(CategorizationBallot)
+            .filter(
+                CategorizationBallot.meeting_id == meeting_id,
+                CategorizationBallot.activity_id == activity_id,
+                CategorizationBallot.submitted.is_(True),
+            )
+            .all()
+        )
+
+        tally_by_item: Dict[str, Dict[str, int]] = {}
+        for ballot in ballots:
+            item_tally = tally_by_item.setdefault(ballot.item_key, {})
+            category_id = ballot.category_id or UNSORTED_CATEGORY_ID
+            item_tally[category_id] = int(item_tally.get(category_id, 0)) + 1
+
+        metrics: Dict[str, Dict[str, Any]] = {}
+        for item in items:
+            item_key = item.item_key
+            item_tally = tally_by_item.get(item_key, {})
+            ordered = sorted(item_tally.items(), key=lambda pair: (-pair[1], pair[0]))
+            valid_votes = sum(count for _, count in ordered)
+
+            if ordered:
+                top_category_id, top_count = ordered[0]
+            else:
+                top_category_id, top_count = UNSORTED_CATEGORY_ID, 0
+            second_count = ordered[1][1] if len(ordered) > 1 else 0
+            top_share = float(top_count / valid_votes) if valid_votes > 0 else 0.0
+            second_share = float(second_count / valid_votes) if valid_votes > 0 else 0.0
+            margin = float(top_share - second_share)
+            status_label = (
+                "AGREED"
+                if valid_votes >= max(0, int(minimum_ballots))
+                and top_share >= float(agreement_threshold)
+                else "DISPUTED"
+            )
+
+            metrics[item_key] = {
+                "top_category_id": top_category_id,
+                "top_count": top_count,
+                "top_share": top_share,
+                "second_share": second_share,
+                "margin": margin,
+                "valid_votes": valid_votes,
+                "status_label": status_label,
+                "tally": item_tally,
+            }
+        return metrics
+
+    def list_final_assignments(self, meeting_id: str, activity_id: str) -> Dict[str, str]:
+        rows = (
+            self.db.query(CategorizationFinalAssignment)
+            .filter(
+                CategorizationFinalAssignment.meeting_id == meeting_id,
+                CategorizationFinalAssignment.activity_id == activity_id,
+            )
+            .all()
+        )
+        return {row.item_key: row.category_id for row in rows}
 
     def upsert_ballot(
         self,

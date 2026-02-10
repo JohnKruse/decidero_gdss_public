@@ -1264,6 +1264,212 @@
   background: rgba(126, 192, 238, 0.12);
 }
 
+.categorization-toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.85rem;
+  align-items: center;
+}
+
+.categorization-toolbar #categorizationRefreshButton {
+  margin-left: auto;
+}
+
+.categorization-lock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  user-select: none;
+  color: #4f5d75;
+  font-size: 0.84rem;
+}
+
+.categorization-lock-label {
+  font-weight: 600;
+}
+
+.categorization-lock-toggle input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.categorization-lock-slider {
+  position: relative;
+  width: 46px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(11, 61, 145, 0.2);
+  border: 1px solid rgba(11, 61, 145, 0.35);
+  transition: background 0.15s ease;
+}
+
+.categorization-lock-slider::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: transform 0.15s ease;
+}
+
+.categorization-lock-toggle input[type="checkbox"]:checked + .categorization-lock-slider {
+  background: rgba(11, 61, 145, 0.78);
+}
+
+.categorization-lock-toggle input[type="checkbox"]:checked + .categorization-lock-slider::after {
+  transform: translateX(22px);
+}
+
+.categorization-lock-toggle input[type="checkbox"]:disabled + .categorization-lock-slider {
+  opacity: 0.6;
+}
+
+.categorization-board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.categorization-column {
+  border: 1px solid rgba(11, 61, 145, 0.12);
+  border-radius: 10px;
+  background: rgba(11, 61, 145, 0.03);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.categorization-bucket-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.categorization-bucket-controls .control-btn {
+  width: auto;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.categorization-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+  max-height: 24rem;
+  overflow-y: auto;
+}
+
+.categorization-list li {
+  border: 1px solid rgba(11, 61, 145, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 0.5rem 0.65rem;
+}
+
+#categorizationItemsList li {
+  padding: 0.35rem 0.5rem;
+}
+
+#categorizationItemsList {
+  max-height: 26rem;
+  overflow-y: auto;
+}
+
+#categorizationBucketsList li {
+  padding: 0.75rem 0.8rem;
+  min-height: 3.1rem;
+  display: flex;
+  align-items: center;
+}
+
+#categorizationBucketsList {
+  max-height: none;
+  overflow: visible;
+}
+
+.categorization-list li.is-draggable {
+  cursor: grab;
+}
+
+.categorization-list li.is-draggable:active {
+  cursor: grabbing;
+}
+
+.categorization-item-empty {
+  text-align: center;
+  font-style: italic;
+  color: #4f5d75;
+}
+
+.categorization-item-main {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.categorization-item-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: #4f5d75;
+}
+
+.categorization-item-actions {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.categorization-bucket-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.categorization-bucket-title {
+  font-weight: 600;
+  color: var(--navy-blue);
+}
+
+.categorization-bucket-count {
+  font-size: 0.82rem;
+  color: #4f5d75;
+}
+
+.categorization-bucket-item {
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.categorization-bucket-item:hover {
+  border-color: rgba(11, 61, 145, 0.38);
+}
+
+.categorization-bucket-item.is-selected {
+  border-color: rgba(11, 61, 145, 0.62);
+  background: rgba(126, 192, 238, 0.2);
+}
+
+.categorization-bucket-item.is-drop-target {
+  border-color: rgba(34, 139, 34, 0.8);
+  background: rgba(34, 139, 34, 0.12);
+}
+
+#categorizationItemsList li.is-drop-target {
+  border-color: rgba(34, 139, 34, 0.8);
+  background: rgba(34, 139, 34, 0.12);
+}
+
 @media (max-width: 720px) {
   .facilitator-controls-grid {
     flex-direction: column;
@@ -1286,6 +1492,10 @@
 
   .voting-footer-actions .control-btn {
     flex: 1;
+  }
+
+  .categorization-board {
+    grid-template-columns: 1fr;
   }
 }
 

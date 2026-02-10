@@ -219,6 +219,109 @@ textarea {
 .agenda-config-count { font-size: 0.78rem; color: #4b5563; font-weight: 600; }
 .agenda-module-select { min-width: 220px; padding: 0.5rem 0.6rem; border-radius: 8px; border: 1px solid var(--grid-color); background: var(--background-color); }
 .agenda-row-description { font-size: 0.9rem; color: #4b5563; }
+
+.agenda-config-categorization {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.agenda-config-row {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.agenda-config-row-title {
+    font-weight: 600;
+    color: var(--navy-blue);
+}
+
+.agenda-config-categorization textarea {
+    min-height: 88px;
+    width: 100%;
+}
+
+.agenda-config-lock-notice {
+    border: 1px solid rgba(180, 83, 9, 0.3);
+    background: rgba(255, 247, 237, 0.95);
+    color: #9a3412;
+    border-radius: 8px;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.87rem;
+}
+
+.agenda-config-locked {
+    opacity: 0.72;
+}
+
+.agenda-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.7rem;
+    flex-wrap: wrap;
+}
+
+.agenda-mode-toggle-input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 46px;
+    height: 26px;
+    border-radius: 999px;
+    background: rgba(11, 61, 145, 0.18);
+    border: 1px solid rgba(11, 61, 145, 0.3);
+    position: relative;
+    cursor: pointer;
+    transition: background 0.16s ease;
+}
+
+.agenda-mode-toggle-input::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    transition: transform 0.16s ease;
+}
+
+.agenda-mode-toggle-input:checked {
+    background: rgba(11, 61, 145, 0.75);
+}
+
+.agenda-mode-toggle-input:checked::after {
+    transform: translateX(20px);
+}
+
+.agenda-mode-toggle-label-option {
+    font-size: 0.9rem;
+    color: #374151;
+    font-weight: 600;
+    opacity: 0.75;
+    transition: opacity 0.16s ease, color 0.16s ease;
+}
+
+.agenda-mode-toggle-label-option.is-active {
+    opacity: 1;
+    color: var(--navy-blue);
+}
+
+.agenda-config-grid--parallel {
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    margin-top: 0.2rem;
+}
+
+.agenda-config-parallel-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.agenda-config-parallel-checkbox input[type="checkbox"] {
+    width: auto;
+}
+
 @media (max-width: 768px) {
     .actions-row { flex-direction: column; }
     .tab-buttons { flex-direction: column; }

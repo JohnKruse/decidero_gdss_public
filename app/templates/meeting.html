@@ -226,6 +226,49 @@
             </section>
             {% endgrab %}
 
+            {% grab id="meeting-categorization-panel" %}
+            <section class="content-card activity-panel categorization-panel" data-categorization-root hidden>
+                {{ section_header('Bucketing / Categorization', 'Group ideas into buckets and refine categories in real time.') }}
+                <div class="section-body">
+                    <p id="categorizationInstructions" class="voting-description">
+                        The facilitator will open categorization when ready.
+                    </p>
+                    <div id="categorizationError" class="brainstorming-error" hidden></div>
+                    <div class="categorization-toolbar">
+                        <button type="button" class="control-btn sm" id="categorizationSubmitBallotButton">Submit Ballot</button>
+                        <button type="button" class="control-btn sm" id="categorizationUnsubmitBallotButton">Unsubmit Ballot</button>
+                        <button type="button" class="control-btn sm" id="categorizationRevealButton">Reveal</button>
+                        <label class="categorization-lock-toggle" for="categorizationLockToggle">
+                            <span class="categorization-lock-label">Unlocked</span>
+                            <input type="checkbox" id="categorizationLockToggle" />
+                            <span class="categorization-lock-slider" aria-hidden="true"></span>
+                            <span class="categorization-lock-label">Locked</span>
+                        </label>
+                        <button type="button" class="control-btn sm" id="categorizationRefreshButton">Refresh</button>
+                    </div>
+                    <div class="categorization-board">
+                        <div class="categorization-column">
+                            <h3 id="categorizationOpenBucketTitle">Open Bucket Contents</h3>
+                            <ul id="categorizationItemsList" class="categorization-list">
+                                <li class="categorization-item-empty">No items available.</li>
+                            </ul>
+                        </div>
+                        <div class="categorization-column">
+                            <h3>Buckets (Drop Target)</h3>
+                            <div class="categorization-bucket-controls">
+                                <button type="button" class="control-btn sm" id="categorizationAddBucketButton">Add Bucket</button>
+                                <button type="button" class="control-btn sm" id="categorizationEditBucketButton">Edit Bucket</button>
+                                <button type="button" class="control-btn sm" id="categorizationDeleteBucketButton">Delete Bucket</button>
+                            </div>
+                            <ul id="categorizationBucketsList" class="categorization-list">
+                                <li class="categorization-item-empty">No buckets available.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            {% endgrab %}
+
             {% grab id="meeting-generic-activity-panel" %}
             <section class="content-card activity-panel generic-activity-panel" data-generic-tool hidden>
                 {{ section_header('Active Activity') }}

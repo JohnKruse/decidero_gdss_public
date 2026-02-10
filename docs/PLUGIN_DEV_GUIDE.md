@@ -97,6 +97,16 @@ The autosave runner is implemented in `app/plugins/autosave.py`.
 - Uses input bundle items to seed voting options (if options are not already set).
 - On stop/autosave, emits a bundle of options with vote totals.
 
+### Categorization
+- Seeds items from input bundle while preserving `metadata` and `source`.
+- Supports `FACILITATOR_LIVE` and `PARALLEL_BALLOT` modes.
+- Uses an implicit `UNSORTED` bucket and supports lock/finalize semantics.
+- On stop, emits output items with `metadata.categorization` plus bundle metadata:
+  - `categories`
+  - `finalization_metadata`
+  - `agreement_metrics` (parallel mode)
+  - `final_assignments`
+
 ### Curation
 - Designed to edit bundle items with facilitator-only endpoints.
 - Drafts are saved via API and autosave, output bundle is finalized on stop.

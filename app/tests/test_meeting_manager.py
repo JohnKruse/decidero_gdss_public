@@ -12,6 +12,11 @@ from app.schemas.meeting import (
 from app.models.user import User, UserRole
 from app.models.meeting import Meeting
 from app.models.idea import Idea
+from app.models.categorization import (
+    CategorizationAuditEvent,
+    CategorizationBucket,
+    CategorizationItem,
+)
 from app.utils.security import get_password_hash  # For creating test users
 from datetime import datetime, timedelta, UTC
 from app.utils.identifiers import generate_user_id
@@ -350,6 +355,183 @@ async def test_add_update_delete_agenda_activity(
         act.activity_id != new_activity.activity_id
         for act in refreshed.agenda_activities
     )
+
+
+def test_update_categorization_config_reseeds_runtime_state(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=2)
+    meeting_payload = MeetingCreate(
+        title="Categorization Config Reseed",
+        description="Ensure settings changes rebuild categorization runtime state",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorize",
+                config={"items": ["Original idea"], "buckets": ["Old bucket"]},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+
+    updated = meeting_manager_instance.update_agenda_activity(
+        meeting.meeting_id,
+        activity.activity_id,
+        AgendaActivityUpdate(
+            config={
+                "items": ["New idea A", "New idea B"],
+                "buckets": ["New bucket"],
+            }
+        ),
+    )
+    assert updated is not None
+
+    seeded_items = (
+        db_session.query(CategorizationItem)
+        .filter(
+            CategorizationItem.meeting_id == meeting.meeting_id,
+            CategorizationItem.activity_id == activity.activity_id,
+        )
+        .all()
+    )
+    assert len(seeded_items) == 2
+    assert {row.content for row in seeded_items} == {"New idea A", "New idea B"}
+
+    seeded_buckets = (
+        db_session.query(CategorizationBucket)
+        .filter(
+            CategorizationBucket.meeting_id == meeting.meeting_id,
+            CategorizationBucket.activity_id == activity.activity_id,
+        )
+        .all()
+    )
+    titles = {row.title for row in seeded_buckets}
+    assert "Unsorted Ideas" in titles
+    assert "New bucket" in titles
+
+
+def test_update_meeting_configuration_seeds_categorization_with_items_only(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=2)
+    meeting_payload = MeetingCreate(
+        title="Categorization Config Save",
+        description="Settings save path should seed categorization state",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideas")],
+    )
+
+    updated = meeting_manager_instance.update_meeting_configuration(
+        meeting.meeting_id,
+        title=meeting.title,
+        description=meeting.description,
+        start_time=meeting.started_at,
+        end_time=meeting.end_time,
+        participant_ids=[],
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Ideas"),
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Bucketing / Categorization",
+                config={"items": ["Alpha", "Beta"], "buckets": []},
+            ),
+        ],
+    )
+    assert updated is not None
+
+    cat_activity = next(
+        item for item in updated.agenda_activities if item.tool_type == "categorization"
+    )
+    seeded_items = (
+        db_session.query(CategorizationItem)
+        .filter(
+            CategorizationItem.meeting_id == meeting.meeting_id,
+            CategorizationItem.activity_id == cat_activity.activity_id,
+        )
+        .all()
+    )
+    assert len(seeded_items) == 2
+    assert {row.content for row in seeded_items} == {"Alpha", "Beta"}
+
+    seeded_buckets = (
+        db_session.query(CategorizationBucket)
+        .filter(
+            CategorizationBucket.meeting_id == meeting.meeting_id,
+            CategorizationBucket.activity_id == cat_activity.activity_id,
+        )
+        .all()
+    )
+    assert len(seeded_buckets) == 1
+    assert seeded_buckets[0].category_id == "UNSORTED"
+
+
+def test_get_activity_data_flags_includes_categorization_runtime_changes(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=2)
+    meeting_payload = MeetingCreate(
+        title="Categorization Data Flag",
+        description="Categorization edits should mark activity as having data",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorize",
+                config={"items": [], "buckets": []},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    db_session.add(
+        CategorizationAuditEvent(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            actor_user_id=test_facilitator.user_id,
+            event_type="bucket_created",
+            payload={"category_id": f"{activity.activity_id}:bucket-1"},
+        )
+    )
+    db_session.commit()
+
+    flags = meeting_manager_instance.get_activity_data_flags(meeting.meeting_id)
+    assert flags.get(activity.activity_id) is True
 
 
 def test_activity_participant_scope_management(

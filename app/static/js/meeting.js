@@ -85,8 +85,8 @@
                 description: "Sort ideas into facilitator-defined buckets.",
                 default_config: {
                     mode: "FACILITATOR_LIVE",
-                    items: ["Edit item here"],
-                    buckets: ["Category 1", "Category 2"],
+                    items: [],
+                    buckets: [],
                     single_assignment_only: true,
                     agreement_threshold: 0.6,
                     margin_threshold: 0.15,
@@ -254,6 +254,23 @@
             resultsTable: document.getElementById("votingResultsTable"),
             resultsBody: document.getElementById("votingResultsBody"),
             closeResultsModal: document.getElementById("closeVotingResultsModal"),
+        };
+
+        const categorization = {
+            root: document.querySelector("[data-categorization-root]"),
+            instructions: document.getElementById("categorizationInstructions"),
+            error: document.getElementById("categorizationError"),
+            openBucketTitle: document.getElementById("categorizationOpenBucketTitle"),
+            itemsList: document.getElementById("categorizationItemsList"),
+            bucketsList: document.getElementById("categorizationBucketsList"),
+            refresh: document.getElementById("categorizationRefreshButton"),
+            addBucket: document.getElementById("categorizationAddBucketButton"),
+            editBucket: document.getElementById("categorizationEditBucketButton"),
+            deleteBucket: document.getElementById("categorizationDeleteBucketButton"),
+            submitBallot: document.getElementById("categorizationSubmitBallotButton"),
+            unsubmitBallot: document.getElementById("categorizationUnsubmitBallotButton"),
+            reveal: document.getElementById("categorizationRevealButton"),
+            lockToggle: document.getElementById("categorizationLockToggle"),
         };
 
         const transfer = {
@@ -495,6 +512,14 @@
         let votingDraftVotes = new Map();
         let votingCommittedVotes = new Map();
         let activeVotingConfig = {};
+        let categorizationState = null;
+        let categorizationActivityId = null;
+        let categorizationRequestInFlight = false;
+        let activeCategorizationConfig = {};
+        let categorizationSelectedBucketId = null;
+        let categorizationDraggedItemKey = null;
+        let categorizationDraggedBucketId = null;
+        const categorizationItemOrder = new Map();
         const transferState = {
             donorActivityId: null,
             donorOrderIndex: null,
@@ -3861,6 +3886,493 @@
             }
         }
 
+        function setCategorizationError(message) {
+            if (!categorization.error) {
+                return;
+            }
+            if (!message) {
+                categorization.error.textContent = "";
+                categorization.error.hidden = true;
+                return;
+            }
+            categorization.error.textContent = message;
+            categorization.error.hidden = false;
+        }
+
+        function bucketCountsFromState(summary, assignmentMap = null) {
+            const counts = new Map();
+            const assignments = assignmentMap || summary?.assignments || {};
+            Object.values(assignments).forEach((categoryId) => {
+                const key = String(categoryId || "UNSORTED");
+                counts.set(key, (counts.get(key) || 0) + 1);
+            });
+            return counts;
+        }
+
+        async function moveCategorizationItem(itemKey, destinationCategoryId, mode) {
+            if (!categorizationActivityId) {
+                return;
+            }
+            const url = mode === "PARALLEL_BALLOT"
+                ? `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/ballot/assignments`
+                : `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/assignments`;
+            const payload = {
+                activity_id: categorizationActivityId,
+                item_key: itemKey,
+                category_id: destinationCategoryId,
+            };
+            const response = await fetch(url, {
+                method: "POST",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to move categorization item.");
+            }
+        }
+
+        async function reorderCategorizationBuckets(activityId, orderedCategoryIds) {
+            const response = await fetch(
+                `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/buckets/reorder`,
+                {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        activity_id: activityId,
+                        category_ids: orderedCategoryIds,
+                    }),
+                },
+            );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to reorder buckets.");
+            }
+        }
+
+        async function renameCategorizationBucket(activityId, categoryId, currentTitle) {
+            const title = window.prompt("Edit bucket title", currentTitle || "");
+            if (!title || !title.trim()) {
+                return;
+            }
+            const response = await fetch(
+                `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/buckets/${encodeURIComponent(categoryId)}`,
+                {
+                    method: "PATCH",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        activity_id: activityId,
+                        title: title.trim(),
+                    }),
+                },
+            );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to edit bucket.");
+            }
+        }
+
+        async function deleteCategorizationBucket(activityId, categoryId, bucketTitle) {
+            const confirmed = window.confirm(
+                `Delete bucket "${bucketTitle || categoryId}"? Items will move to Unsorted.`,
+            );
+            if (!confirmed) {
+                return;
+            }
+            const response = await fetch(
+                `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/buckets/${encodeURIComponent(categoryId)}`,
+                {
+                    method: "DELETE",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        activity_id: activityId,
+                    }),
+                },
+            );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to delete bucket.");
+            }
+        }
+
+        function renderCategorizationSummary(summary, eligibility) {
+            categorizationState = summary || null;
+            if (categorization.instructions) {
+                categorization.instructions.textContent =
+                    (summary && summary.mode === "PARALLEL_BALLOT")
+                        ? "Parallel ballot mode is active. Assign each item to a bucket and submit your ballot."
+                        : "Facilitator-live mode is active. Buckets and assignments update for everyone in real time.";
+            }
+            if (!categorization.itemsList || !categorization.bucketsList) {
+                return;
+            }
+            categorization.itemsList.innerHTML = "";
+            categorization.bucketsList.innerHTML = "";
+            if (!summary || !Array.isArray(summary.items)) {
+                const empty = document.createElement("li");
+                empty.className = "categorization-item-empty";
+                empty.textContent = "No items available.";
+                categorization.itemsList.appendChild(empty);
+                const emptyBucket = document.createElement("li");
+                emptyBucket.className = "categorization-item-empty";
+                emptyBucket.textContent = "No buckets available.";
+                categorization.bucketsList.appendChild(emptyBucket);
+                return;
+            }
+
+            const isFacilitator = Boolean(state.isFacilitator);
+            const mode = String(summary.mode || "FACILITATOR_LIVE").toUpperCase();
+            const assignments = summary.assignments || {};
+            const ballotAssignments = summary.ballot_assignments || summary.assignments || {};
+            const buckets = Array.isArray(summary.buckets) ? summary.buckets : [];
+            const effectiveAssignments = mode === "PARALLEL_BALLOT" && !isFacilitator
+                ? ballotAssignments
+                : assignments;
+            const counts = bucketCountsFromState(summary, effectiveAssignments);
+
+            if (!categorizationSelectedBucketId || !buckets.some((bucket) => bucket.category_id === categorizationSelectedBucketId)) {
+                const preferred = buckets.find((bucket) => bucket.category_id === "UNSORTED");
+                categorizationSelectedBucketId = preferred?.category_id || buckets[0]?.category_id || null;
+            }
+
+            const sortedBuckets = [...buckets].sort((a, b) => {
+                const aId = String(a.category_id || "");
+                const bId = String(b.category_id || "");
+                if (aId === "UNSORTED" && bId !== "UNSORTED") return -1;
+                if (bId === "UNSORTED" && aId !== "UNSORTED") return 1;
+                return Number(a.order_index || 0) - Number(b.order_index || 0);
+            });
+
+            if (buckets.length === 0) {
+                const emptyBucket = document.createElement("li");
+                emptyBucket.className = "categorization-item-empty";
+                emptyBucket.textContent = "No buckets available.";
+                categorization.bucketsList.appendChild(emptyBucket);
+            } else {
+                const canManageBuckets = mode === "FACILITATOR_LIVE" && isFacilitator && !summary.locked;
+                const collectBucketOrder = () => {
+                    const order = [];
+                    if (!categorization.bucketsList) {
+                        return order;
+                    }
+                    categorization.bucketsList.querySelectorAll(".categorization-bucket-item").forEach((entry) => {
+                        const value = String(entry.dataset.categoryId || "").trim();
+                        if (value) {
+                            order.push(value);
+                        }
+                    });
+                    return order;
+                };
+                const handlePersistBucketOrder = async () => {
+                    if (!categorizationActivityId) {
+                        return;
+                    }
+                    const orderedCategoryIds = collectBucketOrder();
+                    if (!orderedCategoryIds.length) {
+                        return;
+                    }
+                    try {
+                        setCategorizationError(null);
+                        await reorderCategorizationBuckets(categorizationActivityId, orderedCategoryIds);
+                        await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                    } catch (error) {
+                        setCategorizationError(error.message || "Unable to reorder buckets.");
+                    } finally {
+                        categorizationDraggedBucketId = null;
+                    }
+                };
+
+                sortedBuckets.forEach((bucket) => {
+                    const bucketId = String(bucket.category_id || "");
+                    const displayTitle = bucketId === "UNSORTED"
+                        ? "Unsorted Ideas"
+                        : (bucket.title || bucket.category_id || "Bucket");
+                    const li = document.createElement("li");
+                    li.className = "categorization-bucket-item";
+                    li.dataset.categoryId = bucketId;
+                    if (bucketId === categorizationSelectedBucketId) {
+                        li.classList.add("is-selected");
+                    }
+                    const row = document.createElement("div");
+                    row.className = "categorization-bucket-row";
+                    const title = document.createElement("span");
+                    title.className = "categorization-bucket-title";
+                    title.textContent = displayTitle;
+                    const count = document.createElement("span");
+                    count.className = "categorization-bucket-count";
+                    count.textContent = `${counts.get(bucketId) || 0} items`;
+                    row.append(title, count);
+                    li.appendChild(row);
+                    li.addEventListener("click", () => {
+                        categorizationSelectedBucketId = bucketId;
+                        renderCategorizationSummary(categorizationState, eligibility);
+                    });
+                    if (canManageBuckets && bucketId !== "UNSORTED") {
+                        li.draggable = true;
+                        li.classList.add("is-draggable");
+                        li.addEventListener("dragstart", (event) => {
+                            categorizationDraggedItemKey = null;
+                            categorizationDraggedBucketId = bucketId;
+                            if (event.dataTransfer) {
+                                event.dataTransfer.setData("text/x-cat-bucket", bucketId);
+                                event.dataTransfer.effectAllowed = "move";
+                            }
+                        });
+                    }
+                    if (canManageBuckets) {
+                        li.addEventListener("dragover", (event) => {
+                            event.preventDefault();
+                            li.classList.add("is-drop-target");
+                        });
+                        li.addEventListener("dragleave", () => {
+                            li.classList.remove("is-drop-target");
+                        });
+                        li.addEventListener("drop", async (event) => {
+                            event.preventDefault();
+                            li.classList.remove("is-drop-target");
+                            const itemKey = event.dataTransfer?.getData("text/x-cat-item")
+                                || event.dataTransfer?.getData("text/plain")
+                                || categorizationDraggedItemKey;
+                            if (itemKey) {
+                                try {
+                                    setCategorizationError(null);
+                                    await moveCategorizationItem(itemKey, bucketId, mode);
+                                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                                } catch (error) {
+                                    setCategorizationError(error.message || "Unable to move categorization item.");
+                                } finally {
+                                    categorizationDraggedItemKey = null;
+                                }
+                                return;
+                            }
+                            const draggedBucket = event.dataTransfer?.getData("text/x-cat-bucket") || categorizationDraggedBucketId;
+                            if (draggedBucket) {
+                                if (draggedBucket === "UNSORTED" || draggedBucket === bucketId) {
+                                    return;
+                                }
+                                const sourceEntry = categorization.bucketsList?.querySelector(
+                                    `.categorization-bucket-item[data-category-id="${CSS.escape(draggedBucket)}"]`,
+                                );
+                                if (sourceEntry && sourceEntry !== li) {
+                                    li.parentElement?.insertBefore(sourceEntry, li);
+                                    await handlePersistBucketOrder();
+                                }
+                            }
+                        });
+                        li.addEventListener("dragend", () => {
+                            categorizationDraggedBucketId = null;
+                            li.classList.remove("is-drop-target");
+                        });
+                    }
+                    categorization.bucketsList.appendChild(li);
+                });
+            }
+
+            const openBucket = buckets.find((bucket) => bucket.category_id === categorizationSelectedBucketId) || null;
+            const openBucketCount = counts.get(String(categorizationSelectedBucketId || "UNSORTED")) || 0;
+            if (categorization.openBucketTitle) {
+                const bucketLabel = categorizationSelectedBucketId === "UNSORTED"
+                    ? "Unsorted Ideas"
+                    : (openBucket?.title || categorizationSelectedBucketId || "Open Bucket");
+                categorization.openBucketTitle.textContent = `Open Bucket Contents: ${bucketLabel} (${openBucketCount})`;
+            }
+
+            const visibleItems = mode === "FACILITATOR_LIVE"
+                ? summary.items.filter((item) => {
+                    const itemKey = item.item_key;
+                    return String(effectiveAssignments[itemKey] || "UNSORTED") === String(categorizationSelectedBucketId || "UNSORTED");
+                })
+                : summary.items;
+
+            const orderKey = `${summary.activity_id || categorizationActivityId || "unknown"}:${categorizationSelectedBucketId || "UNSORTED"}`;
+            const existingOrder = categorizationItemOrder.get(orderKey) || [];
+            const visibleKeys = visibleItems.map((item) => String(item.item_key || ""));
+            const mergedOrder = existingOrder.filter((key) => visibleKeys.includes(key));
+            visibleKeys.forEach((key) => {
+                if (!mergedOrder.includes(key)) {
+                    mergedOrder.push(key);
+                }
+            });
+            categorizationItemOrder.set(orderKey, mergedOrder);
+            const rankByItemKey = new Map(mergedOrder.map((key, index) => [key, index]));
+            const orderedVisibleItems = [...visibleItems].sort((a, b) => {
+                const aRank = rankByItemKey.get(String(a.item_key || ""));
+                const bRank = rankByItemKey.get(String(b.item_key || ""));
+                const left = Number.isFinite(aRank) ? aRank : Number.MAX_SAFE_INTEGER;
+                const right = Number.isFinite(bRank) ? bRank : Number.MAX_SAFE_INTEGER;
+                return left - right;
+            });
+
+            if (orderedVisibleItems.length === 0) {
+                const empty = document.createElement("li");
+                empty.className = "categorization-item-empty";
+                empty.textContent = mode === "FACILITATOR_LIVE"
+                    ? "No items in this bucket."
+                    : "No items available.";
+                categorization.itemsList.appendChild(empty);
+            } else {
+                orderedVisibleItems.forEach((item) => {
+                    const itemKey = item.item_key;
+                    const effectiveCategory = String(effectiveAssignments[itemKey] || "UNSORTED");
+                    const li = document.createElement("li");
+                    li.dataset.itemKey = String(itemKey || "");
+                    const main = document.createElement("div");
+                    main.className = "categorization-item-main";
+                    if (mode === "FACILITATOR_LIVE" && isFacilitator && !summary.locked) {
+                        li.draggable = true;
+                        li.classList.add("is-draggable");
+                        li.addEventListener("dragstart", (event) => {
+                            categorizationDraggedBucketId = null;
+                            categorizationDraggedItemKey = itemKey;
+                            if (event.dataTransfer) {
+                                event.dataTransfer.setData("text/x-cat-item", itemKey);
+                                event.dataTransfer.setData("text/plain", itemKey);
+                                event.dataTransfer.effectAllowed = "move";
+                            }
+                        });
+                        li.addEventListener("dragend", () => {
+                            categorizationDraggedItemKey = null;
+                            li.classList.remove("is-drop-target");
+                        });
+                        li.addEventListener("dragover", (event) => {
+                            const draggedItemKey = event.dataTransfer?.getData("text/x-cat-item")
+                                || event.dataTransfer?.getData("text/plain")
+                                || categorizationDraggedItemKey;
+                            if (!draggedItemKey) {
+                                return;
+                            }
+                            event.preventDefault();
+                            li.classList.add("is-drop-target");
+                        });
+                        li.addEventListener("dragleave", () => {
+                            li.classList.remove("is-drop-target");
+                        });
+                        li.addEventListener("drop", (event) => {
+                            const draggedItemKey = event.dataTransfer?.getData("text/x-cat-item")
+                                || event.dataTransfer?.getData("text/plain")
+                                || categorizationDraggedItemKey;
+                            const targetItemKey = String(itemKey || "");
+                            li.classList.remove("is-drop-target");
+                            if (!draggedItemKey || String(draggedItemKey) === targetItemKey) {
+                                return;
+                            }
+                            event.preventDefault();
+                            const current = [...(categorizationItemOrder.get(orderKey) || [])];
+                            const sourceIndex = current.indexOf(String(draggedItemKey));
+                            const targetIndex = current.indexOf(targetItemKey);
+                            if (sourceIndex < 0 || targetIndex < 0) {
+                                return;
+                            }
+                            const [entry] = current.splice(sourceIndex, 1);
+                            const targetRect = li.getBoundingClientRect();
+                            const dropInLowerHalf = event.clientY > (targetRect.top + targetRect.height / 2);
+                            const adjustedTargetIndex = current.indexOf(targetItemKey);
+                            const insertIndex = dropInLowerHalf ? adjustedTargetIndex + 1 : adjustedTargetIndex;
+                            current.splice(insertIndex, 0, entry);
+                            categorizationItemOrder.set(orderKey, current);
+                            renderCategorizationSummary(categorizationState, eligibility);
+                        });
+                    }
+                    const text = document.createElement("div");
+                    text.textContent = item.content || item.item_key || "Item";
+                    main.append(text);
+
+                    const canAssignInParallel = mode === "PARALLEL_BALLOT" && !isFacilitator && !summary.locked;
+                    if (canAssignInParallel) {
+                        const actions = document.createElement("div");
+                        actions.className = "categorization-item-actions";
+                        const select = document.createElement("select");
+                        select.className = "form-select";
+                        buckets.forEach((bucket) => {
+                            const option = document.createElement("option");
+                            option.value = bucket.category_id || "";
+                            option.textContent = bucket.title || bucket.category_id || "Bucket";
+                            if (option.value === effectiveCategory) {
+                                option.selected = true;
+                            }
+                            select.appendChild(option);
+                        });
+                        const save = document.createElement("button");
+                        save.type = "button";
+                        save.className = "control-btn sm";
+                        save.textContent = "Set";
+                        save.addEventListener("click", async () => {
+                            if (!categorizationActivityId) {
+                                return;
+                            }
+                            try {
+                                setCategorizationError(null);
+                                await moveCategorizationItem(itemKey, select.value, mode);
+                                await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                            } catch (error) {
+                                setCategorizationError(error.message || "Unable to save categorization assignment.");
+                            }
+                        });
+                        actions.append(select, save);
+                        main.appendChild(actions);
+                    }
+
+                    li.appendChild(main);
+                    categorization.itemsList.appendChild(li);
+                });
+            }
+
+            const showFacilitatorControls = isFacilitator;
+            if (categorization.addBucket) categorization.addBucket.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
+            if (categorization.editBucket) categorization.editBucket.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
+            if (categorization.deleteBucket) categorization.deleteBucket.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
+            if (categorization.reveal) categorization.reveal.hidden = !showFacilitatorControls || mode !== "PARALLEL_BALLOT";
+            if (categorization.lockToggle) {
+                const wrapper = categorization.lockToggle.closest(".categorization-lock-toggle");
+                if (wrapper) {
+                    wrapper.hidden = !showFacilitatorControls;
+                }
+                categorization.lockToggle.checked = Boolean(summary?.locked);
+                categorization.lockToggle.disabled = !showFacilitatorControls;
+            }
+            const selectedIsUnsorted = String(categorizationSelectedBucketId || "") === "UNSORTED";
+            if (categorization.editBucket) categorization.editBucket.disabled = !showFacilitatorControls || selectedIsUnsorted;
+            if (categorization.deleteBucket) categorization.deleteBucket.disabled = !showFacilitatorControls || selectedIsUnsorted;
+            const participantCanBallot = mode === "PARALLEL_BALLOT" && !isFacilitator;
+            if (categorization.submitBallot) categorization.submitBallot.hidden = !participantCanBallot;
+            if (categorization.unsubmitBallot) categorization.unsubmitBallot.hidden = !participantCanBallot;
+        }
+
+        async function loadCategorizationState(activityId, config = {}, { force = false } = {}) {
+            if (!categorization.root || !activityId || (categorizationRequestInFlight && !force)) {
+                return;
+            }
+            categorizationRequestInFlight = true;
+            try {
+                const mode = String(config.mode || "FACILITATOR_LIVE").toUpperCase();
+                const endpoint = mode === "PARALLEL_BALLOT" && !state.isFacilitator
+                    ? "ballot"
+                    : "state";
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/${endpoint}?activity_id=${encodeURIComponent(activityId)}`,
+                    { credentials: "include" },
+                );
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || "Unable to load categorization state.");
+                }
+                const summary = await response.json();
+                summary.mode = mode;
+                summary.locked = Boolean(config.locked);
+                renderCategorizationSummary(summary);
+                setCategorizationError(null);
+            } catch (error) {
+                renderCategorizationSummary(null);
+                setCategorizationError(error.message || "Unable to load categorization state.");
+            } finally {
+                categorizationRequestInFlight = false;
+            }
+        }
+
         function setBrainstormingFormEnabled(enabled, config) {
             if (!brainstorming.form) {
                 return;
@@ -4557,7 +5069,7 @@
             if (!ui.genericPanel.root) {
                 return;
             }
-            const useGeneric = Boolean(toolType) && !["brainstorming", "voting"].includes(toolType);
+            const useGeneric = Boolean(toolType) && !["brainstorming", "voting", "categorization"].includes(toolType);
             if (!useGeneric) {
                 ui.genericPanel.root.hidden = true;
                 return;
@@ -4587,10 +5099,12 @@
             const showTool = Boolean(hasTool && canEnter && (isActive || state.isFacilitator));
             let showBrainstorming = showTool && toolType === "brainstorming";
             let showVoting = showTool && toolType === "voting";
+            let showCategorization = showTool && toolType === "categorization";
             const showTransfer = transferState.active && state.isFacilitator;
             if (showTransfer) {
                 showBrainstorming = false;
                 showVoting = false;
+                showCategorization = false;
             }
 
             updateParticipantStatus(eligibility);
@@ -4700,6 +5214,32 @@
                 }
             }
 
+            if (categorization.root) {
+                categorization.root.hidden = !showCategorization;
+                if (showCategorization) {
+                    activeCategorizationConfig = activityConfig || {};
+                    const newActivityId = eligibility?.activityId || null;
+                    if (categorizationActivityId !== newActivityId) {
+                        categorizationActivityId = newActivityId;
+                        categorizationSelectedBucketId = "UNSORTED";
+                    }
+                    if (categorization.instructions) {
+                        categorization.instructions.textContent =
+                            instructions ||
+                            (isActive
+                                ? "Categorization is live. Place ideas into the best buckets."
+                                : "This categorization activity is closed.");
+                    }
+                    loadCategorizationState(newActivityId, activeCategorizationConfig, { force: true });
+                } else {
+                    activeCategorizationConfig = {};
+                    categorizationActivityId = null;
+                    categorizationSelectedBucketId = null;
+                    renderCategorizationSummary(null);
+                    setCategorizationError(null);
+                }
+            }
+
             if (transfer.root) {
                 transfer.root.hidden = !showTransfer;
                 if (showTransfer) {
@@ -4713,7 +5253,7 @@
                 }
             }
 
-            const showGeneric = showTool && !showBrainstorming && !showVoting && !showTransfer && toolType;
+            const showGeneric = showTool && !showBrainstorming && !showVoting && !showCategorization && !showTransfer && toolType;
             showActiveToolPanel(
                 showGeneric ? toolType : null,
                 showGeneric ? activeActivity : null,
@@ -4990,6 +5530,11 @@
                 case "voting_update":
                     if (payload && votingActivityId === payload.activity_id) {
                         loadVotingOptions(payload.activity_id);
+                    }
+                    break;
+                case "categorization_update":
+                    if (payload && categorizationActivityId === payload.activity_id) {
+                        loadCategorizationState(payload.activity_id, activeCategorizationConfig, { force: true });
                     }
                     break;
                 case "new_idea":
@@ -5372,6 +5917,197 @@
             voting.resultsModal.addEventListener("click", (event) => {
                 if (event.target === voting.resultsModal) {
                     closeVotingResultsModal();
+                }
+            });
+        }
+
+        if (categorization.refresh) {
+            categorization.refresh.addEventListener("click", () => {
+                if (categorizationActivityId) {
+                    loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                }
+            });
+        }
+
+        if (categorization.addBucket) {
+            categorization.addBucket.addEventListener("click", async () => {
+                if (!categorizationActivityId) {
+                    return;
+                }
+                const title = window.prompt("Bucket title");
+                if (!title || !title.trim()) {
+                    return;
+                }
+                try {
+                    const response = await fetch(
+                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/buckets`,
+                        {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                                activity_id: categorizationActivityId,
+                                title: title.trim(),
+                            }),
+                        },
+                    );
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || "Unable to add bucket.");
+                    }
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to add bucket.");
+                }
+            });
+        }
+
+        if (categorization.editBucket) {
+            categorization.editBucket.addEventListener("click", async () => {
+                if (!categorizationActivityId || !categorizationSelectedBucketId || categorizationSelectedBucketId === "UNSORTED") {
+                    return;
+                }
+                const selected = (categorizationState?.buckets || []).find(
+                    (bucket) => String(bucket.category_id || "") === String(categorizationSelectedBucketId),
+                );
+                try {
+                    await renameCategorizationBucket(
+                        categorizationActivityId,
+                        categorizationSelectedBucketId,
+                        selected?.title || categorizationSelectedBucketId,
+                    );
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to edit bucket.");
+                }
+            });
+        }
+
+        if (categorization.deleteBucket) {
+            categorization.deleteBucket.addEventListener("click", async () => {
+                if (!categorizationActivityId || !categorizationSelectedBucketId || categorizationSelectedBucketId === "UNSORTED") {
+                    return;
+                }
+                const selected = (categorizationState?.buckets || []).find(
+                    (bucket) => String(bucket.category_id || "") === String(categorizationSelectedBucketId),
+                );
+                try {
+                    await deleteCategorizationBucket(
+                        categorizationActivityId,
+                        categorizationSelectedBucketId,
+                        selected?.title || categorizationSelectedBucketId,
+                    );
+                    categorizationSelectedBucketId = "UNSORTED";
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to delete bucket.");
+                }
+            });
+        }
+
+        if (categorization.submitBallot) {
+            categorization.submitBallot.addEventListener("click", async () => {
+                if (!categorizationActivityId) {
+                    return;
+                }
+                try {
+                    const response = await fetch(
+                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/ballot/submit`,
+                        {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ activity_id: categorizationActivityId }),
+                        },
+                    );
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || "Unable to submit ballot.");
+                    }
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to submit ballot.");
+                }
+            });
+        }
+
+        if (categorization.unsubmitBallot) {
+            categorization.unsubmitBallot.addEventListener("click", async () => {
+                if (!categorizationActivityId) {
+                    return;
+                }
+                try {
+                    const response = await fetch(
+                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/ballot/unsubmit`,
+                        {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ activity_id: categorizationActivityId }),
+                        },
+                    );
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || "Unable to unsubmit ballot.");
+                    }
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to unsubmit ballot.");
+                }
+            });
+        }
+
+        if (categorization.reveal) {
+            categorization.reveal.addEventListener("click", async () => {
+                if (!categorizationActivityId) {
+                    return;
+                }
+                try {
+                    const response = await fetch(
+                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/reveal`,
+                        {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ activity_id: categorizationActivityId, revealed: true }),
+                        },
+                    );
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || "Unable to reveal results.");
+                    }
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to reveal results.");
+                }
+            });
+        }
+
+        if (categorization.lockToggle) {
+            categorization.lockToggle.addEventListener("change", async () => {
+                if (!categorizationActivityId) {
+                    return;
+                }
+                const nextLocked = Boolean(categorization.lockToggle.checked);
+                try {
+                    const response = await fetch(
+                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/lock`,
+                        {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ activity_id: categorizationActivityId, locked: nextLocked }),
+                        },
+                    );
+                    if (!response.ok) {
+                        const err = await response.json().catch(() => ({}));
+                        throw new Error(err.detail || "Unable to update lock state.");
+                    }
+                    activeCategorizationConfig = { ...activeCategorizationConfig, locked: nextLocked };
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    categorization.lockToggle.checked = !nextLocked;
+                    setCategorizationError(error.message || "Unable to update lock state.");
                 }
             });
         }

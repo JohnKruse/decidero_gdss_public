@@ -12,6 +12,7 @@ from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
 from app.plugins.context import ActivityContext
 from app.services.activity_pipeline import ActivityPipeline
 from app.services.activity_catalog import get_activity_catalog
+from app.services.categorization_manager import CategorizationManager
 from app.services.voting_manager import VotingManager
 
 
@@ -413,3 +414,62 @@ def test_categorization_plugin_does_not_overwrite_existing_items(db_session):
     seeded_items = activity.config.get("items") or []
     assert len(seeded_items) == 1
     assert seeded_items[0]["content"] == "Manual"
+
+
+def test_categorization_plugin_close_emits_finalized_output_metadata(db_session):
+    meeting, _, activity, user = _seed_meeting_with_categorization(db_session)
+    activity.config = {
+        "mode": "PARALLEL_BALLOT",
+        "items": [{"id": "cat-1", "content": "Idea One"}],
+        "buckets": ["Theme A", "Theme B"],
+        "agreement_threshold": 0.6,
+        "minimum_ballots": 1,
+        "finalization_metadata": {"mode": "PARALLEL_BALLOT", "ballot_count": 1},
+    }
+    db_session.add(activity)
+    db_session.commit()
+
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=user)
+    plugin = CategorizationPlugin()
+    plugin.open_activity(context, None)
+
+    manager = CategorizationManager(db_session)
+    buckets = manager.list_buckets(meeting.meeting_id, activity.activity_id)
+    target_bucket = next(
+        bucket.category_id for bucket in buckets if bucket.category_id != "UNSORTED"
+    )
+    manager.upsert_ballot(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        user_id=user.user_id,
+        item_key="cat-1",
+        category_id=target_bucket,
+        submitted=True,
+    )
+    manager.set_final_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key="cat-1",
+        category_id=target_bucket,
+        resolver_user_id=user.user_id,
+    )
+
+    result = plugin.close_activity(context)
+    assert result is not None
+
+    output_bundle = (
+        db_session.query(ActivityBundle)
+        .filter(
+            ActivityBundle.meeting_id == meeting.meeting_id,
+            ActivityBundle.activity_id == activity.activity_id,
+            ActivityBundle.kind == "output",
+        )
+        .order_by(ActivityBundle.created_at.desc())
+        .first()
+    )
+    assert output_bundle is not None
+    metadata = output_bundle.bundle_metadata or {}
+    assert "categories" in metadata
+    assert metadata["finalization_metadata"]["mode"] == "PARALLEL_BALLOT"
+    assert metadata["final_assignments"]["cat-1"] == target_bucket
+    assert output_bundle.items[0]["metadata"]["categorization"]["bucket_id"] == target_bucket
