@@ -20,6 +20,10 @@ This guide is for facilitators/admins who need to host meetings for participants
 
 ## Mode A: Local (single machine)
 
+If you need setup steps, use the local runbook first:
+
+`docs/LOCAL_SETUP_GUIDE.md`
+
 ```bash
 ./start_local.sh
 ```

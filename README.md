@@ -10,8 +10,9 @@ Decidero GDSS is a group decision support system for facilitated meetings with a
 > **READ THESE RUNBOOKS BEFORE USING QUICK START FOR HOSTING/DEPLOYMENT.**
 >
 > Start here:
-> 1. **Admin hosting runbook:** [`docs/ADMIN_HOSTING_GUIDE.md`](docs/ADMIN_HOSTING_GUIDE.md)
-> 2. **Server production runbook:** [`docs/SERVER_HOSTING_GUIDE.md`](docs/SERVER_HOSTING_GUIDE.md)
+> 1. **Local setup runbook (lowest barrier):** [`docs/LOCAL_SETUP_GUIDE.md`](docs/LOCAL_SETUP_GUIDE.md)
+> 2. **Admin hosting runbook:** [`docs/ADMIN_HOSTING_GUIDE.md`](docs/ADMIN_HOSTING_GUIDE.md)
+> 3. **Server production runbook:** [`docs/SERVER_HOSTING_GUIDE.md`](docs/SERVER_HOSTING_GUIDE.md)
 >
 > `Quick Start (Local Host)` below is for local development, not production hosting.
 
@@ -22,6 +23,10 @@ Decidero GDSS is maintained by John Kruse.
 - License: Apache License 2.0 (`LICENSE`)
 
 ## Quick Start (Local Host)
+For the simplest local setup instructions, use:
+
+`docs/LOCAL_SETUP_GUIDE.md`
+
 1. Create and activate a virtual environment.
 2. Install dependencies.
 3. Copy env template.
