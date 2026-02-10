@@ -20,7 +20,7 @@
     data-brainstorm-max-length="{{ brainstorming_limits.idea_character_limit | default(500) }}"
     data-brainstorm-max-ideas="{{ brainstorming_limits.max_ideas_per_user | default(0) }}"
     data-meeting-refresh-enabled="{{ 'true' if meeting_refresh.get('enabled', True) else 'false' }}"
-    data-meeting-refresh-interval-seconds="{{ meeting_refresh.get('interval_seconds', 15) }}"
+    data-meeting-refresh-interval-seconds="{{ meeting_refresh.get('interval_seconds', 8) }}"
     data-meeting-refresh-hidden-interval-seconds="{{ meeting_refresh.get('hidden_interval_seconds', 45) }}"
     data-meeting-refresh-failure-backoff-seconds="{{ meeting_refresh.get('failure_backoff_seconds', 60) }}">
     {% grab id="meeting-overview-card" %}

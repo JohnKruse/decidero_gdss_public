@@ -15,7 +15,7 @@ _DEFAULT_BRAINSTORMING_LIMITS = {
 }
 _DEFAULT_MEETING_REFRESH = {
     "enabled": True,
-    "interval_seconds": 15,
+    "interval_seconds": 8,
     "hidden_interval_seconds": 45,
     "failure_backoff_seconds": 60,
 }

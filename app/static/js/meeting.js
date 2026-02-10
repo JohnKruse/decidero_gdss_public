@@ -36,7 +36,7 @@
             };
 
             const enabled = parseBool(root.dataset.meetingRefreshEnabled, true);
-            const intervalSeconds = parsePositiveInt(root.dataset.meetingRefreshIntervalSeconds, 15);
+            const intervalSeconds = parsePositiveInt(root.dataset.meetingRefreshIntervalSeconds, 8);
             const hiddenIntervalSeconds = parsePositiveInt(
                 root.dataset.meetingRefreshHiddenIntervalSeconds,
                 45,
@@ -4516,25 +4516,61 @@
             }
         }
 
-        async function deleteActivity(activityId) {
+        async function deleteActivity(activityId, options = {}) {
             if (!state.isFacilitator || !activityId) {
                 return;
+            }
+            const currentlyActive = Boolean(options.isRunning || options.isPaused);
+            if (currentlyActive) {
+                const proceed = confirm(
+                    "This activity is currently running or paused. It must be stopped before deletion. Stop and continue?",
+                );
+                if (!proceed) {
+                    return;
+                }
+                try {
+                    if (ui.statusBadge) {
+                        setStatus("Stopping activity before delete...", "info");
+                    }
+                    await sendControl("stop_tool", { activityId });
+                    // Allow state to settle before issuing delete.
+                    await new Promise((resolve) => setTimeout(resolve, 350));
+                } catch (error) {
+                    console.error("Unable to stop activity before delete:", error);
+                    setFacilitatorFeedback(
+                        error.message || "Unable to stop activity. Delete cancelled.",
+                        "error",
+                    );
+                    return;
+                }
             }
             if (!confirm("Are you sure you want to delete this activity? This cannot be undone.")) {
                 return;
             }
             setFacilitatorFeedback("Deleting activity…", "info");
             try {
-                const response = await fetch(
+                const deleteOnce = async () => fetch(
                     `/api/meetings/${encodeURIComponent(context.meetingId)}/agenda/${encodeURIComponent(activityId)}`,
                     {
                         method: "DELETE",
                         credentials: "include",
                     },
                 );
+                let response = await deleteOnce();
                 if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.detail || "Failed to delete activity.");
+                    let errorData = await response.json().catch(() => ({}));
+                    const detail = String(errorData.detail || "");
+                    if (detail.toLowerCase().includes("cannot delete an active activity")) {
+                        // The backend is authoritative; refresh once and retry.
+                        await new Promise((resolve) => setTimeout(resolve, 350));
+                        response = await deleteOnce();
+                        if (!response.ok) {
+                            errorData = await response.json().catch(() => ({}));
+                        }
+                    }
+                    if (!response.ok) {
+                        throw new Error(errorData.detail || "Failed to delete activity.");
+                    }
                 }
                 const filtered = (state.agenda || []).filter((item) => item.activity_id !== activityId);
                 state.agenda = filtered;
@@ -4819,10 +4855,12 @@
                     deleteBtn.type = "button";
                     deleteBtn.className = "control-btn agenda-item-delete-btn";
                     deleteBtn.textContent = "✖";
-                    deleteBtn.title = "Delete Activity";
+                    deleteBtn.title = isActive
+                        ? "Stop required before delete"
+                        : "Delete Activity";
                     deleteBtn.addEventListener("click", async (e) => {
                         e.stopPropagation();
-                        await deleteActivity(item.activity_id);
+                        await deleteActivity(item.activity_id, { isRunning, isPaused });
                     });
                     actions.appendChild(deleteBtn);
                 }
