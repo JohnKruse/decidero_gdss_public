@@ -262,6 +262,9 @@
             error: document.getElementById("categorizationError"),
             openBucketTitle: document.getElementById("categorizationOpenBucketTitle"),
             itemsList: document.getElementById("categorizationItemsList"),
+            addItem: document.getElementById("categorizationAddItemButton"),
+            editItem: document.getElementById("categorizationEditItemButton"),
+            deleteItem: document.getElementById("categorizationDeleteItemButton"),
             bucketsList: document.getElementById("categorizationBucketsList"),
             refresh: document.getElementById("categorizationRefreshButton"),
             addBucket: document.getElementById("categorizationAddBucketButton"),
@@ -515,8 +518,10 @@
         let categorizationState = null;
         let categorizationActivityId = null;
         let categorizationRequestInFlight = false;
+        let categorizationIsActive = false;
         let activeCategorizationConfig = {};
         let categorizationSelectedBucketId = null;
+        let categorizationSelectedItemKey = null;
         let categorizationDraggedItemKey = null;
         let categorizationDraggedBucketId = null;
         const categorizationItemOrder = new Map();
@@ -3999,6 +4004,73 @@
             }
         }
 
+        async function createCategorizationItem(activityId, content) {
+            const response = await fetch(
+                `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/items`,
+                {
+                    method: "POST",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        activity_id: activityId,
+                        content,
+                    }),
+                },
+            );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to add idea.");
+            }
+            return response.json();
+        }
+
+        async function renameCategorizationItem(activityId, itemKey, currentContent) {
+            const content = window.prompt("Edit idea", currentContent || "");
+            if (!content || !content.trim()) {
+                return;
+            }
+            const response = await fetch(
+                `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/items/${encodeURIComponent(itemKey)}`,
+                {
+                    method: "PATCH",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        activity_id: activityId,
+                        content: content.trim(),
+                    }),
+                },
+            );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to edit idea.");
+            }
+        }
+
+        async function deleteCategorizationItem(activityId, itemKey, itemContent) {
+            const confirmed = window.confirm(
+                `Delete idea "${itemContent || itemKey}"?`,
+            );
+            if (!confirmed) {
+                return;
+            }
+            const response = await fetch(
+                `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/items/${encodeURIComponent(itemKey)}`,
+                {
+                    method: "DELETE",
+                    credentials: "include",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        activity_id: activityId,
+                    }),
+                },
+            );
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.detail || "Unable to delete idea.");
+            }
+        }
+
         function renderCategorizationSummary(summary, eligibility) {
             categorizationState = summary || null;
             if (categorization.instructions) {
@@ -4053,7 +4125,7 @@
                 emptyBucket.textContent = "No buckets available.";
                 categorization.bucketsList.appendChild(emptyBucket);
             } else {
-                const canManageBuckets = mode === "FACILITATOR_LIVE" && isFacilitator && !summary.locked;
+                const canManageBuckets = mode === "FACILITATOR_LIVE" && isFacilitator && categorizationIsActive;
                 const collectBucketOrder = () => {
                     const order = [];
                     if (!categorization.bucketsList) {
@@ -4206,8 +4278,16 @@
                 const right = Number.isFinite(bRank) ? bRank : Number.MAX_SAFE_INTEGER;
                 return left - right;
             });
+            const visibleItemKeys = orderedVisibleItems.map((item) => String(item.item_key || ""));
+            if (
+                !categorizationSelectedItemKey
+                || !visibleItemKeys.includes(String(categorizationSelectedItemKey))
+            ) {
+                categorizationSelectedItemKey = visibleItemKeys[0] || null;
+            }
 
             if (orderedVisibleItems.length === 0) {
+                categorizationSelectedItemKey = null;
                 const empty = document.createElement("li");
                 empty.className = "categorization-item-empty";
                 empty.textContent = mode === "FACILITATOR_LIVE"
@@ -4220,9 +4300,18 @@
                     const effectiveCategory = String(effectiveAssignments[itemKey] || "UNSORTED");
                     const li = document.createElement("li");
                     li.dataset.itemKey = String(itemKey || "");
+                    if (String(categorizationSelectedItemKey || "") === String(itemKey || "")) {
+                        li.classList.add("is-selected");
+                    }
+                    if (mode === "FACILITATOR_LIVE" && isFacilitator) {
+                        li.addEventListener("click", () => {
+                            categorizationSelectedItemKey = itemKey;
+                            renderCategorizationSummary(categorizationState, eligibility);
+                        });
+                    }
                     const main = document.createElement("div");
                     main.className = "categorization-item-main";
-                    if (mode === "FACILITATOR_LIVE" && isFacilitator && !summary.locked) {
+                    if (mode === "FACILITATOR_LIVE" && isFacilitator && categorizationIsActive) {
                         li.draggable = true;
                         li.classList.add("is-draggable");
                         li.addEventListener("dragstart", (event) => {
@@ -4281,7 +4370,7 @@
                     text.textContent = item.content || item.item_key || "Item";
                     main.append(text);
 
-                    const canAssignInParallel = mode === "PARALLEL_BALLOT" && !isFacilitator && !summary.locked;
+                    const canAssignInParallel = mode === "PARALLEL_BALLOT" && !isFacilitator && !summary.locked && categorizationIsActive;
                     if (canAssignInParallel) {
                         const actions = document.createElement("div");
                         actions.className = "categorization-item-actions";
@@ -4325,6 +4414,9 @@
             if (categorization.addBucket) categorization.addBucket.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.editBucket) categorization.editBucket.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.deleteBucket) categorization.deleteBucket.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
+            if (categorization.addItem) categorization.addItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
+            if (categorization.editItem) categorization.editItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
+            if (categorization.deleteItem) categorization.deleteItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.reveal) categorization.reveal.hidden = !showFacilitatorControls || mode !== "PARALLEL_BALLOT";
             if (categorization.lockToggle) {
                 const wrapper = categorization.lockToggle.closest(".categorization-lock-toggle");
@@ -4332,12 +4424,19 @@
                     wrapper.hidden = !showFacilitatorControls;
                 }
                 categorization.lockToggle.checked = Boolean(summary?.locked);
-                categorization.lockToggle.disabled = !showFacilitatorControls;
+                categorization.lockToggle.disabled = !showFacilitatorControls || !categorizationIsActive;
             }
+            if (categorization.addBucket) categorization.addBucket.disabled = !showFacilitatorControls || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
+            if (categorization.addItem) categorization.addItem.disabled = !showFacilitatorControls || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
+            if (categorization.reveal) categorization.reveal.disabled = !showFacilitatorControls || mode !== "PARALLEL_BALLOT" || !categorizationIsActive;
             const selectedIsUnsorted = String(categorizationSelectedBucketId || "") === "UNSORTED";
-            if (categorization.editBucket) categorization.editBucket.disabled = !showFacilitatorControls || selectedIsUnsorted;
-            if (categorization.deleteBucket) categorization.deleteBucket.disabled = !showFacilitatorControls || selectedIsUnsorted;
-            const participantCanBallot = mode === "PARALLEL_BALLOT" && !isFacilitator;
+            if (categorization.editBucket) categorization.editBucket.disabled = !showFacilitatorControls || selectedIsUnsorted || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
+            if (categorization.deleteBucket) categorization.deleteBucket.disabled = !showFacilitatorControls || selectedIsUnsorted || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
+            const hasSelectedItem = Boolean(categorizationSelectedItemKey);
+            const canManageIdeas = showFacilitatorControls && mode === "FACILITATOR_LIVE" && categorizationIsActive;
+            if (categorization.editItem) categorization.editItem.disabled = !canManageIdeas || !hasSelectedItem;
+            if (categorization.deleteItem) categorization.deleteItem.disabled = !canManageIdeas || !hasSelectedItem;
+            const participantCanBallot = mode === "PARALLEL_BALLOT" && !isFacilitator && !summary.locked && categorizationIsActive;
             if (categorization.submitBallot) categorization.submitBallot.hidden = !participantCanBallot;
             if (categorization.unsubmitBallot) categorization.unsubmitBallot.hidden = !participantCanBallot;
         }
@@ -5256,10 +5355,12 @@
                 categorization.root.hidden = !showCategorization;
                 if (showCategorization) {
                     activeCategorizationConfig = activityConfig || {};
+                    categorizationIsActive = Boolean(isActive && canEnter);
                     const newActivityId = eligibility?.activityId || null;
                     if (categorizationActivityId !== newActivityId) {
                         categorizationActivityId = newActivityId;
                         categorizationSelectedBucketId = "UNSORTED";
+                        categorizationSelectedItemKey = null;
                     }
                     if (categorization.instructions) {
                         categorization.instructions.textContent =
@@ -5271,8 +5372,10 @@
                     loadCategorizationState(newActivityId, activeCategorizationConfig, { force: true });
                 } else {
                     activeCategorizationConfig = {};
+                    categorizationIsActive = false;
                     categorizationActivityId = null;
                     categorizationSelectedBucketId = null;
+                    categorizationSelectedItemKey = null;
                     renderCategorizationSummary(null);
                     setCategorizationError(null);
                 }
@@ -5996,6 +6099,74 @@
                     await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
                 } catch (error) {
                     setCategorizationError(error.message || "Unable to add bucket.");
+                }
+            });
+        }
+
+        if (categorization.addItem) {
+            categorization.addItem.addEventListener("click", async () => {
+                if (!categorizationActivityId) {
+                    return;
+                }
+                const content = window.prompt("Idea text");
+                if (!content || !content.trim()) {
+                    return;
+                }
+                try {
+                    const created = await createCategorizationItem(categorizationActivityId, content.trim());
+                    categorizationSelectedItemKey = String(created?.item_key || "") || null;
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to add idea.");
+                }
+            });
+        }
+
+        if (categorization.editItem) {
+            categorization.editItem.addEventListener("click", async () => {
+                if (!categorizationActivityId || !categorizationSelectedItemKey) {
+                    return;
+                }
+                const selected = (categorizationState?.items || []).find(
+                    (item) => String(item.item_key || "") === String(categorizationSelectedItemKey),
+                );
+                if (!selected) {
+                    return;
+                }
+                try {
+                    await renameCategorizationItem(
+                        categorizationActivityId,
+                        categorizationSelectedItemKey,
+                        selected?.content || "",
+                    );
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to edit idea.");
+                }
+            });
+        }
+
+        if (categorization.deleteItem) {
+            categorization.deleteItem.addEventListener("click", async () => {
+                if (!categorizationActivityId || !categorizationSelectedItemKey) {
+                    return;
+                }
+                const selected = (categorizationState?.items || []).find(
+                    (item) => String(item.item_key || "") === String(categorizationSelectedItemKey),
+                );
+                if (!selected) {
+                    return;
+                }
+                try {
+                    await deleteCategorizationItem(
+                        categorizationActivityId,
+                        categorizationSelectedItemKey,
+                        selected?.content || "",
+                    );
+                    categorizationSelectedItemKey = null;
+                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
+                } catch (error) {
+                    setCategorizationError(error.message || "Unable to delete idea.");
                 }
             });
         }

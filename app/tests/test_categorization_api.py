@@ -178,6 +178,93 @@ def test_categorization_bucket_create_forbidden_for_participant(
     assert create_resp.status_code == 403, create_resp.json()
 
 
+def test_categorization_item_mutations_are_facilitator_only(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+    meeting = _create_categorization_meeting(db_session, owner_id=facilitator.user_id)
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    participant = user_manager_with_admin.add_user(
+        first_name="Item",
+        last_name="Participant",
+        email="item.participant@decidero.local",
+        hashed_password=get_password_hash("ItemParticipant@123"),
+        role=UserRole.PARTICIPANT.value,
+        login="item_participant",
+    )
+    meeting.participants.append(participant)
+    db_session.add(meeting)
+    db_session.commit()
+
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=meeting.agenda_activities[0],
+        actor_user_id=facilitator.user_id,
+    )
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "categorization",
+                "status": "in_progress",
+            },
+        )
+    )
+
+    try:
+        facilitator_login = client.post(
+            "/api/auth/token",
+            json={"username": "admin", "password": "Admin@123!"},
+        )
+        assert facilitator_login.status_code == 200, facilitator_login.json()
+
+        create_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/items",
+            json={"activity_id": activity_id, "content": "Idea 2"},
+        )
+        assert create_resp.status_code == 200, create_resp.json()
+        item_key = create_resp.json()["item_key"]
+
+        update_resp = client.patch(
+            f"/api/meetings/{meeting.meeting_id}/categorization/items/{item_key}",
+            json={"activity_id": activity_id, "content": "Idea 2 updated"},
+        )
+        assert update_resp.status_code == 200, update_resp.json()
+        assert update_resp.json()["content"] == "Idea 2 updated"
+
+        participant_login = client.post(
+            "/api/auth/token",
+            json={"username": "item_participant", "password": "ItemParticipant@123"},
+        )
+        assert participant_login.status_code == 200, participant_login.json()
+        participant_create_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/items",
+            json={"activity_id": activity_id, "content": "Not allowed"},
+        )
+        assert participant_create_resp.status_code == 403, participant_create_resp.json()
+
+        facilitator_login_again = client.post(
+            "/api/auth/token",
+            json={"username": "admin", "password": "Admin@123!"},
+        )
+        assert facilitator_login_again.status_code == 200, facilitator_login_again.json()
+        delete_resp = client.request(
+            "DELETE",
+            f"/api/meetings/{meeting.meeting_id}/categorization/items/{item_key}",
+            json={"activity_id": activity_id},
+        )
+        assert delete_resp.status_code == 204
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_categorization_scope_enforced_for_custom_participant_list(
     client: TestClient,
     user_manager_with_admin,
@@ -605,7 +692,7 @@ def test_parallel_reveal_forbidden_for_participant(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
-def test_categorization_lock_blocks_mutations(
+def test_categorization_lock_keeps_facilitator_mutations_available(
     authenticated_client: TestClient,
     user_manager_with_admin,
     db_session,
@@ -644,7 +731,100 @@ def test_categorization_lock_blocks_mutations(
             f"/api/meetings/{meeting.meeting_id}/categorization/buckets",
             json={"activity_id": activity_id, "title": "Blocked"},
         )
-        assert create_resp.status_code == 409, create_resp.json()
-        assert create_resp.json()["detail"] == "This activity is locked."
+        assert create_resp.status_code == 200, create_resp.json()
+        assert create_resp.json()["title"] == "Blocked"
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_parallel_lock_blocks_participant_ballot_mutation_but_allows_facilitator_controls(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+    meeting = _create_parallel_categorization_meeting(db_session, owner_id=facilitator.user_id)
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    participant = user_manager_with_admin.add_user(
+        first_name="Locked",
+        last_name="Participant",
+        email="parallel.locked@decidero.local",
+        hashed_password=get_password_hash("ParallelLocked@123"),
+        role=UserRole.PARTICIPANT.value,
+        login="parallel_locked",
+    )
+    meeting.participants.append(participant)
+    db_session.add(meeting)
+    db_session.commit()
+
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=meeting.agenda_activities[0],
+        actor_user_id=facilitator.user_id,
+    )
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "categorization",
+                "status": "in_progress",
+                "activeActivities": [
+                    {
+                        "activityId": activity_id,
+                        "tool": "categorization",
+                        "status": "in_progress",
+                        "metadata": {"participantScope": "all"},
+                    }
+                ],
+            },
+        )
+    )
+
+    try:
+        facilitator_login = client.post(
+            "/api/auth/token",
+            json={"username": "admin", "password": "Admin@123!"},
+        )
+        assert facilitator_login.status_code == 200, facilitator_login.json()
+        lock_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/lock",
+            json={"activity_id": activity_id, "locked": True},
+        )
+        assert lock_resp.status_code == 200, lock_resp.json()
+
+        reveal_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/reveal",
+            json={"activity_id": activity_id, "revealed": True},
+        )
+        assert reveal_resp.status_code == 200, reveal_resp.json()
+        assert reveal_resp.json()["results_revealed"] is True
+
+        participant_login = client.post(
+            "/api/auth/token",
+            json={"username": "parallel_locked", "password": "ParallelLocked@123"},
+        )
+        assert participant_login.status_code == 200, participant_login.json()
+
+        ballot_state = client.get(
+            f"/api/meetings/{meeting.meeting_id}/categorization/ballot",
+            params={"activity_id": activity_id},
+        )
+        assert ballot_state.status_code == 200, ballot_state.json()
+        first_bucket = next(
+            bucket["category_id"]
+            for bucket in ballot_state.json()["buckets"]
+            if bucket["category_id"] != "UNSORTED"
+        )
+        assign_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/ballot/assignments",
+            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": first_bucket},
+        )
+        assert assign_resp.status_code == 409, assign_resp.json()
+        assert assign_resp.json()["detail"] == "This activity is locked."
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))

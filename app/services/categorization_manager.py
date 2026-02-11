@@ -291,6 +291,160 @@ class CategorizationManager:
             .all()
         )
 
+    def create_item(
+        self,
+        *,
+        meeting_id: str,
+        activity_id: str,
+        content: str,
+        actor_user_id: Optional[str],
+        item_key: Optional[str] = None,
+    ) -> CategorizationItem:
+        content_value = str(content or "").strip()
+        if not content_value:
+            raise HTTPException(status_code=400, detail="Idea content is required.")
+
+        proposed_key = str(item_key or "").strip()
+        existing_keys = {
+            str(row[0] or "")
+            for row in self.db.query(CategorizationItem.item_key)
+            .filter(
+                CategorizationItem.meeting_id == meeting_id,
+                CategorizationItem.activity_id == activity_id,
+            )
+            .all()
+        }
+        if not proposed_key:
+            prefix = f"{activity_id}:item-"
+            max_suffix = 0
+            for existing_key in existing_keys:
+                if not existing_key.startswith(prefix):
+                    continue
+                suffix = existing_key[len(prefix):]
+                if suffix.isdigit():
+                    max_suffix = max(max_suffix, int(suffix))
+            next_suffix = max_suffix + 1
+            proposed_key = f"{prefix}{next_suffix}"
+            while proposed_key in existing_keys:
+                next_suffix += 1
+                proposed_key = f"{prefix}{next_suffix}"
+        elif proposed_key in existing_keys:
+            raise HTTPException(status_code=409, detail="Idea item_key already exists.")
+
+        item = CategorizationItem(
+            meeting_id=meeting_id,
+            activity_id=activity_id,
+            item_key=proposed_key,
+            content=content_value,
+            item_metadata={},
+            source={},
+        )
+        self.db.add(item)
+        self.db.add(
+            CategorizationAssignment(
+                meeting_id=meeting_id,
+                activity_id=activity_id,
+                item_key=proposed_key,
+                category_id=UNSORTED_CATEGORY_ID,
+                is_unsorted=True,
+                assigned_by=actor_user_id,
+            )
+        )
+        self.db.commit()
+        self.db.refresh(item)
+        self.log_event(
+            meeting_id=meeting_id,
+            activity_id=activity_id,
+            actor_user_id=actor_user_id,
+            event_type="item_created",
+            payload={"item_key": proposed_key},
+            commit=True,
+        )
+        return item
+
+    def update_item(
+        self,
+        *,
+        meeting_id: str,
+        activity_id: str,
+        item_key: str,
+        content: str,
+        actor_user_id: Optional[str],
+    ) -> CategorizationItem:
+        item = (
+            self.db.query(CategorizationItem)
+            .filter(
+                CategorizationItem.meeting_id == meeting_id,
+                CategorizationItem.activity_id == activity_id,
+                CategorizationItem.item_key == item_key,
+            )
+            .first()
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="Idea not found.")
+        content_value = str(content or "").strip()
+        if not content_value:
+            raise HTTPException(status_code=400, detail="Idea content cannot be empty.")
+        item.content = content_value
+        self.db.add(item)
+        self.db.commit()
+        self.db.refresh(item)
+        self.log_event(
+            meeting_id=meeting_id,
+            activity_id=activity_id,
+            actor_user_id=actor_user_id,
+            event_type="item_updated",
+            payload={"item_key": item_key},
+            commit=True,
+        )
+        return item
+
+    def delete_item(
+        self,
+        *,
+        meeting_id: str,
+        activity_id: str,
+        item_key: str,
+        actor_user_id: Optional[str],
+    ) -> None:
+        item = (
+            self.db.query(CategorizationItem)
+            .filter(
+                CategorizationItem.meeting_id == meeting_id,
+                CategorizationItem.activity_id == activity_id,
+                CategorizationItem.item_key == item_key,
+            )
+            .first()
+        )
+        if not item:
+            raise HTTPException(status_code=404, detail="Idea not found.")
+
+        self.db.query(CategorizationAssignment).filter(
+            CategorizationAssignment.meeting_id == meeting_id,
+            CategorizationAssignment.activity_id == activity_id,
+            CategorizationAssignment.item_key == item_key,
+        ).delete(synchronize_session=False)
+        self.db.query(CategorizationBallot).filter(
+            CategorizationBallot.meeting_id == meeting_id,
+            CategorizationBallot.activity_id == activity_id,
+            CategorizationBallot.item_key == item_key,
+        ).delete(synchronize_session=False)
+        self.db.query(CategorizationFinalAssignment).filter(
+            CategorizationFinalAssignment.meeting_id == meeting_id,
+            CategorizationFinalAssignment.activity_id == activity_id,
+            CategorizationFinalAssignment.item_key == item_key,
+        ).delete(synchronize_session=False)
+        self.db.delete(item)
+        self.db.commit()
+        self.log_event(
+            meeting_id=meeting_id,
+            activity_id=activity_id,
+            actor_user_id=actor_user_id,
+            event_type="item_deleted",
+            payload={"item_key": item_key},
+            commit=True,
+        )
+
     def upsert_assignment(
         self,
         *,

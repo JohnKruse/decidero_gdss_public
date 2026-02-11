@@ -3,7 +3,7 @@
 {% block title %}{{ meeting.title }} – Meeting - Decidero GDSS{% endblock %}
 
 {% block extra_css %}
-    <link rel="stylesheet" href="/static/css/meeting.css?v=20260130a">
+    <link rel="stylesheet" href="/static/css/meeting.css?v=20260211a">
 {% endblock %}
 
 {% block top_nav_right %}
@@ -249,6 +249,11 @@
                     <div class="categorization-board">
                         <div class="categorization-column">
                             <h3 id="categorizationOpenBucketTitle">Open Bucket Contents</h3>
+                            <div class="categorization-item-controls">
+                                <button type="button" class="control-btn sm" id="categorizationAddItemButton">Add Idea</button>
+                                <button type="button" class="control-btn sm" id="categorizationEditItemButton">Edit Idea</button>
+                                <button type="button" class="control-btn sm" id="categorizationDeleteItemButton">Delete Idea</button>
+                            </div>
                             <ul id="categorizationItemsList" class="categorization-list">
                                 <li class="categorization-item-empty">No items available.</li>
                             </ul>
@@ -502,5 +507,5 @@
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260130b"></script>
+<script src="/static/js/meeting.js?v=20260211a"></script>
 {% endblock %}

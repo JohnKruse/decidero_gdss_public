@@ -28,6 +28,21 @@ class CategorizationBucketReorderRequest(BaseModel):
     category_ids: List[str] = Field(default_factory=list)
 
 
+class CategorizationItemCreateRequest(BaseModel):
+    activity_id: str
+    content: str
+    item_key: Optional[str] = None
+
+
+class CategorizationItemUpdateRequest(BaseModel):
+    activity_id: str
+    content: str
+
+
+class CategorizationItemDeleteRequest(BaseModel):
+    activity_id: str
+
+
 class CategorizationAssignmentRequest(BaseModel):
     activity_id: str
     item_key: str

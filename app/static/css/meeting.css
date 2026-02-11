@@ -1353,7 +1353,21 @@
   align-items: center;
 }
 
+.categorization-item-controls {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
 .categorization-bucket-controls .control-btn {
+  width: auto;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.categorization-item-controls .control-btn {
   width: auto;
   flex: 0 0 auto;
   align-self: center;
@@ -1456,6 +1470,11 @@
 }
 
 .categorization-bucket-item.is-selected {
+  border-color: rgba(11, 61, 145, 0.62);
+  background: rgba(126, 192, 238, 0.2);
+}
+
+#categorizationItemsList li.is-selected {
   border-color: rgba(11, 61, 145, 0.62);
   background: rgba(126, 192, 238, 0.2);
 }

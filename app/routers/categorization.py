@@ -23,6 +23,9 @@ from app.schemas.categorization import (
     CategorizationBucketDeleteRequest,
     CategorizationBucketReorderRequest,
     CategorizationBucketUpdateRequest,
+    CategorizationItemCreateRequest,
+    CategorizationItemDeleteRequest,
+    CategorizationItemUpdateRequest,
     CategorizationRevealRequest,
     CategorizationStateResponse,
 )
@@ -183,6 +186,11 @@ def _set_results_revealed(db: Session, activity: AgendaActivity, revealed: bool)
 def _is_locked(activity: AgendaActivity) -> bool:
     config = dict(getattr(activity, "config", {}) or {})
     return bool(config.get("locked", False))
+
+
+def _enforce_participant_lock(activity: AgendaActivity, *, is_facilitator: bool) -> None:
+    if not is_facilitator and _is_locked(activity):
+        raise HTTPException(status_code=409, detail="This activity is locked.")
 
 
 def _set_locked(
@@ -354,8 +362,7 @@ async def set_ballot_assignment(
             status_code=409,
             detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
+    _enforce_participant_lock(activity, is_facilitator=is_facilitator)
     allowed_participant_ids, is_active = await _resolve_participant_scope(
         meeting_id, payload.activity_id, activity
     )
@@ -415,8 +422,7 @@ async def submit_ballot(
             status_code=409,
             detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
+    _enforce_participant_lock(activity, is_facilitator=is_facilitator)
     allowed_participant_ids, is_active = await _resolve_participant_scope(
         meeting_id, payload.activity_id, activity
     )
@@ -497,8 +503,7 @@ async def unsubmit_ballot(
             status_code=409,
             detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
+    _enforce_participant_lock(activity, is_facilitator=is_facilitator)
     allowed_participant_ids, is_active = await _resolve_participant_scope(
         meeting_id, payload.activity_id, activity
     )
@@ -551,8 +556,6 @@ async def set_reveal_state(
             status_code=409,
             detail="Reveal controls are only available in PARALLEL_BALLOT mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
     _set_results_revealed(db, activity, payload.revealed)
     await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
     return {"results_revealed": _is_results_revealed(activity)}
@@ -699,8 +702,6 @@ async def set_final_assignment(
             status_code=409,
             detail="Final assignment workflow is only available in PARALLEL_BALLOT mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
 
     manager = CategorizationManager(db)
     state = manager.build_state(meeting_id, payload.activity_id)
@@ -754,8 +755,6 @@ async def create_bucket(
             status_code=409,
             detail="Bucket management via this endpoint is only available in FACILITATOR_LIVE mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
     _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
     if not is_active:
         raise HTTPException(
@@ -798,8 +797,6 @@ async def update_bucket(
             status_code=409,
             detail="Bucket management via this endpoint is only available in FACILITATOR_LIVE mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
     _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
     if not is_active:
         raise HTTPException(
@@ -842,8 +839,6 @@ async def delete_bucket(
             status_code=409,
             detail="Bucket management via this endpoint is only available in FACILITATOR_LIVE mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
     _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
     if not is_active:
         raise HTTPException(
@@ -876,8 +871,6 @@ async def reorder_buckets(
             status_code=409,
             detail="Bucket management via this endpoint is only available in FACILITATOR_LIVE mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
     _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
     if not is_active:
         raise HTTPException(
@@ -903,6 +896,109 @@ async def reorder_buckets(
     }
 
 
+@router.post("/items")
+async def create_item(
+    meeting_id: str,
+    payload: CategorizationItemCreateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    meeting = _load_meeting(db, meeting_id)
+    _, is_facilitator = _access(meeting, current_user)
+    if not is_facilitator:
+        raise HTTPException(status_code=403, detail="Only facilitators can manage ideas.")
+    activity = _resolve_activity(meeting, payload.activity_id)
+    if _is_parallel_mode(activity):
+        raise HTTPException(
+            status_code=409,
+            detail="Idea management via this endpoint is only available in FACILITATOR_LIVE mode.",
+        )
+    _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
+    if not is_active:
+        raise HTTPException(
+            status_code=403, detail="This activity is not open for categorization."
+        )
+
+    item = CategorizationManager(db).create_item(
+        meeting_id=meeting_id,
+        activity_id=payload.activity_id,
+        content=payload.content,
+        item_key=payload.item_key,
+        actor_user_id=current_user.user_id,
+    )
+    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
+    return {"item_key": item.item_key, "content": item.content}
+
+
+@router.patch("/items/{item_key}")
+async def update_item(
+    meeting_id: str,
+    item_key: str,
+    payload: CategorizationItemUpdateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    meeting = _load_meeting(db, meeting_id)
+    _, is_facilitator = _access(meeting, current_user)
+    if not is_facilitator:
+        raise HTTPException(status_code=403, detail="Only facilitators can manage ideas.")
+    activity = _resolve_activity(meeting, payload.activity_id)
+    if _is_parallel_mode(activity):
+        raise HTTPException(
+            status_code=409,
+            detail="Idea management via this endpoint is only available in FACILITATOR_LIVE mode.",
+        )
+    _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
+    if not is_active:
+        raise HTTPException(
+            status_code=403, detail="This activity is not open for categorization."
+        )
+
+    item = CategorizationManager(db).update_item(
+        meeting_id=meeting_id,
+        activity_id=payload.activity_id,
+        item_key=item_key,
+        content=payload.content,
+        actor_user_id=current_user.user_id,
+    )
+    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
+    return {"item_key": item.item_key, "content": item.content}
+
+
+@router.delete("/items/{item_key}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_item(
+    meeting_id: str,
+    item_key: str,
+    payload: CategorizationItemDeleteRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db),
+):
+    meeting = _load_meeting(db, meeting_id)
+    _, is_facilitator = _access(meeting, current_user)
+    if not is_facilitator:
+        raise HTTPException(status_code=403, detail="Only facilitators can manage ideas.")
+    activity = _resolve_activity(meeting, payload.activity_id)
+    if _is_parallel_mode(activity):
+        raise HTTPException(
+            status_code=409,
+            detail="Idea management via this endpoint is only available in FACILITATOR_LIVE mode.",
+        )
+    _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
+    if not is_active:
+        raise HTTPException(
+            status_code=403, detail="This activity is not open for categorization."
+        )
+
+    CategorizationManager(db).delete_item(
+        meeting_id=meeting_id,
+        activity_id=payload.activity_id,
+        item_key=item_key,
+        actor_user_id=current_user.user_id,
+    )
+    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
+    return None
+
+
 @router.post("/assignments")
 async def set_assignment(
     meeting_id: str,
@@ -920,8 +1016,6 @@ async def set_assignment(
             status_code=409,
             detail="Facilitator assignment moves via this endpoint are only available in FACILITATOR_LIVE mode.",
         )
-    if _is_locked(activity):
-        raise HTTPException(status_code=409, detail="This activity is locked.")
     _, is_active = await _resolve_participant_scope(meeting_id, payload.activity_id, activity)
     if not is_active:
         raise HTTPException(
