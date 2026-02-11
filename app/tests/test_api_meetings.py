@@ -15,8 +15,10 @@ from app.data.meeting_manager import MeetingManager
 from app.services import meeting_state_manager
 from app.schemas.meeting import AgendaActivityCreate
 from app.schemas.meeting import MeetingCreate, PublicityType
+from app.models.categorization import CategorizationAuditEvent, CategorizationBallot
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity
+from app.models.voting import VotingVote
 from app.models.user import UserRole
 from app.utils.security import get_password_hash
 
@@ -511,6 +513,100 @@ def test_reorder_agenda_activities_api(
     )
     if error_response.status_code == 404:
         assert "not found" in error_response.json()["detail"]
+
+
+def test_get_meeting_agenda_includes_lock_metadata(
+    authenticated_client: TestClient,
+    test_meeting_data: str,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    voting_create = authenticated_client.post(
+        f"/api/meetings/{test_meeting_data}/agenda",
+        json={
+            "tool_type": "voting",
+            "title": "Prioritise",
+            "config": {"options": ["Alpha", "Beta"], "max_votes": 2},
+        },
+    )
+    assert voting_create.status_code == 201, voting_create.json()
+    voting_activity = voting_create.json()
+
+    categorization_create = authenticated_client.post(
+        f"/api/meetings/{test_meeting_data}/agenda",
+        json={
+            "tool_type": "categorization",
+            "title": "Bucket Ideas",
+            "config": {
+                "mode": "PARALLEL_BALLOT",
+                "items": ["Idea 1"],
+                "buckets": ["Bucket A"],
+            },
+        },
+    )
+    assert categorization_create.status_code == 201, categorization_create.json()
+    categorization_activity = categorization_create.json()
+
+    db_session.add(
+        VotingVote(
+            meeting_id=test_meeting_data,
+            activity_id=voting_activity["activity_id"],
+            user_id=admin_user.user_id,
+            option_id=f"{voting_activity['activity_id']}:alpha",
+            option_label="Alpha",
+            weight=1,
+        )
+    )
+    db_session.add(
+        CategorizationAuditEvent(
+            meeting_id=test_meeting_data,
+            activity_id=categorization_activity["activity_id"],
+            actor_user_id=admin_user.user_id,
+            event_type="bucket_created",
+            payload={"category_id": f"{categorization_activity['activity_id']}:bucket-1"},
+        )
+    )
+    db_session.add(
+        CategorizationBallot(
+            meeting_id=test_meeting_data,
+            activity_id=categorization_activity["activity_id"],
+            user_id=admin_user.user_id,
+            item_key=f"{categorization_activity['activity_id']}:item-1",
+            category_id="UNSORTED",
+            submitted=True,
+        )
+    )
+    db_session.commit()
+
+    meeting_response = authenticated_client.get(f"/api/meetings/{test_meeting_data}")
+    assert meeting_response.status_code == 200, meeting_response.json()
+    agenda = meeting_response.json().get("agenda") or []
+
+    voting_row = next(
+        item for item in agenda if item.get("activity_id") == voting_activity["activity_id"]
+    )
+    assert voting_row["has_votes"] is True
+    assert voting_row["has_data"] is True
+    assert set(voting_row["locked_config_keys"]) == {
+        "options",
+        "max_votes",
+        "max_votes_per_option",
+    }
+
+    categorization_row = next(
+        item
+        for item in agenda
+        if item.get("activity_id") == categorization_activity["activity_id"]
+    )
+    assert categorization_row["has_submitted_ballots"] is True
+    assert categorization_row["has_data"] is True
+    assert "items" in categorization_row["locked_config_keys"]
+    assert "buckets" in categorization_row["locked_config_keys"]
+    assert "mode" in categorization_row["locked_config_keys"]
 
 
 def test_cofacilitator_update_permissions(

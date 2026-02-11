@@ -14,9 +14,11 @@ from app.models.meeting import Meeting
 from app.models.idea import Idea
 from app.models.categorization import (
     CategorizationAuditEvent,
+    CategorizationBallot,
     CategorizationBucket,
     CategorizationItem,
 )
+from app.models.voting import VotingVote
 from app.utils.security import get_password_hash  # For creating test users
 from datetime import datetime, timedelta, UTC
 from app.utils.identifiers import generate_user_id
@@ -422,6 +424,221 @@ def test_update_categorization_config_reseeds_runtime_state(
     assert "Unsorted Ideas" in titles
     assert "New bucket" in titles
 
+
+def test_update_voting_config_blocks_locked_fields_after_votes(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Voting Lock Policy",
+        description="Lock selected voting fields once votes exist",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Dot Vote",
+                config={"options": ["Alpha", "Beta"], "max_votes": 2},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    db_session.add(
+        VotingVote(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            user_id=test_facilitator.user_id,
+            option_id=f"{activity.activity_id}:alpha",
+            option_label="Alpha",
+            weight=1,
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        meeting_manager_instance.update_agenda_activity(
+            meeting.meeting_id,
+            activity.activity_id,
+            AgendaActivityUpdate(config={"options": ["Alpha", "Beta", "Gamma"]}),
+        )
+    assert exc.value.status_code == 409
+    assert "options" in str(exc.value.detail)
+
+    with pytest.raises(HTTPException) as exc:
+        meeting_manager_instance.update_agenda_activity(
+            meeting.meeting_id,
+            activity.activity_id,
+            AgendaActivityUpdate(config={"max_votes": 3}),
+        )
+    assert exc.value.status_code == 409
+    assert "max_votes" in str(exc.value.detail)
+
+    updated = meeting_manager_instance.update_agenda_activity(
+        meeting.meeting_id,
+        activity.activity_id,
+        AgendaActivityUpdate(config={"show_results_immediately": True}),
+    )
+    assert updated.config["show_results_immediately"] is True
+
+
+def test_update_brainstorming_config_allows_changes_with_live_data(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Brainstorming Lock Policy",
+        description="Brainstorming config should remain editable with live ideas",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideas")],
+    )
+    activity = meeting.agenda_activities[0]
+    db_session.add(
+        Idea(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            user_id=test_facilitator.user_id,
+            content="Live idea",
+        )
+    )
+    db_session.commit()
+
+    updated = meeting_manager_instance.update_agenda_activity(
+        meeting.meeting_id,
+        activity.activity_id,
+        AgendaActivityUpdate(config={"allow_subcomments": True}),
+    )
+    assert updated.config["allow_subcomments"] is True
+
+
+def test_update_categorization_seed_fields_blocked_after_live_data(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=2)
+    meeting_payload = MeetingCreate(
+        title="Categorization Seed Lock Policy",
+        description="Seed fields should lock once categorization has live data",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorize",
+                config={"items": ["Original"], "buckets": ["Existing"]},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    db_session.add(
+        CategorizationAuditEvent(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            actor_user_id=test_facilitator.user_id,
+            event_type="bucket_created",
+            payload={"category_id": f"{activity.activity_id}:bucket-1"},
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        meeting_manager_instance.update_agenda_activity(
+            meeting.meeting_id,
+            activity.activity_id,
+            AgendaActivityUpdate(config={"items": ["Updated item"]}),
+        )
+    assert exc.value.status_code == 409
+    assert "items" in str(exc.value.detail)
+
+    updated = meeting_manager_instance.update_agenda_activity(
+        meeting.meeting_id,
+        activity.activity_id,
+        AgendaActivityUpdate(config={"allow_unsorted_submission": False}),
+    )
+    assert updated.config["allow_unsorted_submission"] is False
+
+
+def test_update_categorization_parallel_fields_blocked_after_submitted_ballots(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=2)
+    meeting_payload = MeetingCreate(
+        title="Categorization Ballot Lock Policy",
+        description="Parallel interpretation fields lock after ballot submit",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorize",
+                config={"mode": "PARALLEL_BALLOT", "items": ["Alpha"], "buckets": ["One"]},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    db_session.add(
+        CategorizationBallot(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            user_id=test_facilitator.user_id,
+            item_key=f"{activity.activity_id}:item-1",
+            category_id="UNSORTED",
+            submitted=True,
+        )
+    )
+    db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        meeting_manager_instance.update_agenda_activity(
+            meeting.meeting_id,
+            activity.activity_id,
+            AgendaActivityUpdate(config={"agreement_threshold": 0.8}),
+        )
+    assert exc.value.status_code == 409
+    assert "agreement_threshold" in str(exc.value.detail)
 
 def test_update_meeting_configuration_seeds_categorization_with_items_only(
     meeting_manager_instance: MeetingManager,

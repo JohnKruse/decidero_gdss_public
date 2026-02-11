@@ -1187,19 +1187,53 @@ endblock %}
         }
 
         function applyRowConfigLock(rowState) {
-            const locked = Boolean(rowState?.hasData);
+            const toolType = (rowState?.module?.tool_type || '').toLowerCase();
+            const lockedKeys = new Set(
+                Array.isArray(rowState?.lockedConfigKeys)
+                    ? rowState.lockedConfigKeys.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                    : [],
+            );
+            if (lockedKeys.size === 0 && rowState?.hasData) {
+                if (toolType === 'voting' && rowState?.hasVotes) {
+                    ['options', 'max_votes', 'max_votes_per_option'].forEach((key) => lockedKeys.add(key));
+                }
+                if (toolType === 'categorization') {
+                    ['items', 'buckets'].forEach((key) => lockedKeys.add(key));
+                    if (rowState?.hasSubmittedBallots) {
+                        [
+                            'mode',
+                            'single_assignment_only',
+                            'agreement_threshold',
+                            'margin_threshold',
+                            'minimum_ballots',
+                            'tie_policy',
+                            'missing_vote_handling',
+                            'private_until_reveal',
+                            'allow_unsorted_submission',
+                        ].forEach((key) => lockedKeys.add(key));
+                    }
+                }
+            }
+            const locked = lockedKeys.size > 0;
             const container = rowState?.configContainer;
             if (container) {
                 container.classList.toggle('agenda-config-locked', locked);
             }
             if (!rowState?.configInputs) return;
-            Object.values(rowState.configInputs).forEach((meta) => {
+            Object.entries(rowState.configInputs).forEach(([key, meta]) => {
                 if (!meta?.input) return;
-                meta.input.disabled = locked;
-                meta.input.readOnly = locked;
+                const fieldLocked = lockedKeys.has(key);
+                meta.locked = fieldLocked;
+                meta.input.disabled = fieldLocked;
+                meta.input.readOnly = fieldLocked;
             });
             if (rowState?.configLockNotice) {
                 rowState.configLockNotice.hidden = !locked;
+                if (locked) {
+                    rowState.configLockNotice.textContent = `Some settings are locked because this activity already has live data: ${Array.from(lockedKeys).map((key) => formatConfigLabel(key)).join(', ')}.`;
+                } else {
+                    rowState.configLockNotice.textContent = '';
+                }
             }
         }
 
@@ -1208,7 +1242,17 @@ endblock %}
         function removeRow(rowState) { const index = agendaState.indexOf(rowState); if (index !== -1) agendaState.splice(index, 1); rowState.container.remove(); updateOrders(); if (agendaState.length === 0) addAgendaItem(); }
 
         function createAgendaRow(prefill) {
-            const rowState = { module: null, titleEdited: Boolean(prefill && prefill.title), configInputs: {}, activityId: prefill?.activity_id || null, hasData: Boolean(prefill?.has_data), lockedToolType: prefill?.tool_type || null };
+            const rowState = {
+                module: null,
+                titleEdited: Boolean(prefill && prefill.title),
+                configInputs: {},
+                activityId: prefill?.activity_id || null,
+                hasData: Boolean(prefill?.has_data),
+                hasVotes: Boolean(prefill?.has_votes),
+                hasSubmittedBallots: Boolean(prefill?.has_submitted_ballots),
+                lockedConfigKeys: Array.isArray(prefill?.locked_config_keys) ? [...prefill.locked_config_keys] : [],
+                lockedToolType: prefill?.tool_type || null,
+            };
             const row = document.createElement('div'); row.className = 'agenda-row'; rowState.container = row;
             if (rowState.activityId) {
                 row.dataset.activityId = rowState.activityId;
@@ -1367,6 +1411,9 @@ endblock %}
                 activity_id: prefill.activity_id || null,
                 order_index: prefill.order_index || null,
                 has_data: Boolean(prefill.has_data),
+                has_votes: Boolean(prefill.has_votes),
+                has_submitted_ballots: Boolean(prefill.has_submitted_ballots),
+                locked_config_keys: Array.isArray(prefill.locked_config_keys) ? prefill.locked_config_keys : [],
             };
         }
 
@@ -1600,9 +1647,16 @@ endblock %}
                     }
                     const agendaPayload = collectAgendaPayload();
                     const targetItem = agendaPayload[targetIndex];
+                    const targetRowState = agendaState[targetIndex];
                     if (!targetItem) {
                         throw new Error('Unable to build the activity payload.');
                     }
+                    const configPatch = { ...(targetItem.config || {}) };
+                    Object.entries(targetRowState?.configInputs || {}).forEach(([key, meta]) => {
+                        if (meta?.locked) {
+                            delete configPatch[key];
+                        }
+                    });
                     const response = await fetch(
                         `/api/meetings/${meetingId}/agenda/${activityParam}`,
                         {
@@ -1613,7 +1667,7 @@ endblock %}
                                 tool_type: targetItem.tool_type,
                                 title: targetItem.title,
                                 instructions: targetItem.instructions,
-                                config: targetItem.config,
+                                config: configPatch,
                             }),
                         },
                     );
