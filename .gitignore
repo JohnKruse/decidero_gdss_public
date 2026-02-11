@@ -108,6 +108,9 @@ celerybeat.pid
 # OS specific
 .DS_Store
 
+# Design source files
+*.afphoto
+
 # Environment variables
 .idea
 .vscode
