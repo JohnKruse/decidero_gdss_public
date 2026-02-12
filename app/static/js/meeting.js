@@ -6297,6 +6297,11 @@
                 if (!categorizationActivityId) {
                     return;
                 }
+                if (!state.isFacilitator) {
+                    categorization.lockToggle.checked = Boolean(activeCategorizationConfig?.locked);
+                    setCategorizationError("Only facilitators can lock this activity.");
+                    return;
+                }
                 const nextLocked = Boolean(categorization.lockToggle.checked);
                 try {
                     const response = await fetch(
