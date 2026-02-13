@@ -273,7 +273,6 @@
             submitBallot: document.getElementById("categorizationSubmitBallotButton"),
             unsubmitBallot: document.getElementById("categorizationUnsubmitBallotButton"),
             reveal: document.getElementById("categorizationRevealButton"),
-            lockToggle: document.getElementById("categorizationLockToggle"),
         };
 
         const transfer = {
@@ -4418,14 +4417,6 @@
             if (categorization.editItem) categorization.editItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.deleteItem) categorization.deleteItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.reveal) categorization.reveal.hidden = !showFacilitatorControls || mode !== "PARALLEL_BALLOT";
-            if (categorization.lockToggle) {
-                const wrapper = categorization.lockToggle.closest(".categorization-lock-toggle");
-                if (wrapper) {
-                    wrapper.hidden = !showFacilitatorControls;
-                }
-                categorization.lockToggle.checked = Boolean(summary?.locked);
-                categorization.lockToggle.disabled = !showFacilitatorControls || !categorizationIsActive;
-            }
             if (categorization.addBucket) categorization.addBucket.disabled = !showFacilitatorControls || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
             if (categorization.addItem) categorization.addItem.disabled = !showFacilitatorControls || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
             if (categorization.reveal) categorization.reveal.disabled = !showFacilitatorControls || mode !== "PARALLEL_BALLOT" || !categorizationIsActive;
@@ -6288,40 +6279,6 @@
                     await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
                 } catch (error) {
                     setCategorizationError(error.message || "Unable to reveal results.");
-                }
-            });
-        }
-
-        if (categorization.lockToggle) {
-            categorization.lockToggle.addEventListener("change", async () => {
-                if (!categorizationActivityId) {
-                    return;
-                }
-                if (!state.isFacilitator) {
-                    categorization.lockToggle.checked = Boolean(activeCategorizationConfig?.locked);
-                    setCategorizationError("Only facilitators can lock this activity.");
-                    return;
-                }
-                const nextLocked = Boolean(categorization.lockToggle.checked);
-                try {
-                    const response = await fetch(
-                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/lock`,
-                        {
-                            method: "POST",
-                            credentials: "include",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ activity_id: categorizationActivityId, locked: nextLocked }),
-                        },
-                    );
-                    if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.detail || "Unable to update lock state.");
-                    }
-                    activeCategorizationConfig = { ...activeCategorizationConfig, locked: nextLocked };
-                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
-                } catch (error) {
-                    categorization.lockToggle.checked = !nextLocked;
-                    setCategorizationError(error.message || "Unable to update lock state.");
                 }
             });
         }
