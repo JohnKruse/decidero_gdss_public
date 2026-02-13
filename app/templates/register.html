@@ -63,9 +63,6 @@
                 <label for="password">PASSWORD</label>
                 <input type="password" id="password" name="password" required
                        autocomplete="new-password">
-                <button type="button" class="password-toggle" data-target="password" aria-label="Show password">
-                    <span class="password-toggle-icon" aria-hidden="true"></span>
-                </button>
             </div>
             <div class="password-requirements" id="passwordRequirements" aria-live="polite">
                 <div class="requirement" data-rule="length"><span class="indicator"></span>At least 8 characters</div>
@@ -78,9 +75,12 @@
                 <label for="password_confirmation">CONFIRM PASSWORD</label>
                 <input type="password" id="password_confirmation" name="password_confirmation" required
                        autocomplete="new-password">
-                <button type="button" class="password-toggle" data-target="password_confirmation" aria-label="Show password confirmation">
-                    <span class="password-toggle-icon" aria-hidden="true"></span>
-                </button>
+            </div>
+            <div class="password-visibility-toggle">
+                <label for="show-passwords">
+                    <input type="checkbox" id="show-passwords" name="show_passwords">
+                    Show password
+                </label>
             </div>
             <input type="hidden" name="role" value="{{ initial_role }}">
             <button type="submit" class="submit-btn">
@@ -121,6 +121,7 @@
         const organizationInput = document.getElementById('organization');
         const passwordInput = document.getElementById('password');
         const confirmInput = document.getElementById('password_confirmation');
+        const showPasswordsInput = document.getElementById('show-passwords');
         const submitButton = form.querySelector('.submit-btn');
         const passwordRequirementItems = document.querySelectorAll('#passwordRequirements .requirement');
         const loginPattern = /^[A-Za-z0-9._@+-]{3,50}$/;
@@ -152,20 +153,13 @@
             updatePasswordRequirements(passwordInput.value);
         });
 
-        const passwordToggles = document.querySelectorAll('.password-toggle');
-        passwordToggles.forEach((toggle) => {
-            toggle.addEventListener('click', () => {
-                const targetId = toggle.dataset.target;
-                const targetInput = document.getElementById(targetId);
-                if (!targetInput) {
-                    return;
-                }
-                const isHidden = targetInput.type === 'password';
-                targetInput.type = isHidden ? 'text' : 'password';
-                toggle.classList.toggle('is-visible', isHidden);
-                toggle.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        if (showPasswordsInput) {
+            showPasswordsInput.addEventListener('change', () => {
+                const asText = showPasswordsInput.checked;
+                passwordInput.type = asText ? 'text' : 'password';
+                confirmInput.type = asText ? 'text' : 'password';
             });
-        });
+        }
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();

@@ -237,6 +237,27 @@ body {
     content: "✔";
 }
 
+.password-visibility-toggle {
+    margin-top: -0.2rem;
+    margin-bottom: 0.8rem;
+    text-align: center;
+}
+
+.password-visibility-toggle label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.85rem;
+    color: rgba(11, 61, 145, 0.85);
+    letter-spacing: 0.03em;
+    cursor: pointer;
+}
+
+.password-visibility-toggle input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--navy-blue);
+}
+
 .submit-btn {
     background: var(--navy-blue);
     color: var(--white);
