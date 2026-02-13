@@ -482,6 +482,7 @@ GRAB_ENDPOINT_PATH = "/__grab"
 EXEMPT_PATHS = [
     "/login",  # HTML login page
     "/register",  # HTML registration page
+    "/about",  # Public about page
     "/api/auth/login",  # API endpoint for form-based login (pages.py)
     "/api/auth/token",  # API endpoint for token generation
     "/api/auth/register",  # API endpoint for user registration

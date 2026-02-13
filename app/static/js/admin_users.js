@@ -68,6 +68,23 @@
     return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized : '#9CA3AF';
   }
 
+  function normalizeAvatarPath(path) {
+    const normalized = String(path || '').trim();
+    if (!normalized.startsWith('/static/avatars/')) {
+      return '';
+    }
+    return normalized;
+  }
+
+  function renderUserAvatar(user) {
+    const avatarColor = normalizeAvatarColor(user.avatar_color);
+    const avatarPath = normalizeAvatarPath(user.avatar_icon_path);
+    if (avatarPath) {
+      return `<img class="user-avatar-thumb" src="${avatarPath}" alt="" aria-hidden="true" loading="lazy" decoding="async" style="background-color: ${avatarColor};">`;
+    }
+    return `<span class="user-avatar-thumb user-avatar-thumb--fallback" aria-hidden="true" style="background-color: ${avatarColor};"></span>`;
+  }
+
   function buildRoleSelect(roleValue, identifier, disabled) {
     const options = [];
     const addOption = (value) => {
@@ -104,13 +121,12 @@
       const actionsDisabled = isSuperAdmin ? 'disabled aria-disabled="true"' : '';
       const identifier = u.login || u.email;
       const roleSelect = buildRoleSelect(roleValue, identifier, isSuperAdmin);
-      const avatarColor = normalizeAvatarColor(u.avatar_color);
       const tr = document.createElement('tr');
       tr.dataset.role = roleValue;
       tr.innerHTML = `
         <td>
           <div class="user-login-cell">
-            <span class="user-color-avatar" aria-hidden="true" style="background-color: ${avatarColor};"></span>
+            ${renderUserAvatar(u)}
             <span>${u.login || ''}</span>
           </div>
         </td>

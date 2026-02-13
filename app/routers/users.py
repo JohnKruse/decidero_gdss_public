@@ -977,6 +977,7 @@ async def get_users(
                 "first_name": u.first_name,
                 "last_name": u.last_name,
                 "avatar_color": u.avatar_color,
+                "avatar_icon_path": u.avatar_icon_path,
                 "role": u.role,
                 "is_active": u.is_active,
             }

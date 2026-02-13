@@ -64,6 +64,12 @@
                 <input type="password" id="password" name="password" required
                        autocomplete="new-password">
             </div>
+            <div class="password-visibility-toggle">
+                <label for="show-passwords">
+                    <input type="checkbox" id="show-passwords" name="show_passwords">
+                    Show password
+                </label>
+            </div>
             <div class="password-requirements" id="passwordRequirements" aria-live="polite">
                 <div class="requirement" data-rule="length"><span class="indicator"></span>At least 8 characters</div>
                 <div class="requirement" data-rule="uppercase"><span class="indicator"></span>Contains an uppercase letter</div>
@@ -75,12 +81,6 @@
                 <label for="password_confirmation">CONFIRM PASSWORD</label>
                 <input type="password" id="password_confirmation" name="password_confirmation" required
                        autocomplete="new-password">
-            </div>
-            <div class="password-visibility-toggle">
-                <label for="show-passwords">
-                    <input type="checkbox" id="show-passwords" name="show_passwords">
-                    Show password
-                </label>
             </div>
             <input type="hidden" name="role" value="{{ initial_role }}">
             <button type="submit" class="submit-btn">
