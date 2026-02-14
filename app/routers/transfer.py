@@ -19,6 +19,7 @@ from app.schemas.transfer import TransferCommit, TransferDraftUpdate, TransferBu
 from app.services import meeting_state_manager
 from app.services.activity_catalog import get_activity_definition
 from app.services.transfer_source import build_transfer_items
+from app.services.transfer_transforms import apply_transfer_transform
 from app.services.voting_manager import VotingManager
 from app.services.categorization_manager import CategorizationManager
 from app.utils.transfer_metadata import append_transfer_history, ensure_transfer_metadata
@@ -271,6 +272,9 @@ async def get_transfer_bundles(
     meeting_id: str,
     activity_id: str = Query(..., description="Donor activity identifier"),
     include_comments: bool = Query(True, description="Include comments in response"),
+    transfer_profile: Optional[str] = Query(
+        None, description="Transfer transform profile applied before editing"
+    ),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -291,19 +295,27 @@ async def get_transfer_bundles(
     activity = _resolve_activity(meeting, activity_id)
     await _ensure_not_running(meeting_id, activity_id)
 
-    items, source = build_transfer_items(
+    items, source, source_metadata = build_transfer_items(
         db,
         meeting,
         activity,
         include_comments=include_comments,
     )
+    transformed = apply_transfer_transform(
+        items=items,
+        donor_tool_type=activity.tool_type,
+        requested_profile=transfer_profile,
+        source_metadata=source_metadata,
+    )
+    items = transformed.items
     logger.info(
-        "transfer bundles meeting=%s activity=%s ideas=%d include_comments=%s source=%s",
+        "transfer bundles meeting=%s activity=%s ideas=%d include_comments=%s source=%s profile=%s",
         meeting_id,
         activity_id,
         len(items),
         include_comments,
         source,
+        transformed.profile,
     )
     items = [
         {
@@ -331,7 +343,12 @@ async def get_transfer_bundles(
         "activity_id": activity_id,
         "kind": "input",
         "items": items,
-        "metadata": {"include_comments": include_comments},
+        "metadata": {
+            "include_comments": include_comments,
+            "transfer_profile": transformed.profile,
+            "source_tool_type": str(activity.tool_type or "").lower(),
+            "source_metadata": source_metadata,
+        },
         "created_at": None,
         "updated_at": None,
     }

@@ -4,14 +4,14 @@ from pydantic import BaseModel, Field
 
 
 class TransferBundleItem(BaseModel):
-    id: Optional[int] = None
+    id: Optional[int | str] = None
     content: Optional[str] = None
     meeting_id: Optional[str] = None
     activity_id: Optional[str] = None
     user_id: Optional[str] = None
     user_color: Optional[str] = None
     submitted_name: Optional[str] = None
-    parent_id: Optional[int] = None
+    parent_id: Optional[int | str] = None
     timestamp: Optional[str] = None
     updated_at: Optional[str] = None
     created_at: Optional[str] = None  # Legacy alias for timestamp

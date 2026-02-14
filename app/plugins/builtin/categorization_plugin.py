@@ -63,7 +63,7 @@ class CategorizationPlugin(ActivityPlugin):
         manager = CategorizationManager(context.db)
         state = manager.build_state(context.meeting.meeting_id, context.activity.activity_id)
         config = dict(context.activity.config or {})
-        mode = str(config.get("mode") or "FACILITATOR_LIVE").upper()
+        mode = self._normalized_mode(config.get("mode"))
         threshold = self._as_float(
             config.get("agreement_threshold", config.get("agree_threshold", 0.60)),
             fallback=0.60,
@@ -129,6 +129,8 @@ class CategorizationPlugin(ActivityPlugin):
             )
 
         finalization_metadata = dict(config.get("finalization_metadata") or {})
+        if str(finalization_metadata.get("mode") or "").upper() == "PARALLEL_BALLOT":
+            finalization_metadata["mode"] = "FACILITATOR_LIVE"
         if not finalization_metadata:
             finalization_metadata = {
                 "mode": mode,
@@ -158,7 +160,15 @@ class CategorizationPlugin(ActivityPlugin):
         context,
         include_comments: bool = True,
     ) -> Optional[TransferSourceResult]:
-        return TransferSourceResult(items=self._build_items(context), source="categorization")
+        state = CategorizationManager(context.db).build_state(
+            context.meeting.meeting_id,
+            context.activity.activity_id,
+        )
+        return TransferSourceResult(
+            items=self._build_items(context, state=state),
+            source="categorization",
+            metadata={"categorization_buckets": list(state.get("buckets") or [])},
+        )
 
     def get_transfer_count(self, context) -> Optional[int]:
         return len(self._build_items(context))
@@ -176,6 +186,13 @@ class CategorizationPlugin(ActivityPlugin):
             return int(raw)
         except (TypeError, ValueError):
             return int(fallback)
+
+    @staticmethod
+    def _normalized_mode(raw_mode: Any) -> str:
+        mode = str(raw_mode or "FACILITATOR_LIVE").upper()
+        if mode == "PARALLEL_BALLOT":
+            return "FACILITATOR_LIVE"
+        return mode
 
     @staticmethod
     def _seed_items_from_bundle(input_bundle) -> List[Dict[str, Any]]:
@@ -251,12 +268,18 @@ class CategorizationPlugin(ActivityPlugin):
         return f"{content} (Comments: {'; '.join(comment_texts)})"
 
     @staticmethod
-    def _build_items(context) -> List[Dict[str, Any]]:
+    def _build_items(context, state: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         manager = CategorizationManager(context.db)
-        state = manager.build_state(context.meeting.meeting_id, context.activity.activity_id)
+        state = state or manager.build_state(
+            context.meeting.meeting_id, context.activity.activity_id
+        )
         items = state.get("items", [])
         buckets = {
             str(bucket.get("category_id")): str(bucket.get("title") or "")
+            for bucket in state.get("buckets", [])
+        }
+        bucket_orders = {
+            str(bucket.get("category_id")): int(bucket.get("order_index", 0))
             for bucket in state.get("buckets", [])
         }
         assignments = dict(state.get("assignments") or {})
@@ -279,6 +302,10 @@ class CategorizationPlugin(ActivityPlugin):
                 categorization = dict(metadata.get("categorization") or {})
                 categorization.setdefault("bucket_id", category_id)
                 categorization.setdefault("bucket_title", buckets.get(category_id, category_id))
+                categorization.setdefault(
+                    "bucket_order_index",
+                    bucket_orders.get(category_id, 999999),
+                )
                 metadata["categorization"] = categorization
                 source = deepcopy(item.get("source") or {})
                 source.setdefault("meeting_id", context.meeting.meeting_id)

@@ -10,6 +10,7 @@ from app.models.categorization import CategorizationItem
 from app.models.idea import Idea
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
+from app.services.categorization_manager import CategorizationManager
 from app.services.voting_manager import VotingManager
 from app.services import meeting_state_manager
 
@@ -1018,6 +1019,200 @@ def test_transfer_commit_to_categorization_populates_items(
         assert any("Campus parking is limited" in (row.content or "") for row in seeded_rows)
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_bundles_from_categorization_support_profiles(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Categorization Transfer Profiles",
+            description="Ensure categorization transfer supports rollup and suffix profiles.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Buckets",
+                config={
+                    "mode": "FACILITATOR_LIVE",
+                    "items": ["Apply policy", "Train staff", "Reserve room"],
+                    "buckets": ["Rules & Regulations", "Logistics", "Unused Bucket"],
+                },
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=activity,
+        actor_user_id=facilitator.user_id,
+    )
+
+    buckets = manager.list_buckets(meeting.meeting_id, activity.activity_id)
+    rules_bucket = next(bucket for bucket in buckets if bucket.title == "Rules & Regulations")
+    logistics_bucket = next(bucket for bucket in buckets if bucket.title == "Logistics")
+
+    items = manager.list_items(meeting.meeting_id, activity.activity_id)
+    item_map = {item.content: item.item_key for item in items}
+    manager.upsert_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key=item_map["Apply policy"],
+        category_id=rules_bucket.category_id,
+        actor_user_id=facilitator.user_id,
+    )
+    manager.upsert_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key=item_map["Train staff"],
+        category_id=rules_bucket.category_id,
+        actor_user_id=facilitator.user_id,
+    )
+    manager.upsert_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key=item_map["Reserve room"],
+        category_id=logistics_bucket.category_id,
+        actor_user_id=facilitator.user_id,
+    )
+
+    rollup_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={
+            "activity_id": activity.activity_id,
+            "include_comments": "false",
+            "transfer_profile": "bucket_rollup",
+        },
+    )
+    assert rollup_resp.status_code == 200, rollup_resp.json()
+    rollup_items = rollup_resp.json()["input"]["items"]
+    assert [item["content"] for item in rollup_items] == [
+        "Category: Rules & Regulations (Ideas: Apply policy; Train staff)",
+        "Category: Logistics (Ideas: Reserve room)",
+        "Category: Unused Bucket (Ideas: )",
+    ]
+
+    suffix_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={
+            "activity_id": activity.activity_id,
+            "include_comments": "false",
+            "transfer_profile": "bucket_suffix",
+        },
+    )
+    assert suffix_resp.status_code == 200, suffix_resp.json()
+    suffix_items = suffix_resp.json()["input"]["items"]
+    assert [item["content"] for item in suffix_items] == [
+        "Apply policy (Category: Rules & Regulations)",
+        "Train staff (Category: Rules & Regulations)",
+        "Reserve room (Category: Logistics)",
+    ]
+
+
+def test_transfer_commit_bucket_rollup_to_voting_accepts_string_ids(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Categorization Rollup To Voting",
+            description="Ensure rollup transfer items with string ids can commit to voting.",
+            start_time=datetime.now(UTC) + timedelta(minutes=5),
+            end_time=datetime.now(UTC) + timedelta(minutes=35),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Buckets",
+                config={
+                    "mode": "FACILITATOR_LIVE",
+                    "items": ["Alpha", "Beta"],
+                    "buckets": ["Rules"],
+                },
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=activity,
+        actor_user_id=facilitator.user_id,
+    )
+    rules_bucket = next(
+        bucket
+        for bucket in manager.list_buckets(meeting.meeting_id, activity.activity_id)
+        if bucket.title == "Rules"
+    )
+    for row in manager.list_items(meeting.meeting_id, activity.activity_id):
+        manager.upsert_assignment(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            item_key=row.item_key,
+            category_id=rules_bucket.category_id,
+            actor_user_id=facilitator.user_id,
+        )
+
+    bundles_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={
+            "activity_id": activity.activity_id,
+            "include_comments": "false",
+            "transfer_profile": "bucket_rollup",
+        },
+    )
+    assert bundles_resp.status_code == 200, bundles_resp.json()
+    items = bundles_resp.json()["input"]["items"]
+    assert items
+    assert isinstance(items[0].get("id"), str)
+
+    commit_resp = authenticated_client.post(
+        f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+        json={
+            "donor_activity_id": activity.activity_id,
+            "include_comments": False,
+            "items": items,
+            "metadata": {},
+            "target_activity": {"tool_type": "voting"},
+        },
+    )
+    assert commit_resp.status_code == 200, commit_resp.json()
+    new_activity_id = commit_resp.json()["new_activity"]["activity_id"]
+
+    options_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/voting/options",
+        params={"activity_id": new_activity_id},
+    )
+    assert options_resp.status_code == 200, options_resp.json()
+    labels = [opt["label"] for opt in options_resp.json().get("options", [])]
+    assert any(label.startswith("Category: Rules") for label in labels)
 
 
 def test_transfer_commit_to_voting_resets_stale_state(

@@ -283,6 +283,7 @@
             donorTitle: document.getElementById("transferDonorTitle"),
             includeComments: document.getElementById("transferIncludeComments"),
             targetToolType: document.getElementById("transferTargetToolType"),
+            transformProfile: document.getElementById("transferTransformProfile"),
             addIdea: document.getElementById("transferAddIdea"),
             ideasList: document.getElementById("transferIdeasList"),
             ideasBody: document.getElementById("transferIdeasBody"),
@@ -527,7 +528,9 @@
         const transferState = {
             donorActivityId: null,
             donorOrderIndex: null,
+            donorToolType: null,
             includeComments: true,
+            transformProfile: "standard",
             items: [],
             metadata: {},
             dirty: false,
@@ -2621,6 +2624,9 @@
             if (transfer.targetToolType) {
                 transfer.targetToolType.disabled = disabled;
             }
+            if (transfer.transformProfile) {
+                transfer.transformProfile.disabled = disabled;
+            }
             if (transfer.addIdea) {
                 transfer.addIdea.disabled = disabled;
             }
@@ -2837,6 +2843,46 @@
                 option.textContent = module.label || module.tool_type;
                 transfer.targetToolType.appendChild(option);
             });
+        }
+
+        function getTransferProfileOptions(toolType) {
+            if (String(toolType || "").toLowerCase() === "categorization") {
+                return [
+                    { value: "bucket_rollup", label: "Buckets -> Rollup Ideas" },
+                    { value: "bucket_suffix", label: "Ideas -> Append Category" },
+                ];
+            }
+            return [{ value: "standard", label: "Standard Transfer" }];
+        }
+
+        function getActiveTransferProfile() {
+            if (!transfer.transformProfile || transfer.transformProfile.hidden) {
+                return "standard";
+            }
+            const selected = String(transfer.transformProfile.value || "").trim().toLowerCase();
+            return selected || "standard";
+        }
+
+        function configureTransferProfileSelector(toolType, selectedProfile = null) {
+            if (!transfer.transformProfile) {
+                transferState.transformProfile = "standard";
+                return;
+            }
+            const options = getTransferProfileOptions(toolType);
+            transfer.transformProfile.innerHTML = "";
+            options.forEach((entry) => {
+                const option = document.createElement("option");
+                option.value = entry.value;
+                option.textContent = entry.label;
+                transfer.transformProfile.appendChild(option);
+            });
+            const requested = String(selectedProfile || "").trim().toLowerCase();
+            const values = new Set(options.map((entry) => entry.value));
+            const fallback = options[0]?.value || "standard";
+            const resolved = values.has(requested) ? requested : fallback;
+            transfer.transformProfile.value = resolved;
+            transfer.transformProfile.hidden = options.length <= 1;
+            transferState.transformProfile = resolved;
         }
 
         function renderTransferIdeas() {
@@ -3072,6 +3118,8 @@
         function resetTransferState() {
             transferState.donorActivityId = null;
             transferState.donorOrderIndex = null;
+            transferState.donorToolType = null;
+            transferState.transformProfile = "standard";
             transferState.items = [];
             transferState.metadata = {};
             transferState.dirty = false;
@@ -3087,6 +3135,7 @@
             if (transfer.includeComments) {
                 transfer.includeComments.checked = true;
             }
+            configureTransferProfileSelector(null, "standard");
             if (transfer.donorTitle) {
                 transfer.donorTitle.textContent = "Select a brainstorming activity";
             }
@@ -3105,6 +3154,8 @@
             resetTransferState();
             transferState.donorActivityId = activity.activity_id || activity.activityId || activity.id || null;
             transferState.donorOrderIndex = activity.order_index || null;
+            transferState.donorToolType = String(activity.tool_type || activity.toolType || "").toLowerCase();
+            configureTransferProfileSelector(transferState.donorToolType, null);
             if (transfer.donorTitle) {
                 transfer.donorTitle.textContent = activity.title || "Selected activity";
             }
@@ -3151,6 +3202,7 @@
                 const params = new URLSearchParams({
                     activity_id: transferState.donorActivityId,
                     include_comments: String(transfer.includeComments?.checked ?? true),
+                    transfer_profile: getActiveTransferProfile(),
                 });
                 const transferUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/transfer/bundles?${params.toString()}`;
                 setTransferStatus(`Requesting transfer bundle for ${transferState.donorActivityId}...`, "info");
@@ -3165,7 +3217,11 @@
                 console.info("transfer bundles loaded", { transferUrl, draft: data.draft, input: data.input });
                 const draftItems = Array.isArray(data.draft?.items) ? data.draft.items : null;
                 const inputItems = Array.isArray(data.input?.items) ? data.input.items : null;
-                const useDraft = Boolean(draftItems && draftItems.length > 0);
+                const selectedProfile = getActiveTransferProfile();
+                const draftProfile = String(data.draft?.metadata?.transfer_profile || "").toLowerCase();
+                const useDraft =
+                    Boolean(draftItems && draftItems.length > 0) &&
+                    (!selectedProfile || draftProfile === selectedProfile);
                 const bundle = useDraft ? data.draft : (data.input || data.draft || {});
                 transferState.items = Array.isArray(bundle.items)
                     ? bundle.items.map((item) => normalizeTransferItem(item))
@@ -3216,6 +3272,9 @@
                     }
                 });
                 transferState.metadata = bundle.metadata || {};
+                const resolvedProfile = String(transferState.metadata.transfer_profile || getActiveTransferProfile()).toLowerCase();
+                transferState.transformProfile = resolvedProfile || "standard";
+                configureTransferProfileSelector(transferState.donorToolType, transferState.transformProfile);
                 transferState.dirty = false;
                 transferState.loadSucceeded = true;
                 const loadedCount = transferState.items.length;
@@ -6534,6 +6593,14 @@
             }
             if (transfer.targetToolType) {
                 buildTransferTargetOptions();
+            }
+            if (transfer.transformProfile) {
+                transfer.transformProfile.addEventListener("change", async () => {
+                    transferState.transformProfile = getActiveTransferProfile();
+                    transferState.dirty = false;
+                    setTransferStatus("Loading transformed transfer bundle...", "info");
+                    await loadTransferBundles();
+                });
             }
             // Transfer panel is inline; no modal click handler.
         })(); // end initialize
