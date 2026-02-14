@@ -533,7 +533,7 @@ def test_update_brainstorming_config_allows_changes_with_live_data(
     assert updated.config["allow_subcomments"] is True
 
 
-def test_update_categorization_seed_fields_blocked_after_live_data(
+def test_update_categorization_seed_fields_blocked_after_activity_started(
     meeting_manager_instance: MeetingManager,
     db_session: Session,
     test_facilitator: User,
@@ -562,15 +562,8 @@ def test_update_categorization_seed_fields_blocked_after_live_data(
         ],
     )
     activity = meeting.agenda_activities[0]
-    db_session.add(
-        CategorizationAuditEvent(
-            meeting_id=meeting.meeting_id,
-            activity_id=activity.activity_id,
-            actor_user_id=test_facilitator.user_id,
-            event_type="bucket_created",
-            payload={"category_id": f"{activity.activity_id}:bucket-1"},
-        )
-    )
+    activity.stopped_at = datetime.now(UTC)
+    db_session.add(activity)
     db_session.commit()
 
     with pytest.raises(HTTPException) as exc:

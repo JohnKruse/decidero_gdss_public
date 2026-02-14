@@ -470,6 +470,7 @@ def test_categorization_plugin_close_emits_finalized_output_metadata(db_session)
     assert output_bundle is not None
     metadata = output_bundle.bundle_metadata or {}
     assert "categories" in metadata
-    assert metadata["finalization_metadata"]["mode"] == "PARALLEL_BALLOT"
+    assert metadata["finalization_metadata"]["mode"] == "FACILITATOR_LIVE"
     assert metadata["final_assignments"]["cat-1"] == target_bucket
+    assert metadata["agreement_metrics"] == {}
     assert output_bundle.items[0]["metadata"]["categorization"]["bucket_id"] == target_bucket

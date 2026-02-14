@@ -15,7 +15,7 @@ from app.data.meeting_manager import MeetingManager
 from app.services import meeting_state_manager
 from app.schemas.meeting import AgendaActivityCreate
 from app.schemas.meeting import MeetingCreate, PublicityType
-from app.models.categorization import CategorizationAuditEvent, CategorizationBallot
+from app.models.categorization import CategorizationBallot
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity
 from app.models.voting import VotingVote
@@ -561,15 +561,14 @@ def test_get_meeting_agenda_includes_lock_metadata(
             weight=1,
         )
     )
-    db_session.add(
-        CategorizationAuditEvent(
-            meeting_id=test_meeting_data,
-            activity_id=categorization_activity["activity_id"],
-            actor_user_id=admin_user.user_id,
-            event_type="bucket_created",
-            payload={"category_id": f"{categorization_activity['activity_id']}:bucket-1"},
-        )
+    categorization_activity_model = (
+        db_session.query(AgendaActivity)
+        .filter(AgendaActivity.activity_id == categorization_activity["activity_id"])
+        .first()
     )
+    assert categorization_activity_model is not None
+    categorization_activity_model.stopped_at = datetime.now(UTC)
+    db_session.add(categorization_activity_model)
     db_session.add(
         CategorizationBallot(
             meeting_id=test_meeting_data,

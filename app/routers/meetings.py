@@ -410,12 +410,13 @@ def _apply_activity_lock_metadata(
         has_votes = bool(flags.get("has_votes"))
         has_submitted_ballots = bool(flags.get("has_submitted_ballots"))
         tool_type = str(getattr(item, "tool_type", "") or "").lower()
+        seed_config_locked = meeting_manager.is_categorization_seed_config_locked(item)
 
         locked_config_keys: List[str] = []
         if tool_type == "voting" and has_votes:
             locked_config_keys.extend(["options", "max_votes", "max_votes_per_option"])
         if tool_type == "categorization":
-            if has_live_data:
+            if seed_config_locked:
                 locked_config_keys.extend(["items", "buckets"])
             if has_submitted_ballots:
                 locked_config_keys.extend(parallel_locked_keys)

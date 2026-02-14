@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.data.meeting_manager import MeetingManager
-from app.models.categorization import CategorizationBallot
 from app.models.user import UserRole
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
 from app.services import meeting_state_manager
@@ -425,7 +424,7 @@ def test_categorization_mutations_broadcast_updates(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
-def test_parallel_ballot_lifecycle_and_privacy_controls(
+def test_legacy_parallel_config_uses_facilitator_live_flow(
     client: TestClient,
     user_manager_with_admin,
     db_session,
@@ -435,23 +434,15 @@ def test_parallel_ballot_lifecycle_and_privacy_controls(
     meeting = _create_parallel_categorization_meeting(db_session, owner_id=facilitator.user_id)
     activity_id = meeting.agenda_activities[0].activity_id
 
-    participant_one = user_manager_with_admin.add_user(
+    participant = user_manager_with_admin.add_user(
         first_name="Parallel",
-        last_name="One",
-        email="parallel.one@decidero.local",
-        hashed_password=get_password_hash("ParallelOne@123"),
+        last_name="Participant",
+        email="parallel.participant@decidero.local",
+        hashed_password=get_password_hash("ParallelParticipant@123"),
         role=UserRole.PARTICIPANT.value,
-        login="parallel_one",
+        login="parallel_participant",
     )
-    participant_two = user_manager_with_admin.add_user(
-        first_name="Parallel",
-        last_name="Two",
-        email="parallel.two@decidero.local",
-        hashed_password=get_password_hash("ParallelTwo@123"),
-        role=UserRole.PARTICIPANT.value,
-        login="parallel_two",
-    )
-    meeting.participants.extend([participant_one, participant_two])
+    meeting.participants.append(participant)
     db_session.add(meeting)
     db_session.commit()
 
@@ -488,151 +479,50 @@ def test_parallel_ballot_lifecycle_and_privacy_controls(
         )
         assert facilitator_login.status_code == 200, facilitator_login.json()
 
-        participant_one_login = client.post(
-            "/api/auth/token",
-            json={"username": "parallel_one", "password": "ParallelOne@123"},
-        )
-        assert participant_one_login.status_code == 200, participant_one_login.json()
-
-        hidden_state = client.get(
+        state_before = client.get(
             f"/api/meetings/{meeting.meeting_id}/categorization/state",
             params={"activity_id": activity_id},
         )
-        assert hidden_state.status_code == 200, hidden_state.json()
-        assert hidden_state.json()["assignments"] == {}
-        assert hidden_state.json()["agreement_metrics"] == {}
+        assert state_before.status_code == 200, state_before.json()
+        assert isinstance(state_before.json()["assignments"], dict)
+        assert state_before.json()["agreement_metrics"] == {}
 
         ballot_state = client.get(
             f"/api/meetings/{meeting.meeting_id}/categorization/ballot",
             params={"activity_id": activity_id},
         )
-        assert ballot_state.status_code == 200, ballot_state.json()
-        assert ballot_state.json()["submitted"] is False
-        assert len(ballot_state.json()["items"]) == 2
+        assert ballot_state.status_code == 409, ballot_state.json()
 
-        first_bucket = next(
-            bucket["category_id"]
-            for bucket in ballot_state.json()["buckets"]
-            if bucket["category_id"] != "UNSORTED"
+        create_bucket_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/buckets",
+            json={"activity_id": activity_id, "title": "Compat Bucket"},
         )
-        assign_resp = client.post(
-            f"/api/meetings/{meeting.meeting_id}/categorization/ballot/assignments",
-            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": first_bucket},
-        )
-        assert assign_resp.status_code == 200, assign_resp.json()
+        assert create_bucket_resp.status_code == 200, create_bucket_resp.json()
+        compat_bucket_id = create_bucket_resp.json()["category_id"]
 
-        submit_resp = client.post(
-            f"/api/meetings/{meeting.meeting_id}/categorization/ballot/submit",
-            json={"activity_id": activity_id},
+        facilitator_assign_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/assignments",
+            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": compat_bucket_id},
         )
-        assert submit_resp.status_code == 200, submit_resp.json()
-        assert submit_resp.json()["submitted"] is True
+        assert facilitator_assign_resp.status_code == 200, facilitator_assign_resp.json()
 
-        facilitator_login_after_submit = client.post(
+        participant_login = client.post(
             "/api/auth/token",
-            json={"username": "admin", "password": "Admin@123!"},
+            json={"username": "parallel_participant", "password": "ParallelParticipant@123"},
         )
-        assert facilitator_login_after_submit.status_code == 200, facilitator_login_after_submit.json()
-        facilitator_state = client.get(
+        assert participant_login.status_code == 200, participant_login.json()
+        participant_assign_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/assignments",
+            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": compat_bucket_id},
+        )
+        assert participant_assign_resp.status_code == 403, participant_assign_resp.json()
+
+        state_after = client.get(
             f"/api/meetings/{meeting.meeting_id}/categorization/state",
             params={"activity_id": activity_id},
         )
-        assert facilitator_state.status_code == 200, facilitator_state.json()
-        assert "pi-1" in facilitator_state.json()["agreement_metrics"]
-
-        participant_two_login = client.post(
-            "/api/auth/token",
-            json={"username": "parallel_two", "password": "ParallelTwo@123"},
-        )
-        assert participant_two_login.status_code == 200, participant_two_login.json()
-        second_ballot = client.get(
-            f"/api/meetings/{meeting.meeting_id}/categorization/ballot",
-            params={"activity_id": activity_id},
-        )
-        assert second_ballot.status_code == 200, second_ballot.json()
-        assert second_ballot.json()["assignments"] == {}
-
-        facilitator_login_again = client.post(
-            "/api/auth/token",
-            json={"username": "admin", "password": "Admin@123!"},
-        )
-        assert facilitator_login_again.status_code == 200, facilitator_login_again.json()
-        reveal_resp = client.post(
-            f"/api/meetings/{meeting.meeting_id}/categorization/reveal",
-            json={"activity_id": activity_id, "revealed": True},
-        )
-        assert reveal_resp.status_code == 200, reveal_resp.json()
-        assert reveal_resp.json()["results_revealed"] is True
-
-        participant_two_login_again = client.post(
-            "/api/auth/token",
-            json={"username": "parallel_two", "password": "ParallelTwo@123"},
-        )
-        assert participant_two_login_again.status_code == 200, participant_two_login_again.json()
-        revealed_state = client.get(
-            f"/api/meetings/{meeting.meeting_id}/categorization/state",
-            params={"activity_id": activity_id},
-        )
-        assert revealed_state.status_code == 200, revealed_state.json()
-        assert isinstance(revealed_state.json()["assignments"], dict)
-
-        facilitator_login_for_resolution = client.post(
-            "/api/auth/token",
-            json={"username": "admin", "password": "Admin@123!"},
-        )
-        assert (
-            facilitator_login_for_resolution.status_code == 200
-        ), facilitator_login_for_resolution.json()
-        disputed_resp = client.get(
-            f"/api/meetings/{meeting.meeting_id}/categorization/disputed",
-            params={"activity_id": activity_id},
-        )
-        assert disputed_resp.status_code == 200, disputed_resp.json()
-        assert isinstance(disputed_resp.json()["disputed_items"], list)
-        finalize_resp = client.post(
-            f"/api/meetings/{meeting.meeting_id}/categorization/final-assignments",
-            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": "UNSORTED"},
-        )
-        assert finalize_resp.status_code == 200, finalize_resp.json()
-
-        participant_two_login_post_finalize = client.post(
-            "/api/auth/token",
-            json={"username": "parallel_two", "password": "ParallelTwo@123"},
-        )
-        assert (
-            participant_two_login_post_finalize.status_code == 200
-        ), participant_two_login_post_finalize.json()
-        post_finalize_state = client.get(
-            f"/api/meetings/{meeting.meeting_id}/categorization/state",
-            params={"activity_id": activity_id},
-        )
-        assert post_finalize_state.status_code == 200, post_finalize_state.json()
-        assert post_finalize_state.json()["final_assignments"]["pi-1"] == "UNSORTED"
-
-        preserved_ballot = (
-            db_session.query(CategorizationBallot)
-            .filter(
-                CategorizationBallot.meeting_id == meeting.meeting_id,
-                CategorizationBallot.activity_id == activity_id,
-                CategorizationBallot.user_id == participant_one.user_id,
-                CategorizationBallot.item_key == "pi-1",
-            )
-            .first()
-        )
-        assert preserved_ballot is not None
-        assert preserved_ballot.category_id == first_bucket
-
-        participant_one_login_again = client.post(
-            "/api/auth/token",
-            json={"username": "parallel_one", "password": "ParallelOne@123"},
-        )
-        assert participant_one_login_again.status_code == 200, participant_one_login_again.json()
-        unsubmit_resp = client.post(
-            f"/api/meetings/{meeting.meeting_id}/categorization/ballot/unsubmit",
-            json={"activity_id": activity_id},
-        )
-        assert unsubmit_resp.status_code == 200, unsubmit_resp.json()
-        assert unsubmit_resp.json()["submitted"] is False
+        assert state_after.status_code == 200, state_after.json()
+        assert state_after.json()["assignments"]["pi-1"] == compat_bucket_id
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -737,7 +627,7 @@ def test_categorization_lock_keeps_facilitator_mutations_available(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
-def test_parallel_lock_blocks_participant_ballot_mutation_but_allows_facilitator_controls(
+def test_legacy_parallel_lock_keeps_facilitator_controls_and_disables_parallel_routes(
     client: TestClient,
     user_manager_with_admin,
     db_session,
@@ -796,13 +686,19 @@ def test_parallel_lock_blocks_participant_ballot_mutation_but_allows_facilitator
             json={"activity_id": activity_id, "locked": True},
         )
         assert lock_resp.status_code == 200, lock_resp.json()
+        assert lock_resp.json()["finalization_metadata"]["mode"] == "FACILITATOR_LIVE"
 
         reveal_resp = client.post(
             f"/api/meetings/{meeting.meeting_id}/categorization/reveal",
             json={"activity_id": activity_id, "revealed": True},
         )
-        assert reveal_resp.status_code == 200, reveal_resp.json()
-        assert reveal_resp.json()["results_revealed"] is True
+        assert reveal_resp.status_code == 409, reveal_resp.json()
+
+        create_bucket_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/buckets",
+            json={"activity_id": activity_id, "title": "Allowed While Locked"},
+        )
+        assert create_bucket_resp.status_code == 200, create_bucket_resp.json()
 
         participant_login = client.post(
             "/api/auth/token",
@@ -814,17 +710,12 @@ def test_parallel_lock_blocks_participant_ballot_mutation_but_allows_facilitator
             f"/api/meetings/{meeting.meeting_id}/categorization/ballot",
             params={"activity_id": activity_id},
         )
-        assert ballot_state.status_code == 200, ballot_state.json()
-        first_bucket = next(
-            bucket["category_id"]
-            for bucket in ballot_state.json()["buckets"]
-            if bucket["category_id"] != "UNSORTED"
-        )
+        assert ballot_state.status_code == 409, ballot_state.json()
+
         assign_resp = client.post(
             f"/api/meetings/{meeting.meeting_id}/categorization/ballot/assignments",
-            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": first_bucket},
+            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": "UNSORTED"},
         )
         assert assign_resp.status_code == 409, assign_resp.json()
-        assert assign_resp.json()["detail"] == "This activity is locked."
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))

@@ -115,9 +115,6 @@ celerybeat.pid
 .idea
 .vscode
 
-# Task files
-tasks.json
-tasks/ 
 meeting_MTG20260116-0001_20260116_162303.zip
 .tmp/
 requirements_docs/
@@ -134,3 +131,7 @@ docs/LOAD_TESTING_PLAN_LOCAL.md
 # Ensure core runtime package is always tracked (overrides broad global ignores like "data")
 !app/data/
 !app/data/*.py
+
+# Task files
+# tasks.json
+# tasks/ 

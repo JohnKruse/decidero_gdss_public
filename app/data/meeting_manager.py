@@ -161,6 +161,18 @@ class MeetingManager:
             is not None
         )
 
+    @staticmethod
+    def is_categorization_seed_config_locked(activity: AgendaActivity) -> bool:
+        """Seed config becomes immutable once an activity has started at least once."""
+        if (activity.tool_type or "").lower() != "categorization":
+            return False
+        if getattr(activity, "started_at", None) is not None:
+            return True
+        if getattr(activity, "stopped_at", None) is not None:
+            return True
+        elapsed = getattr(activity, "elapsed_duration", 0) or 0
+        return int(elapsed) > 0
+
     def _resequence_agenda(
         self,
         meeting: Meeting,
@@ -524,14 +536,13 @@ class MeetingManager:
                     patch_config,
                     categorization_live_locked_keys,
                 )
-                if changed_live_locked_keys and self._activity_has_live_data(
-                    meeting_id, activity_id
-                ):
+                if changed_live_locked_keys and self.is_categorization_seed_config_locked(activity):
                     raise HTTPException(
                         status_code=409,
                         detail=(
-                            "Categorization seed settings are locked because live data "
-                            "already exists for this activity: "
+                            "Categorization seed settings are locked because this "
+                            "activity has already started. Manage ideas and buckets "
+                            "inside the live activity interface: "
                             f"{', '.join(sorted(changed_live_locked_keys))}."
                         ),
                     )

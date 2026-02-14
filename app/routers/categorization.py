@@ -157,7 +157,10 @@ async def _broadcast_refresh(meeting_id: str, activity_id: str, initiator_id: st
 
 def _activity_mode(activity: AgendaActivity) -> str:
     config = dict(getattr(activity, "config", {}) or {})
-    return str(config.get("mode") or "FACILITATOR_LIVE").upper()
+    raw_mode = str(config.get("mode") or "FACILITATOR_LIVE").upper()
+    if raw_mode == "PARALLEL_BALLOT":
+        return "FACILITATOR_LIVE"
+    return raw_mode
 
 
 def _is_parallel_mode(activity: AgendaActivity) -> bool:
