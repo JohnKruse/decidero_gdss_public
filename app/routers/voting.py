@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+from time import perf_counter
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from typing import Optional, Set
 from app.services import meeting_state_manager
 
@@ -16,6 +19,7 @@ from app.utils.websocket_manager import websocket_manager
 
 
 router = APIRouter(prefix="/api/meetings/{meeting_id}/voting", tags=["voting"])
+logger = logging.getLogger("app")
 
 
 def _ensure_user_access(
@@ -135,6 +139,7 @@ async def _resolve_voting_scope(
 
 @router.get("/options", response_model=VotingOptionsResponse)
 async def get_voting_options(
+    request: Request,
     meeting_id: str,
     activity_id: str = Query(
         ..., description="Agenda activity identifier (e.g., VOTING-0001)"
@@ -143,43 +148,90 @@ async def get_voting_options(
     meeting_manager: MeetingManager = Depends(get_meeting_manager),
     user_manager: UserManager = Depends(get_user_manager),
 ):
-    user = user_manager.get_user_by_login(current_user_login)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    debug_timing = request.headers.get("X-Debug-Voting-Timing") == "1"
+    start_total = perf_counter()
+    scope_ms = None
+    summary_ms = None
+    response_status = 200
+    detail = ""
+    user = None
+    is_active = False
+    options_count = 0
+    try:
+        user = user_manager.get_user_by_login(current_user_login)
+        if not user:
+            response_status = 404
+            detail = "User not found"
+            raise HTTPException(status_code=404, detail="User not found")
 
-    meeting = meeting_manager.get_meeting(meeting_id)
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+        meeting = meeting_manager.get_meeting(meeting_id)
+        if not meeting:
+            response_status = 404
+            detail = "Meeting not found"
+            raise HTTPException(status_code=404, detail="Meeting not found")
 
-    activity = next(
-        (
-            item
-            for item in getattr(meeting, "agenda_activities", [])
-            if item.activity_id == activity_id
-        ),
-        None,
-    )
-    if not activity:
-        raise HTTPException(status_code=404, detail="Agenda activity not found")
-
-    allowed_participant_ids, is_active = await _resolve_voting_scope(
-        meeting_id, activity_id, activity
-    )
-    _, is_facilitator = _ensure_user_access(meeting, user, allowed_participant_ids)
-    if not is_active and not is_facilitator:
-        raise HTTPException(
-            status_code=403, detail="This activity is not open for voting."
+        activity = next(
+            (
+                item
+                for item in getattr(meeting, "agenda_activities", [])
+                if item.activity_id == activity_id
+            ),
+            None,
         )
+        if not activity:
+            response_status = 404
+            detail = "Agenda activity not found"
+            raise HTTPException(status_code=404, detail="Agenda activity not found")
 
-    voting_manager = VotingManager(meeting_manager.db)
-    summary = voting_manager.build_summary(
-        meeting,
-        activity_id=activity_id,
-        user=user,
-        force_results=False,
-        is_active_state=is_active,
-    )
-    return VotingOptionsResponse(**summary)
+        scope_started = perf_counter()
+        allowed_participant_ids, is_active = await _resolve_voting_scope(
+            meeting_id, activity_id, activity
+        )
+        scope_ms = int((perf_counter() - scope_started) * 1000)
+        _, is_facilitator = _ensure_user_access(meeting, user, allowed_participant_ids)
+        if not is_active and not is_facilitator:
+            response_status = 403
+            detail = "This activity is not open for voting."
+            raise HTTPException(
+                status_code=403, detail="This activity is not open for voting."
+            )
+
+        voting_manager = VotingManager(meeting_manager.db)
+        summary_started = perf_counter()
+        summary = voting_manager.build_summary(
+            meeting,
+            activity_id=activity_id,
+            user=user,
+            force_results=False,
+            is_active_state=is_active,
+        )
+        summary_ms = int((perf_counter() - summary_started) * 1000)
+        options_count = len(summary.get("options", []) or [])
+        return VotingOptionsResponse(**summary)
+    except HTTPException as exc:
+        response_status = exc.status_code
+        detail = str(exc.detail)
+        raise
+    except Exception as exc:
+        response_status = 500
+        detail = str(exc)
+        raise
+    finally:
+        if debug_timing:
+            total_ms = int((perf_counter() - start_total) * 1000)
+            logger.info(
+                "VOTING_TIMING meeting_id=%s activity_id=%s user_id=%s status=%s is_active=%s options=%s scope_ms=%s summary_ms=%s total_ms=%s detail=%s",
+                meeting_id,
+                activity_id,
+                getattr(user, "user_id", "unknown"),
+                response_status,
+                bool(is_active),
+                options_count,
+                scope_ms if scope_ms is not None else -1,
+                summary_ms if summary_ms is not None else -1,
+                total_ms,
+                detail or "ok",
+            )
 
 
 @router.post("/votes", response_model=VoteCastResponse)

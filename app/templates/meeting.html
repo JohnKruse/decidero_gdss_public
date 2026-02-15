@@ -222,6 +222,7 @@
                             </div>
                         </div>
                         <div id="votingStatus" class="control-feedback" aria-live="polite"></div>
+                        <pre id="votingTimingDebug" class="voting-timing-debug" hidden></pre>
                     </div>
                 </div>
             </section>
@@ -499,5 +500,5 @@
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260211a"></script>
+<script src="/static/js/meeting.js?v=20260215f"></script>
 {% endblock %}

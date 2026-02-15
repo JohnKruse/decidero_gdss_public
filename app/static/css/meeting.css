@@ -1208,6 +1208,18 @@
   flex-shrink: 0;
 }
 
+.voting-timing-debug {
+  margin: 0.6rem 0 0;
+  padding: 0.55rem 0.65rem;
+  background: rgba(11, 61, 145, 0.05);
+  border: 1px dashed rgba(11, 61, 145, 0.25);
+  border-radius: 0.5rem;
+  color: #2a3c59;
+  font-size: 0.76rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
 /* Voting Results Modal */
 .voting-results-modal {
   display: flex;

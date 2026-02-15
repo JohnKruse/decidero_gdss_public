@@ -240,6 +240,7 @@
             resultsTable: document.getElementById("votingResultsTable"),
             resultsBody: document.getElementById("votingResultsBody"),
             closeResultsModal: document.getElementById("closeVotingResultsModal"),
+            timingDebug: document.getElementById("votingTimingDebug"),
         };
 
         const categorization = {
@@ -498,6 +499,153 @@
         let votingDraftVotes = new Map();
         let votingCommittedVotes = new Map();
         let activeVotingConfig = {};
+        const votingTiming = (() => {
+            const params = new URLSearchParams(window.location.search || "");
+            const enabledFromQuery = params.get("votingTiming") === "1";
+            const enabledFromStorage = localStorage.getItem("decidero:voting-timing") === "1";
+            const enabled = Boolean(enabledFromQuery || enabledFromStorage);
+            const maxEvents = 120;
+            const events = [];
+            let session = null;
+            let latestState = null;
+
+            function nowMs() {
+                return window.performance && typeof window.performance.now === "function"
+                    ? window.performance.now()
+                    : Date.now();
+            }
+
+            function trimEvents() {
+                if (events.length > maxEvents) {
+                    events.splice(0, events.length - maxEvents);
+                }
+            }
+
+            function notifyUpdate() {
+                if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+                    window.dispatchEvent(new CustomEvent("decidero:voting-timing-update"));
+                }
+            }
+
+            function push(event, data = {}) {
+                if (!enabled) {
+                    return;
+                }
+                events.push({
+                    at_iso: new Date().toISOString(),
+                    at_ms: Math.round(nowMs()),
+                    event,
+                    ...data,
+                });
+                trimEvents();
+            }
+
+            function begin(activityId, trigger = "unknown") {
+                if (!enabled || !activityId) {
+                    return;
+                }
+                const shouldStart = !session || session.activityId !== activityId || session.completed;
+                if (!shouldStart) {
+                    return;
+                }
+                session = {
+                    activityId,
+                    trigger,
+                    startedAt: nowMs(),
+                    marks: {},
+                    completed: false,
+                };
+                latestState = {
+                    activity_id: activityId,
+                    trigger,
+                    status: "in_progress",
+                    total_ms: null,
+                    marks: {},
+                    details: {},
+                };
+                push("session_begin", { activity_id: activityId, trigger });
+                notifyUpdate();
+            }
+
+            function mark(name, data = {}) {
+                if (!enabled || !session) {
+                    return;
+                }
+                if (session.marks[name] === undefined) {
+                    session.marks[name] = Math.round(nowMs() - session.startedAt);
+                }
+                if (latestState) {
+                    latestState.marks[name] = session.marks[name];
+                    latestState.details[name] = { ...data };
+                }
+                push(`mark:${name}`, {
+                    activity_id: session.activityId,
+                    elapsed_ms: session.marks[name],
+                    ...data,
+                });
+                notifyUpdate();
+            }
+
+            function end(status = "completed", data = {}) {
+                if (!enabled || !session) {
+                    return;
+                }
+                const payload = {
+                    activity_id: session.activityId,
+                    trigger: session.trigger,
+                    status,
+                    total_ms: Math.round(nowMs() - session.startedAt),
+                    marks: { ...session.marks },
+                    ...data,
+                };
+                push("session_end", payload);
+                if (typeof console !== "undefined" && typeof console.info === "function") {
+                    console.info("[voting-timing]", payload);
+                }
+                if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+                    window.dispatchEvent(
+                        new CustomEvent("decidero:voting-timing-session", {
+                            detail: payload,
+                        }),
+                    );
+                }
+                latestState = {
+                    activity_id: payload.activity_id,
+                    trigger: payload.trigger,
+                    status: payload.status,
+                    total_ms: payload.total_ms,
+                    marks: { ...payload.marks },
+                    details: {
+                        ...(latestState?.details || {}),
+                        ...data,
+                    },
+                };
+                session.completed = true;
+                notifyUpdate();
+            }
+
+            if (typeof window !== "undefined") {
+                window.__decideroVotingTiming = {
+                    enabled,
+                    getRecent: () => events.slice(),
+                    getState: () => (latestState ? { ...latestState, marks: { ...latestState.marks }, details: { ...latestState.details } } : null),
+                    clear: () => {
+                        events.length = 0;
+                        session = null;
+                        latestState = null;
+                        notifyUpdate();
+                    },
+                };
+            }
+
+            return {
+                enabled,
+                begin,
+                mark,
+                end,
+                getState: () => (latestState ? { ...latestState, marks: { ...latestState.marks }, details: { ...latestState.details } } : null),
+            };
+        })();
         let categorizationState = null;
         let categorizationActivityId = null;
         let categorizationRequestInFlight = false;
@@ -635,6 +783,45 @@
             const maxItems = Number.parseInt(ui.eventsLog.dataset.maxItems || "25", 10);
             while (ui.eventsLog.children.length > maxItems) {
                 ui.eventsLog.removeChild(ui.eventsLog.lastElementChild);
+            }
+        }
+
+        function updateTransferCountForActivity(activityId, delta = 1) {
+            const key = String(activityId || "").trim();
+            if (!key || !Number.isFinite(delta) || delta === 0) {
+                return;
+            }
+
+            let changed = false;
+            const applyUpdate = (collection) => {
+                if (!Array.isArray(collection)) {
+                    return collection;
+                }
+                return collection.map((item) => {
+                    if (!item || item.activity_id !== key) {
+                        return item;
+                    }
+                    const current = Number(item.transfer_count ?? item.transferable_count ?? 0);
+                    const safeCurrent = Number.isFinite(current) ? current : 0;
+                    const nextCount = Math.max(0, safeCurrent + delta);
+                    changed = true;
+                    return {
+                        ...item,
+                        transfer_count: nextCount,
+                        transfer_source: nextCount > 0 ? (item.transfer_source || "ideas") : (item.transfer_source || "none"),
+                        transfer_reason: nextCount > 0 ? null : (item.transfer_reason || "No ideas to transfer yet."),
+                    };
+                });
+            };
+
+            state.agenda = applyUpdate(state.agenda);
+            if (state.latestState && Array.isArray(state.latestState.agenda)) {
+                state.latestState.agenda = applyUpdate(state.latestState.agenda);
+            }
+            if (changed) {
+                state.agendaMap = new Map((state.agenda || []).map((item) => [item.activity_id, item]));
+                renderAgenda(state.agenda);
+                updateAgendaSummary();
             }
         }
 
@@ -2574,6 +2761,47 @@
             }
         }
 
+        function renderVotingTimingDebug() {
+            if (!voting.timingDebug) {
+                return;
+            }
+            if (!votingTiming.enabled) {
+                voting.timingDebug.hidden = true;
+                voting.timingDebug.textContent = "";
+                return;
+            }
+            const snapshot = votingTiming.getState();
+            if (!snapshot) {
+                voting.timingDebug.hidden = false;
+                voting.timingDebug.textContent = "Voting timing enabled. Waiting for next voting activation...";
+                return;
+            }
+
+            const marks = snapshot.marks || {};
+            const details = snapshot.details || {};
+            const phase = (name) => (marks[name] !== undefined ? `${marks[name]}ms` : "--");
+            const detail = (name, key, fallback = "") => {
+                const value = details[name]?.[key];
+                if (value === undefined || value === null || value === "") {
+                    return fallback;
+                }
+                return String(value);
+            };
+
+            const lines = [
+                `Voting Timing (${snapshot.status || "in_progress"})`,
+                `activity=${snapshot.activity_id || "n/a"} trigger=${snapshot.trigger || "n/a"}`,
+                `panel_visible=${phase("panel_visible")} request_start=${phase("request_start")}`,
+                `response_received=${phase("response_received")} fetch=${detail("response_received", "fetch_ms", "--")}ms status=${detail("response_received", "status_code", "--")}`,
+                `response_parsed=${phase("response_parsed")} is_active=${detail("response_parsed", "is_active", "--")} options=${detail("response_parsed", "options_count", "--")}`,
+                `render_complete=${phase("render_complete")} render=${detail("render_complete", "render_ms", "--")}ms`,
+                `interactive_ready=${phase("interactive_ready")} total=${snapshot.total_ms ?? "--"}ms`,
+            ];
+
+            voting.timingDebug.hidden = false;
+            voting.timingDebug.textContent = lines.join("\n");
+        }
+
         function setTransferStatus(message, variant = "") {
             if (!transfer.status) {
                 return;
@@ -3432,6 +3660,35 @@
             return total;
         }
 
+        function isVotingEffectivelyActive(summary) {
+            if (summary?.is_active === true) {
+                return true;
+            }
+            if (votingIsActive) {
+                return true;
+            }
+
+            const activityId =
+                summary?.activity_id || votingActivityId || state.selectedActivityId || state.latestState?.currentActivity;
+            if (!activityId) {
+                return false;
+            }
+
+            const activeEntry = state.activeActivities?.[activityId];
+            const activeStatus = String(activeEntry?.status || "").toLowerCase();
+            if (activeStatus === "in_progress" || activeStatus === "paused") {
+                return true;
+            }
+
+            if (state.latestState?.currentActivity === activityId) {
+                const status = String(state.latestState?.status || "").toLowerCase();
+                if (status === "in_progress" || status === "paused") {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         function updateVotingFooter(summary) {
             if (!voting.footer || !voting.progress || !voting.submit || !voting.reset) {
                 return;
@@ -3469,14 +3726,13 @@
                     ? `You've cast ${cast} of your ${maxVotes} ${noun}.`
                     : `You've cast ${cast} ${noun}.`;
 
-            const canSubmit = votingIsActive && !votingRequestInFlight;
+            const canSubmit = isVotingEffectivelyActive(summary) && !votingRequestInFlight;
             voting.submit.disabled = !canSubmit || !votingDraftDirty || (maxVotes > 0 && cast > maxVotes);
             voting.reset.disabled = !votingDraftDirty || votingRequestInFlight;
 
             // Show/hide View Results button based on active state plus visibility policy.
             if (voting.viewResultsButton) {
-                const isActiveState =
-                    summary.is_active !== undefined ? Boolean(summary.is_active) : Boolean(votingIsActive);
+                const isActiveState = isVotingEffectivelyActive(summary);
                 const isPrivilegedViewer = Boolean(state.isFacilitator || isAdminUser);
                 const canViewResults =
                     summary.can_view_results !== undefined
@@ -3487,7 +3743,7 @@
         }
 
         function adjustVotingDraft(optionId, delta, summary) {
-            if (!summary || !optionId || votingRequestInFlight || !votingIsActive) {
+            if (!summary || !optionId || votingRequestInFlight || !isVotingEffectivelyActive(summary)) {
                 return;
             }
             const maxVotes = Math.max(0, coerceFiniteInt(summary.max_votes, 0));
@@ -3564,6 +3820,28 @@
             renderVotingSummary(summary);
         }
 
+        function handleVotingDotClick(event) {
+            const target = event.target instanceof Element ? event.target.closest(".voting-dot") : null;
+            if (!(target instanceof HTMLButtonElement) || target.disabled) {
+                return;
+            }
+            const summary = votingSummary;
+            if (!summary || !votingIsActive || votingRequestInFlight) {
+                return;
+            }
+            const optionId = String(target.dataset.optionId || "").trim();
+            if (!optionId) {
+                return;
+            }
+            const desired = Math.max(0, coerceFiniteInt(target.dataset.value, 0));
+            if (!desired) {
+                return;
+            }
+            const committedCount = coerceFiniteInt(votingCommittedVotes.get(optionId), 0);
+            const draftCount = coerceFiniteInt(votingDraftVotes.get(optionId), committedCount);
+            applyVotingDraftCount(optionId, desired, summary, committedCount, draftCount);
+        }
+
         function resetVotingDraft(summary) {
             if (!summary || votingRequestInFlight) {
                 return;
@@ -3598,7 +3876,7 @@
 
         async function submitVotingDraft() {
             const summary = votingSummary;
-            if (!summary || !votingDraftDirty || votingRequestInFlight || !votingIsActive) {
+            if (!summary || !votingDraftDirty || votingRequestInFlight || !isVotingEffectivelyActive(summary)) {
                 return;
             }
 
@@ -3728,6 +4006,10 @@
         }
 
         function renderVotingSummary(summary) {
+            const renderStartedAt =
+                votingTiming.enabled && window.performance && typeof window.performance.now === "function"
+                    ? window.performance.now()
+                    : 0;
             votingSummary = summary;
             votingActivityId = summary?.activity_id || null;
 
@@ -3747,13 +4029,12 @@
             if (!voting.list) {
                 return;
             }
-            voting.list.innerHTML = "";
             if (!summary) {
                 updateVotingFooter(null);
                 const empty = document.createElement("li");
                 empty.className = "voting-option voting-option-empty";
                 empty.textContent = "Voting is not active.";
-                voting.list.appendChild(empty);
+                voting.list.replaceChildren(empty);
                 return;
             }
 
@@ -3779,10 +4060,12 @@
                     });
                     empty.appendChild(editBtn);
                 }
-                voting.list.appendChild(empty);
+                voting.list.replaceChildren(empty);
                 return;
             }
 
+            const fragment = document.createDocumentFragment();
+            const draftTotal = getVotingDraftTotal();
             summary.options.forEach((option) => {
                 const draftCount = coerceFiniteInt(
                     votingDraftVotes.get(option.option_id),
@@ -3847,7 +4130,8 @@
 
                 const allowRetract = Boolean(summary.allow_retract);
                 const minAllowed = allowRetract ? 0 : committedCount;
-                const currentTotalWithout = getVotingDraftTotal() - Math.max(0, draftCount);
+                const currentTotalWithout = draftTotal - Math.max(0, draftCount);
+                const isEffectiveActive = isVotingEffectivelyActive(summary);
                 const rail = document.createElement("div");
                 rail.className = "voting-dot-rail";
                 rail.setAttribute("role", "radiogroup");
@@ -3861,31 +4145,58 @@
                     dot.className = "voting-dot";
                     dot.dataset.index = String(i);
                     dot.dataset.active = String(i <= draftCount);
+                    dot.dataset.optionId = option.option_id;
+                    dot.dataset.value = String(i);
                     dot.setAttribute(
                         "aria-label",
                         `Set ${option.label} to ${i} ${i === 1 ? voteLabelSingular : voteLabelPlural}`,
                     );
 
                     const exceedsTotal = maxVotes && currentTotalWithout + i > maxVotes;
-                    const isActiveState = summary.is_active !== undefined ? summary.is_active : votingIsActive;
                     dot.disabled =
                         votingRequestInFlight ||
-                        !isActiveState ||
+                        !isEffectiveActive ||
                         (!allowRetract && i < minAllowed) ||
                         (perOptionCap && Number.isFinite(perOptionCap) && i > perOptionCap) ||
                         (exceedsTotal && i > draftCount);
-
-                    dot.addEventListener("click", () => {
-                        applyVotingDraftCount(option.option_id, i, summary, committedCount, draftCount);
-                    });
                     rail.appendChild(dot);
                 }
 
                 header.append(rail, label);
                 main.append(header, meta);
                 li.append(main);
-                voting.list.appendChild(li);
+                fragment.appendChild(li);
             });
+            voting.list.replaceChildren(fragment);
+            if (votingTiming.enabled && renderStartedAt > 0) {
+                votingTiming.mark("render_complete", {
+                    options_count: summary.options.length,
+                    render_ms: Math.round(window.performance.now() - renderStartedAt),
+                });
+            }
+            if (summary?.is_active === false && isVotingEffectivelyActive(summary)) {
+                votingTiming.mark("active_state_override", {
+                    summary_is_active: false,
+                    effective_is_active: true,
+                    activity_id: summary?.activity_id || null,
+                });
+            }
+            const firstEnabledDot = voting.list.querySelector(".voting-dot:not(:disabled)");
+            if (firstEnabledDot) {
+                votingTiming.mark("interactive_ready", {
+                    options_count: summary.options.length,
+                    is_active: Boolean(summary?.is_active),
+                    effective_is_active: isVotingEffectivelyActive(summary),
+                });
+                votingTiming.end("interactive");
+            } else if (summary && summary.options && summary.options.length > 0) {
+                votingTiming.mark("rendered_without_enabled_dots", {
+                    options_count: summary.options.length,
+                    is_active: Boolean(summary?.is_active),
+                    effective_is_active: isVotingEffectivelyActive(summary),
+                    request_in_flight: Boolean(votingRequestInFlight),
+                });
+            }
 
             updateVotingFooter(summary);
             if (voting.resultsModal && !voting.resultsModal.hidden) {
@@ -3897,20 +4208,44 @@
             if (!voting.root || !activityId) {
                 return;
             }
+            votingTiming.begin(activityId, "load_options");
             if (votingOptionsRefreshInFlight) {
+                votingTiming.mark("load_skipped_inflight");
                 return;
             }
             votingOptionsRefreshInFlight = true;
+            const fetchStartedAt =
+                votingTiming.enabled && window.performance && typeof window.performance.now === "function"
+                    ? window.performance.now()
+                    : 0;
             try {
+                votingTiming.mark("request_start");
+                const requestHeaders = votingTiming.enabled
+                    ? { "X-Debug-Voting-Timing": "1" }
+                    : undefined;
                 const response = await fetch(
                     `/api/meetings/${encodeURIComponent(context.meetingId)}/voting/options?activity_id=${encodeURIComponent(activityId)}`,
-                    { credentials: "include" },
+                    { credentials: "include", headers: requestHeaders },
                 );
+                if (votingTiming.enabled && fetchStartedAt > 0) {
+                    votingTiming.mark("response_received", {
+                        status_code: response.status,
+                        fetch_ms: Math.round(window.performance.now() - fetchStartedAt),
+                    });
+                }
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
+                    votingTiming.end("request_error", {
+                        status_code: response.status,
+                        detail: err.detail || "Unable to load voting options.",
+                    });
                     throw new Error(err.detail || "Unable to load voting options.");
                 }
                 const summary = await response.json();
+                votingTiming.mark("response_parsed", {
+                    options_count: Array.isArray(summary?.options) ? summary.options.length : 0,
+                    is_active: Boolean(summary?.is_active),
+                });
 
                 // Apply config overrides if present
                 if (config.max_votes !== undefined) {
@@ -3927,6 +4262,9 @@
             } catch (error) {
                 setVotingError(error.message || "Unable to load voting options.");
                 setVotingStatus("");
+                votingTiming.end("exception", {
+                    detail: error?.message || "Unable to load voting options.",
+                });
             } finally {
                 votingOptionsRefreshInFlight = false;
             }
@@ -4699,8 +5037,30 @@
                 return;
             }
 
+            const previousAgendaMap = state.agendaMap instanceof Map ? state.agendaMap : new Map();
             state.agenda = Array.isArray(agenda)
                 ? [...agenda].sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
+                    .map((item) => {
+                        const previous = previousAgendaMap.get(item?.activity_id);
+                        if (!previous) {
+                            return item;
+                        }
+                        if (
+                            item?.transfer_count === undefined &&
+                            item?.transferable_count === undefined &&
+                            (previous.transfer_count !== undefined || previous.transferable_count !== undefined)
+                        ) {
+                            return {
+                                ...item,
+                                transfer_count: Number(
+                                    previous.transfer_count ?? previous.transferable_count ?? 0,
+                                ),
+                                transfer_source: item.transfer_source ?? previous.transfer_source,
+                                transfer_reason: item.transfer_reason ?? previous.transfer_reason,
+                            };
+                        }
+                        return item;
+                    })
                 : [];
             state.agendaMap = new Map(state.agenda.map((item) => [item.activity_id, item]));
             ui.agendaList.innerHTML = "";
@@ -5295,6 +5655,11 @@
                 voting.root.hidden = !showVoting;
                 if (showVoting) {
                     activeVotingConfig = activityConfig || {};
+                    votingTiming.begin(eligibility?.activityId, "panel_visible");
+                    votingTiming.mark("panel_visible", {
+                        is_active: Boolean(isActive),
+                        can_enter: Boolean(canEnter),
+                    });
                     if (voting.instructions) {
                         voting.instructions.textContent =
                             instructions ||
@@ -5305,7 +5670,20 @@
                     // Facilitators can adjust votes even when the activity is not currently running.
                     // Use authoritative backend status if available, fallback to snapshot
                     votingIsActive = Boolean(canEnter && (votingSummary?.is_active ?? isActive));
-                    if (votingActivityId !== eligibility?.activityId || !votingSummary) {
+                    const expectedActiveState = Boolean(canEnter && isActive);
+                    const knownSummaryActive =
+                        votingSummary?.is_active !== undefined
+                            ? Boolean(votingSummary.is_active)
+                            : null;
+                    const activeStateChanged =
+                        knownSummaryActive !== null && knownSummaryActive !== expectedActiveState;
+                    if (votingActivityId !== eligibility?.activityId || !votingSummary || activeStateChanged) {
+                        if (activeStateChanged) {
+                            votingTiming.mark("active_state_changed_refresh", {
+                                summary_is_active: knownSummaryActive,
+                                expected_is_active: expectedActiveState,
+                            });
+                        }
                         loadVotingOptions(eligibility?.activityId, activityConfig);
                     }
                     updateVotingFooter(votingSummary);
@@ -5507,6 +5885,19 @@
                 if (responseBody && responseBody.state) {
                     handleStateSnapshot(responseBody.state, true);
                 }
+                const requestedTool = String(
+                    tool ||
+                        state.agendaMap.get(activityId || "")?.tool_type ||
+                        "",
+                ).toLowerCase();
+                if (
+                    activityId &&
+                    requestedTool === "voting" &&
+                    (action === "start_tool" || action === "resume_tool")
+                ) {
+                    votingTiming.mark("control_forced_refresh", { action, activity_id: activityId });
+                    loadVotingOptions(activityId, state.agendaMap.get(activityId)?.config || activeVotingConfig || {});
+                }
                 setFacilitatorFeedback(actionLabel, "success");
             } catch (error) {
                 console.error("Facilitator control failed:", error);
@@ -5663,6 +6054,14 @@
                     break;
                 case "new_idea":
                     handleIncomingIdea(payload);
+                    break;
+                case "transfer_count_update":
+                    if (payload?.activity_id) {
+                        updateTransferCountForActivity(
+                            payload.activity_id,
+                            Number.isFinite(Number(payload.delta)) ? Number(payload.delta) : 0,
+                        );
+                    }
                     break;
                 default:
                     logEvent(`Event received: ${type}`);
@@ -6017,6 +6416,35 @@
             voting.submit.addEventListener("click", () => {
                 submitVotingDraft();
             });
+        }
+
+        window.addEventListener("decidero:voting-timing-update", () => {
+            renderVotingTimingDebug();
+        });
+        let lastVotingTimingActivityLog = null;
+        window.addEventListener("decidero:voting-timing-session", (event) => {
+            const detail = event?.detail || {};
+            const marks = detail.marks || {};
+            const activityId = detail.activity_id || "unknown";
+            const signature = `${activityId}:${detail.total_ms ?? "na"}:${detail.status || "unknown"}`;
+            if (signature === lastVotingTimingActivityLog) {
+                return;
+            }
+            lastVotingTimingActivityLog = signature;
+            const responseMs = marks.response_received ?? null;
+            const parsedMs = marks.response_parsed ?? null;
+            const renderMs = marks.render_complete ?? null;
+            const interactiveMs = marks.interactive_ready ?? null;
+            const status = detail.status || "unknown";
+            const total = detail.total_ms ?? "--";
+            logEvent(
+                `Voting timing ${activityId}: total=${total}ms interactive=${interactiveMs ?? "--"}ms response=${responseMs ?? "--"}ms parsed=${parsedMs ?? "--"}ms render=${renderMs ?? "--"}ms status=${status}`,
+            );
+        });
+        renderVotingTimingDebug();
+
+        if (voting.list) {
+            voting.list.addEventListener("click", handleVotingDotClick);
         }
 
         if (voting.reset) {
