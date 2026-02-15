@@ -374,6 +374,18 @@ async def submit_idea(
             "payload": idea_response.model_dump(mode="json"),
         },
     )
+    if payload.parent_id is None:
+        await websocket_manager.broadcast(
+            meeting_id,
+            {
+                "type": "transfer_count_update",
+                "payload": {
+                    "activity_id": resolved_activity_id,
+                    "delta": 1,
+                    "source": "brainstorming_idea",
+                },
+            },
+        )
 
     return idea_response
 

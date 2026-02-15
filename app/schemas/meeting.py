@@ -189,6 +189,9 @@ class AgendaActivityResponse(AgendaActivityBase):
     order_index: int = Field(..., ge=1)
     elapsed_duration: int = 0
     has_data: bool = False
+    has_votes: bool = False
+    has_submitted_ballots: bool = False
+    locked_config_keys: List[str] = Field(default_factory=list)
     transfer_count: int = 0
     transfer_source: Optional[str] = None
     transfer_reason: Optional[str] = None

@@ -23,6 +23,18 @@ def test_meeting_js_includes_voting_dot_rail():
     assert "voting-dot-rail" in contents
 
 
+def test_meeting_page_includes_categorization_panel_hooks():
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert "data-categorization-root" in html
+    assert "categorizationItemsList" in html
+
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "categorization_update" in js
+    assert "loadCategorizationState" in js
+
+
 def test_meeting_js_redirects_on_unauth():
     with open("app/static/js/page_utils.js", "r", encoding="utf-8") as handle:
         contents = handle.read()

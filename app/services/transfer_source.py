@@ -18,7 +18,7 @@ def build_transfer_items(
     activity: AgendaActivity,
     *,
     include_comments: bool,
-) -> Tuple[List[Dict[str, Any]], str]:
+) -> Tuple[List[Dict[str, Any]], str, Dict[str, Any]]:
     tool_type = (getattr(activity, "tool_type", "") or "").lower()
     plugin = get_activity_registry().get_plugin(tool_type)
     if plugin:
@@ -30,11 +30,11 @@ def build_transfer_items(
             items = _filter_transfer_items(
                 list(result.items or []), include_comments=include_comments
             )
-            return items, result.source or "plugin"
+            return items, result.source or "plugin", dict(result.metadata or {})
 
     items, source = _default_transfer_items(db, meeting, activity)
     items = _filter_transfer_items(items, include_comments=include_comments)
-    return items, source
+    return items, source, {}
 
 
 def get_transfer_count(

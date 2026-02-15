@@ -3,7 +3,7 @@
 {% block title %}{{ meeting.title }} – Meeting - Decidero GDSS{% endblock %}
 
 {% block extra_css %}
-    <link rel="stylesheet" href="/static/css/meeting.css?v=20260130a">
+    <link rel="stylesheet" href="/static/css/meeting.css?v=20260211a">
 {% endblock %}
 
 {% block top_nav_right %}
@@ -20,7 +20,7 @@
     data-brainstorm-max-length="{{ brainstorming_limits.idea_character_limit | default(500) }}"
     data-brainstorm-max-ideas="{{ brainstorming_limits.max_ideas_per_user | default(0) }}"
     data-meeting-refresh-enabled="{{ 'true' if meeting_refresh.get('enabled', True) else 'false' }}"
-    data-meeting-refresh-interval-seconds="{{ meeting_refresh.get('interval_seconds', 15) }}"
+    data-meeting-refresh-interval-seconds="{{ meeting_refresh.get('interval_seconds', 8) }}"
     data-meeting-refresh-hidden-interval-seconds="{{ meeting_refresh.get('hidden_interval_seconds', 45) }}"
     data-meeting-refresh-failure-backoff-seconds="{{ meeting_refresh.get('failure_backoff_seconds', 60) }}">
     {% grab id="meeting-overview-card" %}
@@ -156,6 +156,7 @@
                     </div>
                     <div class="transfer-actions">
                         <select id="transferTargetToolType" class="form-select transfer-target-select"></select>
+                        <select id="transferTransformProfile" class="form-select transfer-target-select" hidden></select>
                         <label class="transfer-toggle">
                             <input type="checkbox" id="transferIncludeComments" checked>
                             <span>Include comments</span>
@@ -221,6 +222,46 @@
                             </div>
                         </div>
                         <div id="votingStatus" class="control-feedback" aria-live="polite"></div>
+                        <pre id="votingTimingDebug" class="voting-timing-debug" hidden></pre>
+                    </div>
+                </div>
+            </section>
+            {% endgrab %}
+
+            {% grab id="meeting-categorization-panel" %}
+            <section class="content-card activity-panel categorization-panel" data-categorization-root hidden>
+                {{ section_header('Bucketing - Facilitator', 'Group ideas into buckets and refine categories in real time.') }}
+                <div class="section-body">
+                    <p id="categorizationInstructions" class="voting-description">
+                        The facilitator will open categorization when ready.
+                    </p>
+                    <div id="categorizationError" class="brainstorming-error" hidden></div>
+                    <div class="categorization-toolbar">
+                        <button type="button" class="control-btn sm" id="categorizationRefreshButton">Refresh</button>
+                    </div>
+                    <div class="categorization-board">
+                        <div class="categorization-column">
+                            <h3 id="categorizationOpenBucketTitle">Open Bucket Contents</h3>
+                            <div class="categorization-item-controls">
+                                <button type="button" class="control-btn sm" id="categorizationAddItemButton">Add Idea</button>
+                                <button type="button" class="control-btn sm" id="categorizationEditItemButton">Edit Idea</button>
+                                <button type="button" class="control-btn sm" id="categorizationDeleteItemButton">Delete Idea</button>
+                            </div>
+                            <ul id="categorizationItemsList" class="categorization-list">
+                                <li class="categorization-item-empty">No items available.</li>
+                            </ul>
+                        </div>
+                        <div class="categorization-column">
+                            <h3>Buckets (Drop Target)</h3>
+                            <div class="categorization-bucket-controls">
+                                <button type="button" class="control-btn sm" id="categorizationAddBucketButton">Add Bucket</button>
+                                <button type="button" class="control-btn sm" id="categorizationEditBucketButton">Edit Bucket</button>
+                                <button type="button" class="control-btn sm" id="categorizationDeleteBucketButton">Delete Bucket</button>
+                            </div>
+                            <ul id="categorizationBucketsList" class="categorization-list">
+                                <li class="categorization-item-empty">No buckets available.</li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -459,5 +500,5 @@
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260130b"></script>
+<script src="/static/js/meeting.js?v=20260215f"></script>
 {% endblock %}

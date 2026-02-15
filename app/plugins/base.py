@@ -11,6 +11,7 @@ from app.config.loader import get_autosave_seconds
 class TransferSourceResult:
     items: List[Dict[str, Any]] = field(default_factory=list)
     source: str = "plugin"
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

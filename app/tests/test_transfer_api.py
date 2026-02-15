@@ -6,9 +6,11 @@ from fastapi.testclient import TestClient
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
+from app.models.categorization import CategorizationItem
 from app.models.idea import Idea
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
+from app.services.categorization_manager import CategorizationManager
 from app.services.voting_manager import VotingManager
 from app.services import meeting_state_manager
 
@@ -221,7 +223,11 @@ def test_transfer_bundles_sort_voting_results_with_metadata(
     )
     assert response.status_code == 200, response.json()
     items = response.json()["input"]["items"]
-    assert [item.get("content") for item in items] == ["Alpha", "beta", "Gamma"]
+    assert [item.get("content") for item in items] == [
+        "Alpha (Votes: 2)",
+        "beta (Votes: 2)",
+        "Gamma (Votes: 1)",
+    ]
     assert items[0]["metadata"]["votes"] == 2
     assert items[0]["metadata"]["voting"]["votes"] == 2
     assert items[0]["metadata"]["voting"]["rank"] == 1
@@ -231,6 +237,98 @@ def test_transfer_bundles_sort_voting_results_with_metadata(
     assert items[2]["metadata"]["votes"] == 1
     assert items[2]["metadata"]["voting"]["votes"] == 1
     assert items[2]["metadata"]["voting"]["rank"] == 3
+
+
+def test_transfer_commit_from_voting_carries_vote_suffix_into_next_activity(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    admin_email = "admin@decidero.local"
+    facilitator = user_manager_with_admin.get_user_by_email(admin_email)
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Voting Transfer Vote Suffix Test",
+            description="Transferred voting ideas should carry vote totals in content.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Vote Round",
+                config={"options": ["Alpha", "Gamma"]},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    voting_manager = VotingManager(db_session)
+    options = voting_manager._extract_options(activity)
+    option_ids = {option.label: option.option_id for option in options}
+
+    db_session.add_all(
+        [
+            VotingVote(
+                meeting_id=meeting.meeting_id,
+                activity_id=activity.activity_id,
+                user_id=facilitator.user_id,
+                option_id=option_ids["Alpha"],
+                option_label="Alpha",
+                weight=3,
+            ),
+            VotingVote(
+                meeting_id=meeting.meeting_id,
+                activity_id=activity.activity_id,
+                user_id=facilitator.user_id,
+                option_id=option_ids["Gamma"],
+                option_label="Gamma",
+                weight=1,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    bundles_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={"activity_id": activity.activity_id, "include_comments": "true"},
+    )
+    assert bundles_resp.status_code == 200, bundles_resp.json()
+    items = bundles_resp.json()["input"]["items"]
+    assert [item.get("content") for item in items] == [
+        "Alpha (Votes: 3)",
+        "Gamma (Votes: 1)",
+    ]
+
+    commit_resp = authenticated_client.post(
+        f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+        json={
+            "donor_activity_id": activity.activity_id,
+            "include_comments": True,
+            "items": items,
+            "metadata": {},
+            "target_activity": {"tool_type": "voting"},
+        },
+    )
+    assert commit_resp.status_code == 200, commit_resp.json()
+    new_activity_id = commit_resp.json()["new_activity"]["activity_id"]
+
+    options_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/voting/options",
+        params={"activity_id": new_activity_id},
+    )
+    assert options_resp.status_code == 200, options_resp.json()
+    labels = [opt["label"] for opt in options_resp.json().get("options", [])]
+    assert labels == ["Alpha (Votes: 3)", "Gamma (Votes: 1)"]
 
 
 def test_transfer_counts_use_plugin_source(
@@ -913,6 +1011,304 @@ def test_transfer_commit_to_voting_preserves_option_labels(
         assert set(labels) == set(idea_texts)
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_commit_to_categorization_populates_items(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Categorization Seed Test",
+            description="Ensure categorization items are seeded from transfer ideas.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Ideas",
+                config={"allow_subcomments": True},
+            )
+        ],
+    )
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_id,
+                    "agendaItemId": activity_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        parent_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Campus parking is limited"},
+        )
+        assert parent_resp.status_code == 201, parent_resp.json()
+        parent = parent_resp.json()
+        comment_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Especially during peak classes", "parent_id": parent["id"]},
+        )
+        assert comment_resp.status_code == 201, comment_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": activity_id, "include_comments": "true"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": activity_id,
+                "include_comments": True,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"tool_type": "categorization"},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+        new_activity = commit_resp.json()["new_activity"]
+        new_activity_id = new_activity["activity_id"]
+
+        refreshed = meeting_manager.get_meeting(meeting.meeting_id)
+        created = next(
+            item
+            for item in refreshed.agenda_activities
+            if item.activity_id == new_activity_id
+        )
+        seeded_items = created.config.get("items") or []
+        assert seeded_items
+        assert any("Campus parking is limited" in str(value) for value in seeded_items)
+        assert any("Comments:" in str(value) for value in seeded_items)
+        assert created.config.get("mode") == "FACILITATOR_LIVE"
+        seeded_rows = (
+            db_session.query(CategorizationItem)
+            .filter(
+                CategorizationItem.meeting_id == meeting.meeting_id,
+                CategorizationItem.activity_id == new_activity_id,
+            )
+            .all()
+        )
+        assert seeded_rows
+        assert any("Campus parking is limited" in (row.content or "") for row in seeded_rows)
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_bundles_from_categorization_support_profiles(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Categorization Transfer Profiles",
+            description="Ensure categorization transfer supports rollup and suffix profiles.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Buckets",
+                config={
+                    "mode": "FACILITATOR_LIVE",
+                    "items": ["Apply policy", "Train staff", "Reserve room"],
+                    "buckets": ["Rules & Regulations", "Logistics", "Unused Bucket"],
+                },
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=activity,
+        actor_user_id=facilitator.user_id,
+    )
+
+    buckets = manager.list_buckets(meeting.meeting_id, activity.activity_id)
+    rules_bucket = next(bucket for bucket in buckets if bucket.title == "Rules & Regulations")
+    logistics_bucket = next(bucket for bucket in buckets if bucket.title == "Logistics")
+
+    items = manager.list_items(meeting.meeting_id, activity.activity_id)
+    item_map = {item.content: item.item_key for item in items}
+    manager.upsert_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key=item_map["Apply policy"],
+        category_id=rules_bucket.category_id,
+        actor_user_id=facilitator.user_id,
+    )
+    manager.upsert_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key=item_map["Train staff"],
+        category_id=rules_bucket.category_id,
+        actor_user_id=facilitator.user_id,
+    )
+    manager.upsert_assignment(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity.activity_id,
+        item_key=item_map["Reserve room"],
+        category_id=logistics_bucket.category_id,
+        actor_user_id=facilitator.user_id,
+    )
+
+    rollup_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={
+            "activity_id": activity.activity_id,
+            "include_comments": "false",
+            "transfer_profile": "bucket_rollup",
+        },
+    )
+    assert rollup_resp.status_code == 200, rollup_resp.json()
+    rollup_items = rollup_resp.json()["input"]["items"]
+    assert [item["content"] for item in rollup_items] == [
+        "Category: Rules & Regulations (Ideas: Apply policy; Train staff)",
+        "Category: Logistics (Ideas: Reserve room)",
+        "Category: Unused Bucket (Ideas: )",
+    ]
+
+    suffix_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={
+            "activity_id": activity.activity_id,
+            "include_comments": "false",
+            "transfer_profile": "bucket_suffix",
+        },
+    )
+    assert suffix_resp.status_code == 200, suffix_resp.json()
+    suffix_items = suffix_resp.json()["input"]["items"]
+    assert [item["content"] for item in suffix_items] == [
+        "Apply policy (Category: Rules & Regulations)",
+        "Train staff (Category: Rules & Regulations)",
+        "Reserve room (Category: Logistics)",
+    ]
+
+
+def test_transfer_commit_bucket_rollup_to_voting_accepts_string_ids(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Categorization Rollup To Voting",
+            description="Ensure rollup transfer items with string ids can commit to voting.",
+            start_time=datetime.now(UTC) + timedelta(minutes=5),
+            end_time=datetime.now(UTC) + timedelta(minutes=35),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Buckets",
+                config={
+                    "mode": "FACILITATOR_LIVE",
+                    "items": ["Alpha", "Beta"],
+                    "buckets": ["Rules"],
+                },
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=activity,
+        actor_user_id=facilitator.user_id,
+    )
+    rules_bucket = next(
+        bucket
+        for bucket in manager.list_buckets(meeting.meeting_id, activity.activity_id)
+        if bucket.title == "Rules"
+    )
+    for row in manager.list_items(meeting.meeting_id, activity.activity_id):
+        manager.upsert_assignment(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            item_key=row.item_key,
+            category_id=rules_bucket.category_id,
+            actor_user_id=facilitator.user_id,
+        )
+
+    bundles_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={
+            "activity_id": activity.activity_id,
+            "include_comments": "false",
+            "transfer_profile": "bucket_rollup",
+        },
+    )
+    assert bundles_resp.status_code == 200, bundles_resp.json()
+    items = bundles_resp.json()["input"]["items"]
+    assert items
+    assert isinstance(items[0].get("id"), str)
+
+    commit_resp = authenticated_client.post(
+        f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+        json={
+            "donor_activity_id": activity.activity_id,
+            "include_comments": False,
+            "items": items,
+            "metadata": {},
+            "target_activity": {"tool_type": "voting"},
+        },
+    )
+    assert commit_resp.status_code == 200, commit_resp.json()
+    new_activity_id = commit_resp.json()["new_activity"]["activity_id"]
+
+    options_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/voting/options",
+        params={"activity_id": new_activity_id},
+    )
+    assert options_resp.status_code == 200, options_resp.json()
+    labels = [opt["label"] for opt in options_resp.json().get("options", [])]
+    assert any(label.startswith("Category: Rules") for label in labels)
 
 
 def test_transfer_commit_to_voting_resets_stale_state(

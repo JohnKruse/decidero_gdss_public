@@ -14,3 +14,4 @@ def test_admin_users_api_includes_avatar_color(authenticated_client: TestClient)
     assert isinstance(payload, list)
     assert payload
     assert "avatar_color" in payload[0]
+    assert "avatar_icon_path" in payload[0]

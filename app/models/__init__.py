@@ -12,6 +12,14 @@ from .meeting import (
 from .idea import Idea
 from .voting import VotingVote
 from .activity_bundle import ActivityBundle
+from .categorization import (
+    CategorizationItem,
+    CategorizationBucket,
+    CategorizationAssignment,
+    CategorizationBallot,
+    CategorizationFinalAssignment,
+    CategorizationAuditEvent,
+)
 
 # You can optionally define __all__ to control what `from app.models import *` imports
 __all__ = [
@@ -25,4 +33,10 @@ __all__ = [
     "AgendaActivity",
     "VotingVote",
     "ActivityBundle",
+    "CategorizationItem",
+    "CategorizationBucket",
+    "CategorizationAssignment",
+    "CategorizationBallot",
+    "CategorizationFinalAssignment",
+    "CategorizationAuditEvent",
 ]

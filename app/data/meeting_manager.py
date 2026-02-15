@@ -10,6 +10,12 @@ from ..models.idea import Idea
 from ..models.voting import VotingVote
 from ..models.activity_bundle import ActivityBundle
 from ..models.user import User, UserRole
+from ..models.categorization import (
+    CategorizationAssignment,
+    CategorizationAuditEvent,
+    CategorizationBallot,
+    CategorizationFinalAssignment,
+)
 from ..schemas.meeting import MeetingCreate, AgendaActivityCreate, AgendaActivityUpdate
 from ..database import get_db
 from ..utils.identifiers import (
@@ -115,6 +121,58 @@ class MeetingManager:
         if max_votes_per_option > max_votes:
             config["max_votes_per_option"] = max_votes
 
+    @staticmethod
+    def _changed_config_keys(
+        existing_config: Dict[str, Any],
+        patch: Dict[str, Any],
+        watched_keys: Set[str],
+    ) -> Set[str]:
+        return {
+            key
+            for key in watched_keys
+            if key in patch and patch.get(key) != existing_config.get(key)
+        }
+
+    def _activity_has_live_data(self, meeting_id: str, activity_id: str) -> bool:
+        return bool(self.get_activity_data_flags(meeting_id).get(activity_id))
+
+    def _voting_has_votes(self, meeting_id: str, activity_id: str) -> bool:
+        return (
+            self.db.query(VotingVote.vote_id)
+            .filter(
+                VotingVote.meeting_id == meeting_id,
+                VotingVote.activity_id == activity_id,
+            )
+            .first()
+            is not None
+        )
+
+    def _categorization_has_submitted_ballots(
+        self, meeting_id: str, activity_id: str
+    ) -> bool:
+        return (
+            self.db.query(CategorizationBallot.ballot_id)
+            .filter(
+                CategorizationBallot.meeting_id == meeting_id,
+                CategorizationBallot.activity_id == activity_id,
+                CategorizationBallot.submitted.is_(True),
+            )
+            .first()
+            is not None
+        )
+
+    @staticmethod
+    def is_categorization_seed_config_locked(activity: AgendaActivity) -> bool:
+        """Seed config becomes immutable once an activity has started at least once."""
+        if (activity.tool_type or "").lower() != "categorization":
+            return False
+        if getattr(activity, "started_at", None) is not None:
+            return True
+        if getattr(activity, "stopped_at", None) is not None:
+            return True
+        elapsed = getattr(activity, "elapsed_duration", 0) or 0
+        return int(elapsed) > 0
+
     def _resequence_agenda(
         self,
         meeting: Meeting,
@@ -171,6 +229,25 @@ class MeetingManager:
                 )
             )
 
+        # Keep categorization runtime state in sync with agenda config immediately.
+        if created:
+            from ..services.categorization_manager import CategorizationManager
+
+            manager = CategorizationManager(self.db)
+            for activity in created:
+                if (activity.tool_type or "").lower() != "categorization":
+                    continue
+                manager.reset_activity_state(
+                    meeting_id=meeting.meeting_id,
+                    activity_id=activity.activity_id,
+                    clear_bundles=True,
+                )
+                manager.seed_activity(
+                    meeting_id=meeting.meeting_id,
+                    activity=activity,
+                    actor_user_id=None,
+                )
+
         return created
 
     # ------------------------------------------------------------------ #
@@ -208,8 +285,109 @@ class MeetingManager:
             .distinct()
             .all()
         }
-        data_ids = {activity_id for activity_id in (idea_ids | vote_ids | bundle_ids) if activity_id}
+        categorization_ballot_ids = {
+            row[0]
+            for row in self.db.query(CategorizationBallot.activity_id)
+            .filter(
+                CategorizationBallot.meeting_id == meeting_id,
+                CategorizationBallot.activity_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        }
+        categorization_final_ids = {
+            row[0]
+            for row in self.db.query(CategorizationFinalAssignment.activity_id)
+            .filter(
+                CategorizationFinalAssignment.meeting_id == meeting_id,
+                CategorizationFinalAssignment.activity_id.isnot(None),
+            )
+            .distinct()
+            .all()
+        }
+        categorization_moved_ids = {
+            row[0]
+            for row in self.db.query(CategorizationAssignment.activity_id)
+            .filter(
+                CategorizationAssignment.meeting_id == meeting_id,
+                CategorizationAssignment.activity_id.isnot(None),
+                CategorizationAssignment.is_unsorted.is_(False),
+            )
+            .distinct()
+            .all()
+        }
+        categorization_audit_ids = {
+            row[0]
+            for row in self.db.query(CategorizationAuditEvent.activity_id)
+            .filter(
+                CategorizationAuditEvent.meeting_id == meeting_id,
+                CategorizationAuditEvent.activity_id.isnot(None),
+                CategorizationAuditEvent.actor_user_id.isnot(None),
+                CategorizationAuditEvent.event_type.in_(
+                    [
+                        "bucket_created",
+                        "bucket_updated",
+                        "bucket_deleted",
+                        "bucket_reordered",
+                        "item_moved",
+                        "ballot_submitted",
+                        "ballot_unsubmitted",
+                        "final_assignment_set",
+                    ]
+                ),
+            )
+            .distinct()
+            .all()
+        }
+        data_ids = {
+            activity_id
+            for activity_id in (
+                idea_ids
+                | vote_ids
+                | bundle_ids
+                | categorization_ballot_ids
+                | categorization_final_ids
+                | categorization_moved_ids
+                | categorization_audit_ids
+            )
+            if activity_id
+        }
         return {activity_id: True for activity_id in data_ids}
+
+    def get_activity_lock_flags(self, meeting_id: str) -> Dict[str, Dict[str, bool]]:
+        has_live_data = self.get_activity_data_flags(meeting_id)
+        vote_ids = {
+            row[0]
+            for row in self.db.query(VotingVote.activity_id)
+            .filter(
+                VotingVote.meeting_id == meeting_id,
+                VotingVote.activity_id.isnot(None),
+            )
+            .distinct()
+            .all()
+            if row[0]
+        }
+        submitted_ballot_ids = {
+            row[0]
+            for row in self.db.query(CategorizationBallot.activity_id)
+            .filter(
+                CategorizationBallot.meeting_id == meeting_id,
+                CategorizationBallot.activity_id.isnot(None),
+                CategorizationBallot.submitted.is_(True),
+            )
+            .distinct()
+            .all()
+            if row[0]
+        }
+
+        flags: Dict[str, Dict[str, bool]] = {}
+        for activity_id in set(has_live_data) | vote_ids | submitted_ballot_ids:
+            flags[activity_id] = {
+                "has_live_data": bool(has_live_data.get(activity_id)),
+                "has_votes": activity_id in vote_ids,
+                "has_submitted_ballots": activity_id in submitted_ballot_ids,
+            }
+        return flags
 
     def get_activity_transfer_counts(self, meeting_id: str) -> Dict[str, Dict[str, Any]]:
         idea_counts = {
@@ -329,11 +507,95 @@ class MeetingManager:
         if payload.instructions is not None:
             activity.instructions = payload.instructions
         if payload.config is not None:
+            tool_type = (activity.tool_type or "").lower()
+            existing_config = dict(activity.config or {})
+            patch_config = dict(payload.config or {})
+
+            if tool_type == "voting":
+                voting_locked_keys = {"options", "max_votes", "max_votes_per_option"}
+                changed_locked_keys = self._changed_config_keys(
+                    existing_config,
+                    patch_config,
+                    voting_locked_keys,
+                )
+                if changed_locked_keys and self._voting_has_votes(
+                    meeting_id, activity_id
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Voting settings are locked because votes already exist for "
+                            f"this activity: {', '.join(sorted(changed_locked_keys))}."
+                        ),
+                    )
+
+            if tool_type == "categorization":
+                categorization_live_locked_keys = {"items", "buckets"}
+                changed_live_locked_keys = self._changed_config_keys(
+                    existing_config,
+                    patch_config,
+                    categorization_live_locked_keys,
+                )
+                if changed_live_locked_keys and self.is_categorization_seed_config_locked(activity):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Categorization seed settings are locked because this "
+                            "activity has already started. Manage ideas and buckets "
+                            "inside the live activity interface: "
+                            f"{', '.join(sorted(changed_live_locked_keys))}."
+                        ),
+                    )
+
+                categorization_ballot_locked_keys = {
+                    "mode",
+                    "single_assignment_only",
+                    "agreement_threshold",
+                    "margin_threshold",
+                    "minimum_ballots",
+                    "tie_policy",
+                    "missing_vote_handling",
+                    "private_until_reveal",
+                    "allow_unsorted_submission",
+                }
+                changed_ballot_locked_keys = self._changed_config_keys(
+                    existing_config,
+                    patch_config,
+                    categorization_ballot_locked_keys,
+                )
+                if changed_ballot_locked_keys and self._categorization_has_submitted_ballots(
+                    meeting_id, activity_id
+                ):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "Parallel categorization interpretation settings are locked "
+                            "because submitted ballots already exist for this activity: "
+                            f"{', '.join(sorted(changed_ballot_locked_keys))}."
+                        ),
+                    )
+
             updated_config = dict(activity.config or {})
             updated_config.update(payload.config)
             if activity.tool_type == "voting":
                 self._enforce_voting_limits(updated_config)
             activity.config = updated_config
+            if activity.tool_type == "categorization":
+                refreshed_seed_keys = {"items", "buckets"}
+                if refreshed_seed_keys.intersection(set(payload.config.keys())):
+                    from ..services.categorization_manager import CategorizationManager
+
+                    manager = CategorizationManager(self.db)
+                    manager.reset_activity_state(
+                        meeting_id=meeting_id,
+                        activity_id=activity_id,
+                        clear_bundles=True,
+                    )
+                    manager.seed_activity(
+                        meeting_id=meeting_id,
+                        activity=activity,
+                        actor_user_id=None,
+                    )
         ordered_sequence: Optional[List[AgendaActivity]] = None
         if payload.order_index is not None:
             desired_position = max(1, payload.order_index)

@@ -53,7 +53,7 @@ def test_meeting_refresh_defaults_when_missing(monkeypatch, tmp_path):
     settings = loader.get_meeting_refresh_settings()
 
     assert settings["enabled"] is True
-    assert settings["interval_seconds"] == 15
+    assert settings["interval_seconds"] == 8
     assert settings["hidden_interval_seconds"] == 45
     assert settings["failure_backoff_seconds"] == 60
 
@@ -77,6 +77,6 @@ def test_meeting_refresh_coercion(monkeypatch, tmp_path):
     settings = loader.get_meeting_refresh_settings()
 
     assert settings["enabled"] is True
-    assert settings["interval_seconds"] == 15
+    assert settings["interval_seconds"] == 8
     assert settings["hidden_interval_seconds"] == 20
     assert settings["failure_backoff_seconds"] == 120

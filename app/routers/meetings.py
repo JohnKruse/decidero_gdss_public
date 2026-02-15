@@ -304,6 +304,7 @@ async def _broadcast_agenda_update(
 ) -> None:
     """Helper to fetch the latest agenda and broadcast it."""
     updated_agenda_items = meeting_manager.list_agenda(meeting_id)
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, updated_agenda_items)
     _apply_transfer_counts(meeting_id, meeting_manager, updated_agenda_items)
     # Convert to Pydantic models for consistent output
     payload = [
@@ -382,6 +383,49 @@ def _apply_transfer_counts(
             setattr(item, "transfer_reason", reason)
         else:
             setattr(item, "transfer_reason", None)
+
+
+def _apply_activity_lock_metadata(
+    meeting_id: str,
+    meeting_manager: MeetingManager,
+    agenda_items: Iterable[AgendaActivity],
+) -> None:
+    lock_flags = meeting_manager.get_activity_lock_flags(meeting_id)
+    parallel_locked_keys = [
+        "mode",
+        "single_assignment_only",
+        "agreement_threshold",
+        "margin_threshold",
+        "minimum_ballots",
+        "tie_policy",
+        "missing_vote_handling",
+        "private_until_reveal",
+        "allow_unsorted_submission",
+    ]
+
+    for item in agenda_items:
+        activity_id = getattr(item, "activity_id", None)
+        flags = lock_flags.get(activity_id or "", {})
+        has_live_data = bool(flags.get("has_live_data"))
+        has_votes = bool(flags.get("has_votes"))
+        has_submitted_ballots = bool(flags.get("has_submitted_ballots"))
+        tool_type = str(getattr(item, "tool_type", "") or "").lower()
+        seed_config_locked = meeting_manager.is_categorization_seed_config_locked(item)
+
+        locked_config_keys: List[str] = []
+        if tool_type == "voting" and has_votes:
+            locked_config_keys.extend(["options", "max_votes", "max_votes_per_option"])
+        if tool_type == "categorization":
+            if seed_config_locked:
+                locked_config_keys.extend(["items", "buckets"])
+            if has_submitted_ballots:
+                locked_config_keys.extend(parallel_locked_keys)
+
+        deduped = list(dict.fromkeys(locked_config_keys))
+        setattr(item, "has_data", has_live_data)
+        setattr(item, "has_votes", has_votes)
+        setattr(item, "has_submitted_ballots", has_submitted_ballots)
+        setattr(item, "locked_config_keys", deduped)
 
 
 def _format_conflicting_users(user_manager: UserManager, user_ids: Iterable[str]):
@@ -742,6 +786,7 @@ async def get_meeting_agenda(
 
     _assert_meeting_access(meeting, user, require_facilitator=False)
     agenda_items = sorted(meeting.agenda_activities, key=lambda item: item.order_index)
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, agenda_items)
     _apply_transfer_counts(meeting_id, meeting_manager, agenda_items)
     return [AgendaActivityResponse.model_validate(item) for item in agenda_items]
 
@@ -772,6 +817,8 @@ async def add_meeting_agenda_item(
 
     _assert_meeting_access(meeting, user)
     created = meeting_manager.add_agenda_activity(meeting_id, agenda_item)
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, [created])
+    _apply_transfer_counts(meeting_id, meeting_manager, [created])
 
     # Broadcast agenda update
     await _broadcast_agenda_update(meeting_id, user.user_id, meeting_manager)
@@ -807,6 +854,8 @@ async def update_meeting_agenda_item(
     updated = meeting_manager.update_agenda_activity(
         meeting_id, activity_id, agenda_patch
     )
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, [updated])
+    _apply_transfer_counts(meeting_id, meeting_manager, [updated])
 
     # Broadcast agenda update
     await _broadcast_agenda_update(meeting_id, user.user_id, meeting_manager)
@@ -873,6 +922,8 @@ async def reorder_meeting_agenda_items(
     reordered_agenda = meeting_manager.reorder_agenda_activities(
         meeting_id, payload.activity_ids
     )
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, reordered_agenda)
+    _apply_transfer_counts(meeting_id, meeting_manager, reordered_agenda)
 
     # Broadcast agenda update
     await _broadcast_agenda_update(meeting_id, user.user_id, meeting_manager)
@@ -1646,9 +1697,11 @@ async def get_meeting(
                 detail="Not enough permissions to view this meeting",
             )
 
-        data_flags = meeting_manager.get_activity_data_flags(meeting_id)
-        for item in getattr(meeting, "agenda_activities", []) or []:
-            setattr(item, "has_data", bool(data_flags.get(item.activity_id)))
+        _apply_activity_lock_metadata(
+            meeting_id,
+            meeting_manager,
+            getattr(meeting, "agenda_activities", []) or [],
+        )
         _apply_transfer_counts(
             meeting_id, meeting_manager, getattr(meeting, "agenda_activities", []) or []
         )

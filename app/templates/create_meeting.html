@@ -210,6 +210,17 @@ endblock %}
                     options: ['Edit vote option here'],
                 },
             },
+            {
+                tool_type: 'categorization',
+                label: 'Bucketing - Facilitator',
+                description: 'Sort ideas into facilitator-defined buckets with an always-available Unsorted lane.',
+                default_config: {
+                    mode: 'FACILITATOR_LIVE',
+                    items: [],
+                    buckets: [],
+                    single_assignment_only: true,
+                },
+            },
         ];
 
         let moduleCatalog = [...DEFAULT_MODULES];
@@ -296,6 +307,10 @@ endblock %}
             'show_results_immediately': 'Show results to participants before submission',
             'options': 'Vote candidates',
             'randomize_participant_order': 'Randomize participant idea order',
+            'mode': 'Categorization mode',
+            'items': 'Ideas to categorize',
+            'buckets': 'Buckets',
+            'single_assignment_only': 'Single assignment only',
         };
         function formatConfigLabel(key) {
             if (CONFIG_LABEL_MAP[key]) return CONFIG_LABEL_MAP[key];
@@ -309,6 +324,7 @@ endblock %}
                 if (meta.type === 'boolean') { result[key] = meta.input.checked; }
                 else if (meta.type === 'number') { const v = Number(meta.input.value); result[key] = Number.isNaN(v) ? 0 : v; }
                 else if (meta.type === 'json') { const raw = meta.input.value.trim(); try { result[key] = raw ? JSON.parse(raw) : {}; } catch { result[key] = raw || {}; } }
+                else if (meta.type === 'array') { result[key] = meta.input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); }
                 else { result[key] = meta.input.value; }
             });
             return result;
@@ -345,10 +361,84 @@ endblock %}
             }
         }
 
+        function renderCategorizationConfig(rowState, defaults, overrideConfig = {}) {
+            const resolveValue = (key, fallback) => (
+                overrideConfig[key] !== undefined ? overrideConfig[key] : fallback
+            );
+            rowState.configContainer.classList.remove('agenda-config-grid');
+            rowState.configContainer.classList.add('agenda-config-categorization');
+
+            const createStackedField = (labelText) => {
+                const field = document.createElement('label');
+                field.className = 'agenda-config-row';
+                const labelSpan = document.createElement('span');
+                labelSpan.className = 'agenda-config-row-title';
+                labelSpan.textContent = labelText;
+                field.appendChild(labelSpan);
+                return field;
+            };
+
+            const itemsField = createStackedField('Ideas to categorize');
+            const itemsHint = document.createElement('span');
+            itemsHint.className = 'agenda-config-hint';
+            itemsHint.textContent = 'One idea per line.';
+            itemsField.appendChild(itemsHint);
+            const itemsInput = document.createElement('textarea');
+            itemsInput.rows = 6;
+            itemsInput.placeholder = 'One idea per line.';
+            const itemsSource = resolveValue('items', defaults.items || []);
+            itemsInput.value = Array.isArray(itemsSource)
+                ? itemsSource.join('\n')
+                : String(itemsSource || '').trim();
+            itemsInput.dataset.configKey = 'items';
+            const itemsCount = document.createElement('span');
+            itemsCount.className = 'agenda-config-count';
+            const updateItemsCount = () => {
+                const lines = itemsInput.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+                itemsCount.textContent = `${lines.length} idea${lines.length === 1 ? '' : 's'}`;
+            };
+            itemsInput.addEventListener('input', updateItemsCount);
+            updateItemsCount();
+            itemsField.append(itemsInput, itemsCount);
+            rowState.configContainer.appendChild(itemsField);
+            rowState.configInputs.items = { input: itemsInput, type: 'array', parseAsJson: false, requireValues: false, field: itemsField };
+
+            const bucketsField = createStackedField('Categories / buckets');
+            const bucketsHint = document.createElement('span');
+            bucketsHint.className = 'agenda-config-hint';
+            bucketsHint.textContent = 'One bucket/category per line.';
+            bucketsField.appendChild(bucketsHint);
+            const bucketsInput = document.createElement('textarea');
+            bucketsInput.rows = 5;
+            bucketsInput.placeholder = 'One bucket/category per line.';
+            const bucketsSource = resolveValue('buckets', defaults.buckets || []);
+            bucketsInput.value = Array.isArray(bucketsSource)
+                ? bucketsSource.join('\n')
+                : String(bucketsSource || '').trim();
+            bucketsInput.dataset.configKey = 'buckets';
+            const bucketsCount = document.createElement('span');
+            bucketsCount.className = 'agenda-config-count';
+            const updateBucketsCount = () => {
+                const lines = bucketsInput.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0);
+                bucketsCount.textContent = `${lines.length} bucket${lines.length === 1 ? '' : 's'}`;
+            };
+            bucketsInput.addEventListener('input', updateBucketsCount);
+            updateBucketsCount();
+            bucketsField.append(bucketsInput, bucketsCount);
+            rowState.configContainer.appendChild(bucketsField);
+            rowState.configInputs.buckets = { input: bucketsInput, type: 'array', parseAsJson: false, requireValues: false, field: bucketsField };
+        }
+
         function renderConfig(rowState, moduleDef, overrideConfig = {}) {
             rowState.configContainer.innerHTML = ''; rowState.configInputs = {};
             const defaults = moduleDef && moduleDef.default_config && typeof moduleDef.default_config === 'object' ? moduleDef.default_config : {};
             const toolType = (moduleDef?.tool_type || '').toLowerCase();
+            rowState.configContainer.classList.remove('agenda-config-categorization');
+            rowState.configContainer.classList.add('agenda-config-grid');
+            if (toolType === 'categorization') {
+                renderCategorizationConfig(rowState, defaults, overrideConfig);
+                return;
+            }
             if (toolType === 'voting') {
                 rowState.configContainer.classList.add('agenda-config-stack');
             } else {
@@ -413,7 +503,7 @@ endblock %}
                     labelSpan.textContent = formatConfigLabel(key);
                     field.appendChild(labelSpan);
                     const valueOverride = overrideConfig[key]; let input; let metaType = typeof defaultValue; let parseAsJson = false;
-                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); let source = valueOverride; if (!Array.isArray(source)) { if (typeof source === 'string') { source = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { source = defaultValue; } } input.value = Array.isArray(source) ? source.join('\n') : ''; metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${lines.length} candidate${lines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
+                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); let source = valueOverride; if (!Array.isArray(source)) { if (typeof source === 'string') { source = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { source = defaultValue; } } input.value = Array.isArray(source) ? source.join('\n') : ''; metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${lines.length} candidate${lines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } if (toolType === 'categorization' && (key === 'items' || key === 'buckets')) { input.placeholder = key === 'items' ? 'One idea per line.' : 'One bucket/category per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = input.placeholder; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); const noun = key === 'items' ? 'idea' : 'bucket'; count.textContent = `${lines.length} ${noun}${lines.length === 1 ? '' : 's'}`; }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
                     else if (metaType === 'number') {
                         input = document.createElement('input');
                         input.type = 'number';
@@ -998,6 +1088,42 @@ endblock %}
             const preserveTitle = options.preserveTitle ?? rowState.titleEdited; if (!preserveTitle) { rowState.titleInput.value = nextModule.label; }
             const existingConfig = options.configOverride || (previousModule && previousModule.tool_type === nextModule.tool_type ? collectConfigValues(rowState) : {});
             renderConfig(rowState, nextModule, existingConfig);
+            applyRowConfigLock(rowState);
+        }
+
+        function applyRowConfigLock(rowState) {
+            const toolType = (rowState?.module?.tool_type || '').toLowerCase();
+            const lockedKeys = new Set(
+                Array.isArray(rowState?.lockedConfigKeys)
+                    ? rowState.lockedConfigKeys.filter((value) => typeof value === 'string' && value.trim().length > 0)
+                    : [],
+            );
+            if (lockedKeys.size === 0 && rowState?.hasData) {
+                if (toolType === 'voting' && rowState?.hasVotes) {
+                    ['options', 'max_votes', 'max_votes_per_option'].forEach((key) => lockedKeys.add(key));
+                }
+            }
+            const locked = lockedKeys.size > 0;
+            const container = rowState?.configContainer;
+            if (container) {
+                container.classList.toggle('agenda-config-locked', locked);
+            }
+            if (!rowState?.configInputs) return;
+            Object.entries(rowState.configInputs).forEach(([key, meta]) => {
+                if (!meta?.input) return;
+                const fieldLocked = lockedKeys.has(key);
+                meta.locked = fieldLocked;
+                meta.input.disabled = fieldLocked;
+                meta.input.readOnly = fieldLocked;
+            });
+            if (rowState?.configLockNotice) {
+                rowState.configLockNotice.hidden = !locked;
+                if (locked) {
+                    rowState.configLockNotice.textContent = `Some settings are locked and must be managed in the live activity interface: ${Array.from(lockedKeys).map((key) => formatConfigLabel(key)).join(', ')}.`;
+                } else {
+                    rowState.configLockNotice.textContent = '';
+                }
+            }
         }
 
         function updateOrders() { agendaState.forEach((rowState, i) => { if (rowState.orderLabel) rowState.orderLabel.textContent = String(i + 1); rowState.container.dataset.orderIndex = String(i + 1); }); }
@@ -1005,7 +1131,17 @@ endblock %}
         function removeRow(rowState) { const index = agendaState.indexOf(rowState); if (index !== -1) agendaState.splice(index, 1); rowState.container.remove(); updateOrders(); if (agendaState.length === 0) addAgendaItem(); }
 
         function createAgendaRow(prefill) {
-            const rowState = { module: null, titleEdited: Boolean(prefill && prefill.title), configInputs: {}, activityId: prefill?.activity_id || null, hasData: Boolean(prefill?.has_data), lockedToolType: prefill?.tool_type || null };
+            const rowState = {
+                module: null,
+                titleEdited: Boolean(prefill && prefill.title),
+                configInputs: {},
+                activityId: prefill?.activity_id || null,
+                hasData: Boolean(prefill?.has_data),
+                hasVotes: Boolean(prefill?.has_votes),
+                hasSubmittedBallots: Boolean(prefill?.has_submitted_ballots),
+                lockedConfigKeys: Array.isArray(prefill?.locked_config_keys) ? [...prefill.locked_config_keys] : [],
+                lockedToolType: prefill?.tool_type || null,
+            };
             const row = document.createElement('div'); row.className = 'agenda-row'; rowState.container = row;
             if (rowState.activityId) {
                 row.dataset.activityId = rowState.activityId;
@@ -1024,13 +1160,19 @@ endblock %}
             const titleGroup = document.createElement('div'); titleGroup.className = 'field-group'; const titleLabel = document.createElement('label'); titleLabel.textContent = 'Activity Title'; const titleInput = document.createElement('input'); titleInput.type = 'text'; titleInput.placeholder = 'Name this activity'; titleInput.value = prefill?.title || ''; titleInput.addEventListener('input', () => { rowState.titleEdited = titleInput.value.trim().length > 0; }); titleGroup.append(titleLabel, titleInput); rowState.titleInput = titleInput;
             const instructionsGroup = document.createElement('div'); instructionsGroup.className = 'field-group'; const instructionsLabel = document.createElement('label'); instructionsLabel.textContent = 'Facilitator Instructions'; const instructionsInput = document.createElement('textarea'); instructionsInput.rows = 3; instructionsInput.placeholder = 'Brief notes or prompts for this activity (optional)'; instructionsInput.value = prefill?.instructions || ''; instructionsGroup.append(instructionsLabel, instructionsInput); rowState.instructionsInput = instructionsInput;
             const description = document.createElement('p'); description.className = 'agenda-row-description'; rowState.description = description;
+            const configLockNotice = document.createElement('div');
+            configLockNotice.className = 'agenda-config-lock-notice';
+            configLockNotice.textContent = 'Configuration is locked because this activity already has live data. For safe changes, create a new activity and use Transfer Ideas from this activity.';
+            configLockNotice.hidden = !rowState.hasData;
+            rowState.configLockNotice = configLockNotice;
             const configContainer = document.createElement('div'); configContainer.className = 'agenda-config-grid'; rowState.configContainer = configContainer;
-            body.append(titleGroup, instructionsGroup, description, configContainer);
+            body.append(titleGroup, instructionsGroup, description, configLockNotice, configContainer);
             row.append(header, body);
             moduleSelect.addEventListener('change', () => { if (rowState.hasData) { moduleSelect.value = rowState.lockedToolType || moduleSelect.value; return; } const values = collectConfigValues(rowState); applyModule(rowState, moduleSelect.value, { preserveTitle: rowState.titleEdited, configOverride: values }); });
             const initialToolType = (prefill && prefill.tool_type) || moduleSelect.value || (moduleCatalog[0] && moduleCatalog[0].tool_type) || DEFAULT_MODULES[0].tool_type;
             if (!rowState.lockedToolType) { rowState.lockedToolType = initialToolType; }
             applyModule(rowState, initialToolType, { initial: true, preserveTitle: Boolean(prefill?.title), configOverride: prefill?.config || {} });
+            applyRowConfigLock(rowState);
             if (prefill) { rowState.titleInput.value = prefill.title || rowState.titleInput.value; if (prefill.instructions) { rowState.instructionsInput.value = prefill.instructions; } }
             return rowState;
         }
@@ -1089,6 +1231,9 @@ endblock %}
                     else if (meta.type === 'array') { const values = meta.input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); if (meta.requireValues && values.length === 0) { errors.push(`${moduleDef.label || toolType} requires at least one ${formatConfigLabel(key)} value.`); } config[key] = values; }
                     else config[key] = meta.input.value;
                 });
+                if (toolType === 'categorization') {
+                    config.mode = 'FACILITATOR_LIVE';
+                }
                 if (toolType === 'voting') {
                     const hasOptionsField = Boolean(rowState.configInputs && rowState.configInputs.options);
                     const hasOptions = Array.isArray(config.options) && config.options.length > 0;
@@ -1157,6 +1302,9 @@ endblock %}
                 activity_id: prefill.activity_id || null,
                 order_index: prefill.order_index || null,
                 has_data: Boolean(prefill.has_data),
+                has_votes: Boolean(prefill.has_votes),
+                has_submitted_ballots: Boolean(prefill.has_submitted_ballots),
+                locked_config_keys: Array.isArray(prefill.locked_config_keys) ? prefill.locked_config_keys : [],
             };
         }
 
@@ -1390,9 +1538,16 @@ endblock %}
                     }
                     const agendaPayload = collectAgendaPayload();
                     const targetItem = agendaPayload[targetIndex];
+                    const targetRowState = agendaState[targetIndex];
                     if (!targetItem) {
                         throw new Error('Unable to build the activity payload.');
                     }
+                    const configPatch = { ...(targetItem.config || {}) };
+                    Object.entries(targetRowState?.configInputs || {}).forEach(([key, meta]) => {
+                        if (meta?.locked) {
+                            delete configPatch[key];
+                        }
+                    });
                     const response = await fetch(
                         `/api/meetings/${meetingId}/agenda/${activityParam}`,
                         {
@@ -1403,7 +1558,7 @@ endblock %}
                                 tool_type: targetItem.tool_type,
                                 title: targetItem.title,
                                 instructions: targetItem.instructions,
-                                config: targetItem.config,
+                                config: configPatch,
                             }),
                         },
                     );

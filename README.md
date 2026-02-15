@@ -97,5 +97,6 @@ For plain local HTTP development, keep it `false`.
 
 ## Developer Notes
 - Plugin guide: `docs/PLUGIN_DEV_GUIDE.md`.
+- Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`.
 - Plugins are loaded from built-ins plus drop-ins at `./plugins` (or `DECIDERO_PLUGIN_DIR`).
 - Activity outputs are snapshot bundles stored in the database.

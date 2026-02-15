@@ -19,7 +19,9 @@ from app.schemas.transfer import TransferCommit, TransferDraftUpdate, TransferBu
 from app.services import meeting_state_manager
 from app.services.activity_catalog import get_activity_definition
 from app.services.transfer_source import build_transfer_items
+from app.services.transfer_transforms import apply_transfer_transform
 from app.services.voting_manager import VotingManager
+from app.services.categorization_manager import CategorizationManager
 from app.utils.transfer_metadata import append_transfer_history, ensure_transfer_metadata
 from app.utils.websocket_manager import websocket_manager
 
@@ -270,6 +272,9 @@ async def get_transfer_bundles(
     meeting_id: str,
     activity_id: str = Query(..., description="Donor activity identifier"),
     include_comments: bool = Query(True, description="Include comments in response"),
+    transfer_profile: Optional[str] = Query(
+        None, description="Transfer transform profile applied before editing"
+    ),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -290,19 +295,27 @@ async def get_transfer_bundles(
     activity = _resolve_activity(meeting, activity_id)
     await _ensure_not_running(meeting_id, activity_id)
 
-    items, source = build_transfer_items(
+    items, source, source_metadata = build_transfer_items(
         db,
         meeting,
         activity,
         include_comments=include_comments,
     )
+    transformed = apply_transfer_transform(
+        items=items,
+        donor_tool_type=activity.tool_type,
+        requested_profile=transfer_profile,
+        source_metadata=source_metadata,
+    )
+    items = transformed.items
     logger.info(
-        "transfer bundles meeting=%s activity=%s ideas=%d include_comments=%s source=%s",
+        "transfer bundles meeting=%s activity=%s ideas=%d include_comments=%s source=%s profile=%s",
         meeting_id,
         activity_id,
         len(items),
         include_comments,
         source,
+        transformed.profile,
     )
     items = [
         {
@@ -330,7 +343,12 @@ async def get_transfer_bundles(
         "activity_id": activity_id,
         "kind": "input",
         "items": items,
-        "metadata": {"include_comments": include_comments},
+        "metadata": {
+            "include_comments": include_comments,
+            "transfer_profile": transformed.profile,
+            "source_tool_type": str(activity.tool_type or "").lower(),
+            "source_metadata": source_metadata,
+        },
         "created_at": None,
         "updated_at": None,
     }
@@ -446,12 +464,15 @@ async def commit_transfer(
         else:
             title = definition.get("label") or target.tool_type.replace("_", " ").title()
     config = dict(target.config or {})
+    inherited_config_from_donor = False
     if not config and (donor.tool_type or "").lower() == target.tool_type.lower():
         config = dict(getattr(donor, "config", {}) or {})
+        inherited_config_from_donor = True
 
     if target_tool == "voting":
         config.setdefault("allow_retract", True)
-        if not config.get("options"):
+        use_transferred_options = inherited_config_from_donor or not config.get("options")
+        if use_transferred_options:
             options = []
             for entry in ideas:
                 if not isinstance(entry, dict):
@@ -482,6 +503,40 @@ async def commit_transfer(
                     payload.include_comments,
                     bool(comments_by_parent)
                 )
+    if target_tool == "categorization":
+        incoming_items = config.get("items")
+        items_missing = not isinstance(incoming_items, list) or not incoming_items
+        if not items_missing:
+            normalized_existing = [
+                str(value).strip().lower()
+                for value in incoming_items
+                if str(value).strip()
+            ]
+            if normalized_existing in (
+                ["edit item here"],
+                ["one idea per line."],
+            ):
+                items_missing = True
+        if items_missing:
+            mapped_items = []
+            for entry in ideas:
+                if not isinstance(entry, dict):
+                    continue
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                if payload.include_comments and comments_by_parent:
+                    content = _append_comments_to_content(entry, comments_by_parent)
+                mapped_items.append(content)
+            if mapped_items:
+                config["items"] = mapped_items
+                logger.info(
+                    "transfer commit created categorization items: count=%d include_comments=%s has_comments=%s",
+                    len(mapped_items),
+                    payload.include_comments,
+                    bool(comments_by_parent),
+                )
+        config.setdefault("mode", "FACILITATOR_LIVE")
     agenda_payload = AgendaActivityCreate(
         tool_type=target_tool or target.tool_type,
         title=title,
@@ -495,6 +550,16 @@ async def commit_transfer(
     if target_tool == "voting":
         VotingManager(meeting_manager.db).reset_activity_state(
             meeting_id, created.activity_id, clear_bundles=True
+        )
+    if target_tool == "categorization":
+        cat_manager = CategorizationManager(meeting_manager.db)
+        cat_manager.reset_activity_state(
+            meeting_id, created.activity_id, clear_bundles=True
+        )
+        cat_manager.seed_activity(
+            meeting_id=meeting_id,
+            activity=created,
+            actor_user_id=current_user.user_id,
         )
 
     bundle_metadata = dict(payload.metadata or {})
