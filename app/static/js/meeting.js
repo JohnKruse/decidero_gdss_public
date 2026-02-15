@@ -81,20 +81,13 @@
             },
             {
                 tool_type: "categorization",
-                label: "Bucketing / Categorization",
+                label: "Bucketing - Facilitator",
                 description: "Sort ideas into facilitator-defined buckets.",
                 default_config: {
                     mode: "FACILITATOR_LIVE",
                     items: [],
                     buckets: [],
                     single_assignment_only: true,
-                    agreement_threshold: 0.6,
-                    margin_threshold: 0.15,
-                    minimum_ballots: 1,
-                    tie_policy: "TIE_UNRESOLVED",
-                    missing_vote_handling: "ignore",
-                    private_until_reveal: true,
-                    allow_unsorted_submission: true,
                 },
             },
         ];
@@ -112,13 +105,6 @@
             items: "Ideas to categorize",
             buckets: "Buckets",
             single_assignment_only: "Single assignment only",
-            agreement_threshold: "Agreement threshold",
-            margin_threshold: "Margin threshold",
-            minimum_ballots: "Minimum ballots",
-            tie_policy: "Tie policy",
-            missing_vote_handling: "Missing vote handling",
-            private_until_reveal: "Private until facilitator reveal",
-            allow_unsorted_submission: "Allow unsorted submission",
         };
 
         const ui = {
@@ -270,9 +256,6 @@
             addBucket: document.getElementById("categorizationAddBucketButton"),
             editBucket: document.getElementById("categorizationEditBucketButton"),
             deleteBucket: document.getElementById("categorizationDeleteBucketButton"),
-            submitBallot: document.getElementById("categorizationSubmitBallotButton"),
-            unsubmitBallot: document.getElementById("categorizationUnsubmitBallotButton"),
-            reveal: document.getElementById("categorizationRevealButton"),
         };
 
         const transfer = {
@@ -3972,13 +3955,11 @@
             return counts;
         }
 
-        async function moveCategorizationItem(itemKey, destinationCategoryId, mode) {
+        async function moveCategorizationItem(itemKey, destinationCategoryId) {
             if (!categorizationActivityId) {
                 return;
             }
-            const url = mode === "PARALLEL_BALLOT"
-                ? `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/ballot/assignments`
-                : `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/assignments`;
+            const url = `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/assignments`;
             const payload = {
                 activity_id: categorizationActivityId,
                 item_key: itemKey,
@@ -4132,10 +4113,7 @@
         function renderCategorizationSummary(summary, eligibility) {
             categorizationState = summary || null;
             if (categorization.instructions) {
-                categorization.instructions.textContent =
-                    (summary && summary.mode === "PARALLEL_BALLOT")
-                        ? "Parallel ballot mode is active. Assign each item to a bucket and submit your ballot."
-                        : "Facilitator-live mode is active. Buckets and assignments update for everyone in real time.";
+                categorization.instructions.textContent = "Facilitator-live mode is active. Buckets and assignments update for everyone in real time.";
             }
             if (!categorization.itemsList || !categorization.bucketsList) {
                 return;
@@ -4157,11 +4135,8 @@
             const isFacilitator = Boolean(state.isFacilitator);
             const mode = String(summary.mode || "FACILITATOR_LIVE").toUpperCase();
             const assignments = summary.assignments || {};
-            const ballotAssignments = summary.ballot_assignments || summary.assignments || {};
             const buckets = Array.isArray(summary.buckets) ? summary.buckets : [];
-            const effectiveAssignments = mode === "PARALLEL_BALLOT" && !isFacilitator
-                ? ballotAssignments
-                : assignments;
+            const effectiveAssignments = assignments;
             const counts = bucketCountsFromState(summary, effectiveAssignments);
 
             if (!categorizationSelectedBucketId || !buckets.some((bucket) => bucket.category_id === categorizationSelectedBucketId)) {
@@ -4270,7 +4245,7 @@
                             if (itemKey) {
                                 try {
                                     setCategorizationError(null);
-                                    await moveCategorizationItem(itemKey, bucketId, mode);
+                                    await moveCategorizationItem(itemKey, bucketId);
                                     await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
                                 } catch (error) {
                                     setCategorizationError(error.message || "Unable to move categorization item.");
@@ -4428,41 +4403,6 @@
                     text.textContent = item.content || item.item_key || "Item";
                     main.append(text);
 
-                    const canAssignInParallel = mode === "PARALLEL_BALLOT" && !isFacilitator && !summary.locked && categorizationIsActive;
-                    if (canAssignInParallel) {
-                        const actions = document.createElement("div");
-                        actions.className = "categorization-item-actions";
-                        const select = document.createElement("select");
-                        select.className = "form-select";
-                        buckets.forEach((bucket) => {
-                            const option = document.createElement("option");
-                            option.value = bucket.category_id || "";
-                            option.textContent = bucket.title || bucket.category_id || "Bucket";
-                            if (option.value === effectiveCategory) {
-                                option.selected = true;
-                            }
-                            select.appendChild(option);
-                        });
-                        const save = document.createElement("button");
-                        save.type = "button";
-                        save.className = "control-btn sm";
-                        save.textContent = "Set";
-                        save.addEventListener("click", async () => {
-                            if (!categorizationActivityId) {
-                                return;
-                            }
-                            try {
-                                setCategorizationError(null);
-                                await moveCategorizationItem(itemKey, select.value, mode);
-                                await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
-                            } catch (error) {
-                                setCategorizationError(error.message || "Unable to save categorization assignment.");
-                            }
-                        });
-                        actions.append(select, save);
-                        main.appendChild(actions);
-                    }
-
                     li.appendChild(main);
                     categorization.itemsList.appendChild(li);
                 });
@@ -4475,10 +4415,8 @@
             if (categorization.addItem) categorization.addItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.editItem) categorization.editItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
             if (categorization.deleteItem) categorization.deleteItem.hidden = !showFacilitatorControls || mode !== "FACILITATOR_LIVE";
-            if (categorization.reveal) categorization.reveal.hidden = !showFacilitatorControls || mode !== "PARALLEL_BALLOT";
             if (categorization.addBucket) categorization.addBucket.disabled = !showFacilitatorControls || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
             if (categorization.addItem) categorization.addItem.disabled = !showFacilitatorControls || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
-            if (categorization.reveal) categorization.reveal.disabled = !showFacilitatorControls || mode !== "PARALLEL_BALLOT" || !categorizationIsActive;
             const selectedIsUnsorted = String(categorizationSelectedBucketId || "") === "UNSORTED";
             if (categorization.editBucket) categorization.editBucket.disabled = !showFacilitatorControls || selectedIsUnsorted || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
             if (categorization.deleteBucket) categorization.deleteBucket.disabled = !showFacilitatorControls || selectedIsUnsorted || mode !== "FACILITATOR_LIVE" || !categorizationIsActive;
@@ -4486,9 +4424,6 @@
             const canManageIdeas = showFacilitatorControls && mode === "FACILITATOR_LIVE" && categorizationIsActive;
             if (categorization.editItem) categorization.editItem.disabled = !canManageIdeas || !hasSelectedItem;
             if (categorization.deleteItem) categorization.deleteItem.disabled = !canManageIdeas || !hasSelectedItem;
-            const participantCanBallot = mode === "PARALLEL_BALLOT" && !isFacilitator && !summary.locked && categorizationIsActive;
-            if (categorization.submitBallot) categorization.submitBallot.hidden = !participantCanBallot;
-            if (categorization.unsubmitBallot) categorization.unsubmitBallot.hidden = !participantCanBallot;
         }
 
         async function loadCategorizationState(activityId, config = {}, { force = false } = {}) {
@@ -4497,12 +4432,10 @@
             }
             categorizationRequestInFlight = true;
             try {
-                const mode = String(config.mode || "FACILITATOR_LIVE").toUpperCase();
-                const endpoint = mode === "PARALLEL_BALLOT" && !state.isFacilitator
-                    ? "ballot"
-                    : "state";
+                const rawMode = String(config.mode || "FACILITATOR_LIVE").toUpperCase();
+                const mode = rawMode === "PARALLEL_BALLOT" ? "FACILITATOR_LIVE" : rawMode;
                 const response = await fetch(
-                    `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/${endpoint}?activity_id=${encodeURIComponent(activityId)}`,
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/state?activity_id=${encodeURIComponent(activityId)}`,
                     { credentials: "include" },
                 );
                 if (!response.ok) {
@@ -6264,83 +6197,6 @@
             });
         }
 
-        if (categorization.submitBallot) {
-            categorization.submitBallot.addEventListener("click", async () => {
-                if (!categorizationActivityId) {
-                    return;
-                }
-                try {
-                    const response = await fetch(
-                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/ballot/submit`,
-                        {
-                            method: "POST",
-                            credentials: "include",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ activity_id: categorizationActivityId }),
-                        },
-                    );
-                    if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.detail || "Unable to submit ballot.");
-                    }
-                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
-                } catch (error) {
-                    setCategorizationError(error.message || "Unable to submit ballot.");
-                }
-            });
-        }
-
-        if (categorization.unsubmitBallot) {
-            categorization.unsubmitBallot.addEventListener("click", async () => {
-                if (!categorizationActivityId) {
-                    return;
-                }
-                try {
-                    const response = await fetch(
-                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/ballot/unsubmit`,
-                        {
-                            method: "POST",
-                            credentials: "include",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ activity_id: categorizationActivityId }),
-                        },
-                    );
-                    if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.detail || "Unable to unsubmit ballot.");
-                    }
-                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
-                } catch (error) {
-                    setCategorizationError(error.message || "Unable to unsubmit ballot.");
-                }
-            });
-        }
-
-        if (categorization.reveal) {
-            categorization.reveal.addEventListener("click", async () => {
-                if (!categorizationActivityId) {
-                    return;
-                }
-                try {
-                    const response = await fetch(
-                        `/api/meetings/${encodeURIComponent(context.meetingId)}/categorization/reveal`,
-                        {
-                            method: "POST",
-                            credentials: "include",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ activity_id: categorizationActivityId, revealed: true }),
-                        },
-                    );
-                    if (!response.ok) {
-                        const err = await response.json().catch(() => ({}));
-                        throw new Error(err.detail || "Unable to reveal results.");
-                    }
-                    await loadCategorizationState(categorizationActivityId, activeCategorizationConfig, { force: true });
-                } catch (error) {
-                    setCategorizationError(error.message || "Unable to reveal results.");
-                }
-            });
-        }
 
         document.addEventListener("keydown", (event) => {
             if (event.key === "Escape" && voting.resultsModal && !voting.resultsModal.hidden) {

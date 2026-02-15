@@ -1,128 +1,85 @@
-# Categorization Activity Spec (V1)
+# Categorization Activity Spec
 
-This document is the implementation gate for Task Master `#83.1`.
-It translates current Decidero contracts into concrete acceptance criteria for the new
-`categorization` activity.
+This document defines the current production contract for the `categorization` activity.
 
-## Canonical Sources Reviewed
-
-- `docs/PLUGIN_DEV_GUIDE.md`
-- `docs/TRANSFER_METADATA.md`
-- `README.md`
-- `app/plugins/base.py`
-- `app/services/activity_pipeline.py`
-- `app/services/transfer_source.py`
-- `app/routers/transfer.py`
-- `app/plugins/builtin/voting_plugin.py`
-- `app/services/voting_manager.py`
-- `app/services/meeting_state.py`
-- `app/routers/realtime.py`
-- `app/utils/websocket_manager.py`
-- `app/templates/create_meeting.html`
-- `app/static/js/meeting.js`
-
-## Naming And Scope
+## Scope
 
 - Canonical tool type: `categorization`
-- UI label: `Bucketing / Categorization`
-- V1 delivery gate: fully functional `FACILITATOR_LIVE`
-- V1.1 milestone: `PARALLEL_BALLOT` with aggregation and disputed-item resolution
+- Runtime mode: `FACILITATOR_LIVE`
+- Participant behavior: view-only
+- Facilitator/admin behavior: all categorization mutations
 
-## Standard In/Out Contract (STDIN/STDOUT Bundles)
+## Data And Transfer Contract
 
-- Input uses activity bundle `kind=input` from `ActivityPipeline.ensure_input_bundle`.
-- Output uses activity bundle `kind=output` finalized on activity stop.
-- Optional autosave uses `kind=draft` if `snapshot_activity` is implemented.
-- Bundle payload format remains `items: []` + optional `metadata: {}`.
-- Transfer metadata must be retained; UI toggles must not remove metadata from payloads.
+- Input bundle uses activity pipeline `kind=input`.
+- Output bundle uses activity pipeline `kind=output` on finalize/stop.
+- Draft persistence may use `kind=draft`.
+- Payload format remains `items: []` with optional `metadata: {}`.
+- Source `metadata` and `source` provenance fields are preserved through categorization and transfer.
 
-## Transfer And Provenance Rules
+## Core Rules
 
-- Transfer intake behavior must match existing transfer conventions in `app/routers/transfer.py`.
-- Source item `metadata` and `source` fields must be preserved.
-- `include_comments=true` behavior must support comments appended in parentheses format:
-  `... (Comments: c1; c2; c3)`.
-- `include_comments=false` excludes comment items from transfer content but does not strip metadata history.
-
-## Core Activity Rules
-
-- Always include an implicit `UNSORTED` bucket.
-- Facilitator/admin can create/edit/delete/reorder buckets live.
-- V1 category deletion policy: moving contained items to `UNSORTED` (Option A).
-- Participants cannot edit bucket definitions in V1.
-- Bucket and assignment IDs must be stable and scoped to `(meeting_id, activity_id)`.
-
-## Runtime Modes
-
-### FACILITATOR_LIVE (V1 Required)
-
-- Facilitator/admin performs all item moves.
-- Participants/observers are view-only.
-- All changes broadcast through websocket refresh events.
-
-### PARALLEL_BALLOT (V1.1 Target)
-
-- Each participant assigns each item to one bucket.
-- Ballots are private until reveal (default).
-- Aggregation fields: `top_category_id`, `top_count`, `top_share`, `second_share`, `margin`, `status_label`.
+- `UNSORTED` bucket is always present.
+- Bucket/item/assignment IDs must remain stable within `(meeting_id, activity_id)`.
+- Bucket deletion moves contained items to `UNSORTED`.
+- Re-seeding/reusing an `activity_id` must clear stale categorization state.
 
 ## RBAC And Participant Scope
 
-- Follow `voting` route pattern for access enforcement:
-  - meeting membership checks
-  - facilitator/admin elevated permissions
-  - per-activity participant scope from realtime metadata, fallback to `activity.config.participant_ids`
-- Participants out of scope receive `403`.
+- Meeting access and participant scope checks follow existing meeting-state rules.
+- Facilitator/admin can mutate buckets, items, and assignments.
+- Participants can read activity state but cannot mutate categorization data.
+- Out-of-scope participants receive `403`.
 
 ## Realtime Contract
 
-- Use `meeting_state_manager` + `websocket_manager` patterns already used by existing activities.
-- Broadcast a categorization refresh event after mutations (example type: `categorization_update`).
-- Broadcast payload should contain refresh context (`activity_id`) and avoid leaking private ballot contents.
+- Mutations broadcast a `categorization_update` websocket event with `activity_id` refresh context.
+- Broadcast payloads must not leak private user-only internals.
 
-## API Surface (Current)
+## API Surface
 
-- Base path: `/api/meetings/{meeting_id}/categorization`
-- Read:
-  - `GET /state?activity_id=...`
-  - `GET /ballot?activity_id=...` (parallel mode participant ballot view)
-  - `GET /disputed?activity_id=...` (facilitator, parallel mode)
-- Facilitator-live mutations:
-  - `POST /buckets`
-  - `PATCH /buckets/{category_id}`
-  - `DELETE /buckets/{category_id}`
-  - `POST /buckets/reorder`
-  - `POST /assignments`
-- Parallel mutations:
-  - `POST /ballot/assignments`
-  - `POST /ballot/submit`
-  - `POST /ballot/unsubmit`
-  - `POST /reveal`
-  - `POST /final-assignments`
-- Lock:
-  - `POST /lock`
-  - Once locked, mutation endpoints return conflict/forbidden responses.
+Base path: `/api/meetings/{meeting_id}/categorization`
 
-## Lock / Finalize
+Supported read endpoints:
 
-- Facilitator can lock/finalize activity.
-- Lock prevents further category edits, item moves, and ballot edits/submissions.
-- Finalization emits output bundle including:
-  - categories and final assignments
-  - finalization metadata (mode, thresholds, timestamp, facilitator id, counts)
-  - optional tallies/ballots audit layer (privacy-aware)
+- `GET /state?activity_id=...`
 
-## Data Hygiene Requirements
+Supported facilitator mutation endpoints:
 
-- Reset stale state on reseed/reuse of `activity_id` (same principle as voting reset helper).
-- Ensure no stale bundle/assignment/ballot leakage across reused activity IDs.
-- Preserve upstream provenance and add derived fields in namespaced metadata only.
+- `POST /buckets`
+- `PATCH /buckets/{category_id}`
+- `DELETE /buckets/{category_id}`
+- `POST /buckets/reorder`
+- `POST /items`
+- `PATCH /items/{item_key}`
+- `DELETE /items/{item_key}`
+- `POST /assignments`
+- `POST /lock`
 
-## Required Test Coverage (Minimum)
+Deprecated legacy parallel endpoints:
 
-- Manager state transitions and invariants (`UNSORTED`, CRUD/reorder, move semantics)
-- Transfer parity and metadata retention (including comments-in-parentheses)
-- RBAC and scoped participant enforcement
-- Websocket update signaling on mutations
-- Lock/finalize behavior and output bundle schema correctness
-- Regression test for stale-state reset when reusing `activity_id`
+- `GET /ballot`
+- `POST /ballot/assignments`
+- `POST /ballot/submit`
+- `POST /ballot/unsubmit`
+- `POST /reveal`
+- `GET /disputed`
+- `POST /final-assignments`
+
+Deprecation behavior:
+
+- Legacy parallel endpoints return `410 Gone` with detail code `parallel_workflow_removed`.
+
+## Lock / Finalization
+
+- Facilitator can lock activity via `POST /lock`.
+- Lock metadata captures facilitator action and finalization context.
+- Output artifacts remain transfer-compatible.
+
+## Required Regression Coverage
+
+- Facilitator-only mutation enforcement for buckets/items/assignments.
+- Participant read-only behavior and scope enforcement.
+- Deprecated parallel endpoint responses (`410` + deprecation code).
+- Lock/finalization behavior and output bundle integrity.
+- Transfer metadata/provenance retention.

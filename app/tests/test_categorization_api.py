@@ -11,6 +11,8 @@ from app.services import meeting_state_manager
 from app.services.categorization_manager import CategorizationManager
 from app.utils.security import get_password_hash
 
+PARALLEL_DEPRECATION_CODE = "parallel_workflow_removed"
+
 
 def _create_categorization_meeting(db_session, owner_id: str):
     meeting_manager = MeetingManager(db_session)
@@ -491,7 +493,8 @@ def test_legacy_parallel_config_uses_facilitator_live_flow(
             f"/api/meetings/{meeting.meeting_id}/categorization/ballot",
             params={"activity_id": activity_id},
         )
-        assert ballot_state.status_code == 409, ballot_state.json()
+        assert ballot_state.status_code == 410, ballot_state.json()
+        assert ballot_state.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
 
         create_bucket_resp = client.post(
             f"/api/meetings/{meeting.meeting_id}/categorization/buckets",
@@ -577,7 +580,8 @@ def test_parallel_reveal_forbidden_for_participant(
             f"/api/meetings/{meeting.meeting_id}/categorization/reveal",
             json={"activity_id": activity_id, "revealed": True},
         )
-        assert reveal_resp.status_code == 403, reveal_resp.json()
+        assert reveal_resp.status_code == 410, reveal_resp.json()
+        assert reveal_resp.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -692,7 +696,22 @@ def test_legacy_parallel_lock_keeps_facilitator_controls_and_disables_parallel_r
             f"/api/meetings/{meeting.meeting_id}/categorization/reveal",
             json={"activity_id": activity_id, "revealed": True},
         )
-        assert reveal_resp.status_code == 409, reveal_resp.json()
+        assert reveal_resp.status_code == 410, reveal_resp.json()
+        assert reveal_resp.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
+
+        disputed_resp = client.get(
+            f"/api/meetings/{meeting.meeting_id}/categorization/disputed",
+            params={"activity_id": activity_id},
+        )
+        assert disputed_resp.status_code == 410, disputed_resp.json()
+        assert disputed_resp.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
+
+        final_resp = client.post(
+            f"/api/meetings/{meeting.meeting_id}/categorization/final-assignments",
+            json={"activity_id": activity_id, "item_key": "pi-1", "category_id": "UNSORTED"},
+        )
+        assert final_resp.status_code == 410, final_resp.json()
+        assert final_resp.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
 
         create_bucket_resp = client.post(
             f"/api/meetings/{meeting.meeting_id}/categorization/buckets",
@@ -710,12 +729,14 @@ def test_legacy_parallel_lock_keeps_facilitator_controls_and_disables_parallel_r
             f"/api/meetings/{meeting.meeting_id}/categorization/ballot",
             params={"activity_id": activity_id},
         )
-        assert ballot_state.status_code == 409, ballot_state.json()
+        assert ballot_state.status_code == 410, ballot_state.json()
+        assert ballot_state.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
 
         assign_resp = client.post(
             f"/api/meetings/{meeting.meeting_id}/categorization/ballot/assignments",
             json={"activity_id": activity_id, "item_key": "pi-1", "category_id": "UNSORTED"},
         )
-        assert assign_resp.status_code == 409, assign_resp.json()
+        assert assign_resp.status_code == 410, assign_resp.json()
+        assert assign_resp.json()["detail"]["code"] == PARALLEL_DEPRECATION_CODE
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))

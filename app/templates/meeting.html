@@ -229,16 +229,13 @@
 
             {% grab id="meeting-categorization-panel" %}
             <section class="content-card activity-panel categorization-panel" data-categorization-root hidden>
-                {{ section_header('Bucketing / Categorization', 'Group ideas into buckets and refine categories in real time.') }}
+                {{ section_header('Bucketing - Facilitator', 'Group ideas into buckets and refine categories in real time.') }}
                 <div class="section-body">
                     <p id="categorizationInstructions" class="voting-description">
                         The facilitator will open categorization when ready.
                     </p>
                     <div id="categorizationError" class="brainstorming-error" hidden></div>
                     <div class="categorization-toolbar">
-                        <button type="button" class="control-btn sm" id="categorizationSubmitBallotButton">Submit Ballot</button>
-                        <button type="button" class="control-btn sm" id="categorizationUnsubmitBallotButton">Unsubmit Ballot</button>
-                        <button type="button" class="control-btn sm" id="categorizationRevealButton">Reveal</button>
                         <button type="button" class="control-btn sm" id="categorizationRefreshButton">Refresh</button>
                     </div>
                     <div class="categorization-board">

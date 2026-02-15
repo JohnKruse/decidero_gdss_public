@@ -12,20 +12,13 @@ from app.services.categorization_manager import CategorizationManager
 class CategorizationPlugin(ActivityPlugin):
     manifest = ActivityPluginManifest(
         tool_type="categorization",
-        label="Bucketing / Categorization",
+        label="Bucketing - Facilitator",
         description="Group ideas into facilitator-defined buckets and keep a portable categorized output.",
         default_config={
             "mode": "FACILITATOR_LIVE",
             "items": [],
             "buckets": [],
             "single_assignment_only": True,
-            "agreement_threshold": 0.60,
-            "margin_threshold": 0.15,
-            "minimum_ballots": 1,
-            "tie_policy": "TIE_UNRESOLVED",
-            "missing_vote_handling": "ignore",
-            "private_until_reveal": True,
-            "allow_unsorted_submission": True,
         },
     )
 
@@ -64,24 +57,7 @@ class CategorizationPlugin(ActivityPlugin):
         state = manager.build_state(context.meeting.meeting_id, context.activity.activity_id)
         config = dict(context.activity.config or {})
         mode = self._normalized_mode(config.get("mode"))
-        threshold = self._as_float(
-            config.get("agreement_threshold", config.get("agree_threshold", 0.60)),
-            fallback=0.60,
-        )
-        minimum_ballots = self._as_int(
-            config.get("minimum_ballots", config.get("min_ballots", 1)),
-            fallback=1,
-        )
-        metrics = (
-            manager.compute_agreement_metrics(
-                meeting_id=context.meeting.meeting_id,
-                activity_id=context.activity.activity_id,
-                agreement_threshold=threshold,
-                minimum_ballots=minimum_ballots,
-            )
-            if mode == "PARALLEL_BALLOT"
-            else {}
-        )
+        metrics: Dict[str, Dict[str, Any]] = {}
         final_assignments = manager.list_final_assignments(
             context.meeting.meeting_id, context.activity.activity_id
         )
@@ -134,8 +110,6 @@ class CategorizationPlugin(ActivityPlugin):
         if not finalization_metadata:
             finalization_metadata = {
                 "mode": mode,
-                "agreement_threshold": threshold,
-                "minimum_ballots": minimum_ballots,
             }
         bundle = ActivityBundleManager(context.db).finalize_output_bundle(
             context.meeting.meeting_id,
@@ -172,20 +146,6 @@ class CategorizationPlugin(ActivityPlugin):
 
     def get_transfer_count(self, context) -> Optional[int]:
         return len(self._build_items(context))
-
-    @staticmethod
-    def _as_float(raw: Any, fallback: float) -> float:
-        try:
-            return float(raw)
-        except (TypeError, ValueError):
-            return float(fallback)
-
-    @staticmethod
-    def _as_int(raw: Any, fallback: int) -> int:
-        try:
-            return int(raw)
-        except (TypeError, ValueError):
-            return int(fallback)
 
     @staticmethod
     def _normalized_mode(raw_mode: Any) -> str:

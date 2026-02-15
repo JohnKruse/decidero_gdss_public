@@ -667,7 +667,7 @@ def test_update_meeting_configuration_seeds_categorization_with_items_only(
             AgendaActivityCreate(tool_type="brainstorming", title="Ideas"),
             AgendaActivityCreate(
                 tool_type="categorization",
-                title="Bucketing / Categorization",
+                title="Bucketing - Facilitator",
                 config={"items": ["Alpha", "Beta"], "buckets": []},
             ),
         ],

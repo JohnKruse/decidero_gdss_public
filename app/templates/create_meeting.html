@@ -212,20 +212,13 @@ endblock %}
             },
             {
                 tool_type: 'categorization',
-                label: 'Bucketing / Categorization',
+                label: 'Bucketing - Facilitator',
                 description: 'Sort ideas into facilitator-defined buckets with an always-available Unsorted lane.',
                 default_config: {
                     mode: 'FACILITATOR_LIVE',
                     items: [],
                     buckets: [],
                     single_assignment_only: true,
-                    agreement_threshold: 0.6,
-                    margin_threshold: 0.15,
-                    minimum_ballots: 1,
-                    tie_policy: 'TIE_UNRESOLVED',
-                    missing_vote_handling: 'ignore',
-                    private_until_reveal: true,
-                    allow_unsorted_submission: true,
                 },
             },
         ];
@@ -318,13 +311,6 @@ endblock %}
             'items': 'Ideas to categorize',
             'buckets': 'Buckets',
             'single_assignment_only': 'Single assignment only',
-            'agreement_threshold': 'Agreement threshold',
-            'margin_threshold': 'Margin threshold',
-            'minimum_ballots': 'Minimum ballots',
-            'tie_policy': 'Tie policy',
-            'missing_vote_handling': 'Missing vote handling',
-            'private_until_reveal': 'Private until facilitator reveal',
-            'allow_unsorted_submission': 'Allow unsorted submission',
         };
         function formatConfigLabel(key) {
             if (CONFIG_LABEL_MAP[key]) return CONFIG_LABEL_MAP[key];

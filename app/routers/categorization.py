@@ -36,6 +36,11 @@ from app.utils.websocket_manager import websocket_manager
 
 router = APIRouter(prefix="/api/meetings/{meeting_id}/categorization", tags=["categorization"])
 
+PARALLEL_ENDPOINT_REMOVAL_DETAIL = {
+    "code": "parallel_workflow_removed",
+    "message": "Parallel ballot workflows are no longer supported. Use facilitator-live categorization endpoints.",
+}
+
 
 def _load_meeting(db: Session, meeting_id: str) -> Meeting:
     meeting = (
@@ -238,6 +243,10 @@ def _config_int(config: dict, *keys: str, fallback: int) -> int:
     return int(fallback)
 
 
+def _raise_parallel_endpoint_gone() -> None:
+    raise HTTPException(status_code=410, detail=PARALLEL_ENDPOINT_REMOVAL_DETAIL)
+
+
 @router.get("/state", response_model=CategorizationStateResponse)
 async def get_state(
     meeting_id: str,
@@ -304,50 +313,9 @@ async def get_ballot_state(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    activity = _resolve_activity(meeting, activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
-        )
-    allowed_participant_ids, is_active = await _resolve_participant_scope(
-        meeting_id, activity_id, activity
-    )
-    if (
-        allowed_participant_ids
-        and not is_facilitator
-        and current_user.user_id not in allowed_participant_ids
-    ):
-        raise HTTPException(status_code=403, detail="You are not assigned to this activity.")
-    if not is_active:
-        raise HTTPException(
-            status_code=403, detail="This activity is not open for categorization."
-        )
-
-    manager = CategorizationManager(db)
-    state = manager.build_state(meeting_id, activity_id)
-    ballots = (
-        db.query(CategorizationBallot)
-        .filter(
-            CategorizationBallot.meeting_id == meeting_id,
-            CategorizationBallot.activity_id == activity_id,
-            CategorizationBallot.user_id == current_user.user_id,
-        )
-        .all()
-    )
-    assignments = {
-        ballot.item_key: ballot.category_id for ballot in ballots if ballot.category_id is not None
-    }
-    submitted = any(bool(ballot.submitted) for ballot in ballots)
-    return CategorizationBallotStateResponse(
-        meeting_id=meeting_id,
-        activity_id=activity_id,
-        submitted=submitted,
-        assignments=assignments,
-        buckets=state["buckets"],
-        items=state["items"],
-    )
+    _access(meeting, current_user)
+    _resolve_activity(meeting, activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/ballot/assignments")
@@ -358,56 +326,9 @@ async def set_ballot_assignment(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    activity = _resolve_activity(meeting, payload.activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
-        )
-    _enforce_participant_lock(activity, is_facilitator=is_facilitator)
-    allowed_participant_ids, is_active = await _resolve_participant_scope(
-        meeting_id, payload.activity_id, activity
-    )
-    if (
-        allowed_participant_ids
-        and not is_facilitator
-        and current_user.user_id not in allowed_participant_ids
-    ):
-        raise HTTPException(status_code=403, detail="You are not assigned to this activity.")
-    if not is_active:
-        raise HTTPException(
-            status_code=403, detail="This activity is not open for categorization."
-        )
-
-    category_id = str(payload.category_id or UNSORTED_CATEGORY_ID).strip() or UNSORTED_CATEGORY_ID
-    manager = CategorizationManager(db)
-    state = manager.build_state(meeting_id, payload.activity_id)
-    valid_item_ids = {str(item.get("item_key")) for item in state["items"]}
-    if payload.item_key not in valid_item_ids:
-        raise HTTPException(status_code=404, detail="Item not found.")
-    valid_bucket_ids = {str(bucket.get("category_id")) for bucket in state["buckets"]}
-    if category_id not in valid_bucket_ids:
-        raise HTTPException(status_code=404, detail="Bucket not found.")
-
-    ballot = manager.upsert_ballot(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        user_id=current_user.user_id,
-        item_key=payload.item_key,
-        category_id=category_id,
-        submitted=False,
-    )
-    manager.log_event(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        actor_user_id=current_user.user_id,
-        event_type="ballot_assignment_set",
-        payload={"item_key": payload.item_key, "category_id": category_id},
-        commit=True,
-    )
-    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
-    return {"item_key": ballot.item_key, "category_id": ballot.category_id, "submitted": ballot.submitted}
+    _access(meeting, current_user)
+    _resolve_activity(meeting, payload.activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/ballot/submit")
@@ -418,77 +339,9 @@ async def submit_ballot(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    activity = _resolve_activity(meeting, payload.activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
-        )
-    _enforce_participant_lock(activity, is_facilitator=is_facilitator)
-    allowed_participant_ids, is_active = await _resolve_participant_scope(
-        meeting_id, payload.activity_id, activity
-    )
-    if (
-        allowed_participant_ids
-        and not is_facilitator
-        and current_user.user_id not in allowed_participant_ids
-    ):
-        raise HTTPException(status_code=403, detail="You are not assigned to this activity.")
-    if not is_active:
-        raise HTTPException(
-            status_code=403, detail="This activity is not open for categorization."
-        )
-
-    manager = CategorizationManager(db)
-    state = manager.build_state(meeting_id, payload.activity_id)
-    config = dict(getattr(activity, "config", {}) or {})
-    allow_unsorted_submission = bool(config.get("allow_unsorted_submission", True))
-
-    existing_ballots = (
-        db.query(CategorizationBallot)
-        .filter(
-            CategorizationBallot.meeting_id == meeting_id,
-            CategorizationBallot.activity_id == payload.activity_id,
-            CategorizationBallot.user_id == current_user.user_id,
-        )
-        .all()
-    )
-    ballot_by_item = {ballot.item_key: ballot for ballot in existing_ballots}
-    missing_required = []
-    for item in state["items"]:
-        item_key = str(item.get("item_key") or "")
-        if not item_key:
-            continue
-        existing = ballot_by_item.get(item_key)
-        category_id = existing.category_id if existing else UNSORTED_CATEGORY_ID
-        if not allow_unsorted_submission and category_id in {None, UNSORTED_CATEGORY_ID}:
-            missing_required.append(item_key)
-            continue
-        manager.upsert_ballot(
-            meeting_id=meeting_id,
-            activity_id=payload.activity_id,
-            user_id=current_user.user_id,
-            item_key=item_key,
-            category_id=category_id,
-            submitted=True,
-        )
-    if missing_required:
-        raise HTTPException(
-            status_code=400,
-            detail="All items must be assigned before submitting.",
-        )
-
-    manager.log_event(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        actor_user_id=current_user.user_id,
-        event_type="ballot_submitted",
-        payload={"user_id": current_user.user_id},
-        commit=True,
-    )
-    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
-    return {"submitted": True}
+    _access(meeting, current_user)
+    _resolve_activity(meeting, payload.activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/ballot/unsubmit")
@@ -499,47 +352,9 @@ async def unsubmit_ballot(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    activity = _resolve_activity(meeting, payload.activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Ballot endpoints are only available in PARALLEL_BALLOT mode.",
-        )
-    _enforce_participant_lock(activity, is_facilitator=is_facilitator)
-    allowed_participant_ids, is_active = await _resolve_participant_scope(
-        meeting_id, payload.activity_id, activity
-    )
-    if (
-        allowed_participant_ids
-        and not is_facilitator
-        and current_user.user_id not in allowed_participant_ids
-    ):
-        raise HTTPException(status_code=403, detail="You are not assigned to this activity.")
-    if not is_active:
-        raise HTTPException(
-            status_code=403, detail="This activity is not open for categorization."
-        )
-
-    db.query(CategorizationBallot).filter(
-        CategorizationBallot.meeting_id == meeting_id,
-        CategorizationBallot.activity_id == payload.activity_id,
-        CategorizationBallot.user_id == current_user.user_id,
-    ).update(
-        {CategorizationBallot.submitted: False},
-        synchronize_session=False,
-    )
-    db.commit()
-    CategorizationManager(db).log_event(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        actor_user_id=current_user.user_id,
-        event_type="ballot_unsubmitted",
-        payload={"user_id": current_user.user_id},
-        commit=True,
-    )
-    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
-    return {"submitted": False}
+    _access(meeting, current_user)
+    _resolve_activity(meeting, payload.activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/reveal")
@@ -550,18 +365,9 @@ async def set_reveal_state(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    if not is_facilitator:
-        raise HTTPException(status_code=403, detail="Only facilitators can manage reveal state.")
-    activity = _resolve_activity(meeting, payload.activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Reveal controls are only available in PARALLEL_BALLOT mode.",
-        )
-    _set_results_revealed(db, activity, payload.revealed)
-    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
-    return {"results_revealed": _is_results_revealed(activity)}
+    _access(meeting, current_user)
+    _resolve_activity(meeting, payload.activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/lock")
@@ -639,53 +445,9 @@ async def list_disputed_items(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    if not is_facilitator:
-        raise HTTPException(status_code=403, detail="Only facilitators can view disputed items.")
-    activity = _resolve_activity(meeting, activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Disputed-item workflow is only available in PARALLEL_BALLOT mode.",
-        )
-
-    manager = CategorizationManager(db)
-    state = manager.build_state(meeting_id, activity_id)
-    config = dict(getattr(activity, "config", {}) or {})
-    threshold = _config_float(config, "agreement_threshold", "agree_threshold", fallback=0.6)
-    minimum_ballots = _config_int(config, "minimum_ballots", "min_ballots", fallback=1)
-    metrics = manager.compute_agreement_metrics(
-        meeting_id=meeting_id,
-        activity_id=activity_id,
-        agreement_threshold=threshold,
-        minimum_ballots=minimum_ballots,
-    )
-    final_assignments = manager.list_final_assignments(meeting_id, activity_id)
-    item_by_key = {str(item.get("item_key")): item for item in state.get("items", [])}
-    disputed = []
-    for item_key, metric in metrics.items():
-        if str(metric.get("status_label")) != "DISPUTED":
-            continue
-        disputed.append(
-            {
-                "item_key": item_key,
-                "item": item_by_key.get(item_key, {}),
-                "metric": metric,
-                "final_category_id": final_assignments.get(item_key),
-            }
-        )
-    disputed.sort(
-        key=lambda row: (
-            float((row.get("metric") or {}).get("margin", 0.0)),
-            -float((row.get("metric") or {}).get("valid_votes", 0)),
-            str(row.get("item_key") or ""),
-        )
-    )
-    return CategorizationDisputedItemsResponse(
-        meeting_id=meeting_id,
-        activity_id=activity_id,
-        disputed_items=disputed,
-    )
+    _access(meeting, current_user)
+    _resolve_activity(meeting, activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/final-assignments")
@@ -696,49 +458,9 @@ async def set_final_assignment(
     db: Session = Depends(get_db),
 ):
     meeting = _load_meeting(db, meeting_id)
-    _, is_facilitator = _access(meeting, current_user)
-    if not is_facilitator:
-        raise HTTPException(status_code=403, detail="Only facilitators can set final assignments.")
-    activity = _resolve_activity(meeting, payload.activity_id)
-    if not _is_parallel_mode(activity):
-        raise HTTPException(
-            status_code=409,
-            detail="Final assignment workflow is only available in PARALLEL_BALLOT mode.",
-        )
-
-    manager = CategorizationManager(db)
-    state = manager.build_state(meeting_id, payload.activity_id)
-    valid_item_ids = {str(item.get("item_key")) for item in state["items"]}
-    if payload.item_key not in valid_item_ids:
-        raise HTTPException(status_code=404, detail="Item not found.")
-    valid_bucket_ids = {str(bucket.get("category_id")) for bucket in state["buckets"]}
-    if payload.category_id not in valid_bucket_ids:
-        raise HTTPException(status_code=404, detail="Bucket not found.")
-
-    final = manager.set_final_assignment(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        item_key=payload.item_key,
-        category_id=payload.category_id,
-        resolver_user_id=current_user.user_id,
-    )
-    manager.upsert_assignment(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        item_key=payload.item_key,
-        category_id=payload.category_id,
-        actor_user_id=current_user.user_id,
-    )
-    manager.log_event(
-        meeting_id=meeting_id,
-        activity_id=payload.activity_id,
-        actor_user_id=current_user.user_id,
-        event_type="final_assignment_set",
-        payload={"item_key": payload.item_key, "category_id": payload.category_id},
-        commit=True,
-    )
-    await _broadcast_refresh(meeting_id, payload.activity_id, current_user.user_id)
-    return {"item_key": final.item_key, "category_id": final.category_id}
+    _access(meeting, current_user)
+    _resolve_activity(meeting, payload.activity_id)
+    _raise_parallel_endpoint_gone()
 
 
 @router.post("/buckets")
