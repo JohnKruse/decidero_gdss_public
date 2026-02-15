@@ -223,7 +223,11 @@ def test_transfer_bundles_sort_voting_results_with_metadata(
     )
     assert response.status_code == 200, response.json()
     items = response.json()["input"]["items"]
-    assert [item.get("content") for item in items] == ["Alpha", "beta", "Gamma"]
+    assert [item.get("content") for item in items] == [
+        "Alpha (Votes: 2)",
+        "beta (Votes: 2)",
+        "Gamma (Votes: 1)",
+    ]
     assert items[0]["metadata"]["votes"] == 2
     assert items[0]["metadata"]["voting"]["votes"] == 2
     assert items[0]["metadata"]["voting"]["rank"] == 1
@@ -233,6 +237,98 @@ def test_transfer_bundles_sort_voting_results_with_metadata(
     assert items[2]["metadata"]["votes"] == 1
     assert items[2]["metadata"]["voting"]["votes"] == 1
     assert items[2]["metadata"]["voting"]["rank"] == 3
+
+
+def test_transfer_commit_from_voting_carries_vote_suffix_into_next_activity(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    admin_email = "admin@decidero.local"
+    facilitator = user_manager_with_admin.get_user_by_email(admin_email)
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Voting Transfer Vote Suffix Test",
+            description="Transferred voting ideas should carry vote totals in content.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Vote Round",
+                config={"options": ["Alpha", "Gamma"]},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    voting_manager = VotingManager(db_session)
+    options = voting_manager._extract_options(activity)
+    option_ids = {option.label: option.option_id for option in options}
+
+    db_session.add_all(
+        [
+            VotingVote(
+                meeting_id=meeting.meeting_id,
+                activity_id=activity.activity_id,
+                user_id=facilitator.user_id,
+                option_id=option_ids["Alpha"],
+                option_label="Alpha",
+                weight=3,
+            ),
+            VotingVote(
+                meeting_id=meeting.meeting_id,
+                activity_id=activity.activity_id,
+                user_id=facilitator.user_id,
+                option_id=option_ids["Gamma"],
+                option_label="Gamma",
+                weight=1,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    bundles_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={"activity_id": activity.activity_id, "include_comments": "true"},
+    )
+    assert bundles_resp.status_code == 200, bundles_resp.json()
+    items = bundles_resp.json()["input"]["items"]
+    assert [item.get("content") for item in items] == [
+        "Alpha (Votes: 3)",
+        "Gamma (Votes: 1)",
+    ]
+
+    commit_resp = authenticated_client.post(
+        f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+        json={
+            "donor_activity_id": activity.activity_id,
+            "include_comments": True,
+            "items": items,
+            "metadata": {},
+            "target_activity": {"tool_type": "voting"},
+        },
+    )
+    assert commit_resp.status_code == 200, commit_resp.json()
+    new_activity_id = commit_resp.json()["new_activity"]["activity_id"]
+
+    options_resp = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/voting/options",
+        params={"activity_id": new_activity_id},
+    )
+    assert options_resp.status_code == 200, options_resp.json()
+    labels = [opt["label"] for opt in options_resp.json().get("options", [])]
+    assert labels == ["Alpha (Votes: 3)", "Gamma (Votes: 1)"]
 
 
 def test_transfer_counts_use_plugin_source(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import re
 from typing import Any, Dict, Optional
 
 from app.data.activity_bundle_manager import ActivityBundleManager
@@ -106,6 +107,21 @@ class VotingPlugin(ActivityPlugin):
         meeting: Meeting = context.meeting
         activity: AgendaActivity = context.activity
         items = self._build_items(context, meeting, activity)
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            metadata = item.get("metadata")
+            voting_meta = metadata.get("voting") if isinstance(metadata, dict) else {}
+            votes = 0
+            if isinstance(voting_meta, dict):
+                try:
+                    votes = int(voting_meta.get("votes") or 0)
+                except (TypeError, ValueError):
+                    votes = 0
+            item["content"] = self._append_votes_to_content(content, votes)
         return TransferSourceResult(items=items, source="voting")
 
     def get_transfer_count(self, context) -> Optional[int]:
@@ -159,6 +175,11 @@ class VotingPlugin(ActivityPlugin):
             items.append(base)
 
         return items
+
+    @staticmethod
+    def _append_votes_to_content(content: str, votes: int) -> str:
+        base = re.sub(r"\s+\(Votes:\s*\d+\)\s*$", "", str(content or "").strip())
+        return f"{base} (Votes: {max(int(votes or 0), 0)})"
 
 
 PLUGIN = VotingPlugin()

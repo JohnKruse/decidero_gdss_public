@@ -464,12 +464,15 @@ async def commit_transfer(
         else:
             title = definition.get("label") or target.tool_type.replace("_", " ").title()
     config = dict(target.config or {})
+    inherited_config_from_donor = False
     if not config and (donor.tool_type or "").lower() == target.tool_type.lower():
         config = dict(getattr(donor, "config", {}) or {})
+        inherited_config_from_donor = True
 
     if target_tool == "voting":
         config.setdefault("allow_retract", True)
-        if not config.get("options"):
+        use_transferred_options = inherited_config_from_donor or not config.get("options")
+        if use_transferred_options:
             options = []
             for entry in ideas:
                 if not isinstance(entry, dict):
