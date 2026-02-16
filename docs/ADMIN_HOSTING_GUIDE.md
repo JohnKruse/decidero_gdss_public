@@ -39,6 +39,25 @@ If you need remote participants and a stable URL, use:
 3. If people are remote and meeting is short/temporary: use Quick Tunnel.
 4. If meetings are long-running or repeated with external participants: use Production.
 
+## 0. Get The Code (Required For Local/LAN/Quick Tunnel)
+
+### Actions
+
+On the machine that will run Decidero:
+
+```bash
+git clone https://github.com/JohnKruse/decidero_gdss_public.git
+cd decidero_gdss_public
+```
+
+If you are using a fork/private copy, clone that repo instead.
+
+### Verify
+
+```bash
+ls README.md requirements.txt start_local.sh start_remote_tunnel.sh
+```
+
 ## Mode A: Local (single machine)
 
 ### Actions

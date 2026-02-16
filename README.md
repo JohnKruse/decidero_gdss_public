@@ -46,10 +46,17 @@ For the simplest local setup instructions, use `docs/LOCAL_SETUP_GUIDE.md`.
 
 ### Actions
 
-1. Create and activate a virtual environment.
-2. Install dependencies.
-3. Copy env template.
-4. Start local server.
+1. Clone the repo and enter it:
+
+```bash
+git clone https://github.com/JohnKruse/decidero_gdss_public.git
+cd decidero_gdss_public
+```
+
+2. Create and activate a virtual environment.
+3. Install dependencies.
+4. Copy env template.
+5. Start local server.
 
 ```bash
 python3 -m venv venv

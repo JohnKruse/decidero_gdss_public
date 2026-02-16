@@ -2,6 +2,25 @@
 
 This guide is for anyone who wants to run Decidero locally for practice, testing, or exploration with the lowest possible setup effort.
 
+## 0. Get The Code
+
+### Actions
+
+Clone the repository, then enter the project folder:
+
+```bash
+git clone https://github.com/JohnKruse/decidero_gdss_public.git
+cd decidero_gdss_public
+```
+
+If you downloaded a ZIP instead, extract it and open a terminal in the extracted folder before continuing.
+
+### Verify
+
+```bash
+ls README.md requirements.txt start_local.sh
+```
+
 ## Quick Start (One-Time Setup)
 
 From the project root:
