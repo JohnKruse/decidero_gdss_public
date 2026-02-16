@@ -3,6 +3,24 @@
 This document defines the versioned contract for the `categorization` activity.
 It is the compatibility baseline for Task Master `#84`.
 
+## Who Should Read This
+
+- Developers changing categorization schemas or APIs.
+- Engineers building new activities and using categorization as a contract example.
+- QA/reviewers validating compatibility and migration safety.
+
+## Human Overview
+
+Use this document as a "worked example" of what a reliable Decidero activity contract looks like.
+
+In plain language:
+
+- Categorization takes incoming ideas and organizes them into buckets.
+- It must preserve provenance and metadata so downstream activities still know where ideas came from.
+- It must emit output in a stable shape so transfer/reporting/replay behavior stays predictable.
+
+If you are building a new activity type, this contract is a good reference for how strict to be about schema versioning, compatibility, and tests.
+
 ## Scope
 
 - Standard in/out bundle compatibility with existing plugin pipeline

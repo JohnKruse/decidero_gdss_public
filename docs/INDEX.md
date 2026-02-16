@@ -10,6 +10,8 @@ Use this page as the entry point for all project docs.
 
 ## Activity Development (Critical Path)
 
+If you are new to activity development, start with the first link below. It explains the mental model in plain language before the technical details.
+
 1. Activity contract and reliability workflow: `docs/ACTIVITY_CONTRACT_GUIDE.md`
 2. Plugin implementation guide: `docs/PLUGIN_DEV_GUIDE.md`
 3. Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`

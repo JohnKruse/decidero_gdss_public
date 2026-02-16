@@ -2,6 +2,31 @@
 
 This guide explains how to build in-process activity plugins for Decidero GDSS, how idea bundles flow between activities, and how autosave/crash recovery works.
 
+## Who Should Read This
+
+- Developers implementing or modifying activity plugins.
+- Engineers integrating drop-in plugins for custom workflows.
+- Test/release owners verifying plugin behavior before deployment.
+
+## Human Overview
+
+Before diving into code, here is the high-level model:
+
+- Decidero meetings are made of activity steps.
+- Each step is powered by a plugin.
+- Plugins are the behavior layer that decides how ideas are read, transformed, and published.
+
+In practical terms:
+
+1. A plugin opens an activity and prepares its working state.
+2. It can snapshot drafts so progress survives refreshes/crashes.
+3. It closes the activity by producing a clean output bundle for whatever comes next.
+
+You do not need to redesign the platform to add value. Most new activities are just new rules for:
+- how to interpret input ideas
+- how to let facilitators/participants interact with them
+- how to emit reliable output for downstream use
+
 ## Critical Contract Path
 
 Use this first for new activity work:

@@ -7,6 +7,12 @@ This guide is a production-oriented runbook for hosting Decidero on a single-nod
 - `Caddy` (TLS + reverse proxy)
 - SQLite (current default in this repo)
 
+## Who Should Read This
+
+- Engineers responsible for deploying and operating Decidero on a server.
+- Admins setting up a stable domain/subdomain for recurring remote sessions.
+- Maintainers handling backups, updates, and production incident response.
+
 ## Fast Path (Domain/Subdomain + HTTPS)
 
 If you just want the shortest path to a stable URL, follow this chain first:

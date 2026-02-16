@@ -2,6 +2,28 @@
 
 This is the canonical implementation contract for creating reliable new Decidero activities.
 
+## Who Should Read This
+
+- Developers creating a brand-new activity type.
+- Maintainers changing activity lifecycle, transfer, or autosave behavior.
+- Reviewers validating compatibility and regression risk before merge.
+
+## Human Overview
+
+If you are new to Decidero activity development, here is the big picture in plain terms:
+
+- An activity is one phase of a meeting (for example brainstorming, voting, or categorization).
+- Each activity receives ideas from a previous phase, works on them, and emits results for the next phase.
+- The "contract" is the shared structure that keeps this handoff reliable so activities can be swapped, extended, or added without breaking the meeting flow.
+
+Think of each activity as a "tool head" in a pipeline:
+
+1. It starts with input from upstream.
+2. It may autosave work-in-progress while running.
+3. It publishes final output when stopped.
+
+If your new activity follows this contract, it behaves predictably with existing transfer, autosave, and meeting controls.
+
 ## Fast Path
 
 ### Actions

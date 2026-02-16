@@ -2,6 +2,12 @@
 
 This guide is for facilitators/admins who need to host meetings for participants.
 
+## Who Should Read This
+
+- Facilitators running live workshops.
+- Admins choosing between local, LAN, tunnel, and production hosting modes.
+- Ops partners supporting facilitators during active sessions.
+
 ## Fast Path
 
 If you need remote participants and a stable URL, use:
