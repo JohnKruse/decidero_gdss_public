@@ -7,11 +7,36 @@ This guide is a production-oriented runbook for hosting Decidero on a single-nod
 - `Caddy` (TLS + reverse proxy)
 - SQLite (current default in this repo)
 
+## Fast Path (Domain/Subdomain + HTTPS)
+
+If you just want the shortest path to a stable URL, follow this chain first:
+
+1. Pick a host name for Decidero, usually a subdomain like `decidero.example.com`.
+2. In your DNS provider, add:
+   - `A` record: `decidero` -> `<your server public IPv4>`
+   - `AAAA` record: `decidero` -> `<your server public IPv6>` (only if your server has IPv6)
+3. Wait for DNS to resolve:
+   - `dig +short decidero.example.com`
+4. On the server, run setup scripts in order:
+   - `sudo bash scripts/vps/bootstrap_ubuntu.sh`
+   - `sudo bash scripts/vps/deploy_decidero.sh <YOUR_REPO_URL>`
+   - `sudo DECIDERO_JWT_SECRET_KEY='<strong_secret>' bash scripts/vps/configure_systemd.sh`
+   - `sudo bash scripts/vps/configure_caddy.sh decidero.example.com`
+5. Verify:
+   - `curl -I https://decidero.example.com/health`
+
+> Explanation: Keep your existing `@` and `www` records unchanged if they already serve another site (for example Blogger/WordPress). Add a new subdomain record for Decidero instead.
+
+## Action-First Format
+
+- Lines under each step are actions to perform.
+- `> Explanation:` callouts are context, not required commands.
+
 ## Recommendation For This Codebase
 
 Use a **single Linux host** with **one uvicorn worker** behind Caddy.
 
-Why this is the right default right now:
+> Explanation: This is the safest default for the current architecture.
 
 - Realtime meeting state is in-memory (`app/services/meeting_state.py`).
 - WebSocket connection tracking is in-memory (`app/utils/websocket_manager.py`).
@@ -19,7 +44,7 @@ Why this is the right default right now:
 
 If you run multiple workers/processes, realtime state will split across processes and behavior can become inconsistent.
 
-What this means in practice:
+> Explanation: Practical impact.
 
 - This is a reliability-first choice, not a maximum-throughput choice.
 - You can still serve normal workshop traffic on one mid-size server.
@@ -46,7 +71,9 @@ These scripts implement the same flow as this guide, but in repeatable steps.
 
 ## 1. Provision Server
 
-Suggested baseline:
+### Actions
+
+Use this baseline:
 
 - Ubuntu 24.04 LTS
 - 2 vCPU, 4 GB RAM
@@ -54,7 +81,24 @@ Suggested baseline:
 - Static IP
 - Domain pointed to server IP (`A` record)
 
+### 1.1 DNS Domain/Subdomain Setup (for stable URL)
+
+1. Choose a public host name (recommended: subdomain), for example:
+   - `decidero.example.com`
+2. In your DNS control panel, add:
+   - `A` record for `decidero` -> your server public IPv4
+   - `AAAA` record for `decidero` -> your server public IPv6 (if used)
+3. Confirm DNS:
+
+```bash
+dig +short decidero.example.com
+```
+
+> Explanation: Do not repoint your existing `www` record unless you want Decidero to replace that site. Most setups keep `www` for the current website and use a dedicated subdomain for Decidero.
+
 ## 2. Initial Server Hardening
+
+### Actions
 
 SSH to the server as a sudo-capable user and run:
 
@@ -66,7 +110,7 @@ sudo apt -y install python3 python3-venv python3-pip git caddy ufw sqlite3
 sudo timedatectl set-timezone UTC
 ```
 
-Why these choices:
+> Explanation:
 
 - `ufw`: default-deny host firewall so only intended ports are reachable.
 - `80/443`: required for HTTP->HTTPS and TLS traffic.
@@ -85,9 +129,15 @@ sudo ufw enable
 sudo ufw status
 ```
 
+### Verify
+
+```bash
+sudo ufw status
+```
+
 If your cloud provider firewall is already set up, you can keep it, but this guide does not require it.
 
-Is it a problem if you skip firewall setup entirely?
+> Explanation: Risks of skipping firewall setup entirely.
 
 - Not always an immediate outage risk, but it increases blast radius if any service accidentally binds publicly.
 - Cloud/provider firewalls can help, but host firewall is usually simpler to keep in sync with this guide.
@@ -95,13 +145,15 @@ Is it a problem if you skip firewall setup entirely?
 
 ## 3. Create App User + Directories
 
+### Actions
+
 ```bash
 sudo useradd --system --create-home --shell /usr/sbin/nologin decidero || true
 sudo mkdir -p /opt/decidero
 sudo chown -R decidero:decidero /opt/decidero
 ```
 
-Why run as a dedicated non-login user:
+> Explanation:
 
 - Limits damage if the app process is compromised.
 - Keeps ownership boundaries clean between app files and system files.
@@ -123,7 +175,15 @@ If you are deploying a fork or private copy instead, replace the URL with your r
 sudo -u decidero git clone <YOUR_REPO_URL> /opt/decidero/app
 ```
 
+### Verify
+
+```bash
+ls -ld /opt/decidero /opt/decidero/app
+```
+
 ## 4. Python Environment
+
+### Actions
 
 ```bash
 sudo -u decidero python3 -m venv /opt/decidero/venv
@@ -133,9 +193,17 @@ sudo -u decidero /opt/decidero/venv/bin/pip install -r /opt/decidero/app/require
 
 Note: this installs code + dependencies only. The app is started in Step 6 when `systemd` is enabled.
 
+### Verify
+
+```bash
+sudo -u decidero /opt/decidero/venv/bin/python -V
+```
+
 ## 5. Runtime Environment File
 
 This app reads environment variables directly. It does **not** auto-load `.env` by default in production startup, so use a systemd `EnvironmentFile`.
+
+### Actions
 
 Create `/etc/decidero/decidero.env`:
 
@@ -158,7 +226,7 @@ sudo chmod 640 /etc/decidero/decidero.env
 echo "Generated JWT secret length: ${#DECIDERO_JWT_SECRET_KEY}"
 ```
 
-Why this matters:
+> Explanation:
 
 - `DECIDERO_ENV=production` enforces stronger startup behavior (missing JWT secret fails fast).
 - `DECIDERO_JWT_SECRET_KEY` signs auth tokens; weak or rotating secrets will break sessions and can weaken security.
@@ -174,7 +242,16 @@ openssl rand -hex 48
 
 The main command block above already generates and writes this for you.
 
+### Verify
+
+```bash
+sudo ls -l /etc/decidero/decidero.env
+sudo grep -E '^DECIDERO_ENV=|^DECIDERO_SECURE_COOKIES=' /etc/decidero/decidero.env
+```
+
 ## 6. Create systemd Service
+
+### Actions
 
 Create `/etc/systemd/system/decidero.service`:
 
@@ -201,7 +278,7 @@ WantedBy=multi-user.target
 EOF
 ```
 
-Why `systemd` instead of running in a shell:
+> Explanation:
 
 - Auto-restart on crash.
 - Starts on boot.
@@ -217,6 +294,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now decidero
 sudo systemctl status decidero --no-pager
 ```
+
+### Verify
 
 Health check:
 
@@ -238,6 +317,8 @@ curl -sS http://127.0.0.1:8000/health
 
 Use this for short workshops (1-3 days) when you do not have a domain.
 
+#### Actions
+
 Install `cloudflared`:
 
 ```bash
@@ -255,7 +336,13 @@ cloudflared tunnel --url http://127.0.0.1:8000
 
 Copy/share the printed `https://*.trycloudflare.com` URL.
 
-Important operating note for Quick Tunnel:
+#### Verify
+
+```bash
+curl -sS https://<your-random>.trycloudflare.com/health
+```
+
+> Explanation: Important operating notes for Quick Tunnel.
 
 - `trycloudflare.com` URLs are ephemeral and usually change when `cloudflared` restarts.
 - Browser-saved credentials are domain-scoped, so users may think passwords are "gone" when the URL changes.
@@ -280,6 +367,8 @@ Notes:
 
 ### Track B (Production, Domain): Caddy TLS Reverse Proxy
 
+#### Actions
+
 Create `/etc/caddy/Caddyfile`:
 
 ```caddy
@@ -303,13 +392,19 @@ Test:
 curl -I https://your-domain.example.com/health
 ```
 
-Why Caddy in front of uvicorn:
+#### Verify
+
+```bash
+curl -I https://your-domain.example.com/health
+```
+
+> Explanation:
 
 - Automatic certificate issuance/renewal.
 - Clean HTTPS defaults with minimal config.
 - Keeps app bound privately on `127.0.0.1`.
 
-Could you expose uvicorn directly on `0.0.0.0:8000`?
+> Explanation: Could you expose uvicorn directly on `0.0.0.0:8000`?
 
 - Yes, but then you lose managed TLS, cookie/security expectations, and reverse-proxy controls.
 - For this app, HTTPS is not optional in production because auth cookies should be `Secure`.
@@ -327,6 +422,13 @@ Recommended rollout:
 2. Immediately create the first admin account yourself.
 3. Then decide whether to keep public registration open.
 
+### Actions
+
+1. Open `https://your-domain.example.com/register`.
+2. Create the first account yourself (this becomes `super_admin`).
+3. Decide whether to keep `/register` open.
+4. If closing registration, add the Caddy block below and reload Caddy.
+
 If you want to close public registration at proxy layer after bootstrap, add to Caddy:
 
 ```caddy
@@ -338,7 +440,14 @@ respond @block_register 403
 
 Then reload Caddy.
 
-Why this is important:
+### Verify
+
+1. Sign out and sign back in with the new admin account.
+2. Open `/register`:
+   - If blocked, expect HTTP `403`.
+   - If left open, participant signup should still work.
+
+> Explanation:
 
 - Public registration stays available unless you explicitly close it.
 - After first admin creation, open registration still allows anyone to self-register as participant.
@@ -347,6 +456,8 @@ Why this is important:
 ## 9. Data and Backups (SQLite)
 
 Current DB path from config: `sqlite:///./decidero.db` -> `/opt/decidero/app/decidero.db`.
+
+### Actions
 
 On-demand backup:
 
@@ -381,13 +492,21 @@ sudo chown decidero:decidero /opt/decidero/app/decidero.db
 sudo systemctl start decidero
 ```
 
-Is backup really required on a single server?
+### Verify
+
+```bash
+ls -1 /opt/decidero/app/backups | tail
+```
+
+> Explanation: Is backup required on a single server?
 
 - Yes. SQLite is a single file; accidental deletion, disk corruption, or operator error can wipe state instantly.
 - VM/cloud snapshots are helpful but usually slower for granular restore than a direct `.backup` file.
 - A nightly backup is the minimum baseline; add off-host copy when possible.
 
 ## 10. Update Procedure
+
+### Actions
 
 ```bash
 cd /opt/decidero/app
@@ -408,6 +527,11 @@ curl -sS https://<your-random>.trycloudflare.com/health
 ```
 
 Then verify login, dashboard, meeting create/join, and realtime meeting updates in browser.
+
+### Verify
+
+1. `sudo systemctl status decidero --no-pager` is green.
+2. `/health` is healthy on the active public URL.
 
 ## 11. Logs and Troubleshooting
 

@@ -2,6 +2,10 @@
 
 This document defines the current production contract for the `categorization` activity.
 
+Related:
+- `docs/ACTIVITY_CONTRACT_GUIDE.md`
+- `docs/CATEGORIZATION_CONTRACT.md`
+
 ## Scope
 
 - Canonical tool type: `categorization`

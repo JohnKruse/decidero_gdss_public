@@ -10,9 +10,10 @@ Decidero GDSS is a group decision support system for facilitated meetings with a
 > **READ THESE RUNBOOKS BEFORE USING QUICK START FOR HOSTING/DEPLOYMENT.**
 >
 > Start here:
-> 1. **Local setup runbook (lowest barrier):** [`docs/LOCAL_SETUP_GUIDE.md`](docs/LOCAL_SETUP_GUIDE.md)
-> 2. **Admin hosting runbook:** [`docs/ADMIN_HOSTING_GUIDE.md`](docs/ADMIN_HOSTING_GUIDE.md)
-> 3. **Server production runbook:** [`docs/SERVER_HOSTING_GUIDE.md`](docs/SERVER_HOSTING_GUIDE.md)
+> 1. **Documentation index (all paths):** [`docs/INDEX.md`](docs/INDEX.md)
+> 2. **Local setup runbook (lowest barrier):** [`docs/LOCAL_SETUP_GUIDE.md`](docs/LOCAL_SETUP_GUIDE.md)
+> 3. **Admin hosting runbook:** [`docs/ADMIN_HOSTING_GUIDE.md`](docs/ADMIN_HOSTING_GUIDE.md)
+> 4. **Server production runbook:** [`docs/SERVER_HOSTING_GUIDE.md`](docs/SERVER_HOSTING_GUIDE.md)
 >
 > `Quick Start (Local Host)` below is for local development, not production hosting.
 
@@ -22,10 +23,28 @@ Decidero GDSS is maintained by John Kruse.
 - Project repository: `https://github.com/JohnKruse/decidero_gdss_public`
 - License: Apache License 2.0 (`LICENSE`)
 
-## Quick Start (Local Host)
-For the simplest local setup instructions, use:
+## Fast Path (Stable Public URL)
 
-`docs/LOCAL_SETUP_GUIDE.md`
+### Actions
+
+1. Pick a domain/subdomain for Decidero (example: `decidero.example.com`).
+2. Point DNS `A` (and optional `AAAA`) record to your server IP.
+3. Follow:
+   - `docs/ADMIN_HOSTING_GUIDE.md`
+   - `docs/SERVER_HOSTING_GUIDE.md`
+
+### Verify
+
+```bash
+curl -I https://your-domain.example.com/health
+```
+
+> Explanation: For recurring or multi-day remote meetings, prefer a stable domain over temporary tunnel URLs.
+
+## Quick Start (Local Host)
+For the simplest local setup instructions, use `docs/LOCAL_SETUP_GUIDE.md`.
+
+### Actions
 
 1. Create and activate a virtual environment.
 2. Install dependencies.
@@ -40,23 +59,36 @@ cp .env.example .env
 ./start_local.sh
 ```
 
+### Verify
+
 Open `http://localhost:8000`.
 
 ## Remote Participants (Easy HTTPS, No Domain Needed)
-If participants are outside your LAN, use a secure tunnel. This gives you an `https://...` URL without managing certificates.
+If participants are outside your LAN and you need a quick temporary URL, use a secure tunnel.
 
 ### Option A: One-command remote mode (recommended)
-Run:
+
+#### Actions
 
 ```bash
 ./start_remote_tunnel.sh
 ```
 
 This starts the app and prints a public `https://<random>.trycloudflare.com` URL to share.
-It also auto-restarts `cloudflared` if the tunnel process exits and writes tunnel logs to `logs/cloudflared.log`.
+
+#### Verify
+
+1. Open the printed tunnel URL in your browser.
+2. Confirm `/health` and login both work before sharing.
+
+> Explanation: The script auto-restarts `cloudflared` if it exits and writes logs to `logs/cloudflared.log`.
+> Explanation: Tunnel URLs are ephemeral and can change on restart.
 
 ## Cookie Security Toggle
-When serving over HTTPS (tunnel or reverse proxy), enable secure cookies:
+
+### Actions
+
+When serving over HTTPS (tunnel or reverse proxy), enable secure cookies.
 
 ```bash
 export DECIDERO_SECURE_COOKIES=true
@@ -69,16 +101,23 @@ auth:
   secure_cookies: true
 ```
 
-For plain local HTTP development, keep it `false`.
+### Verify
+
+1. Sign in over HTTPS and confirm sessions persist.
+2. For local HTTP development, keep secure cookies `false`.
 
 ## Host Checklist
-- Same machine testing: run `./start_local.sh` and use `http://localhost:8000`.
-- Same LAN meeting: run `./start_local.sh`; if needed, bind app to LAN IP.
-- Remote meeting: run `./start_remote_tunnel.sh` and share the HTTPS tunnel URL.
-- Keep `.env` private and never commit it.
-- For any internet-exposed usage, set:
-  - `DECIDERO_ENV=production`
-  - `DECIDERO_JWT_SECRET_KEY=<long-random-secret>`
+
+### Actions
+
+1. Same machine testing: run `./start_local.sh` and use `http://localhost:8000`.
+2. Same LAN meeting: run `./start_local.sh`; if needed, bind app to LAN IP.
+3. Remote meeting (temporary): run `./start_remote_tunnel.sh` and share the HTTPS tunnel URL.
+4. Remote meeting (stable): use the domain/subdomain flow in `docs/SERVER_HOSTING_GUIDE.md`.
+5. Keep `.env` private and never commit it.
+6. For any internet-exposed usage, set:
+   - `DECIDERO_ENV=production`
+   - `DECIDERO_JWT_SECRET_KEY=<long-random-secret>`
 
 ## Remote Tunnel Reliability Knobs
 `start_remote_tunnel.sh` supports environment overrides:
@@ -96,6 +135,7 @@ For plain local HTTP development, keep it `false`.
 - No local installation is required.
 
 ## Developer Notes
+- Activity contract guide (critical): `docs/ACTIVITY_CONTRACT_GUIDE.md`.
 - Plugin guide: `docs/PLUGIN_DEV_GUIDE.md`.
 - Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`.
 - Plugins are loaded from built-ins plus drop-ins at `./plugins` (or `DECIDERO_PLUGIN_DIR`).

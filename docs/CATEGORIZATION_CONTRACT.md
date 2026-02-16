@@ -12,6 +12,7 @@ It is the compatibility baseline for Task Master `#84`.
 
 ## Canonical References
 
+- `docs/ACTIVITY_CONTRACT_GUIDE.md`
 - `docs/PLUGIN_DEV_GUIDE.md`
 - `docs/TRANSFER_METADATA.md`
 - `docs/CATEGORIZATION_ACTIVITY_SPEC.md`
@@ -28,7 +29,12 @@ It is the compatibility baseline for Task Master `#84`.
 
 Required:
 - `schema_version: 1`
-- `mode: FACILITATOR_LIVE | PARALLEL_BALLOT`
+- `mode: FACILITATOR_LIVE` (canonical runtime mode)
+
+Compatibility acceptance:
+- `mode: PARALLEL_BALLOT` is accepted for backward compatibility in config payloads.
+- Current runtime behavior normalizes legacy `PARALLEL_BALLOT` to `FACILITATOR_LIVE`.
+- Legacy parallel endpoints remain deprecated and return `410 Gone`.
 
 Core fields:
 - `items: [string | item-object]`
@@ -47,7 +53,7 @@ Required:
 - `schema_version: 1`
 - `meeting_id`
 - `activity_id`
-- `mode`
+- `mode` (`FACILITATOR_LIVE`)
 
 Core fields:
 - `locked: bool`

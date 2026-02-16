@@ -2,6 +2,14 @@
 
 This guide explains how to build in-process activity plugins for Decidero GDSS, how idea bundles flow between activities, and how autosave/crash recovery works.
 
+## Critical Contract Path
+
+Use this first for new activity work:
+
+- `docs/ACTIVITY_CONTRACT_GUIDE.md`
+
+> Explanation: The contract guide is the reliability baseline for new activities. Use this page for implementation details and examples.
+
 ## Core Concepts
 
 ### Activities
@@ -40,6 +48,8 @@ Plugins implement the `ActivityPlugin` interface (see `app/plugins/base.py`):
 - `close_activity(context)`
 - `get_autosave_seconds(config)` (provided by base)
 
+> Explanation: `validate_config()` exists on the interface, but current lifecycle wiring does not automatically invoke it. If you need strict config validation today, call validators inside plugin lifecycle methods.
+
 ### Manifest Fields
 Minimal manifest:
 ```
@@ -52,6 +62,14 @@ ActivityPluginManifest(
 ```
 
 `autosave_seconds` is clamped to 5–300 seconds.
+
+## Reliability Invariants (Required)
+
+1. Keep `tool_type` unique and stable.
+2. Preserve incoming `metadata` and `source` when emitting output items.
+3. Emit deterministic item identifiers scoped to the current `activity_id`.
+4. Keep `open_activity` idempotent so restart/reopen does not duplicate seeded state.
+5. Emit transfer-compatible output bundle payloads from `close_activity`.
 
 ## Activity Context API
 Plugins receive an `ActivityContext` with DB access and helper methods:
@@ -99,7 +117,7 @@ The autosave runner is implemented in `app/plugins/autosave.py`.
 
 ### Categorization
 - Seeds items from input bundle while preserving `metadata` and `source`.
-- Supports `FACILITATOR_LIVE` and `PARALLEL_BALLOT` modes.
+- Accepts legacy `PARALLEL_BALLOT` config values but normalizes runtime behavior to `FACILITATOR_LIVE`.
 - Uses an implicit `UNSORTED` bucket and supports lock/finalize semantics.
 - On stop, emits output items with `metadata.categorization` plus bundle metadata:
   - `categories`
@@ -127,6 +145,7 @@ These are meant to power a lightweight editing UI for curated idea lists.
 4. Implement `open_activity` and `close_activity`.
 5. (Optional) Implement `snapshot_activity` for autosave.
 6. Export `PLUGIN = YourPlugin()`.
+7. Run the contract matrix in `docs/ACTIVITY_CONTRACT_GUIDE.md`.
 
 ## Testing
 You can add unit tests under `app/tests` and use pytest:
