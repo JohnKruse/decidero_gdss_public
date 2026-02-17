@@ -6,7 +6,9 @@ for short, bursty workshop traffic.
 ## Scope
 
 - Target deployment profile: single-node, SQLite-backed, realtime enabled.
-- Capacity objective: approximately 100 concurrent attendees.
+- Capacity objective for stress rehearsal: approximately 100 concurrent attendees.
+- Conservative published expectation for operators: approximately 75 concurrent
+  attendees on a 3 vCPU server profile.
 - Burst pattern: synchronized user actions (register/login/submit) for 1-2 minutes.
 - Out of scope for this milestone: Postgres migration and multi-node scaling.
 
@@ -78,6 +80,43 @@ Operational stress pack (current):
   polling every 2-5 seconds.
 - Test B (CPU Lock): 50 users, spawn 10 users/second, repeated failed login attempts.
 - Test C (Static Asset Drag): 80 users, spawn 5 users/second, dashboard + static fetch.
+
+Realistic capacity profile (recommended for published guidance):
+- Script: `decidero_grafana_k6_test_v4_realistic.js`
+- Default shape: ramp to 75 VUs over 3 minutes, hold 8 minutes, ramp down 1 minute.
+- Behavior mix per iteration:
+  - 65% meeting-state poll
+  - 25% dashboard + 2 static assets
+  - 10% relogin/session-refresh pressure
+- Think-time: random 10-30 seconds per user action (clumpy but human-like).
+- Suggested public claim basis: "Comfortable at 75 concurrent participants" only
+  when this profile passes on your production-like VPS at least 3 runs in a row.
+
+Run example (CLI):
+```bash
+k6 run -o cloud \
+  -e BASE_URL=https://decidero.kruser.org \
+  -e ADMIN_LOGIN=admin \
+  -e ADMIN_PASSWORD='Password123!' \
+  -e MEETING_ID=MTG20260217-0005 \
+  -e TARGET_VUS=75 \
+  -e RAMP_UP_SECONDS=180 \
+  -e STEADY_SECONDS=480 \
+  -e RAMP_DOWN_SECONDS=60 \
+  -e THINK_MIN_SECONDS=10 \
+  -e THINK_MAX_SECONDS=30 \
+  -e USER_PREFIX=participant \
+  -e USER_PASSWORD='Password123!' \
+  -e USER_COUNT=75 \
+  -e USER_START=1 \
+  -e USER_PAD_WIDTH=3 \
+  -e RELOGIN_PERCENT=0.02 \
+  decidero_grafana_k6_test_v4_realistic.js
+```
+
+Important:
+- For realistic results, do not run this scenario with all VUs sharing one
+  account. Use pre-created participant accounts (`USER_*` variables above).
 
 ## Required Test Coverage (Pytest + Rehearsal)
 

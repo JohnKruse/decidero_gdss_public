@@ -23,6 +23,28 @@ Decidero GDSS is maintained by John Kruse.
 - Project repository: `https://github.com/JohnKruse/decidero_gdss_public`
 - License: Apache License 2.0 (`LICENSE`)
 
+## Capacity Expectations (SQLite, Single Node)
+
+Use this project with conservative expectations on the default SQLite setup.
+
+- Comfortable published target: up to ~75 concurrent participants.
+- Above that, behavior can degrade during synchronized surges (for example,
+  many users logging in or submitting at the same moment).
+- For higher confidence, run the k6 scripts in this repo against your own
+  deployment before a live event.
+- Run realistic load tests with distinct participant accounts (not one shared
+  login), or results can be artificially pessimistic.
+
+Recommended server sizing for that target:
+
+- Preferred: 3 vCPU / 4-8 GB RAM
+- Minimum for smaller groups/pilots: 2 vCPU / 4 GB RAM
+
+Related docs:
+
+- `docs/SERVER_HOSTING_GUIDE.md`
+- `docs/RELIABILITY_100_CONCURRENCY_PLAN.md`
+
 ## Fast Path (Stable Public URL)
 
 ### Actions
