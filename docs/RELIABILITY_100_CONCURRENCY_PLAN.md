@@ -7,8 +7,10 @@ for short, bursty workshop traffic.
 
 - Target deployment profile: single-node, SQLite-backed, realtime enabled.
 - Capacity objective for stress rehearsal: approximately 100 concurrent attendees.
-- Conservative published expectation for operators: approximately 75 concurrent
-  attendees on a 3 vCPU server profile.
+- Conservative published expectation for operators (current): approximately 50
+  concurrent attendees on a 3 vCPU server profile.
+- Target milestone: increase reliable capacity to approximately 100 concurrent
+  attendees.
 - Burst pattern: synchronized user actions (register/login/submit) for 1-2 minutes.
 - Out of scope for this milestone: Postgres migration and multi-node scaling.
 
@@ -89,7 +91,7 @@ Realistic capacity profile (recommended for published guidance):
   - 25% dashboard + 2 static assets
   - 10% relogin/session-refresh pressure
 - Think-time: random 10-30 seconds per user action (clumpy but human-like).
-- Suggested public claim basis: "Comfortable at 75 concurrent participants" only
+- Suggested public claim basis: "Comfortable at 50 concurrent participants" only
   when this profile passes on your production-like VPS at least 3 runs in a row.
 
 Run example (CLI):

@@ -82,7 +82,7 @@ These scripts implement the same flow as this guide, but in repeatable steps.
 Use this baseline:
 
 - Ubuntu 24.04 LTS
-- 3 vCPU, 4-8 GB RAM (recommended for ~75 concurrent participants)
+- 3 vCPU, 4-8 GB RAM (recommended for current ~50 concurrent target)
 - 2 vCPU, 4 GB RAM (small sessions/pilots)
 - 40+ GB SSD
 - Static IP
@@ -587,12 +587,14 @@ Common issues:
 Current production limit:
 
 - Single process/single node is the safe mode for realtime correctness.
-- With the current SQLite-based deployment, plan for ~75 concurrent attendees
+- With the current SQLite-based deployment, plan for ~50 concurrent attendees
   as the conservative published target.
 - Expect degraded behavior during short synchronized surges (for example, many
   users creating accounts or submitting ideas at the same moment).
 - For events near/above this range, run the k6 reliability scripts in this
   repository against your exact deployment and meeting profile first.
+- Current roadmap goal: improve this deployment profile toward ~100 concurrent
+  attendees with reliability hardening and repeated rehearsal passes.
 
 When you outgrow this:
 

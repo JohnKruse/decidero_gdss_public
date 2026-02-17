@@ -27,13 +27,14 @@ Decidero GDSS is maintained by John Kruse.
 
 Use this project with conservative expectations on the default SQLite setup.
 
-- Comfortable published target: up to ~75 concurrent participants.
+- Current conservative published target: up to ~50 concurrent participants.
 - Above that, behavior can degrade during synchronized surges (for example,
   many users logging in or submitting at the same moment).
 - For higher confidence, run the k6 scripts in this repo against your own
   deployment before a live event.
 - Run realistic load tests with distinct participant accounts (not one shared
   login), or results can be artificially pessimistic.
+- Roadmap goal: improve reliability to support ~100 concurrent participants.
 
 Recommended server sizing for that target:
 
