@@ -30,6 +30,13 @@ _DEFAULT_MEETING_ACTIVITY_LOG = {
     "max_items": 100,
 }
 _DEFAULT_AUTOSAVE_SECONDS = 10
+_DEFAULT_AUTH_LOGIN_RATE_LIMIT = {
+    "enabled": True,
+    "window_seconds": 60,
+    "max_failures_per_username": 8,
+    "max_failures_per_ip": 40,
+    "lockout_seconds": 60,
+}
 
 
 def load_config() -> Dict[str, Any]:
@@ -234,6 +241,77 @@ def get_secure_cookies_enabled() -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def get_auth_login_rate_limit_settings() -> Dict[str, Any]:
+    """Return failed-login rate limiting settings with env/config overrides."""
+    config = load_config()
+    auth_section = config.get("auth") or {}
+    section = auth_section.get("login_rate_limit") or {}
+    defaults = dict(_DEFAULT_AUTH_LOGIN_RATE_LIMIT)
+
+    def _env_bool(name: str) -> Any:
+        value = os.getenv(name)
+        if value is None:
+            return None
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+
+    def _env_int(name: str) -> Any:
+        value = os.getenv(name)
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _coerce_positive_int(value: Any, fallback: int) -> int:
+        try:
+            candidate = int(value)
+            return candidate if candidate > 0 else fallback
+        except Exception:  # noqa: BLE001
+            return fallback
+
+    def _coerce_bool(value: Any, fallback: bool) -> bool:
+        if value is None:
+            return fallback
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(value)
+
+    enabled = _env_bool("DECIDERO_LOGIN_RATE_LIMIT_ENABLED")
+    if enabled is None:
+        enabled = section.get("enabled")
+    window_seconds = _env_int("DECIDERO_LOGIN_RATE_LIMIT_WINDOW_SECONDS")
+    if window_seconds is None:
+        window_seconds = section.get("window_seconds")
+    max_fail_user = _env_int("DECIDERO_LOGIN_RATE_LIMIT_MAX_FAILURES_PER_USERNAME")
+    if max_fail_user is None:
+        max_fail_user = section.get("max_failures_per_username")
+    max_fail_ip = _env_int("DECIDERO_LOGIN_RATE_LIMIT_MAX_FAILURES_PER_IP")
+    if max_fail_ip is None:
+        max_fail_ip = section.get("max_failures_per_ip")
+    lockout_seconds = _env_int("DECIDERO_LOGIN_RATE_LIMIT_LOCKOUT_SECONDS")
+    if lockout_seconds is None:
+        lockout_seconds = section.get("lockout_seconds")
+
+    return {
+        "enabled": _coerce_bool(enabled, defaults["enabled"]),
+        "window_seconds": _coerce_positive_int(
+            window_seconds, defaults["window_seconds"]
+        ),
+        "max_failures_per_username": _coerce_positive_int(
+            max_fail_user, defaults["max_failures_per_username"]
+        ),
+        "max_failures_per_ip": _coerce_positive_int(
+            max_fail_ip, defaults["max_failures_per_ip"]
+        ),
+        "lockout_seconds": _coerce_positive_int(
+            lockout_seconds, defaults["lockout_seconds"]
+        ),
+    }
 
 
 def get_autosave_seconds() -> int:

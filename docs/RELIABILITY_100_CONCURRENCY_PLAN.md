@@ -138,6 +138,8 @@ Operational stress pack (current):
   - Browser performs bounded automatic retry for transient overload statuses
     (`429`, `503`) with short backoff.
   - After retry exhaustion, user sees a clear temporary-busy message.
+  - Failed-login storm protection applies temporary server-side throttling with
+    `429` and `Retry-After` once per-user/per-IP limits are exceeded.
 - Registration (`/api/auth/register`):
   - No silent automatic retry yet (to avoid duplicate-account edge cases without
     registration idempotency support).

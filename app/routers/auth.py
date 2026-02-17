@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
 from datetime import timedelta
 from typing import Dict
 from pydantic import BaseModel
@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.schemas.schemas import LoginResponse
 from app.schemas.user import UserCreate
 from app.config.loader import get_secure_cookies_enabled
+from app.services.login_rate_limiter import login_rate_limiter
 
 router = APIRouter(prefix="/api/auth", tags=["authentication"])
 logger = logging.getLogger("auth_router")
@@ -36,6 +37,7 @@ class PasswordChange(BaseModel):
 
 @router.post("/token", response_model=LoginResponse)
 async def login_for_access_token(
+    request: Request,
     response: Response,
     token_request: TokenRequest,
     db: Session = Depends(get_db),
@@ -47,15 +49,38 @@ async def login_for_access_token(
     """
     username = token_request.username
     password = token_request.password
+    client_ip = getattr(getattr(request, "client", None), "host", None) or "unknown"
+
+    limited, retry_after = login_rate_limiter.check_limited(
+        username=username, ip=client_ip
+    )
+    if limited:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please wait before trying again.",
+            headers={"Retry-After": str(retry_after)},
+        )
 
     logger.info("Login attempt for username '%s'", username)
     user = user_manager.verify_user_credentials(username, password)
     if not user:
+        login_rate_limiter.record_failure(username=username, ip=client_ip)
+        limited, retry_after = login_rate_limiter.check_limited(
+            username=username, ip=client_ip
+        )
+        if limited:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Please wait before trying again.",
+                headers={"Retry-After": str(retry_after)},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    login_rate_limiter.record_success(username=username, ip=client_ip)
 
     needs_change = not user.password_changed
 

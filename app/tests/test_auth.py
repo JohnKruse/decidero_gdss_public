@@ -13,6 +13,10 @@ from app.auth.auth import (
 )
 from jose import jwt
 import os
+from app.services.login_rate_limiter import (
+    LoginRateLimitSettings,
+    login_rate_limiter,
+)
 
 # client = TestClient(app) # Removed module-level client
 
@@ -26,6 +30,29 @@ ADMIN_LOGIN_FOR_TEST = os.getenv("ADMIN_LOGIN", ADMIN_EMAIL_FOR_TEST.split("@")[
 def user_manager_fixture(user_manager_with_admin: UserManager):  # Use the new fixture
     """Provides a user manager instance where the default admin already exists."""
     return user_manager_with_admin
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_rate_limiter_fixture():
+    login_rate_limiter.set_settings(
+        LoginRateLimitSettings(
+            enabled=True,
+            window_seconds=60,
+            max_failures_per_username=8,
+            max_failures_per_ip=40,
+            lockout_seconds=60,
+        )
+    )
+    yield
+    login_rate_limiter.set_settings(
+        LoginRateLimitSettings(
+            enabled=True,
+            window_seconds=60,
+            max_failures_per_username=8,
+            max_failures_per_ip=40,
+            lockout_seconds=60,
+        )
+    )
 
 
 def test_initial_admin_creation_on_startup(
@@ -105,6 +132,56 @@ def test_invalid_login(
         data.get("detail") == "Incorrect username or password"
     )  # Based on /api/auth/token endpoint
     assert "access_token" not in response.cookies
+
+
+def test_login_rate_limit_returns_429_after_repeated_failures(
+    user_manager_fixture: UserManager, client: TestClient
+):
+    login_rate_limiter.set_settings(
+        LoginRateLimitSettings(
+            enabled=True,
+            window_seconds=120,
+            max_failures_per_username=2,
+            max_failures_per_ip=100,
+            lockout_seconds=30,
+        )
+    )
+    payload = {"username": ADMIN_LOGIN_FOR_TEST, "password": "wrongpassword"}
+
+    first = client.post("/api/auth/token", json=payload)
+    assert first.status_code == 401, first.text
+
+    second = client.post("/api/auth/token", json=payload)
+    assert second.status_code == 429, second.text
+    assert second.headers.get("retry-after") is not None
+
+
+def test_login_rate_limit_clears_after_success(
+    user_manager_fixture: UserManager, client: TestClient
+):
+    login_rate_limiter.set_settings(
+        LoginRateLimitSettings(
+            enabled=True,
+            window_seconds=120,
+            max_failures_per_username=3,
+            max_failures_per_ip=100,
+            lockout_seconds=30,
+        )
+    )
+    bad_payload = {"username": ADMIN_LOGIN_FOR_TEST, "password": "wrongpassword"}
+    good_payload = {
+        "username": ADMIN_LOGIN_FOR_TEST,
+        "password": ADMIN_PASSWORD_FOR_TEST,
+    }
+
+    bad = client.post("/api/auth/token", json=bad_payload)
+    assert bad.status_code == 401, bad.text
+
+    good = client.post("/api/auth/token", json=good_payload)
+    assert good.status_code == 200, good.text
+
+    bad_again = client.post("/api/auth/token", json=bad_payload)
+    assert bad_again.status_code == 401, bad_again.text
 
 
 def test_protected_endpoint_requires_auth(
