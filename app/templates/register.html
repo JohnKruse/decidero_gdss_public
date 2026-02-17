@@ -243,6 +243,9 @@
                 } else {
                     errorMessage += response.statusText;
                 }
+                if (response.status === 503 || response.status === 429) {
+                    errorMessage = 'Registration is temporarily busy. Wait a few seconds and submit again.';
+                }
                 jsErrorsDiv.textContent = errorMessage;
             } catch (error) {
                 console.error('Registration error:', error);

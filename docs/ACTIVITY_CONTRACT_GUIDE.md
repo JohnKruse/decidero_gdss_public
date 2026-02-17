@@ -118,6 +118,7 @@ python3 -m pytest app/tests/test_transfer_transforms.py -q
 ### Verify
 
 1. New `tool_type` appears in module catalog with `label`, `description`, `default_config`, `stem`.
+2. If the plugin defines reliability metadata, catalog entry also includes `reliability_policy`.
 2. Creating an agenda item with that `tool_type` starts/stops cleanly.
 
 ## Contract Test Matrix
@@ -129,6 +130,23 @@ python3 -m pytest app/tests/test_activity_plugins.py -q
 python3 -m pytest app/tests/test_transfer_comment_format_parity.py -q
 python3 -m pytest app/tests/test_transfer_api.py -q
 ```
+
+## Reliability Metadata (Optional)
+
+Plugins may publish client reliability hints through manifest metadata:
+
+- `manifest.reliability_policy` (dictionary)
+- exposed by module catalog endpoint (`GET /api/meetings/modules`)
+
+Current use case:
+
+- brainstorming `submit_idea` retry/backoff + idempotency header policy.
+
+Guidance:
+
+1. Treat metadata as hints for client retry behavior, not as authorization rules.
+2. Keep safe defaults in clients when metadata is missing.
+3. Document any new policy keys in this guide and corresponding feature docs.
 
 For categorization contract changes:
 

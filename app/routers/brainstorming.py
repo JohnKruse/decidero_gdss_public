@@ -1,18 +1,22 @@
 from fastapi import (
     APIRouter,
     Depends,
+    Header,
     HTTPException,
     Query,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 from typing import Any, Dict, List, Optional, Set
 import logging
 
 from app.auth import get_current_active_user
 from app.database import get_db
+from app.data.idempotency_manager import BrainstormingIdempotencyManager
 from app.models.meeting import Meeting, MeetingFacilitator
 from app.models.user import User, UserRole
 from app.schemas.brainstorming import (
@@ -231,6 +235,11 @@ async def submit_idea(
     activity_id: Optional[str] = Query(
         None, description="Agenda activity identifier (e.g., BRAINSTORM-0001)"
     ),
+    x_idempotency_key: Optional[str] = Header(
+        None,
+        alias="X-Idempotency-Key",
+        description="Optional client-generated key for safe replay of retries.",
+    ),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
@@ -291,8 +300,10 @@ async def submit_idea(
     )
     allow_anonymous = _coerce_bool(activity_config.get("allow_anonymous"))
     allow_subcomments = _coerce_bool(activity_config.get("allow_subcomments"))
+    idempotency_key = (x_idempotency_key or "").strip()[:128] or None
 
     ideas_manager = IdeasManager()
+    idempotency_manager = BrainstormingIdempotencyManager()
 
     # Validate parent_id if provided (subcomment)
     if payload.parent_id is not None:
@@ -316,6 +327,36 @@ async def submit_idea(
             detail=f"Ideas are limited to {max_chars} characters.",
         )
 
+    effective_submitted_name = None if allow_anonymous else payload.submitted_name
+    request_hash = None
+    idempotency_entry = None
+    if idempotency_key:
+        request_hash = idempotency_manager.build_request_hash(
+            content=content,
+            parent_id=payload.parent_id,
+            metadata=payload.metadata,
+            submitted_name=effective_submitted_name,
+        )
+        existing = idempotency_manager.get_existing(
+            db,
+            meeting_id=meeting_id,
+            activity_id=resolved_activity_id,
+            user_id=current_user.user_id,
+            idempotency_key=idempotency_key,
+        )
+        if existing:
+            if existing.request_hash != request_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Idempotency key was already used with a different request payload.",
+                )
+            if existing.response_payload and existing.status_code:
+                return JSONResponse(
+                    status_code=existing.status_code,
+                    content=existing.response_payload,
+                )
+            idempotency_entry = existing
+
     max_per_user = BRAINSTORMING_LIMITS.get("max_ideas_per_user") or 0
     if max_per_user > 0:
         submitted = ideas_manager.count_ideas_for_user(
@@ -329,6 +370,37 @@ async def submit_idea(
 
     idea_owner_id = None if allow_anonymous else current_user.user_id
     submitted_name = None if allow_anonymous else payload.submitted_name
+    if idempotency_key and idempotency_entry is None:
+        try:
+            # Opportunistic cleanup keeps the idempotency table bounded.
+            idempotency_manager.prune_expired(db)
+            idempotency_entry = idempotency_manager.claim(
+                db,
+                meeting_id=meeting_id,
+                activity_id=resolved_activity_id,
+                user_id=current_user.user_id,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+        except IntegrityError:
+            db.rollback()
+            existing = idempotency_manager.get_existing(
+                db,
+                meeting_id=meeting_id,
+                activity_id=resolved_activity_id,
+                user_id=current_user.user_id,
+                idempotency_key=idempotency_key,
+            )
+            if existing and existing.request_hash == request_hash and existing.response_payload and existing.status_code:
+                return JSONResponse(
+                    status_code=existing.status_code,
+                    content=existing.response_payload,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A request with this idempotency key is already in progress.",
+            )
+
     idea = ideas_manager.add_idea(
         db,
         meeting_id,
@@ -341,6 +413,7 @@ async def submit_idea(
         },
         activity_id=resolved_activity_id,
         force_anonymous_name=False,
+        commit=False,
     )
     if not idea:
         raise HTTPException(
@@ -366,12 +439,22 @@ async def submit_idea(
                 "user_avatar_icon_path": current_user.avatar_icon_path,
             }
         )
+    response_payload = idea_response.model_dump(mode="json")
+    if idempotency_key and idempotency_entry is not None:
+        idempotency_manager.store_success(
+            db,
+            entry=idempotency_entry,
+            status_code=status.HTTP_201_CREATED,
+            response_payload=response_payload,
+            idea_id=getattr(idea, "id", None),
+        )
+    db.commit()
 
     await websocket_manager.broadcast(
         meeting_id,
         {
             "type": "new_idea",
-            "payload": idea_response.model_dump(mode="json"),
+            "payload": response_payload,
         },
     )
     if payload.parent_id is None:

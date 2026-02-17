@@ -402,6 +402,7 @@ class ActivityCatalogEntry(BaseModel):
     description: Optional[str] = None
     stem: str
     default_config: Dict[str, Any] = Field(default_factory=dict)
+    reliability_policy: Dict[str, Any] = Field(default_factory=dict)
 
 
 class MeetingStateSnapshot(BaseModel):

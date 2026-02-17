@@ -88,6 +88,26 @@ ActivityPluginManifest(
 
 `autosave_seconds` is clamped to 5–300 seconds.
 
+Optional reliability metadata:
+```
+ActivityPluginManifest(
+    ...,
+    reliability_policy={
+        "submit_idea": {
+            "retryable_statuses": [429, 502, 503, 504],
+            "max_retries": 3,
+            "base_delay_ms": 400,
+            "max_delay_ms": 2500,
+            "jitter_ratio": 0.25,
+            "idempotency_header": "X-Idempotency-Key",
+        }
+    },
+)
+```
+
+`reliability_policy` is published in the agenda modules catalog so browser clients can apply
+bounded retry/idempotency behavior per activity operation.
+
 ## Reliability Invariants (Required)
 
 1. Keep `tool_type` unique and stable.

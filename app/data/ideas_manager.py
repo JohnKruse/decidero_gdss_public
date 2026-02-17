@@ -21,6 +21,7 @@ class IdeasManager:
         *,
         activity_id: Optional[str] = None,
         force_anonymous_name: bool = False,
+        commit: bool = True,
     ) -> Optional[Idea]:
         """Add a new idea to a meeting's brainstorming session."""
         try:
@@ -66,7 +67,10 @@ class IdeasManager:
             )
 
             db.add(db_idea)
-            db.commit()
+            if commit:
+                db.commit()
+            else:
+                db.flush()
             db.refresh(db_idea)
             print(
                 f"Successfully added idea (ID: {db_idea.id}) to meeting ID: {meeting_id}"

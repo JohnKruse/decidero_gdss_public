@@ -479,12 +479,13 @@
         let brainstormingActivityId = null;
         let brainstormingIdeasLoaded = false;
         let brainstormingSubmitInFlight = false;
-        const brainstormingRetryableStatuses = new Set([429, 502, 503, 504]);
-        const brainstormingSubmitRetryPolicy = {
+        const brainstormingSubmitRetryDefaults = {
+            retryableStatuses: [429, 502, 503, 504],
             maxRetries: 3,
             baseDelayMs: 400,
             maxDelayMs: 2500,
             jitterRatio: 0.25,
+            idempotencyHeader: "X-Idempotency-Key",
         };
         const brainstormingSubmitQueue = window.DecideroReliableActions
             ? window.DecideroReliableActions.createSerialQueue("brainstorming-submit")
@@ -4874,6 +4875,27 @@
                 const payload = { content };
                 const submitUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(brainstormingActivityId)}`;
                 const reliableActions = window.DecideroReliableActions;
+                const moduleMeta = getModuleMeta("brainstorming");
+                const retryConfig = moduleMeta?.reliability_policy?.submit_idea || {};
+                const retryableStatuses = Array.isArray(retryConfig.retryable_statuses)
+                    ? retryConfig.retryable_statuses.map((value) => Number.parseInt(value, 10)).filter((value) => Number.isFinite(value))
+                    : brainstormingSubmitRetryDefaults.retryableStatuses;
+                const retryableStatusSet = new Set(retryableStatuses);
+                const maxRetries = Number.isFinite(retryConfig.max_retries)
+                    ? Math.max(0, retryConfig.max_retries)
+                    : brainstormingSubmitRetryDefaults.maxRetries;
+                const baseDelayMs = Number.isFinite(retryConfig.base_delay_ms)
+                    ? Math.max(1, retryConfig.base_delay_ms)
+                    : brainstormingSubmitRetryDefaults.baseDelayMs;
+                const maxDelayMs = Number.isFinite(retryConfig.max_delay_ms)
+                    ? Math.max(baseDelayMs, retryConfig.max_delay_ms)
+                    : brainstormingSubmitRetryDefaults.maxDelayMs;
+                const jitterRatio = Number.isFinite(retryConfig.jitter_ratio)
+                    ? Math.max(0, retryConfig.jitter_ratio)
+                    : brainstormingSubmitRetryDefaults.jitterRatio;
+                const idempotencyHeader = String(
+                    retryConfig.idempotency_header || brainstormingSubmitRetryDefaults.idempotencyHeader,
+                );
                 const response = await brainstormingSubmitQueue.enqueue(() => {
                     if (!reliableActions || typeof reliableActions.runWithRetry !== "function") {
                         return fetch(submitUrl, {
@@ -4889,15 +4911,18 @@
                             credentials: "include",
                             headers: {
                                 "Content-Type": "application/json",
-                                "X-Idempotency-Key": requestId,
+                                [idempotencyHeader]: requestId,
                                 "X-Retry-Attempt": String(attempt),
                             },
                             body: JSON.stringify(payload),
                         }),
                         {
-                            ...brainstormingSubmitRetryPolicy,
+                            maxRetries,
+                            baseDelayMs,
+                            maxDelayMs,
+                            jitterRatio,
                             shouldRetryResult: (result) => Boolean(
-                                result && brainstormingRetryableStatuses.has(result.status),
+                                result && retryableStatusSet.has(result.status),
                             ),
                             onRetry: ({ attempt }) => {
                                 setBrainstormingError(`Connection busy. Retrying submit (${attempt + 1})…`);

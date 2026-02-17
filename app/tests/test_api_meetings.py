@@ -314,6 +314,12 @@ def test_list_agenda_modules(authenticated_client: TestClient):
     assert isinstance(catalog, list)
     tool_types = {entry["tool_type"] for entry in catalog}
     assert {"brainstorming", "voting"}.issubset(tool_types)
+    brainstorming = next(
+        (entry for entry in catalog if entry.get("tool_type") == "brainstorming"),
+        None,
+    )
+    assert brainstorming is not None
+    assert "reliability_policy" in brainstorming
 
 
 def test_add_agenda_item_to_meeting(

@@ -337,6 +337,14 @@ def test_activity_catalog_includes_core_tools():
     entries = get_activity_catalog()
     tool_types = {entry["tool_type"] for entry in entries}
     assert {"brainstorming", "voting", "categorization"}.issubset(tool_types)
+    brainstorming_entry = next(
+        (entry for entry in entries if entry["tool_type"] == "brainstorming"),
+        None,
+    )
+    assert brainstorming_entry is not None
+    policy = brainstorming_entry.get("reliability_policy") or {}
+    submit_policy = policy.get("submit_idea") or {}
+    assert submit_policy.get("idempotency_header") == "X-Idempotency-Key"
 
 
 def test_categorization_plugin_seeds_items_with_comment_folding_and_provenance(db_session):

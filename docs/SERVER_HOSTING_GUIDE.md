@@ -564,6 +564,9 @@ Common issues:
   this is usually password-manager lookup behavior, not data loss; validate locally first, then perform server-side credential reset only if credentials are truly unknown.
 - 502 from Caddy:
   check `systemctl status decidero` and that app binds `127.0.0.1:8000`.
+- Brainstorming duplicate submit protection conflicts (`409`):
+  if clients use `X-Idempotency-Key`, ensure retries reuse the same key only for
+  the same payload. A reused key with changed payload is rejected by design.
 
 ## 12. Known Limits and Next Upgrade Path
 

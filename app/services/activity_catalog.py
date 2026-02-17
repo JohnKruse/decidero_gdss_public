@@ -16,6 +16,7 @@ def get_activity_catalog() -> List[Dict[str, Any]]:
             "label": plugin.manifest.label,
             "description": plugin.manifest.description,
             "default_config": dict(plugin.manifest.default_config or {}),
+            "reliability_policy": dict(plugin.manifest.reliability_policy or {}),
         }
         enriched = dict(entry)
         enriched["stem"] = derive_activity_prefix(entry["tool_type"])
@@ -35,6 +36,7 @@ def get_activity_definition(tool_type: str) -> Optional[Dict[str, Any]]:
         "label": plugin.manifest.label,
         "description": plugin.manifest.description,
         "default_config": dict(plugin.manifest.default_config or {}),
+        "reliability_policy": dict(plugin.manifest.reliability_policy or {}),
     }
     enriched = dict(entry)
     enriched["stem"] = derive_activity_prefix(normalised)

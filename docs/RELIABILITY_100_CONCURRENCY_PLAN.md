@@ -111,6 +111,30 @@ Each profile is run independently and as part of a mixed full rehearsal.
 3. Session host guidance:
 - What participants should experience during temporary overload and when to retry.
 
+## Brainstorming Idempotency Contract (Current)
+
+- Write endpoint: `POST /api/meetings/{meeting_id}/brainstorming/ideas`
+- Client header: `X-Idempotency-Key: <opaque-client-key>`
+- Recommended client behavior:
+  1. Generate one key per user submit action.
+  2. Reuse that same key across retries for that action.
+  3. Do not reuse the key for a different payload.
+- Server behavior:
+  1. Same key + same payload in the same user/meeting/activity scope replays the
+     original success response.
+  2. Same key + different payload returns conflict (`409`).
+
+## Auth/Registration Overload UX Policy (Current)
+
+- Login (`/api/auth/token`):
+  - Browser performs bounded automatic retry for transient overload statuses
+    (`429`, `503`) with short backoff.
+  - After retry exhaustion, user sees a clear temporary-busy message.
+- Registration (`/api/auth/register`):
+  - No silent automatic retry yet (to avoid duplicate-account edge cases without
+    registration idempotency support).
+  - User receives explicit temporary-busy guidance and can safely retry manually.
+
 ## Exit Gate
 
 Do not declare milestone complete until:

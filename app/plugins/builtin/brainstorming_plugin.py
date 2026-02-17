@@ -26,6 +26,16 @@ class BrainstormingPlugin(ActivityPlugin):
                 "auto_jump_new_ideas", True
             ),
         },
+        reliability_policy={
+            "submit_idea": {
+                "retryable_statuses": [429, 502, 503, 504],
+                "max_retries": 3,
+                "base_delay_ms": 400,
+                "max_delay_ms": 2500,
+                "jitter_ratio": 0.25,
+                "idempotency_header": "X-Idempotency-Key",
+            }
+        },
     )
 
     def open_activity(self, context, input_bundle=None) -> None:

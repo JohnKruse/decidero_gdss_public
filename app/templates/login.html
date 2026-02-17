@@ -116,14 +116,32 @@
             const password = document.getElementById('password').value;
 
             try {
-                const response = await fetch('/api/auth/token', {
+                const reliableActions = window.DecideroReliableActions;
+                const loginRequest = {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json'
                     },
                     body: JSON.stringify({ username: login, password: password }),
-                });
+                };
+                const response = reliableActions && typeof reliableActions.runWithRetry === 'function'
+                    ? await reliableActions.runWithRetry(
+                        ({ attempt }) => {
+                            if (attempt > 0) {
+                                showMessage(`Server is busy. Retrying login (${attempt})…`);
+                            }
+                            return fetch('/api/auth/token', loginRequest);
+                        },
+                        {
+                            maxRetries: 2,
+                            baseDelayMs: 450,
+                            maxDelayMs: 1800,
+                            jitterRatio: 0.2,
+                            shouldRetryResult: (result) => result && (result.status === 429 || result.status === 503),
+                        }
+                    )
+                    : await fetch('/api/auth/token', loginRequest);
 
                 loadingDiv.style.display = 'none'; // Hide loading indicator
 
@@ -141,7 +159,11 @@
                     }
                 } else {
                     const errorData = await response.json().catch(() => ({ detail: "Login failed. Please check your credentials." }));
-                    showMessage(errorData.detail || "Login failed. Please try again.");
+                    if (response.status === 503 || response.status === 429) {
+                        showMessage("Login service is temporarily busy. Please retry in a few seconds.");
+                    } else {
+                        showMessage(errorData.detail || "Login failed. Please try again.");
+                    }
                 }
             } catch (error) {
                 loadingDiv.style.display = 'none'; // Hide loading indicator

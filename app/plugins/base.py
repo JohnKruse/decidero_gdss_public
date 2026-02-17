@@ -20,6 +20,7 @@ class ActivityPluginManifest:
     label: str
     description: str
     default_config: Dict[str, Any] = field(default_factory=dict)
+    reliability_policy: Dict[str, Any] = field(default_factory=dict)
     autosave_seconds: Optional[int] = None
 
 

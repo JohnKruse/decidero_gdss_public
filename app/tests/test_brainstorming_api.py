@@ -57,9 +57,31 @@ def test_brainstorming_idea_submission_broadcast(
             },
         )
     )
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "brainstorming",
+                "status": "in_progress",
+            },
+        )
+    )
     meeting = MeetingManager(db_session).get_meeting(meeting_id)
     assert meeting is not None
     activity_id = meeting.agenda_activities[0].activity_id
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "brainstorming",
+                "status": "in_progress",
+            },
+        )
+    )
 
     with authenticated_client.websocket_connect(
         f"/api/meetings/{meeting_id}/brainstorming/ws"
@@ -105,6 +127,87 @@ def test_brainstorming_idea_submission_broadcast(
             broadcast["payload"]["user_avatar_icon_path"]
             == created["user_avatar_icon_path"]
         )
+
+
+def test_brainstorming_submit_idempotency_replays_success(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    facilitator_user = user_manager_with_admin.add_user(
+        first_name="Idempotent",
+        last_name="Facilitator",
+        email="idem.facilitator@example.com",
+        hashed_password=get_password_hash("IdeaFac1!"),
+        role=UserRole.FACILITATOR.value,
+        login="idem_facilitator",
+    )
+    db_session.commit()
+    db_session.refresh(facilitator_user)
+    meeting_id = _create_meeting(authenticated_client, facilitator_user.user_id)
+    meeting = MeetingManager(db_session).get_meeting(meeting_id)
+    assert meeting is not None
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    headers = {"X-Idempotency-Key": "idem-test-001"}
+    payload = {"content": "Idempotency should prevent duplicates."}
+
+    first = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas?activity_id={activity_id}",
+        json=payload,
+        headers=headers,
+    )
+    assert first.status_code == 201, first.json()
+    second = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas?activity_id={activity_id}",
+        json=payload,
+        headers=headers,
+    )
+    assert second.status_code == 201, second.json()
+    assert second.json()["id"] == first.json()["id"]
+
+    ideas = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas?activity_id={activity_id}"
+    )
+    assert ideas.status_code == 200
+    assert len(ideas.json()) == 1
+
+
+def test_brainstorming_submit_idempotency_rejects_payload_mismatch(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    facilitator_user = user_manager_with_admin.add_user(
+        first_name="Mismatch",
+        last_name="Facilitator",
+        email="idem.mismatch@example.com",
+        hashed_password=get_password_hash("IdeaFac1!"),
+        role=UserRole.FACILITATOR.value,
+        login="idem_mismatch",
+    )
+    db_session.commit()
+    db_session.refresh(facilitator_user)
+    meeting_id = _create_meeting(authenticated_client, facilitator_user.user_id)
+    meeting = MeetingManager(db_session).get_meeting(meeting_id)
+    assert meeting is not None
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    headers = {"X-Idempotency-Key": "idem-test-002"}
+    first = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas?activity_id={activity_id}",
+        json={"content": "Original content."},
+        headers=headers,
+    )
+    assert first.status_code == 201, first.json()
+
+    second = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas?activity_id={activity_id}",
+        json={"content": "Changed content."},
+        headers=headers,
+    )
+    assert second.status_code == 409
+    assert "Idempotency key was already used" in second.json().get("detail", "")
 
 
 def test_brainstorming_ideas_access_control(

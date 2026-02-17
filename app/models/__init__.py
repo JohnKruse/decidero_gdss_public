@@ -12,6 +12,7 @@ from .meeting import (
 from .idea import Idea
 from .voting import VotingVote
 from .activity_bundle import ActivityBundle
+from .idempotency import BrainstormingIdempotencyKey
 from .categorization import (
     CategorizationItem,
     CategorizationBucket,
@@ -33,6 +34,7 @@ __all__ = [
     "AgendaActivity",
     "VotingVote",
     "ActivityBundle",
+    "BrainstormingIdempotencyKey",
     "CategorizationItem",
     "CategorizationBucket",
     "CategorizationAssignment",
