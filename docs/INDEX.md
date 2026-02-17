@@ -7,6 +7,7 @@ Use this page as the entry point for all project docs.
 1. Local setup (single machine): `docs/LOCAL_SETUP_GUIDE.md`
 2. Admin/facilitator hosting modes: `docs/ADMIN_HOSTING_GUIDE.md`
 3. Production server/domain setup: `docs/SERVER_HOSTING_GUIDE.md`
+4. SQLite 100-concurrency reliability plan: `docs/RELIABILITY_100_CONCURRENCY_PLAN.md`
 
 ## Activity Development (Critical Path)
 

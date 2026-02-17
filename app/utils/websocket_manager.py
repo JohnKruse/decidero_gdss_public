@@ -81,7 +81,9 @@ class WebSocketManager:
         meeting_connections = self.active_connections.get(meeting_id, {})
         disconnected: list[str] = []
 
-        for connection_id, connection in meeting_connections.items():
+        # Iterate over a snapshot to avoid mutation-during-iteration when
+        # disconnect() runs concurrently in other request handlers.
+        for connection_id, connection in list(meeting_connections.items()):
             if skip_connection and connection_id == skip_connection:
                 continue
 

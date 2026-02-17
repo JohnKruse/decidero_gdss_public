@@ -570,6 +570,9 @@ Common issues:
 Current production limit:
 
 - Single process/single node is the safe mode for realtime correctness.
+- With the current SQLite-based deployment, plan for ~100 concurrent attendees.
+- Expect degraded behavior during short synchronized surges (for example, many
+  users creating accounts or submitting ideas at the same moment).
 
 When you outgrow this:
 

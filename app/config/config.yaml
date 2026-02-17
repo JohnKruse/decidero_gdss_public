@@ -8,6 +8,13 @@ sqlite:
   busy_timeout_ms: 30000
   write_retries: 5
   retry_backoff_ms: 200
+database_pool:
+  # SQLite tuning for workshop bursts. Keep conservative to avoid runaway
+  # connection pressure while still supporting ~100 concurrent attendees.
+  pool_size: 20
+  max_overflow: 40
+  pool_timeout_seconds: 15
+  pool_recycle_seconds: 1800
 # Allow participants to join multiple concurrent activities (disable exclusivity checks)
 activity_participant_exclusivity: false
 default_meeting_settings:

@@ -212,6 +212,16 @@ async def meeting_socket(
             meeting_id,
             connection_id,
         )
+    except RuntimeError as exc:
+        # Starlette may raise RuntimeError when the socket closes mid-receive.
+        if "WebSocket is not connected" in str(exc):
+            logger.debug(
+                "WebSocket runtime disconnect: meeting_id=%s connection_id=%s",
+                meeting_id,
+                connection_id,
+            )
+        else:
+            raise
     finally:
         websocket_manager.disconnect(meeting_id, connection_id)
         state_snapshot = await meeting_state_manager.unregister_participant(

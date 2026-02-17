@@ -1,6 +1,7 @@
 from typing import Dict, Optional, Set
 from fastapi import Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import TimeoutError as SATimeoutError, OperationalError
 from datetime import datetime, timedelta, UTC
 from jose import JWTError, jwt
 from urllib.parse import urlencode  # Added import
@@ -13,13 +14,17 @@ from app.database import (
 from app.models.user import User as UserModel  # Import the User model
 import os
 import logging
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, PlainTextResponse
 from grab_extension import is_grab_enabled
 from app.config.loader import load_config, get_guest_join_enabled
 
 # Set up a dedicated logger for authentication events
 logger = logging.getLogger("auth_module")  # Changed logger name for clarity
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())  # Allow configuring log level
+
+
+class AuthBackendUnavailable(RuntimeError):
+    """Raised when auth cannot complete due to temporary backend failures."""
 
 
 # --- Configuration ---
@@ -287,6 +292,14 @@ async def _get_current_user_model_optional(
     except JWTError:
         logger.warning("_get_current_user_model_optional: JWT decode failure.")
         return None
+    except (SATimeoutError, OperationalError) as e:
+        logger.error(
+            "_get_current_user_model_optional: Backend unavailable while resolving token '%s...': %s",
+            token[:10],
+            str(e),
+            exc_info=True,
+        )
+        raise AuthBackendUnavailable(str(e)) from e
     except Exception as e:
         logger.error(
             f"_get_current_user_model_optional: Unexpected error for token '{token[:10]}...': {str(e)}",
@@ -533,6 +546,7 @@ async def auth_middleware(request: Request, call_next):
 
     user: Optional[UserModel] = None
     db: Optional[Session] = None  # Initialize db to None
+    auth_backend_unavailable = False
 
     if token:
         try:
@@ -568,6 +582,14 @@ async def auth_middleware(request: Request, call_next):
                 logger.warning(
                     f"Auth Middleware: Token found but invalid or user not found for path '{path}'."
                 )
+        except AuthBackendUnavailable as e:
+            logger.warning(
+                "Auth Middleware: Authentication backend unavailable for path '%s': %s",
+                path,
+                str(e),
+            )
+            auth_backend_unavailable = True
+            user = None
         except Exception as e:
             logger.error(
                 f"Auth Middleware: Unexpected error during token validation for path '{path}': {str(e)}",
@@ -591,6 +613,21 @@ async def auth_middleware(request: Request, call_next):
         logger.warning(
             f"Auth Middleware: Unauthenticated access attempt to protected path: {path}"
         )
+        if auth_backend_unavailable:
+            retry_headers = {"Retry-After": "5"}
+            if path.startswith("/api/"):
+                return JSONResponse(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    content={
+                        "detail": "Authentication backend temporarily unavailable. Please retry shortly."
+                    },
+                    headers=retry_headers,
+                )
+            return PlainTextResponse(
+                "Authentication backend temporarily unavailable. Please retry shortly.",
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                headers=retry_headers,
+            )
         if path.startswith("/api/"):
             logger.info(
                 f"Auth Middleware: Returning 401 UNAUTHORIZED for API path: {path}"

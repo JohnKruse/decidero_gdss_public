@@ -20,6 +20,10 @@ _DEFAULT_SQLITE_JOURNAL_MODE = "WAL"
 _DEFAULT_SQLITE_SYNCHRONOUS = "NORMAL"
 _DEFAULT_SQLITE_WRITE_RETRIES = 5
 _DEFAULT_SQLITE_RETRY_BACKOFF_MS = 200
+_DEFAULT_POOL_SIZE = 20
+_DEFAULT_MAX_OVERFLOW = 40
+_DEFAULT_POOL_TIMEOUT_SECONDS = 15
+_DEFAULT_POOL_RECYCLE_SECONDS = 1800
 
 def _get_database_url() -> str:
     config = load_config()
@@ -58,6 +62,33 @@ def _get_sqlite_settings() -> dict:
     }
 
 
+def _get_pool_settings() -> dict:
+    config = load_config()
+    pool_config = config.get("database_pool") or {}
+
+    def _coerce_positive_int(value, fallback):
+        try:
+            candidate = int(value)
+            return candidate if candidate > 0 else fallback
+        except Exception:  # noqa: BLE001
+            return fallback
+
+    return {
+        "pool_size": _coerce_positive_int(
+            pool_config.get("pool_size"), _DEFAULT_POOL_SIZE
+        ),
+        "max_overflow": _coerce_positive_int(
+            pool_config.get("max_overflow"), _DEFAULT_MAX_OVERFLOW
+        ),
+        "pool_timeout": _coerce_positive_int(
+            pool_config.get("pool_timeout_seconds"), _DEFAULT_POOL_TIMEOUT_SECONDS
+        ),
+        "pool_recycle": _coerce_positive_int(
+            pool_config.get("pool_recycle_seconds"), _DEFAULT_POOL_RECYCLE_SECONDS
+        ),
+    }
+
+
 def _ensure_sqlite_directory(database_url: str) -> None:
     if not database_url.startswith("sqlite"):
         return
@@ -77,13 +108,24 @@ logger = logging.getLogger("database")
 
 _ensure_sqlite_directory(DATABASE_URL)
 
-connect_args = {"check_same_thread": False}
+connect_args = {}
 _sqlite_settings = None
 if DATABASE_URL.startswith("sqlite"):
     _sqlite_settings = _get_sqlite_settings()
+    connect_args["check_same_thread"] = False
     connect_args["timeout"] = max(1, _sqlite_settings["busy_timeout_ms"] / 1000)
 
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+_pool_settings = _get_pool_settings()
+engine = create_engine(
+    DATABASE_URL,
+    connect_args=connect_args,
+    pool_size=_pool_settings["pool_size"],
+    max_overflow=_pool_settings["max_overflow"],
+    pool_timeout=_pool_settings["pool_timeout"],
+    pool_recycle=_pool_settings["pool_recycle"],
+    pool_pre_ping=True,
+    pool_use_lifo=True,
+)
 
 
 if DATABASE_URL.startswith("sqlite"):
@@ -282,11 +324,11 @@ def ensure_sqlite_schema(engine_to_check) -> None:
 
 def get_db():
     req_id = uuid.uuid4()
-    logger.info(f"[DB_SESSION_START][{req_id}] Creating database session.")
+    logger.debug(f"[DB_SESSION_START][{req_id}] Creating database session.")
     db = SessionLocal()
     try:
         logger.debug(f"[DB_SESSION_YIELD][{req_id}] Yielding database session.")
         yield db
     finally:
-        logger.info(f"[DB_SESSION_END][{req_id}] Closing database session.")
+        logger.debug(f"[DB_SESSION_END][{req_id}] Closing database session.")
         db.close()

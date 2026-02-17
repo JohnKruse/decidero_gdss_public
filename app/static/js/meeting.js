@@ -479,6 +479,20 @@
         let brainstormingActivityId = null;
         let brainstormingIdeasLoaded = false;
         let brainstormingSubmitInFlight = false;
+        const brainstormingRetryableStatuses = new Set([429, 502, 503, 504]);
+        const brainstormingSubmitRetryPolicy = {
+            maxRetries: 3,
+            baseDelayMs: 400,
+            maxDelayMs: 2500,
+            jitterRatio: 0.25,
+        };
+        const brainstormingSubmitQueue = window.DecideroReliableActions
+            ? window.DecideroReliableActions.createSerialQueue("brainstorming-submit")
+            : {
+                enqueue(task) {
+                    return task();
+                },
+            };
         const brainstormingIdeaIds = new Set();
         const brainstormingIdeaNumbers = new Map();
         const brainstormingSubcommentCounts = new Map();
@@ -4858,16 +4872,39 @@
                 setBrainstormingFormEnabled(true);
 
                 const payload = { content };
-
-                const response = await fetch(
-                    `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(brainstormingActivityId)}`,
-                    {
-                        method: "POST",
-                        credentials: "include",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload),
-                    },
-                );
+                const submitUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(brainstormingActivityId)}`;
+                const reliableActions = window.DecideroReliableActions;
+                const response = await brainstormingSubmitQueue.enqueue(() => {
+                    if (!reliableActions || typeof reliableActions.runWithRetry !== "function") {
+                        return fetch(submitUrl, {
+                            method: "POST",
+                            credentials: "include",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(payload),
+                        });
+                    }
+                    return reliableActions.runWithRetry(
+                        ({ attempt, requestId }) => fetch(submitUrl, {
+                            method: "POST",
+                            credentials: "include",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "X-Idempotency-Key": requestId,
+                                "X-Retry-Attempt": String(attempt),
+                            },
+                            body: JSON.stringify(payload),
+                        }),
+                        {
+                            ...brainstormingSubmitRetryPolicy,
+                            shouldRetryResult: (result) => Boolean(
+                                result && brainstormingRetryableStatuses.has(result.status),
+                            ),
+                            onRetry: ({ attempt }) => {
+                                setBrainstormingError(`Connection busy. Retrying submit (${attempt + 1})…`);
+                            },
+                        },
+                    );
+                });
 
                 if (!response.ok) {
                     const errorPayload = await response.json().catch(() => ({}));
@@ -4875,6 +4912,11 @@
                         setBrainstormingError("Session expired. Please refresh and log in again.");
                         setBrainstormingFormEnabled(false);
                         throw new Error("Session expired.");
+                    }
+                    if (response.status === 429 || response.status === 503) {
+                        throw new Error(
+                            errorPayload.detail || "Server is temporarily busy. Please try again shortly.",
+                        );
                     }
                     throw new Error(errorPayload.detail || "Unable to submit idea");
                 }
