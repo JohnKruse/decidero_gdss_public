@@ -258,6 +258,19 @@ async def _test_a_connection_limit(
     queuepool_signals = 0
     status_504 = 0
 
+    async def _safe_join_meeting(
+        client: httpx.AsyncClient, meeting_id: str, display_name: str
+    ) -> Optional[int]:
+        try:
+            response = await client.post(
+                "/api/meetings/join",
+                json={"meeting_code": meeting_id, "display_name": display_name},
+                timeout=20.0,
+            )
+            return response.status_code
+        except httpx.RequestError:
+            return None
+
     async def _worker(index: int) -> None:
         nonlocal queuepool_signals, status_504
         cred = credentials[index]
@@ -267,11 +280,10 @@ async def _test_a_connection_limit(
             if not (login_sample.status_code and 200 <= login_sample.status_code < 300):
                 return
 
-            await client.post(
-                "/api/meetings/join",
-                json={"meeting_code": meeting_id, "display_name": cred.first_name},
-                timeout=20.0,
-            )
+            join_status = await _safe_join_meeting(client, meeting_id, cred.first_name)
+            if join_status is None:
+                state_samples.append(RequestSample(status_code=None, latency_ms=0.0))
+                return
 
             started = time.perf_counter()
             while (time.perf_counter() - started) < max(1, args.poll_duration_seconds):
@@ -429,6 +441,19 @@ async def _test_c_static_asset_drag(
     asset_samples: list[RequestSample] = []
     discovered_assets: list[str] = []
 
+    async def _safe_join_meeting(
+        client: httpx.AsyncClient, meeting_id: str, display_name: str
+    ) -> Optional[int]:
+        try:
+            response = await client.post(
+                "/api/meetings/join",
+                json={"meeting_code": meeting_id, "display_name": display_name},
+                timeout=20.0,
+            )
+            return response.status_code
+        except httpx.RequestError:
+            return None
+
     async def _worker(index: int) -> None:
         nonlocal discovered_assets
         cred = credentials[index]
@@ -438,11 +463,10 @@ async def _test_c_static_asset_drag(
                 dashboard_samples.append(login_sample)
                 return
 
-            await client.post(
-                "/api/meetings/join",
-                json={"meeting_code": meeting_id, "display_name": cred.first_name},
-                timeout=20.0,
-            )
+            join_status = await _safe_join_meeting(client, meeting_id, cred.first_name)
+            if join_status is None:
+                dashboard_samples.append(RequestSample(status_code=None, latency_ms=0.0))
+                return
 
             started = time.perf_counter()
             status_code: Optional[int]
