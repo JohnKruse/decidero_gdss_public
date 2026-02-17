@@ -56,6 +56,8 @@ Selected references:
 - `DECIDERO_GIT_BRANCH` (default `main`)
 - `DECIDERO_DOMAIN` (for caddy script)
 - `DECIDERO_BLOCK_PUBLIC_REGISTER=true` (optional Caddy block on `/register`)
+- `DECIDERO_SERVE_STATIC_FROM_CADDY=true` (serve `/static/*` directly from Caddy)
+- `DECIDERO_STATIC_ROOT` (default `/opt/decidero/app/app/static`)
 - `DECIDERO_BACKUP_CRON` (default `30 2 * * *`)
 
 ## Notes

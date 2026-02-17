@@ -19,6 +19,8 @@ fi
 
 CADDYFILE="${DECIDERO_CADDYFILE:-/etc/caddy/Caddyfile}"
 BLOCK_REGISTER="${DECIDERO_BLOCK_PUBLIC_REGISTER:-false}"
+STATIC_ROOT="${DECIDERO_STATIC_ROOT:-/opt/decidero/app/app/static}"
+SERVE_STATIC="${DECIDERO_SERVE_STATIC_FROM_CADDY:-true}"
 
 cat > "${CADDYFILE}" <<EOF
 ${DOMAIN} {
@@ -31,6 +33,16 @@ if [[ "${BLOCK_REGISTER}" == "true" ]]; then
         path /register /api/auth/register
     }
     respond @block_register 403
+EOF
+fi
+
+if [[ "${SERVE_STATIC}" == "true" ]]; then
+  cat >> "${CADDYFILE}" <<EOF
+    handle_path /static/* {
+        root * ${STATIC_ROOT}
+        file_server
+        header Cache-Control "public, max-age=3600"
+    }
 EOF
 fi
 

@@ -380,6 +380,13 @@ Create `/etc/caddy/Caddyfile`:
 ```caddy
 your-domain.example.com {
     encode gzip zstd
+
+    handle_path /static/* {
+        root * /opt/decidero/app/app/static
+        file_server
+        header Cache-Control "public, max-age=3600"
+    }
+
     reverse_proxy 127.0.0.1:8000
 }
 ```
@@ -409,6 +416,7 @@ curl -I https://your-domain.example.com/health
 - Automatic certificate issuance/renewal.
 - Clean HTTPS defaults with minimal config.
 - Keeps app bound privately on `127.0.0.1`.
+- Offloads static files from Python so API/auth requests have more headroom under load.
 
 > Explanation: Could you expose uvicorn directly on `0.0.0.0:8000`?
 
