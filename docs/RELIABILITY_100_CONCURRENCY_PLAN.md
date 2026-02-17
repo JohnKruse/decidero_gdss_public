@@ -73,6 +73,12 @@ Each profile is run independently and as part of a mixed full rehearsal.
 - Facilitator performs activity controls while 80-100 users refresh state and
   submit ideas in clumps.
 
+Operational stress pack (current):
+- Test A (Connection Limit): 100 users, spawn 50 users/second, meeting-state
+  polling every 2-5 seconds.
+- Test B (CPU Lock): 50 users, spawn 10 users/second, repeated failed login attempts.
+- Test C (Static Asset Drag): 80 users, spawn 5 users/second, dashboard + static fetch.
+
 ## Required Test Coverage (Pytest + Rehearsal)
 
 1. Unit tests:
@@ -89,6 +95,8 @@ Each profile is run independently and as part of a mixed full rehearsal.
 
 4. Rehearsal tests:
 - Scripted burst profile runs with metrics collection and pass/fail summary.
+- Reference script: `scripts/reliability/rehearse_burst_load.py`
+- Report template: `docs/RELIABILITY_REHEARSAL_REPORT_TEMPLATE.md`
 
 ## Metrics To Capture Per Rehearsal
 

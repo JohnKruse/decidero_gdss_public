@@ -8,6 +8,8 @@ Use this page as the entry point for all project docs.
 2. Admin/facilitator hosting modes: `docs/ADMIN_HOSTING_GUIDE.md`
 3. Production server/domain setup: `docs/SERVER_HOSTING_GUIDE.md`
 4. SQLite 100-concurrency reliability plan: `docs/RELIABILITY_100_CONCURRENCY_PLAN.md`
+5. Local/VPS load testing + burst rehearsal: `docs/LOAD_TESTING_PLAN_LOCAL.md`
+6. Reliability rehearsal report template: `docs/RELIABILITY_REHEARSAL_REPORT_TEMPLATE.md`
 
 ## Activity Development (Critical Path)
 
