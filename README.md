@@ -170,4 +170,5 @@ auth:
 - Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`.
 - Plugins are loaded from built-ins plus drop-ins at `./plugins` (or `DECIDERO_PLUGIN_DIR`).
 - Reliability contract: all activity write operations must use shared frontend `runReliableWriteAction`; module catalog provides normalized `reliability_policy.write_default` baseline.
+- Meeting UI applies adaptive refresh backoff + jitter during write bursts and transient overload (`429/502/503/504`) to prioritise user submissions over background polling.
 - Activity outputs are snapshot bundles stored in the database.

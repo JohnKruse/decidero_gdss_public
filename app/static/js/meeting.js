@@ -50,6 +50,9 @@
                 intervalMs: intervalSeconds * 1000,
                 hiddenIntervalMs: hiddenIntervalSeconds * 1000,
                 failureBackoffMs: failureBackoffSeconds * 1000,
+                writePriorityBackoffMs: Math.max(intervalSeconds * 1000, 5000),
+                overloadBackoffMs: Math.max(intervalSeconds * 1000, 12000),
+                jitterRatio: 0.2,
             };
         })();
 
@@ -541,6 +544,7 @@
         let meetingRefreshTimer = null;
         let meetingRefreshInFlight = false;
         let meetingRefreshFailures = 0;
+        let meetingRefreshBackpressureUntil = 0;
         let realtimeConnected = false;
         let activeBrainstormingConfig = {};
         let votingSummary = null;
@@ -5054,13 +5058,18 @@
             const queue = getReliableQueue(queueName || `${toolType}-${actionName}`);
             const policy = resolveWriteReliabilityPolicy(toolType, actionName, fallbackPolicy);
             return queue.enqueue(() => {
+                const withWriteOutcome = async ({ attempt, requestId }) => {
+                    const response = await requestFactory({ attempt, requestId, policy });
+                    noteMeetingWriteOutcome(response);
+                    return response;
+                };
                 const reliableActions = window.DecideroReliableActions;
                 if (!reliableActions || typeof reliableActions.runWithRetry !== "function") {
-                    return requestFactory({ attempt: 0, requestId: null, policy });
+                    return withWriteOutcome({ attempt: 0, requestId: null });
                 }
                 const retryableStatusSet = new Set(policy.retryableStatuses || []);
                 return reliableActions.runWithRetry(
-                    ({ attempt, requestId }) => requestFactory({ attempt, requestId, policy }),
+                    ({ attempt, requestId }) => withWriteOutcome({ attempt, requestId }),
                     {
                         maxRetries: policy.maxRetries,
                         baseDelayMs: policy.baseDelayMs,
@@ -5069,7 +5078,21 @@
                         shouldRetryResult: (result) => Boolean(
                             result && retryableStatusSet.has(result.status),
                         ),
-                        onRetry,
+                        onRetry: (payload) => {
+                            const status = payload?.result?.status;
+                            if (status) {
+                                markMeetingRefreshBackpressure(status);
+                            } else if (payload?.reason === "retryable_error") {
+                                meetingRefreshBackpressureUntil = Math.max(
+                                    meetingRefreshBackpressureUntil,
+                                    Date.now() + Math.max(2000, meetingRefreshConfig.overloadBackoffMs),
+                                );
+                                startMeetingRefresh();
+                            }
+                            if (typeof onRetry === "function") {
+                                onRetry(payload);
+                            }
+                        },
                     },
                 );
             });
@@ -6363,6 +6386,11 @@
             if (meetingRefreshInFlight || !meetingRefreshConfig.enabled) {
                 return;
             }
+            if (brainstormingSubmitInFlight || votingRequestInFlight) {
+                // Prioritise writes during clumpy bursts.
+                startMeetingRefresh();
+                return;
+            }
             meetingRefreshInFlight = true;
             try {
                 const response = await fetch(`/api/meetings/${encodeURIComponent(context.meetingId)}`, {
@@ -6417,11 +6445,58 @@
 
         function getMeetingRefreshDelayMs() {
             if (meetingRefreshFailures > 0) {
-                return meetingRefreshConfig.failureBackoffMs;
+                return withRefreshJitter(meetingRefreshConfig.failureBackoffMs);
             }
-            return document.hidden
-                ? meetingRefreshConfig.hiddenIntervalMs
-                : meetingRefreshConfig.intervalMs;
+            const now = Date.now();
+            if (meetingRefreshBackpressureUntil > now) {
+                return withRefreshJitter(meetingRefreshConfig.overloadBackoffMs);
+            }
+            if (brainstormingSubmitInFlight || votingRequestInFlight) {
+                return withRefreshJitter(meetingRefreshConfig.writePriorityBackoffMs);
+            }
+            return withRefreshJitter(
+                document.hidden
+                    ? meetingRefreshConfig.hiddenIntervalMs
+                    : meetingRefreshConfig.intervalMs,
+            );
+        }
+
+        function withRefreshJitter(delayMs) {
+            const baseDelayMs = Math.max(250, Number(delayMs) || 0);
+            const ratio = Math.max(0, Number(meetingRefreshConfig.jitterRatio) || 0);
+            if (!ratio) {
+                return baseDelayMs;
+            }
+            const jitter = Math.round(baseDelayMs * ratio * Math.random());
+            return baseDelayMs + jitter;
+        }
+
+        function markMeetingRefreshBackpressure(statusCode = 0) {
+            const status = Number.parseInt(statusCode, 10);
+            if (![429, 502, 503, 504].includes(status)) {
+                return;
+            }
+            const now = Date.now();
+            const floorMs = Math.max(2000, meetingRefreshConfig.overloadBackoffMs);
+            meetingRefreshBackpressureUntil = Math.max(meetingRefreshBackpressureUntil, now + floorMs);
+            startMeetingRefresh();
+        }
+
+        function clearMeetingRefreshBackpressure() {
+            if (meetingRefreshBackpressureUntil > 0) {
+                meetingRefreshBackpressureUntil = 0;
+            }
+        }
+
+        function noteMeetingWriteOutcome(response) {
+            if (!response) {
+                return;
+            }
+            if (response.ok) {
+                clearMeetingRefreshBackpressure();
+                return;
+            }
+            markMeetingRefreshBackpressure(response.status);
         }
 
         function stopMeetingRefresh() {
