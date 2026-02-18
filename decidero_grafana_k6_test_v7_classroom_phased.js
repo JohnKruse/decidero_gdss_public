@@ -17,6 +17,27 @@ function toInt(name, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseDurationToSeconds(raw, fallbackSeconds = 0) {
+  if (!raw || typeof raw !== "string") return fallbackSeconds;
+  const input = raw.trim().toLowerCase();
+  if (!input) return fallbackSeconds;
+  const pattern = /(\d+)\s*(ms|s|m|h)/g;
+  let totalSeconds = 0;
+  let matched = false;
+  let match = pattern.exec(input);
+  while (match) {
+    matched = true;
+    const value = Number.parseInt(match[1], 10);
+    const unit = match[2];
+    if (unit === "h") totalSeconds += value * 3600;
+    else if (unit === "m") totalSeconds += value * 60;
+    else if (unit === "s") totalSeconds += value;
+    else if (unit === "ms") totalSeconds += value / 1000;
+    match = pattern.exec(input);
+  }
+  return matched ? totalSeconds : fallbackSeconds;
+}
+
 const TARGET_USERS = toInt("TARGET_USERS", 75);
 const USER_PREFIX = __ENV.USER_PREFIX || "participant";
 const USER_START = toInt("USER_START", 1);
@@ -24,6 +45,8 @@ const USER_PAD_WIDTH = toInt("USER_PAD_WIDTH", 2);
 const USER_PASSWORD = __ENV.USER_PASSWORD || ADMIN_PASSWORD;
 const TEST_TAG = __ENV.TEST_TAG || `CLASSROOM-${Date.now()}`;
 const ENSURE_USERS = (__ENV.ENSURE_USERS || "1") === "1";
+const CLEANUP_USERS_ON_TEARDOWN = (__ENV.CLEANUP_USERS_ON_TEARDOWN || "1") === "1";
+const CLEANUP_MEETING_ON_TEARDOWN = (__ENV.CLEANUP_MEETING_ON_TEARDOWN || "1") === "1";
 const WAVE_PERIOD_SEC = toInt("WAVE_PERIOD_SEC", 40);
 const IDEA_MAX_CHARS = toInt("IDEA_MAX_CHARS", 320);
 const COMMENT_MAX_CHARS = toInt("COMMENT_MAX_CHARS", 220);
@@ -48,8 +71,10 @@ const RUN_USER_PREFIX = `${USER_PREFIX_BASE}${UNIQUE_SUFFIX ? `_${UNIQUE_SUFFIX}
 const PHASE1_START = __ENV.PHASE1_START || "0s";
 const PHASE1_DURATION = __ENV.PHASE1_DURATION || "3m";
 const PHASE2_START = __ENV.PHASE2_START || "3m";
-const PHASE2_DURATION = __ENV.PHASE2_DURATION || "12m";
-const PHASE3_START = __ENV.PHASE3_START || "15m";
+const PHASE2_DURATION = __ENV.PHASE2_DURATION || "7m";
+const PHASE3_START =
+  __ENV.PHASE3_START ||
+  `${Math.round(parseDurationToSeconds(PHASE2_START) + parseDurationToSeconds(PHASE2_DURATION))}s`;
 const PHASE3_DURATION = __ENV.PHASE3_DURATION || "6m";
 
 export const options = {
@@ -289,6 +314,26 @@ function addParticipantsToMeeting(meetingId) {
   return added;
 }
 
+function deleteGeneratedUsers(userPrefix, userStart, userCount, userPadWidth) {
+  if (!userPrefix || userCount <= 0) return { deleted: 0, skipped: 0 };
+  let deleted = 0;
+  let skipped = 0;
+  for (let i = 0; i < userCount; i += 1) {
+    const login = `${userPrefix}${String(userStart + i).padStart(userPadWidth, "0")}`;
+    const res = http.del(
+      `${BASE}/api/users/${encodeURIComponent(login)}`,
+      null,
+      { timeout: "60s" },
+    );
+    if (res.status === 200) {
+      deleted += 1;
+    } else if (res.status === 404) {
+      skipped += 1;
+    }
+  }
+  return { deleted, skipped };
+}
+
 function startTool(meetingId, tool, activityId) {
   const res = jsonPost(`${BASE}/api/meetings/${meetingId}/control`, {
     action: "start_tool",
@@ -424,7 +469,26 @@ export function setup() {
     testTag: TEST_TAG,
     targetUsers: TARGET_USERS,
     userPrefix: RUN_USER_PREFIX,
+    userStart: USER_START,
+    userPadWidth: USER_PAD_WIDTH,
   };
+}
+
+export function teardown(data) {
+  if (!CLEANUP_USERS_ON_TEARDOWN && !CLEANUP_MEETING_ON_TEARDOWN) return;
+  if (!loginAs(ADMIN_LOGIN, ADMIN_PASSWORD)) return;
+  if (CLEANUP_MEETING_ON_TEARDOWN && data?.meetingId) {
+    http.del(`${BASE}/api/meetings/${encodeURIComponent(data.meetingId)}`, null, {
+      timeout: "60s",
+    });
+  }
+  if (!CLEANUP_USERS_ON_TEARDOWN) return;
+  deleteGeneratedUsers(
+    data?.userPrefix || RUN_USER_PREFIX,
+    data?.userStart || USER_START,
+    data?.targetUsers || TARGET_USERS,
+    data?.userPadWidth || USER_PAD_WIDTH,
+  );
 }
 
 export function phase1Herd(data) {
