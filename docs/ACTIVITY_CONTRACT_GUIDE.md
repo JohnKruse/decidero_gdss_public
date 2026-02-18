@@ -118,8 +118,8 @@ python3 -m pytest app/tests/test_transfer_transforms.py -q
 ### Verify
 
 1. New `tool_type` appears in module catalog with `label`, `description`, `default_config`, `stem`.
-2. If the plugin defines reliability metadata, catalog entry also includes `reliability_policy`.
-2. Creating an agenda item with that `tool_type` starts/stops cleanly.
+2. Catalog entry includes `reliability_policy.write_default` (platform baseline), plus any action-specific overrides.
+3. Creating an agenda item with that `tool_type` starts/stops cleanly.
 
 ## Contract Test Matrix
 
@@ -131,22 +131,25 @@ python3 -m pytest app/tests/test_transfer_comment_format_parity.py -q
 python3 -m pytest app/tests/test_transfer_api.py -q
 ```
 
-## Reliability Metadata (Optional)
+## Reliability Metadata (Required Contract Surface)
 
-Plugins may publish client reliability hints through manifest metadata:
+Plugins publish client reliability policy through manifest metadata:
 
 - `manifest.reliability_policy` (dictionary)
 - exposed by module catalog endpoint (`GET /api/meetings/modules`)
+- always normalized by the backend to include `write_default`
 
-Current use case:
+Current use cases:
 
 - brainstorming `submit_idea` retry/backoff + idempotency header policy.
+- voting `cast_vote` retry/backoff policy (can inherit `write_default`).
 
 Guidance:
 
-1. Treat metadata as hints for client retry behavior, not as authorization rules.
-2. Keep safe defaults in clients when metadata is missing.
-3. Document any new policy keys in this guide and corresponding feature docs.
+1. Treat metadata as client reliability policy, not as authorization rules.
+2. Always route write actions through shared reliable-action wrapper (`runReliableWriteAction` in `app/static/js/meeting.js`).
+3. Add action-specific keys (for example `submit_idea`, `cast_vote`) only when they intentionally diverge from `write_default`.
+4. Document any new policy keys in this guide and corresponding feature docs.
 
 For categorization contract changes:
 

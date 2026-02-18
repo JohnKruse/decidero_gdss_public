@@ -11,7 +11,7 @@ from app.plugins.builtin.voting_plugin import VotingPlugin
 from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
 from app.plugins.context import ActivityContext
 from app.services.activity_pipeline import ActivityPipeline
-from app.services.activity_catalog import get_activity_catalog
+from app.services.activity_catalog import get_activity_catalog, normalise_reliability_policy
 from app.services.categorization_manager import CategorizationManager
 from app.services.voting_manager import VotingManager
 
@@ -337,6 +337,16 @@ def test_activity_catalog_includes_core_tools():
     entries = get_activity_catalog()
     tool_types = {entry["tool_type"] for entry in entries}
     assert {"brainstorming", "voting", "categorization"}.issubset(tool_types)
+    for entry in entries:
+        policy = entry.get("reliability_policy") or {}
+        default_write = policy.get("write_default") or {}
+        assert isinstance(default_write, dict)
+        assert isinstance(default_write.get("retryable_statuses"), list)
+        assert isinstance(default_write.get("max_retries"), int)
+        assert isinstance(default_write.get("base_delay_ms"), int)
+        assert isinstance(default_write.get("max_delay_ms"), int)
+        assert isinstance(default_write.get("jitter_ratio"), float)
+        assert default_write.get("idempotency_header") == "X-Idempotency-Key"
     brainstorming_entry = next(
         (entry for entry in entries if entry["tool_type"] == "brainstorming"),
         None,
@@ -345,6 +355,33 @@ def test_activity_catalog_includes_core_tools():
     policy = brainstorming_entry.get("reliability_policy") or {}
     submit_policy = policy.get("submit_idea") or {}
     assert submit_policy.get("idempotency_header") == "X-Idempotency-Key"
+
+
+def test_reliability_policy_normalisation_applies_safe_defaults():
+    normalised = normalise_reliability_policy(
+        {
+            "submit_idea": {
+                "retryable_statuses": [429, "503", "abc", 429],
+                "max_retries": "4",
+                "base_delay_ms": "250",
+                "max_delay_ms": "1000",
+                "jitter_ratio": "0.5",
+                "idempotency_header": "X-Custom-Idempotency",
+            },
+            "bad_shape": "ignore-me",
+        }
+    )
+    assert "submit_idea" in normalised
+    assert normalised["submit_idea"]["retryable_statuses"] == [429, 503]
+    assert normalised["submit_idea"]["max_retries"] == 4
+    assert normalised["submit_idea"]["base_delay_ms"] == 250
+    assert normalised["submit_idea"]["max_delay_ms"] == 1000
+    assert normalised["submit_idea"]["jitter_ratio"] == 0.5
+    assert normalised["submit_idea"]["idempotency_header"] == "X-Custom-Idempotency"
+    assert normalised["write_default"] == normalised["submit_idea"]
+
+    fallback_only = normalise_reliability_policy({})
+    assert fallback_only["write_default"]["retryable_statuses"] == [429, 502, 503, 504]
 
 
 def test_categorization_plugin_seeds_items_with_comment_folding_and_provenance(db_session):

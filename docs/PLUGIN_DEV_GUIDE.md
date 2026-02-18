@@ -88,7 +88,7 @@ ActivityPluginManifest(
 
 `autosave_seconds` is clamped to 5–300 seconds.
 
-Optional reliability metadata:
+Reliability metadata (required contract surface):
 ```
 ActivityPluginManifest(
     ...,
@@ -106,7 +106,8 @@ ActivityPluginManifest(
 ```
 
 `reliability_policy` is published in the agenda modules catalog so browser clients can apply
-bounded retry/idempotency behavior per activity operation.
+bounded retry/idempotency behavior per activity operation. The backend always injects
+`write_default` policy values for safe baseline behavior.
 
 ## Reliability Invariants (Required)
 
@@ -115,6 +116,7 @@ bounded retry/idempotency behavior per activity operation.
 3. Emit deterministic item identifiers scoped to the current `activity_id`.
 4. Keep `open_activity` idempotent so restart/reopen does not duplicate seeded state.
 5. Emit transfer-compatible output bundle payloads from `close_activity`.
+6. For any write UI action, use the shared reliable wrapper (`runReliableWriteAction` in `app/static/js/meeting.js`) and map an action key in `reliability_policy` when custom tuning is needed.
 
 ## Activity Context API
 Plugins receive an `ActivityContext` with DB access and helper methods:

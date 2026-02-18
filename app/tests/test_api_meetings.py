@@ -318,8 +318,12 @@ def test_list_agenda_modules(authenticated_client: TestClient):
         (entry for entry in catalog if entry.get("tool_type") == "brainstorming"),
         None,
     )
+    voting = next((entry for entry in catalog if entry.get("tool_type") == "voting"), None)
     assert brainstorming is not None
+    assert voting is not None
     assert "reliability_policy" in brainstorming
+    assert "write_default" in (brainstorming.get("reliability_policy") or {})
+    assert "write_default" in (voting.get("reliability_policy") or {})
 
 
 def test_add_agenda_item_to_meeting(

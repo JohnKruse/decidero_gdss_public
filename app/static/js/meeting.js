@@ -64,6 +64,24 @@
                     auto_jump_new_ideas: true,
                     prompt: "",
                 },
+                reliability_policy: {
+                    write_default: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 350,
+                        max_delay_ms: 1800,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                    submit_idea: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 3,
+                        base_delay_ms: 400,
+                        max_delay_ms: 2500,
+                        jitter_ratio: 0.25,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                },
             },
             {
                 tool_type: "voting",
@@ -78,6 +96,24 @@
                     randomize_participant_order: false,
                     options: ["Edit vote option here"],
                 },
+                reliability_policy: {
+                    write_default: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 350,
+                        max_delay_ms: 1800,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                    cast_vote: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 300,
+                        max_delay_ms: 1500,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                },
             },
             {
                 tool_type: "categorization",
@@ -88,6 +124,16 @@
                     items: [],
                     buckets: [],
                     single_assignment_only: true,
+                },
+                reliability_policy: {
+                    write_default: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 350,
+                        max_delay_ms: 1800,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
                 },
             },
         ];
@@ -479,21 +525,15 @@
         let brainstormingActivityId = null;
         let brainstormingIdeasLoaded = false;
         let brainstormingSubmitInFlight = false;
-        const brainstormingSubmitRetryDefaults = {
+        const writeReliabilityDefaults = {
             retryableStatuses: [429, 502, 503, 504],
-            maxRetries: 3,
-            baseDelayMs: 400,
-            maxDelayMs: 2500,
-            jitterRatio: 0.25,
+            maxRetries: 2,
+            baseDelayMs: 350,
+            maxDelayMs: 1800,
+            jitterRatio: 0.2,
             idempotencyHeader: "X-Idempotency-Key",
         };
-        const brainstormingSubmitQueue = window.DecideroReliableActions
-            ? window.DecideroReliableActions.createSerialQueue("brainstorming-submit")
-            : {
-                enqueue(task) {
-                    return task();
-                },
-            };
+        const reliableActionQueues = new Map();
         const brainstormingIdeaIds = new Set();
         const brainstormingIdeaNumbers = new Map();
         const brainstormingSubcommentCounts = new Map();
@@ -3869,19 +3909,31 @@
         }
 
         async function postVote(optionId, action = "add") {
-            const response = await fetch(
-                `/api/meetings/${encodeURIComponent(context.meetingId)}/voting/votes`,
-                {
-                    method: "POST",
-                    credentials: "include",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        activity_id: votingActivityId,
-                        option_id: optionId,
-                        action,
-                    }),
+            const response = await runReliableWriteAction({
+                toolType: "voting",
+                actionName: "cast_vote",
+                queueName: "voting-submit",
+                requestFactory: ({ attempt, requestId, policy }) => fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/voting/votes`,
+                    {
+                        method: "POST",
+                        credentials: "include",
+                        headers: {
+                            "Content-Type": "application/json",
+                            [policy.idempotencyHeader]: requestId || "",
+                            "X-Retry-Attempt": String(attempt),
+                        },
+                        body: JSON.stringify({
+                            activity_id: votingActivityId,
+                            option_id: optionId,
+                            action,
+                        }),
+                    },
+                ),
+                onRetry: ({ attempt }) => {
+                    setVotingStatus(`Connection busy. Retrying vote (${attempt + 1})…`);
                 },
-            );
+            });
             if (!response.ok) {
                 const err = await response.json().catch(() => ({}));
                 throw new Error(err.detail || "Unable to submit vote.");
@@ -4874,61 +4926,29 @@
 
                 const payload = { content };
                 const submitUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(brainstormingActivityId)}`;
-                const reliableActions = window.DecideroReliableActions;
-                const moduleMeta = getModuleMeta("brainstorming");
-                const retryConfig = moduleMeta?.reliability_policy?.submit_idea || {};
-                const retryableStatuses = Array.isArray(retryConfig.retryable_statuses)
-                    ? retryConfig.retryable_statuses.map((value) => Number.parseInt(value, 10)).filter((value) => Number.isFinite(value))
-                    : brainstormingSubmitRetryDefaults.retryableStatuses;
-                const retryableStatusSet = new Set(retryableStatuses);
-                const maxRetries = Number.isFinite(retryConfig.max_retries)
-                    ? Math.max(0, retryConfig.max_retries)
-                    : brainstormingSubmitRetryDefaults.maxRetries;
-                const baseDelayMs = Number.isFinite(retryConfig.base_delay_ms)
-                    ? Math.max(1, retryConfig.base_delay_ms)
-                    : brainstormingSubmitRetryDefaults.baseDelayMs;
-                const maxDelayMs = Number.isFinite(retryConfig.max_delay_ms)
-                    ? Math.max(baseDelayMs, retryConfig.max_delay_ms)
-                    : brainstormingSubmitRetryDefaults.maxDelayMs;
-                const jitterRatio = Number.isFinite(retryConfig.jitter_ratio)
-                    ? Math.max(0, retryConfig.jitter_ratio)
-                    : brainstormingSubmitRetryDefaults.jitterRatio;
-                const idempotencyHeader = String(
-                    retryConfig.idempotency_header || brainstormingSubmitRetryDefaults.idempotencyHeader,
-                );
-                const response = await brainstormingSubmitQueue.enqueue(() => {
-                    if (!reliableActions || typeof reliableActions.runWithRetry !== "function") {
-                        return fetch(submitUrl, {
-                            method: "POST",
-                            credentials: "include",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify(payload),
-                        });
-                    }
-                    return reliableActions.runWithRetry(
-                        ({ attempt, requestId }) => fetch(submitUrl, {
+                const response = await runReliableWriteAction({
+                    toolType: "brainstorming",
+                    actionName: "submit_idea",
+                    queueName: "brainstorming-submit",
+                    fallbackPolicy: {
+                        maxRetries: 3,
+                        baseDelayMs: 400,
+                        maxDelayMs: 2500,
+                        jitterRatio: 0.25,
+                    },
+                    requestFactory: ({ attempt, requestId, policy }) => fetch(submitUrl, {
                             method: "POST",
                             credentials: "include",
                             headers: {
                                 "Content-Type": "application/json",
-                                [idempotencyHeader]: requestId,
+                                [policy.idempotencyHeader]: requestId || "",
                                 "X-Retry-Attempt": String(attempt),
                             },
                             body: JSON.stringify(payload),
                         }),
-                        {
-                            maxRetries,
-                            baseDelayMs,
-                            maxDelayMs,
-                            jitterRatio,
-                            shouldRetryResult: (result) => Boolean(
-                                result && retryableStatusSet.has(result.status),
-                            ),
-                            onRetry: ({ attempt }) => {
-                                setBrainstormingError(`Connection busy. Retrying submit (${attempt + 1})…`);
-                            },
-                        },
-                    );
+                    onRetry: ({ attempt }) => {
+                        setBrainstormingError(`Connection busy. Retrying submit (${attempt + 1})…`);
+                    },
                 });
 
                 if (!response.ok) {
@@ -4973,6 +4993,86 @@
 
         function getModuleMeta(toolType) {
             return state.moduleMap.get((toolType || "").toLowerCase()) || state.moduleMap.get(toolType) || null;
+        }
+
+        function getReliableQueue(name) {
+            const key = String(name || "default");
+            if (reliableActionQueues.has(key)) {
+                return reliableActionQueues.get(key);
+            }
+            const queue = window.DecideroReliableActions
+                ? window.DecideroReliableActions.createSerialQueue(key)
+                : {
+                    enqueue(task) {
+                        return task();
+                    },
+                };
+            reliableActionQueues.set(key, queue);
+            return queue;
+        }
+
+        function resolveWriteReliabilityPolicy(toolType, actionName, fallback = {}) {
+            const moduleMeta = getModuleMeta(toolType) || {};
+            const policy = moduleMeta.reliability_policy || {};
+            const actionPolicy = policy[actionName] || policy.write_default || {};
+            const merged = {
+                ...writeReliabilityDefaults,
+                ...(fallback || {}),
+            };
+
+            const statuses = Array.isArray(actionPolicy.retryable_statuses)
+                ? actionPolicy.retryable_statuses
+                    .map((value) => Number.parseInt(value, 10))
+                    .filter((value) => Number.isFinite(value))
+                : null;
+            if (statuses && statuses.length) {
+                merged.retryableStatuses = statuses;
+            }
+
+            const maxRetries = Number.parseInt(actionPolicy.max_retries, 10);
+            if (Number.isFinite(maxRetries)) merged.maxRetries = Math.max(0, maxRetries);
+            const baseDelayMs = Number.parseInt(actionPolicy.base_delay_ms, 10);
+            if (Number.isFinite(baseDelayMs)) merged.baseDelayMs = Math.max(1, baseDelayMs);
+            const maxDelayMs = Number.parseInt(actionPolicy.max_delay_ms, 10);
+            if (Number.isFinite(maxDelayMs)) merged.maxDelayMs = Math.max(merged.baseDelayMs, maxDelayMs);
+            const jitterRatio = Number.parseFloat(actionPolicy.jitter_ratio);
+            if (Number.isFinite(jitterRatio)) merged.jitterRatio = Math.max(0, jitterRatio);
+            if (typeof actionPolicy.idempotency_header === "string" && actionPolicy.idempotency_header.trim()) {
+                merged.idempotencyHeader = actionPolicy.idempotency_header.trim();
+            }
+            return merged;
+        }
+
+        async function runReliableWriteAction({
+            toolType,
+            actionName,
+            queueName,
+            fallbackPolicy,
+            requestFactory,
+            onRetry,
+        }) {
+            const queue = getReliableQueue(queueName || `${toolType}-${actionName}`);
+            const policy = resolveWriteReliabilityPolicy(toolType, actionName, fallbackPolicy);
+            return queue.enqueue(() => {
+                const reliableActions = window.DecideroReliableActions;
+                if (!reliableActions || typeof reliableActions.runWithRetry !== "function") {
+                    return requestFactory({ attempt: 0, requestId: null, policy });
+                }
+                const retryableStatusSet = new Set(policy.retryableStatuses || []);
+                return reliableActions.runWithRetry(
+                    ({ attempt, requestId }) => requestFactory({ attempt, requestId, policy }),
+                    {
+                        maxRetries: policy.maxRetries,
+                        baseDelayMs: policy.baseDelayMs,
+                        maxDelayMs: policy.maxDelayMs,
+                        jitterRatio: policy.jitterRatio,
+                        shouldRetryResult: (result) => Boolean(
+                            result && retryableStatusSet.has(result.status),
+                        ),
+                        onRetry,
+                    },
+                );
+            });
         }
 
         let currentDraggedItem = null; // Global variable to store the currently dragged item
