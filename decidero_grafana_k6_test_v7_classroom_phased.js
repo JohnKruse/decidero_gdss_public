@@ -1,6 +1,7 @@
 import http from "k6/http";
 import { check, sleep } from "k6";
 import exec from "k6/execution";
+import { Counter, Rate, Trend } from "k6/metrics";
 
 const BASE = __ENV.BASE_URL;
 const ADMIN_LOGIN = __ENV.ADMIN_LOGIN;
@@ -53,6 +54,20 @@ const COMMENT_MAX_CHARS = toInt("COMMENT_MAX_CHARS", 220);
 const PHASE1_RATE_MIN = Number.parseFloat(__ENV.PHASE1_RATE_MIN || "1.5");
 const PHASE1_RATE_MAX = Number.parseFloat(__ENV.PHASE1_RATE_MAX || "2.0");
 const PHASE2_RATE_PER_MIN = Number.parseFloat(__ENV.PHASE2_RATE_PER_MIN || "1.0");
+const WRITE_MAX_RETRIES = toInt("WRITE_MAX_RETRIES", 3);
+const WRITE_BASE_DELAY_MS = toInt("WRITE_BASE_DELAY_MS", 400);
+const WRITE_MAX_DELAY_MS = toInt("WRITE_MAX_DELAY_MS", 2500);
+const WRITE_JITTER_RATIO = Number.parseFloat(__ENV.WRITE_JITTER_RATIO || "0.25");
+const AUTH_MAX_RETRIES = toInt("AUTH_MAX_RETRIES", 2);
+const AUTH_BASE_DELAY_MS = toInt("AUTH_BASE_DELAY_MS", 450);
+const AUTH_MAX_DELAY_MS = toInt("AUTH_MAX_DELAY_MS", 1800);
+const AUTH_JITTER_RATIO = Number.parseFloat(__ENV.AUTH_JITTER_RATIO || "0.2");
+const RETRYABLE_STATUSES = new Set(
+  (__ENV.RETRYABLE_STATUSES || "0,429,502,503,504")
+    .split(",")
+    .map((raw) => Number.parseInt(raw.trim(), 10))
+    .filter((n) => Number.isFinite(n)),
+);
 
 const LENGTH_SHORT_MIN = 10;
 const LENGTH_SHORT_MAX = 50;
@@ -76,6 +91,12 @@ const PHASE3_START =
   __ENV.PHASE3_START ||
   `${Math.round(parseDurationToSeconds(PHASE2_START) + parseDurationToSeconds(PHASE2_DURATION))}s`;
 const PHASE3_DURATION = __ENV.PHASE3_DURATION || "6m";
+
+const retryAttemptsTotal = new Counter("retry_attempts_total");
+const retryRecoveredTotal = new Counter("retry_recovered_total");
+const retryExhaustedTotal = new Counter("retry_exhausted_total");
+const retryAttemptCount = new Trend("retry_attempt_count", true);
+const retryExhaustedRate = new Rate("retry_exhausted_rate");
 
 export const options = {
   noCookiesReset: true,
@@ -127,8 +148,64 @@ function jsonPost(url, body, extraHeaders = {}) {
   });
 }
 
+function isHttpSuccess(statusCode) {
+  return statusCode >= 200 && statusCode < 300;
+}
+
+function backoffMs(attempt, baseDelayMs, maxDelayMs, jitterRatio) {
+  const expDelay = Math.min(maxDelayMs, baseDelayMs * Math.pow(2, Math.max(0, attempt)));
+  const jitter = Math.max(0, jitterRatio) * expDelay * Math.random();
+  return Math.round(expDelay + jitter);
+}
+
+function runWithRetry(requestFn, retryConfig) {
+  const {
+    action = "unknown",
+    maxRetries = 0,
+    baseDelayMs = 250,
+    maxDelayMs = 1000,
+    jitterRatio = 0.2,
+    retryableStatuses = RETRYABLE_STATUSES,
+  } = retryConfig || {};
+
+  let attempt = 0;
+  let response = requestFn(attempt);
+  while (attempt < maxRetries && response && retryableStatuses.has(response.status)) {
+    retryAttemptsTotal.add(1, { action, status: String(response.status) });
+    const waitMs = backoffMs(attempt, baseDelayMs, maxDelayMs, jitterRatio);
+    sleep(waitMs / 1000);
+    attempt += 1;
+    response = requestFn(attempt);
+  }
+
+  const attemptsUsed = attempt + 1;
+  retryAttemptCount.add(attemptsUsed, { action });
+  const success = response ? isHttpSuccess(response.status) : false;
+  if (attemptsUsed > 1 && success) {
+    retryRecoveredTotal.add(1, { action });
+  }
+  retryExhaustedRate.add(success ? 0 : 1, { action });
+  if (!success) {
+    retryExhaustedTotal.add(1, {
+      action,
+      status: response ? String(response.status) : "none",
+    });
+  }
+  return response;
+}
+
 function loginAs(username, password) {
-  const res = jsonPost(`${BASE}/api/auth/token`, { username, password });
+  const res = runWithRetry(
+    () => jsonPost(`${BASE}/api/auth/token`, { username, password }),
+    {
+      action: "login",
+      maxRetries: AUTH_MAX_RETRIES,
+      baseDelayMs: AUTH_BASE_DELAY_MS,
+      maxDelayMs: AUTH_MAX_DELAY_MS,
+      jitterRatio: AUTH_JITTER_RATIO,
+      retryableStatuses: new Set([429, 503, 0]),
+    },
+  );
   const ok = check(res, { "login 200": (r) => r.status === 200 });
   const token =
     res.cookies.access_token && res.cookies.access_token[0]
@@ -358,19 +435,30 @@ function getIdeas(meetingId, activityId) {
 function postIdea(meetingId, activityId, username, marker) {
   const idem = `${TEST_TAG}-${username}-idea-${__VU}-${__ITER}-${Date.now()}`;
   const built = buildVariableText({ phase: marker });
-  const res = jsonPost(
-    `${BASE}/api/meetings/${meetingId}/brainstorming/ideas?activity_id=${encodeURIComponent(activityId)}`,
+  const res = runWithRetry(
+    (attempt) =>
+      jsonPost(
+        `${BASE}/api/meetings/${meetingId}/brainstorming/ideas?activity_id=${encodeURIComponent(activityId)}`,
+        {
+          content: built.content.slice(0, IDEA_MAX_CHARS),
+          submitted_name: username,
+          metadata: {
+            source: "k6_v7",
+            phase: marker,
+            test_tag: TEST_TAG,
+            length_bucket: built.lengthBucket,
+            retry_attempt: attempt,
+          },
+        },
+        { "X-Idempotency-Key": idem, "X-Retry-Attempt": String(attempt) },
+      ),
     {
-      content: built.content.slice(0, IDEA_MAX_CHARS),
-      submitted_name: username,
-      metadata: {
-        source: "k6_v7",
-        phase: marker,
-        test_tag: TEST_TAG,
-        length_bucket: built.lengthBucket,
-      },
+      action: "submit_idea",
+      maxRetries: WRITE_MAX_RETRIES,
+      baseDelayMs: WRITE_BASE_DELAY_MS,
+      maxDelayMs: WRITE_MAX_DELAY_MS,
+      jitterRatio: WRITE_JITTER_RATIO,
     },
-    { "X-Idempotency-Key": idem },
   );
   check(res, {
     "idea submit 201": (r) => r.status === 201,
@@ -388,21 +476,32 @@ function postComment(meetingId, activityId, username, marker) {
   const parent = topLevel[Math.floor(Math.random() * topLevel.length)];
   const idem = `${TEST_TAG}-${username}-comment-${__VU}-${__ITER}-${Date.now()}`;
   const built = buildVariableText({ phase: marker });
-  const res = jsonPost(
-    `${BASE}/api/meetings/${meetingId}/brainstorming/ideas?activity_id=${encodeURIComponent(activityId)}`,
+  const res = runWithRetry(
+    (attempt) =>
+      jsonPost(
+        `${BASE}/api/meetings/${meetingId}/brainstorming/ideas?activity_id=${encodeURIComponent(activityId)}`,
+        {
+          content: built.content.slice(0, COMMENT_MAX_CHARS),
+          parent_id: parent.id,
+          submitted_name: username,
+          metadata: {
+            source: "k6_v7",
+            phase: marker,
+            test_tag: TEST_TAG,
+            type: "comment",
+            length_bucket: built.lengthBucket,
+            retry_attempt: attempt,
+          },
+        },
+        { "X-Idempotency-Key": idem, "X-Retry-Attempt": String(attempt) },
+      ),
     {
-      content: built.content.slice(0, COMMENT_MAX_CHARS),
-      parent_id: parent.id,
-      submitted_name: username,
-      metadata: {
-        source: "k6_v7",
-        phase: marker,
-        test_tag: TEST_TAG,
-        type: "comment",
-        length_bucket: built.lengthBucket,
-      },
+      action: "submit_comment",
+      maxRetries: WRITE_MAX_RETRIES,
+      baseDelayMs: WRITE_BASE_DELAY_MS,
+      maxDelayMs: WRITE_MAX_DELAY_MS,
+      jitterRatio: WRITE_JITTER_RATIO,
     },
-    { "X-Idempotency-Key": idem },
   );
   check(res, {
     "comment submit 201": (r) => r.status === 201,
@@ -432,11 +531,26 @@ function fetchVotingOptions(meetingId, votingActivityId) {
 }
 
 function castVote(meetingId, votingActivityId, optionId) {
-  const res = jsonPost(`${BASE}/api/meetings/${meetingId}/voting/votes`, {
-    activity_id: votingActivityId,
-    option_id: optionId,
-    action: "add",
-  });
+  const idem = `${TEST_TAG}-${cachedUsername || "vu"}-vote-${__VU}-${__ITER}-${Date.now()}`;
+  const res = runWithRetry(
+    (attempt) =>
+      jsonPost(
+        `${BASE}/api/meetings/${meetingId}/voting/votes`,
+        {
+          activity_id: votingActivityId,
+          option_id: optionId,
+          action: "add",
+        },
+        { "X-Idempotency-Key": idem, "X-Retry-Attempt": String(attempt) },
+      ),
+    {
+      action: "cast_vote",
+      maxRetries: WRITE_MAX_RETRIES,
+      baseDelayMs: WRITE_BASE_DELAY_MS,
+      maxDelayMs: WRITE_MAX_DELAY_MS,
+      jitterRatio: WRITE_JITTER_RATIO,
+    },
+  );
   check(res, {
     "vote no 5xx": (r) => r.status < 500,
   });

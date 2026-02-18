@@ -41,6 +41,12 @@ meeting_refresh:
   interval_seconds: 8
   hidden_interval_seconds: 45
   failure_backoff_seconds: 60
+  # During active write bursts, deprioritize background polling to improve submit success.
+  write_priority_backoff_seconds: 8
+  # On transient overload statuses (429/502/503/504), stretch refresh cadence temporarily.
+  overload_backoff_seconds: 12
+  # Randomize refresh timing to avoid synchronized polling spikes.
+  jitter_ratio: 0.2
 meeting_activity_log:
   max_items: 100
 ui_refresh:
@@ -49,3 +55,33 @@ ui_refresh:
   admin_users_interval_seconds: 5
   hidden_interval_seconds: 15
   failure_backoff_seconds: 90
+
+# Frontend retry/backoff defaults for auth and in-meeting write reliability.
+frontend_reliability:
+  write_default:
+    retryable_statuses: [429, 502, 503, 504]
+    max_retries: 2
+    base_delay_ms: 350
+    max_delay_ms: 1800
+    jitter_ratio: 0.2
+    idempotency_header: "X-Idempotency-Key"
+  brainstorming_submit:
+    retryable_statuses: [429, 502, 503, 504]
+    max_retries: 3
+    base_delay_ms: 400
+    max_delay_ms: 2500
+    jitter_ratio: 0.25
+    idempotency_header: "X-Idempotency-Key"
+  login:
+    retryable_statuses: [429, 503]
+    max_retries: 2
+    base_delay_ms: 450
+    max_delay_ms: 1800
+    jitter_ratio: 0.2
+  # Keep default at 0 until registration idempotency guarantees are expanded.
+  registration:
+    retryable_statuses: [429, 503]
+    max_retries: 0
+    base_delay_ms: 450
+    max_delay_ms: 1800
+    jitter_ratio: 0.2

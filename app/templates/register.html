@@ -27,7 +27,15 @@
         </div>
         {% endgrab %}
         {% grab id="register-form" %}
-        <form class="login-form" id="register-form">
+        <form
+            class="login-form"
+            id="register-form"
+            data-register-max-retries="{{ frontend_reliability.get('registration', {}).get('max_retries', 0) }}"
+            data-register-base-delay-ms="{{ frontend_reliability.get('registration', {}).get('base_delay_ms', 450) }}"
+            data-register-max-delay-ms="{{ frontend_reliability.get('registration', {}).get('max_delay_ms', 1800) }}"
+            data-register-jitter-ratio="{{ frontend_reliability.get('registration', {}).get('jitter_ratio', 0.2) }}"
+            data-register-retryable-statuses="{{ (frontend_reliability.get('registration', {}).get('retryable_statuses', [429, 503]) | join(',')) }}"
+        >
             {% if is_initial_setup %}
             {% grab id="register-initial-setup-message" %}
             <div class="initial-setup-message">
@@ -126,6 +134,60 @@
         const submitButton = form.querySelector('.submit-btn');
         const passwordRequirementItems = document.querySelectorAll('#passwordRequirements .requirement');
         const loginPattern = /^[A-Za-z0-9._@+-]{3,50}$/;
+        const parseNonNegativeInt = (value, fallback) => {
+            const parsed = Number.parseInt(value, 10);
+            if (!Number.isFinite(parsed) || parsed < 0) {
+                return fallback;
+            }
+            return parsed;
+        };
+        const parsePositiveInt = (value, fallback) => {
+            const parsed = Number.parseInt(value, 10);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+                return fallback;
+            }
+            return parsed;
+        };
+        const parseBoundedRatio = (value, fallback) => {
+            const parsed = Number.parseFloat(value);
+            if (!Number.isFinite(parsed)) {
+                return fallback;
+            }
+            return Math.max(0, Math.min(1, parsed));
+        };
+        const parseRetryableStatuses = (value, fallback) => {
+            if (typeof value !== 'string' || !value.trim()) {
+                return [...fallback];
+            }
+            const statuses = [];
+            value.split(',').forEach((item) => {
+                const status = Number.parseInt(item.trim(), 10);
+                if (!Number.isFinite(status) || status < 100 || status > 599 || statuses.includes(status)) {
+                    return;
+                }
+                statuses.push(status);
+            });
+            return statuses.length ? statuses : [...fallback];
+        };
+        const registrationPolicy = (() => {
+            const dataset = form?.dataset || {};
+            const baseDelayMs = parsePositiveInt(dataset.registerBaseDelayMs, 450);
+            const maxDelayMs = Math.max(
+                baseDelayMs,
+                parsePositiveInt(dataset.registerMaxDelayMs, 1800)
+            );
+            return {
+                maxRetries: parseNonNegativeInt(dataset.registerMaxRetries, 0),
+                baseDelayMs,
+                maxDelayMs,
+                jitterRatio: parseBoundedRatio(dataset.registerJitterRatio, 0.2),
+                retryableStatuses: parseRetryableStatuses(
+                    dataset.registerRetryableStatuses,
+                    [429, 503]
+                ),
+            };
+        })();
+        const registrationRetryableStatusSet = new Set(registrationPolicy.retryableStatuses);
 
         const passwordValidators = {
             length: (value) => value.length >= 8,
@@ -207,14 +269,32 @@
             }
 
             try {
-                const response = await fetch('/api/auth/register', {
+                const reliableActions = window.DecideroReliableActions;
+                const registerRequest = {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'Accept': 'application/json',
                     },
                     body: JSON.stringify(formData),
-                });
+                };
+                const response = reliableActions && typeof reliableActions.runWithRetry === 'function'
+                    ? await reliableActions.runWithRetry(
+                        ({ attempt }) => {
+                            if (attempt > 0) {
+                                jsErrorsDiv.textContent = `Registration service is busy. Retrying (${attempt}/${registrationPolicy.maxRetries})...`;
+                            }
+                            return fetch('/api/auth/register', registerRequest);
+                        },
+                        {
+                            maxRetries: registrationPolicy.maxRetries,
+                            baseDelayMs: registrationPolicy.baseDelayMs,
+                            maxDelayMs: registrationPolicy.maxDelayMs,
+                            jitterRatio: registrationPolicy.jitterRatio,
+                            shouldRetryResult: (result) => result && registrationRetryableStatusSet.has(result.status),
+                        },
+                    )
+                    : await fetch('/api/auth/register', registerRequest);
 
                 if (response.ok) {
                     window.location.href = '/login';

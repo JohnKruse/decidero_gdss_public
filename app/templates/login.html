@@ -45,7 +45,15 @@
         {% endgrab %}
 
         {% grab id="login-form" %}
-        <form class="login-form" id="loginForm"> <!-- Removed method and action -->
+        <form
+            class="login-form"
+            id="loginForm"
+            data-login-max-retries="{{ frontend_reliability.get('login', {}).get('max_retries', 2) }}"
+            data-login-base-delay-ms="{{ frontend_reliability.get('login', {}).get('base_delay_ms', 450) }}"
+            data-login-max-delay-ms="{{ frontend_reliability.get('login', {}).get('max_delay_ms', 1800) }}"
+            data-login-jitter-ratio="{{ frontend_reliability.get('login', {}).get('jitter_ratio', 0.2) }}"
+            data-login-retryable-statuses="{{ (frontend_reliability.get('login', {}).get('retryable_statuses', [429, 503]) | join(',')) }}"
+        > <!-- Removed method and action -->
             <div class="form-group">
                 <label for="login">USERNAME</label>
                 <input type="text" id="login" name="login" required
@@ -82,6 +90,60 @@
         const loginForm = document.getElementById('loginForm');
         const errorMessageDiv = document.getElementById('errorMessage');
         const loadingDiv = document.querySelector('.loading');
+        const parseNonNegativeInt = (value, fallback) => {
+            const parsed = Number.parseInt(value, 10);
+            if (!Number.isFinite(parsed) || parsed < 0) {
+                return fallback;
+            }
+            return parsed;
+        };
+        const parsePositiveInt = (value, fallback) => {
+            const parsed = Number.parseInt(value, 10);
+            if (!Number.isFinite(parsed) || parsed <= 0) {
+                return fallback;
+            }
+            return parsed;
+        };
+        const parseBoundedRatio = (value, fallback) => {
+            const parsed = Number.parseFloat(value);
+            if (!Number.isFinite(parsed)) {
+                return fallback;
+            }
+            return Math.max(0, Math.min(1, parsed));
+        };
+        const parseRetryableStatuses = (value, fallback) => {
+            if (typeof value !== 'string' || !value.trim()) {
+                return [...fallback];
+            }
+            const statuses = [];
+            value.split(',').forEach((item) => {
+                const status = Number.parseInt(item.trim(), 10);
+                if (!Number.isFinite(status) || status < 100 || status > 599 || statuses.includes(status)) {
+                    return;
+                }
+                statuses.push(status);
+            });
+            return statuses.length ? statuses : [...fallback];
+        };
+        const loginPolicy = (() => {
+            const dataset = loginForm?.dataset || {};
+            const baseDelayMs = parsePositiveInt(dataset.loginBaseDelayMs, 450);
+            const maxDelayMs = Math.max(
+                baseDelayMs,
+                parsePositiveInt(dataset.loginMaxDelayMs, 1800)
+            );
+            return {
+                maxRetries: parseNonNegativeInt(dataset.loginMaxRetries, 2),
+                baseDelayMs,
+                maxDelayMs,
+                jitterRatio: parseBoundedRatio(dataset.loginJitterRatio, 0.2),
+                retryableStatuses: parseRetryableStatuses(
+                    dataset.loginRetryableStatuses,
+                    [429, 503]
+                ),
+            };
+        })();
+        const loginRetryableStatusSet = new Set(loginPolicy.retryableStatuses);
 
         const showMessage = (text, color = "") => {
             errorMessageDiv.textContent = text;
@@ -129,16 +191,16 @@
                     ? await reliableActions.runWithRetry(
                         ({ attempt }) => {
                             if (attempt > 0) {
-                                showMessage(`Server is busy. Retrying login (${attempt})…`);
+                                showMessage(`Server is busy. Retrying login (${attempt}/${loginPolicy.maxRetries})...`);
                             }
                             return fetch('/api/auth/token', loginRequest);
                         },
                         {
-                            maxRetries: 2,
-                            baseDelayMs: 450,
-                            maxDelayMs: 1800,
-                            jitterRatio: 0.2,
-                            shouldRetryResult: (result) => result && (result.status === 429 || result.status === 503),
+                            maxRetries: loginPolicy.maxRetries,
+                            baseDelayMs: loginPolicy.baseDelayMs,
+                            maxDelayMs: loginPolicy.maxDelayMs,
+                            jitterRatio: loginPolicy.jitterRatio,
+                            shouldRetryResult: (result) => result && loginRetryableStatusSet.has(result.status),
                         }
                     )
                     : await fetch('/api/auth/token', loginRequest);

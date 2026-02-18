@@ -3,6 +3,7 @@ from pathlib import Path
 import logging  # Add this
 from app.config.loader import (
     get_brainstorming_limits,
+    get_frontend_reliability_settings,
     get_meeting_activity_log_settings,
     get_meeting_refresh_settings,
     get_ui_refresh_settings,
@@ -176,6 +177,7 @@ async def login(
             "request": request,
             "UserRole": UserRole,  # For role comparisons in template
             "show_setup_alert": show_setup_alert,
+            "frontend_reliability": get_frontend_reliability_settings(),
         },
     )
 
@@ -207,6 +209,7 @@ async def register(
                 UserRole.SUPER_ADMIN.value if is_initial_setup else UserRole.PARTICIPANT.value
             ),
             "UserRole": UserRole,  # For role comparisons in template
+            "frontend_reliability": get_frontend_reliability_settings(),
         },
     )
 
@@ -399,6 +402,7 @@ async def meeting(
 
     brainstorming_limits = get_brainstorming_limits()
     meeting_refresh = get_meeting_refresh_settings()
+    frontend_reliability = get_frontend_reliability_settings()
 
     return templates.TemplateResponse(request, 
         "meeting.html",
@@ -411,6 +415,7 @@ async def meeting(
             "UserRole": UserRole,  # For role comparisons in template
             "brainstorming_limits": brainstorming_limits,
             "meeting_refresh": meeting_refresh,
+            "frontend_reliability": frontend_reliability,
         },
     )
 

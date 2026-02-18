@@ -18,6 +18,9 @@ _DEFAULT_MEETING_REFRESH = {
     "interval_seconds": 8,
     "hidden_interval_seconds": 45,
     "failure_backoff_seconds": 60,
+    "write_priority_backoff_seconds": 8,
+    "overload_backoff_seconds": 12,
+    "jitter_ratio": 0.2,
 }
 _DEFAULT_UI_REFRESH = {
     "enabled": True,
@@ -36,6 +39,38 @@ _DEFAULT_AUTH_LOGIN_RATE_LIMIT = {
     "max_failures_per_username": 8,
     "max_failures_per_ip": 40,
     "lockout_seconds": 60,
+}
+_DEFAULT_FRONTEND_RELIABILITY = {
+    "write_default": {
+        "retryable_statuses": [429, 502, 503, 504],
+        "max_retries": 2,
+        "base_delay_ms": 350,
+        "max_delay_ms": 1800,
+        "jitter_ratio": 0.2,
+        "idempotency_header": "X-Idempotency-Key",
+    },
+    "brainstorming_submit": {
+        "retryable_statuses": [429, 502, 503, 504],
+        "max_retries": 3,
+        "base_delay_ms": 400,
+        "max_delay_ms": 2500,
+        "jitter_ratio": 0.25,
+        "idempotency_header": "X-Idempotency-Key",
+    },
+    "login": {
+        "retryable_statuses": [429, 503],
+        "max_retries": 2,
+        "base_delay_ms": 450,
+        "max_delay_ms": 1800,
+        "jitter_ratio": 0.2,
+    },
+    "registration": {
+        "retryable_statuses": [429, 503],
+        "max_retries": 0,
+        "base_delay_ms": 450,
+        "max_delay_ms": 1800,
+        "jitter_ratio": 0.2,
+    },
 }
 
 
@@ -136,6 +171,104 @@ def get_meeting_refresh_settings() -> Dict[str, Any]:
         "failure_backoff_seconds": _coerce_positive_int(
             section.get("failure_backoff_seconds"),
             defaults["failure_backoff_seconds"],
+        ),
+        "write_priority_backoff_seconds": _coerce_positive_int(
+            section.get("write_priority_backoff_seconds"),
+            defaults["write_priority_backoff_seconds"],
+        ),
+        "overload_backoff_seconds": _coerce_positive_int(
+            section.get("overload_backoff_seconds"),
+            defaults["overload_backoff_seconds"],
+        ),
+        "jitter_ratio": _coerce_jitter_ratio(
+            section.get("jitter_ratio"),
+            defaults["jitter_ratio"],
+        ),
+    }
+
+
+def _coerce_jitter_ratio(value: Any, fallback: float) -> float:
+    try:
+        candidate = float(value)
+    except Exception:  # noqa: BLE001
+        candidate = fallback
+    return max(0.0, min(1.0, candidate))
+
+
+def _normalise_retry_policy(
+    raw_policy: Any,
+    defaults: Dict[str, Any],
+    *,
+    include_idempotency: bool,
+) -> Dict[str, Any]:
+    policy = raw_policy if isinstance(raw_policy, dict) else {}
+    merged = dict(defaults)
+
+    raw_statuses = policy.get("retryable_statuses")
+    if isinstance(raw_statuses, list):
+        statuses = []
+        for value in raw_statuses:
+            try:
+                status = int(value)
+            except Exception:  # noqa: BLE001
+                continue
+            if 100 <= status <= 599 and status not in statuses:
+                statuses.append(status)
+        if statuses:
+            merged["retryable_statuses"] = statuses
+
+    for key in ("max_retries", "base_delay_ms", "max_delay_ms"):
+        try:
+            candidate = int(policy.get(key))
+        except Exception:  # noqa: BLE001
+            continue
+        if candidate >= 0:
+            merged[key] = candidate
+
+    merged["base_delay_ms"] = max(1, int(merged["base_delay_ms"]))
+    merged["max_delay_ms"] = max(merged["base_delay_ms"], int(merged["max_delay_ms"]))
+    merged["max_retries"] = max(0, int(merged["max_retries"]))
+    merged["jitter_ratio"] = _coerce_jitter_ratio(
+        policy.get("jitter_ratio"),
+        float(defaults["jitter_ratio"]),
+    )
+
+    if include_idempotency:
+        header = policy.get("idempotency_header")
+        if isinstance(header, str) and header.strip():
+            merged["idempotency_header"] = header.strip()
+    else:
+        merged.pop("idempotency_header", None)
+
+    return merged
+
+
+def get_frontend_reliability_settings() -> Dict[str, Any]:
+    """Return frontend retry/backoff defaults used by auth and meeting UI paths."""
+    config = load_config()
+    section = config.get("frontend_reliability") or {}
+    defaults = _DEFAULT_FRONTEND_RELIABILITY
+
+    return {
+        "write_default": _normalise_retry_policy(
+            section.get("write_default"),
+            defaults["write_default"],
+            include_idempotency=True,
+        ),
+        "brainstorming_submit": _normalise_retry_policy(
+            section.get("brainstorming_submit"),
+            defaults["brainstorming_submit"],
+            include_idempotency=True,
+        ),
+        "login": _normalise_retry_policy(
+            section.get("login"),
+            defaults["login"],
+            include_idempotency=False,
+        ),
+        "registration": _normalise_retry_policy(
+            section.get("registration"),
+            defaults["registration"],
+            include_idempotency=False,
         ),
     }
 

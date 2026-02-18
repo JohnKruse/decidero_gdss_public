@@ -18,16 +18,37 @@
             userId: root.dataset.userId || null,
             userRole: (root.dataset.userRole || "participant").toLowerCase(),
         };
+        const parsePositiveInt = (value, fallback) => {
+            const parsed = Number.parseInt(value, 10);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+        };
+        const parseNonNegativeInt = (value, fallback) => {
+            const parsed = Number.parseInt(value, 10);
+            return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+        };
+        const parseBoundedRatio = (value, fallback) => {
+            const parsed = Number.parseFloat(value);
+            if (!Number.isFinite(parsed)) {
+                return fallback;
+            }
+            return Math.max(0, Math.min(1, parsed));
+        };
+        const parseRetryableStatuses = (value, fallback) => {
+            if (typeof value !== "string" || !value.trim()) {
+                return fallback;
+            }
+            const parsed = value
+                .split(",")
+                .map((entry) => Number.parseInt(entry.trim(), 10))
+                .filter((entry) => Number.isFinite(entry));
+            return parsed.length ? parsed : fallback;
+        };
         const isAdminUser = context.userRole === "admin" || context.userRole === "super_admin";
         const brainstormingLimits = {
             ideaCharacterLimit: Number(root.dataset.brainstormMaxLength || "") || 500,
             maxIdeasPerUser: Number(root.dataset.brainstormMaxIdeas || "") || 0,
         };
         const meetingRefreshConfig = (() => {
-            const parsePositiveInt = (value, fallback) => {
-                const parsed = Number.parseInt(value, 10);
-                return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-            };
             const parseBool = (value, fallback) => {
                 if (value === undefined || value === null || value === "") {
                     return fallback;
@@ -50,9 +71,15 @@
                 intervalMs: intervalSeconds * 1000,
                 hiddenIntervalMs: hiddenIntervalSeconds * 1000,
                 failureBackoffMs: failureBackoffSeconds * 1000,
-                writePriorityBackoffMs: Math.max(intervalSeconds * 1000, 5000),
-                overloadBackoffMs: Math.max(intervalSeconds * 1000, 12000),
-                jitterRatio: 0.2,
+                writePriorityBackoffMs: parsePositiveInt(
+                    root.dataset.meetingRefreshWritePriorityBackoffSeconds,
+                    intervalSeconds,
+                ) * 1000,
+                overloadBackoffMs: parsePositiveInt(
+                    root.dataset.meetingRefreshOverloadBackoffSeconds,
+                    Math.max(intervalSeconds, 12),
+                ) * 1000,
+                jitterRatio: parseBoundedRatio(root.dataset.meetingRefreshJitterRatio, 0.2),
             };
         })();
 
@@ -529,12 +556,27 @@
         let brainstormingIdeasLoaded = false;
         let brainstormingSubmitInFlight = false;
         const writeReliabilityDefaults = {
-            retryableStatuses: [429, 502, 503, 504],
-            maxRetries: 2,
-            baseDelayMs: 350,
-            maxDelayMs: 1800,
-            jitterRatio: 0.2,
-            idempotencyHeader: "X-Idempotency-Key",
+            retryableStatuses: parseRetryableStatuses(
+                root.dataset.writeDefaultRetryableStatuses,
+                [429, 502, 503, 504],
+            ),
+            maxRetries: parseNonNegativeInt(root.dataset.writeDefaultMaxRetries, 2),
+            baseDelayMs: parsePositiveInt(root.dataset.writeDefaultBaseDelayMs, 350),
+            maxDelayMs: Math.max(
+                parsePositiveInt(root.dataset.writeDefaultBaseDelayMs, 350),
+                parsePositiveInt(root.dataset.writeDefaultMaxDelayMs, 1800),
+            ),
+            jitterRatio: parseBoundedRatio(root.dataset.writeDefaultJitterRatio, 0.2),
+            idempotencyHeader: root.dataset.writeDefaultIdempotencyHeader || "X-Idempotency-Key",
+        };
+        const brainstormSubmitFallbackPolicy = {
+            maxRetries: parseNonNegativeInt(root.dataset.brainstormSubmitMaxRetries, 3),
+            baseDelayMs: parsePositiveInt(root.dataset.brainstormSubmitBaseDelayMs, 400),
+            maxDelayMs: Math.max(
+                parsePositiveInt(root.dataset.brainstormSubmitBaseDelayMs, 400),
+                parsePositiveInt(root.dataset.brainstormSubmitMaxDelayMs, 2500),
+            ),
+            jitterRatio: parseBoundedRatio(root.dataset.brainstormSubmitJitterRatio, 0.25),
         };
         const reliableActionQueues = new Map();
         const brainstormingIdeaIds = new Set();
@@ -4934,12 +4976,7 @@
                     toolType: "brainstorming",
                     actionName: "submit_idea",
                     queueName: "brainstorming-submit",
-                    fallbackPolicy: {
-                        maxRetries: 3,
-                        baseDelayMs: 400,
-                        maxDelayMs: 2500,
-                        jitterRatio: 0.25,
-                    },
+                    fallbackPolicy: brainstormSubmitFallbackPolicy,
                     requestFactory: ({ attempt, requestId, policy }) => fetch(submitUrl, {
                             method: "POST",
                             credentials: "include",
