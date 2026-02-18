@@ -94,4 +94,28 @@
         </p>
     </div>
 </section>
+
+<div
+    id="archiveConfirmModal"
+    class="archive-confirm-modal"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="archiveConfirmTitle"
+    hidden
+>
+    <div class="archive-confirm-modal__content">
+        <h3 id="archiveConfirmTitle">Archive Meeting?</h3>
+        <p id="archiveConfirmText">
+            This will move the meeting off the active dashboard and into Archived.
+        </p>
+        <div class="archive-confirm-modal__actions">
+            <button type="button" class="meeting-action-btn secondary" id="archiveConfirmCancel">
+                Cancel
+            </button>
+            <button type="button" class="meeting-action-btn" id="archiveConfirmAccept">
+                Archive Meeting
+            </button>
+        </div>
+    </div>
+</div>
 {% endgrab %}

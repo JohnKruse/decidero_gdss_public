@@ -13,6 +13,8 @@
         roleScope: 'participant',
         viewMode: 'active',
         capabilities: new Set(['participant']),
+        archiveModalResolver: null,
+        archiveModalMeetingId: null,
         loading: false,
         hideErrorTimeout: null,
         meetings: [],
@@ -32,7 +34,11 @@
         importMeetingButton: document.getElementById('importMeetingButton'),
         importMeetingFile: document.getElementById('importMeetingFile'),
         meetingModeActive: document.getElementById('meetingModeActive'),
-        meetingModeArchived: document.getElementById('meetingModeArchived')
+        meetingModeArchived: document.getElementById('meetingModeArchived'),
+        archiveConfirmModal: document.getElementById('archiveConfirmModal'),
+        archiveConfirmText: document.getElementById('archiveConfirmText'),
+        archiveConfirmAccept: document.getElementById('archiveConfirmAccept'),
+        archiveConfirmCancel: document.getElementById('archiveConfirmCancel')
     };
 
     const refreshConfig = (() => {
@@ -77,6 +83,7 @@
         determineRoleScope();
         bindSortEvents();
         bindModeEvents();
+        bindArchiveModalEvents();
         exposeGlobalActions();
         bindImportEvents();
         loadDashboardData();
@@ -305,6 +312,65 @@
                 button.disabled = false;
                 button.textContent = defaultLabel;
             }
+        });
+    }
+
+    function bindArchiveModalEvents() {
+        const modal = selectors.archiveConfirmModal;
+        if (!modal) {
+            return;
+        }
+
+        selectors.archiveConfirmCancel?.addEventListener('click', () => resolveArchiveModal(false));
+        selectors.archiveConfirmAccept?.addEventListener('click', () => resolveArchiveModal(true));
+
+        modal.addEventListener('click', (event) => {
+            if (event.target === modal) {
+                resolveArchiveModal(false);
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && state.archiveModalResolver) {
+                resolveArchiveModal(false);
+            }
+        });
+    }
+
+    function resolveArchiveModal(confirmed) {
+        if (!state.archiveModalResolver) {
+            return;
+        }
+        const resolver = state.archiveModalResolver;
+        state.archiveModalResolver = null;
+        state.archiveModalMeetingId = null;
+        if (selectors.archiveConfirmModal) {
+            selectors.archiveConfirmModal.hidden = true;
+        }
+        resolver(Boolean(confirmed));
+    }
+
+    function openArchiveConfirmModal(meeting) {
+        const modal = selectors.archiveConfirmModal;
+        if (!modal) {
+            return Promise.resolve(window.confirm('Archive this meeting?'));
+        }
+
+        if (state.archiveModalResolver) {
+            resolveArchiveModal(false);
+        }
+
+        state.archiveModalMeetingId = meeting?.meeting_id || null;
+        const title = (meeting?.title || 'this meeting').toString();
+        if (selectors.archiveConfirmText) {
+            selectors.archiveConfirmText.textContent =
+                `Archive "${title}"? This removes it from the active dashboard.`;
+        }
+        modal.hidden = false;
+        selectors.archiveConfirmCancel?.focus();
+
+        return new Promise((resolve) => {
+            state.archiveModalResolver = resolve;
         });
     }
 
@@ -608,7 +674,8 @@
                     createMutationButton(
                         'Archive',
                         `/api/meetings/${encodeURIComponent(meeting.meeting_id)}/archive`,
-                        'meeting-action-btn secondary'
+                        'meeting-action-btn secondary',
+                        { confirmArchive: true, meeting }
                     )
                 );
             }
@@ -652,7 +719,7 @@
         return button;
     }
 
-    function createMutationButton(label, url, className = 'meeting-action-btn') {
+    function createMutationButton(label, url, className = 'meeting-action-btn', options = {}) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = className;
@@ -666,6 +733,12 @@
         button.addEventListener('click', async () => {
             button.disabled = true;
             try {
+                if (options.confirmArchive) {
+                    const confirmed = await openArchiveConfirmModal(options.meeting);
+                    if (!confirmed) {
+                        return;
+                    }
+                }
                 const response = await fetch(url, {
                     method: 'POST',
                     credentials: 'include'

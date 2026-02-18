@@ -872,6 +872,45 @@ button {
     background-color: var(--primary-color-dark);
 }
 
+.archive-confirm-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1300;
+    padding: 1rem;
+}
+
+.archive-confirm-modal[hidden] {
+    display: none;
+}
+
+.archive-confirm-modal__content {
+    width: 100%;
+    max-width: 480px;
+    background: var(--white);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(11, 61, 145, 0.24);
+    padding: 1.25rem;
+}
+
+.archive-confirm-modal__content h3 {
+    margin-bottom: 0.65rem;
+}
+
+.archive-confirm-modal__content p {
+    color: #4f5d75;
+}
+
+.archive-confirm-modal__actions {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.6rem;
+}
+
 .error-banner {
     position: fixed;
     bottom: 1.5rem;
