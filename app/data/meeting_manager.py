@@ -2,6 +2,8 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 from typing import Dict, Optional, List, Any, Sequence, Iterable, Set, Tuple
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
+import re
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException, Depends
 
@@ -38,6 +40,44 @@ class MeetingManager:
     def __init__(self, db: Session, logger=None):
         self.db = db
         self.logger = logger or print
+
+    @staticmethod
+    def _project_root() -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    @classmethod
+    def _archive_root(cls) -> Path:
+        return cls._project_root() / "data" / "meetings_archive"
+
+    @staticmethod
+    def _slugify_for_path(value: Optional[str], fallback: str = "owner") -> str:
+        text = (value or "").strip().lower()
+        if not text:
+            return fallback
+        slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+        return slug or fallback
+
+    def _find_latest_archive_file(self, meeting: Meeting) -> Optional[str]:
+        owner_login = getattr(getattr(meeting, "owner", None), "login", None) or meeting.owner_id
+        owner_slug = self._slugify_for_path(owner_login, "owner")
+        owner_dir = self._archive_root() / owner_slug
+        if not owner_dir.exists():
+            return None
+
+        pattern = f"*__{meeting.meeting_id}.zip"
+        matches = sorted(
+            owner_dir.glob(pattern),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if not matches:
+            return None
+
+        latest = matches[0]
+        try:
+            return str(latest.relative_to(self._project_root()))
+        except ValueError:
+            return str(latest)
 
     # ------------------------------------------------------------------ #
     # Agenda activity helpers
@@ -1377,6 +1417,7 @@ class MeetingManager:
         role_scope: str = "participant",
         status_filter: Optional[str] = None,
         sort: str = "start_time",
+        archive_scope: str = "active",
     ) -> Dict[str, Any]:
         """Return meetings scoped to the current user with dashboard metadata."""
 
@@ -1461,6 +1502,12 @@ class MeetingManager:
             start_at = self._ensure_aware(meeting.started_at)
             end_at = self._ensure_aware(meeting.end_time)
             created_at = self._ensure_aware(meeting.created_at)
+            normalized_status = (meeting.status or "").lower()
+
+            if archive_scope == "active" and normalized_status == "archived":
+                continue
+            if archive_scope == "archived" and normalized_status != "archived":
+                continue
 
             computed_status = self._classify_dashboard_status(
                 meeting,
@@ -1523,9 +1570,7 @@ class MeetingManager:
                     "owner_id": meeting.owner_id,
                     "title": meeting.title,
                     "status": computed_status,
-                    "raw_status": (
-                        (meeting.status or "").lower() if meeting.status else None
-                    ),
+                    "raw_status": normalized_status if normalized_status else None,
                     "start_time": start_at,
                     "end_time": end_at,
                     "created_at": created_at,
@@ -1544,6 +1589,11 @@ class MeetingManager:
                     ),
                     "is_public": meeting.is_public,
                     "participant_count": len(getattr(meeting, "participants", [])),
+                    "archive_file": (
+                        self._find_latest_archive_file(meeting)
+                        if normalized_status == "archived"
+                        else None
+                    ),
                     "quick_actions": self._build_quick_actions(meeting),
                     "notifications": notification_counts,
                 }

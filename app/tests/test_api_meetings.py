@@ -4,6 +4,7 @@ import io
 import json
 import os
 import zipfile
+from pathlib import Path
 from datetime import datetime, timedelta, UTC
 
 import pytest
@@ -107,6 +108,84 @@ def test_list_meetings_supports_status_filter(
     payload = response.json()
     assert payload["filters"]["status"] == "never_started"
     assert payload["summary"]["never_started"] == len(payload["items"])
+
+
+def test_archive_and_restore_meeting_dashboard_visibility(
+    authenticated_client: TestClient,
+    test_meeting_data: str,
+):
+    """Archived meetings should move off the default dashboard and support restore."""
+
+    archive_response = authenticated_client.post(
+        f"/api/meetings/{test_meeting_data}/archive"
+    )
+    assert archive_response.status_code == 200, archive_response.json()
+    archived_payload = archive_response.json()
+    assert archived_payload["status"] == "archived"
+
+    active_dashboard = authenticated_client.get("/api/meetings/")
+    assert active_dashboard.status_code == 200
+    active_items = active_dashboard.json()["items"]
+    assert all(item["id"] != test_meeting_data for item in active_items)
+
+    archived_dashboard = authenticated_client.get("/api/meetings/archived")
+    assert archived_dashboard.status_code == 200
+    archived_items = archived_dashboard.json()["items"]
+    archived_item = next(
+        (item for item in archived_items if item["id"] == test_meeting_data),
+        None,
+    )
+    assert archived_item is not None
+    assert archived_item["raw_status"] == "archived"
+    assert archived_item.get("archive_file")
+    archive_file = Path(archived_item["archive_file"])
+    assert archive_file.is_file()
+
+    restore_response = authenticated_client.post(
+        f"/api/meetings/{test_meeting_data}/restore"
+    )
+    assert restore_response.status_code == 200, restore_response.json()
+    restored_payload = restore_response.json()
+    assert restored_payload["status"] == "completed"
+
+    refreshed_active = authenticated_client.get("/api/meetings/")
+    assert refreshed_active.status_code == 200
+    assert any(
+        item["id"] == test_meeting_data for item in refreshed_active.json()["items"]
+    )
+
+    refreshed_archived = authenticated_client.get("/api/meetings/archived")
+    assert refreshed_archived.status_code == 200
+    assert all(
+        item["id"] != test_meeting_data for item in refreshed_archived.json()["items"]
+    )
+
+
+def test_participant_cannot_archive_meeting(
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+    test_meeting_data: str,
+):
+    participant_password = "ParticipantArchive@123!"
+    participant = user_manager_with_admin.add_user(
+        first_name="Part",
+        last_name="Archiver",
+        email="participant.archive@example.com",
+        hashed_password=get_password_hash(participant_password),
+        role=UserRole.PARTICIPANT.value,
+        login="participant_archive",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(participant)
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": participant.login, "password": participant_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    archive_response = client.post(f"/api/meetings/{test_meeting_data}/archive")
+    assert archive_response.status_code == 403
 
 
 def test_export_meeting_returns_zip_bundle(

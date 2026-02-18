@@ -471,6 +471,7 @@ class MeetingListItem(BaseModel):
     is_participant: bool
     is_public: bool
     participant_count: int = 0
+    archive_file: Optional[str] = None
     quick_actions: MeetingQuickActions
     notifications: MeetingNotificationCounts
 

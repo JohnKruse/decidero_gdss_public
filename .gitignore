@@ -121,6 +121,7 @@ requirements_docs/
 
 # SQLite
 decidero.db*
+data/meetings_archive/
 
 # Local TLS artifacts
 certs/*.pem

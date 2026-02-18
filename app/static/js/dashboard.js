@@ -11,6 +11,7 @@
     const state = {
         userRole: 'participant',
         roleScope: 'participant',
+        viewMode: 'active',
         capabilities: new Set(['participant']),
         loading: false,
         hideErrorTimeout: null,
@@ -29,7 +30,9 @@
         errorBanner: document.getElementById('dashboardError'),
         dashboardRoot: document.querySelector('.layout-container'),
         importMeetingButton: document.getElementById('importMeetingButton'),
-        importMeetingFile: document.getElementById('importMeetingFile')
+        importMeetingFile: document.getElementById('importMeetingFile'),
+        meetingModeActive: document.getElementById('meetingModeActive'),
+        meetingModeArchived: document.getElementById('meetingModeArchived')
     };
 
     const refreshConfig = (() => {
@@ -73,6 +76,7 @@
     document.addEventListener('DOMContentLoaded', () => {
         determineRoleScope();
         bindSortEvents();
+        bindModeEvents();
         exposeGlobalActions();
         bindImportEvents();
         loadDashboardData();
@@ -217,6 +221,37 @@
         };
     }
 
+    function bindModeEvents() {
+        const modeButtons = [selectors.meetingModeActive, selectors.meetingModeArchived].filter(Boolean);
+        if (!modeButtons.length) {
+            return;
+        }
+
+        modeButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const mode = button.dataset.mode === 'archived' ? 'archived' : 'active';
+                if (state.viewMode === mode) {
+                    return;
+                }
+                state.viewMode = mode;
+                updateModeIndicators();
+                loadDashboardData();
+            });
+        });
+
+        updateModeIndicators();
+    }
+
+    function updateModeIndicators() {
+        const isArchived = state.viewMode === 'archived';
+        if (selectors.meetingModeActive) {
+            selectors.meetingModeActive.classList.toggle('active', !isArchived);
+        }
+        if (selectors.meetingModeArchived) {
+            selectors.meetingModeArchived.classList.toggle('active', isArchived);
+        }
+    }
+
     function bindImportEvents() {
         const button = selectors.importMeetingButton;
         const input = selectors.importMeetingFile;
@@ -278,10 +313,11 @@
         let success = false;
 
         const params = new URLSearchParams({ role: state.roleScope });
+        const endpoint = state.viewMode === 'archived' ? '/api/meetings/archived' : '/api/meetings';
 
         try {
             params.set('_ts', Date.now().toString());
-            const response = await fetch(`/api/meetings?${params.toString()}`, {
+            const response = await fetch(`${endpoint}?${params.toString()}`, {
                 credentials: 'include',
                 cache: 'no-store'
             });
@@ -557,9 +593,26 @@
                 createActionButton('Settings', meeting.quick_actions?.details, 'meeting-action-btn secondary')
             );
         }
-        actionGroup.appendChild(
-            createActionButton('Enter Meeting', meeting.quick_actions?.enter, 'meeting-action-btn')
-        );
+        if (isArchivedMeeting(meeting)) {
+            if (canManageMeeting(meeting)) {
+                actionGroup.appendChild(
+                    createMutationButton('Restore', `/api/meetings/${encodeURIComponent(meeting.meeting_id)}/restore`)
+                );
+            }
+        } else {
+            actionGroup.appendChild(
+                createActionButton('Enter Meeting', meeting.quick_actions?.enter, 'meeting-action-btn')
+            );
+            if (canManageMeeting(meeting)) {
+                actionGroup.appendChild(
+                    createMutationButton(
+                        'Archive',
+                        `/api/meetings/${encodeURIComponent(meeting.meeting_id)}/archive`,
+                        'meeting-action-btn secondary'
+                    )
+                );
+            }
+        }
         if (meeting.quick_actions?.view_results) {
             actionGroup.appendChild(
                 createActionButton('Export Meeting', meeting.quick_actions.view_results, 'meeting-action-btn secondary')
@@ -597,6 +650,50 @@
 
         button.addEventListener('click', () => window.navigateTo(url));
         return button;
+    }
+
+    function createMutationButton(label, url, className = 'meeting-action-btn') {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = className;
+        button.textContent = label;
+
+        if (!url) {
+            button.disabled = true;
+            return button;
+        }
+
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                if (!response.ok) {
+                    let message = `${label} failed.`;
+                    try {
+                        const payload = await response.json();
+                        if (payload?.detail) {
+                            message = payload.detail;
+                        }
+                    } catch (error) {
+                        // ignore parse failures
+                    }
+                    throw new Error(message);
+                }
+                await loadDashboardData();
+            } catch (error) {
+                showErrorBanner(error?.message || `${label} failed. Please try again.`);
+            } finally {
+                button.disabled = false;
+            }
+        });
+        return button;
+    }
+
+    function isArchivedMeeting(meeting) {
+        return (meeting?.raw_status || '').toLowerCase() === 'archived';
     }
 
     function updateSortIndicators(section, reset = false) {
@@ -663,7 +760,9 @@
         if (selectors.meetingsEmpty) {
             selectors.meetingsEmpty.textContent = isLoading
                 ? 'Loading your meetings...'
-                : defaultEmptyMessages.meetings;
+                : (state.viewMode === 'archived'
+                    ? 'No archived meetings found.'
+                    : defaultEmptyMessages.meetings);
         }
     }
 

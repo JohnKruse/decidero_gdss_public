@@ -40,6 +40,8 @@ from fastapi import Request
 from typing import List, Optional, Literal, Iterable, Set, Dict
 from sqlalchemy import func
 from datetime import datetime, timezone
+from pathlib import Path
+import re
 from app.data.user_manager import UserManager, get_user_manager
 import logging
 from datetime import timedelta, UTC
@@ -58,6 +60,8 @@ import zipfile
 
 # Set up logging
 logger = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+MEETING_ARCHIVE_DIR = PROJECT_ROOT / "data" / "meetings_archive"
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
 
@@ -254,6 +258,139 @@ def _build_user_export(user: Optional[User]) -> Dict[str, Optional[str]]:
         "first_name": user.first_name,
         "last_name": user.last_name,
     }
+
+
+def _slugify_for_filename(value: Optional[str], fallback: str) -> str:
+    text = (value or "").strip().lower()
+    if not text:
+        return fallback
+    slug = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
+    return (slug[:80] or fallback)
+
+
+def _build_meeting_export_bundle(
+    meeting: Meeting,
+    meeting_manager: MeetingManager,
+) -> Dict[str, object]:
+    facilitators = []
+    for link in getattr(meeting, "facilitator_links", []) or []:
+        payload = _build_user_export(link.user)
+        payload["is_owner"] = link.is_owner
+        facilitators.append(payload)
+
+    participants = [
+        _build_user_export(participant)
+        for participant in getattr(meeting, "participants", []) or []
+    ]
+
+    agenda = []
+    for activity in getattr(meeting, "agenda_activities", []) or []:
+        agenda.append(
+            {
+                "activity_id": activity.activity_id,
+                "tool_type": activity.tool_type,
+                "title": activity.title,
+                "instructions": activity.instructions,
+                "order_index": activity.order_index,
+                "config": dict(getattr(activity, "config", {}) or {}),
+                "started_at": _serialize_datetime(activity.started_at),
+                "stopped_at": _serialize_datetime(activity.stopped_at),
+                "elapsed_duration": activity.elapsed_duration,
+            }
+        )
+
+    ideas = (
+        meeting_manager.db.query(Idea).filter(Idea.meeting_id == meeting.meeting_id).all()
+    )
+    votes = (
+        meeting_manager.db.query(VotingVote)
+        .filter(VotingVote.meeting_id == meeting.meeting_id)
+        .all()
+    )
+
+    return {
+        "version": 1,
+        "exported_at": _serialize_datetime(datetime.now(timezone.utc)),
+        "meeting": {
+            "meeting_id": meeting.meeting_id,
+            "title": meeting.title,
+            "description": meeting.description,
+            "status": meeting.status,
+            "is_public": meeting.is_public,
+            "created_at": _serialize_datetime(meeting.created_at),
+            "start_time": _serialize_datetime(meeting.started_at),
+            "end_time": _serialize_datetime(meeting.end_time),
+        },
+        "facilitators": facilitators,
+        "participants": participants,
+        "agenda": agenda,
+        "ideas": [
+            {
+                "id": idea.id,
+                "content": idea.content,
+                "parent_id": idea.parent_id,
+                "timestamp": _serialize_datetime(idea.timestamp),
+                "updated_at": _serialize_datetime(idea.updated_at),
+                "meeting_id": idea.meeting_id,
+                "activity_id": idea.activity_id,
+                "user_id": idea.user_id,
+                "user_color": get_user_color(user=idea.author),
+                "submitted_name": idea.submitted_name,
+            }
+            for idea in ideas
+        ],
+        "votes": [
+            {
+                "vote_id": vote.vote_id,
+                "meeting_id": vote.meeting_id,
+                "activity_id": vote.activity_id,
+                "user_id": vote.user_id,
+                "option_id": vote.option_id,
+                "option_label": vote.option_label,
+                "weight": vote.weight,
+                "created_at": _serialize_datetime(vote.created_at),
+            }
+            for vote in votes
+        ],
+    }
+
+
+def _build_meeting_export_zip(bundle: Dict[str, object]) -> io.BytesIO:
+    payload = json.dumps(bundle, indent=2, ensure_ascii=True)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("meeting.json", payload)
+    buffer.seek(0)
+    return buffer
+
+
+def _write_meeting_archive_bundle(
+    meeting: Meeting,
+    meeting_manager: MeetingManager,
+) -> Optional[str]:
+    owner_login = getattr(getattr(meeting, "owner", None), "login", None) or meeting.owner_id
+    owner_slug = _slugify_for_filename(owner_login, "owner")
+    title_slug = _slugify_for_filename(meeting.title, "meeting")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    filename = (
+        f"{timestamp}__{title_slug}__owner-{owner_slug}__{meeting.meeting_id}.zip"
+    )
+
+    archive_dir = MEETING_ARCHIVE_DIR / owner_slug
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    bundle = _build_meeting_export_bundle(meeting, meeting_manager)
+    meeting_payload = bundle.get("meeting")
+    if isinstance(meeting_payload, dict):
+        meeting_payload["status"] = "archived"
+    archive_buffer = _build_meeting_export_zip(bundle)
+
+    archive_path = archive_dir / filename
+    archive_path.write_bytes(archive_buffer.getvalue())
+    try:
+        return str(archive_path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(archive_path)
 
 
 def _resolve_import_user_id(
@@ -1300,6 +1437,7 @@ async def list_meetings(
             role_scope=role_scope,
             status_filter=status_value,
             sort=sort,
+            archive_scope="active",
         )
         return MeetingDashboardResponse.model_validate(dashboard_payload)
     except HTTPException:
@@ -1309,6 +1447,42 @@ async def list_meetings(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list meetings",
+        )
+
+
+@router.get("/archived", response_model=MeetingDashboardResponse)
+async def list_archived_meetings(
+    current_user: str = Depends(get_current_user),
+    role_scope: str = Query(
+        "participant", enum=["participant", "facilitator", "all"], alias="role"
+    ),
+    sort: str = Query("start_time", enum=["start_time", "status", "created"]),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+    user_manager: UserManager = Depends(get_user_manager),
+):
+    """Return archived meetings scoped to the authenticated user."""
+    try:
+        user = user_manager.get_user_by_login(current_user)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
+
+        dashboard_payload = meeting_manager.get_dashboard_meetings(
+            user=user,
+            role_scope=role_scope,
+            status_filter=None,
+            sort=sort,
+            archive_scope="archived",
+        )
+        return MeetingDashboardResponse.model_validate(dashboard_payload)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error listing archived meetings: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list archived meetings",
         )
 
 
@@ -1328,92 +1502,8 @@ async def export_meeting(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
 
     _assert_meeting_access(meeting, user, require_facilitator=True)
-
-    facilitators = []
-    for link in getattr(meeting, "facilitator_links", []) or []:
-        payload = _build_user_export(link.user)
-        payload["is_owner"] = link.is_owner
-        facilitators.append(payload)
-
-    participants = [
-        _build_user_export(participant)
-        for participant in getattr(meeting, "participants", []) or []
-    ]
-
-    agenda = []
-    for activity in getattr(meeting, "agenda_activities", []) or []:
-        agenda.append(
-            {
-                "activity_id": activity.activity_id,
-                "tool_type": activity.tool_type,
-                "title": activity.title,
-                "instructions": activity.instructions,
-                "order_index": activity.order_index,
-                "config": dict(getattr(activity, "config", {}) or {}),
-                "started_at": _serialize_datetime(activity.started_at),
-                "stopped_at": _serialize_datetime(activity.stopped_at),
-                "elapsed_duration": activity.elapsed_duration,
-            }
-        )
-
-    ideas = meeting_manager.db.query(Idea).filter(Idea.meeting_id == meeting_id).all()
-    votes = (
-        meeting_manager.db.query(VotingVote)
-        .filter(VotingVote.meeting_id == meeting_id)
-        .all()
-    )
-
-    bundle = {
-        "version": 1,
-        "exported_at": _serialize_datetime(datetime.now(timezone.utc)),
-        "meeting": {
-            "meeting_id": meeting.meeting_id,
-            "title": meeting.title,
-            "description": meeting.description,
-            "status": meeting.status,
-            "is_public": meeting.is_public,
-            "created_at": _serialize_datetime(meeting.created_at),
-            "start_time": _serialize_datetime(meeting.started_at),
-            "end_time": _serialize_datetime(meeting.end_time),
-        },
-        "facilitators": facilitators,
-        "participants": participants,
-        "agenda": agenda,
-        "ideas": [
-            {
-                "id": idea.id,
-                "content": idea.content,
-                "parent_id": idea.parent_id,
-                "timestamp": _serialize_datetime(idea.timestamp),
-                "updated_at": _serialize_datetime(idea.updated_at),
-                "meeting_id": idea.meeting_id,
-                "activity_id": idea.activity_id,
-                "user_id": idea.user_id,
-                "user_color": get_user_color(user=idea.author),
-                "submitted_name": idea.submitted_name,
-            }
-            for idea in ideas
-        ],
-        "votes": [
-            {
-                "vote_id": vote.vote_id,
-                "meeting_id": vote.meeting_id,
-                "activity_id": vote.activity_id,
-                "user_id": vote.user_id,
-                "option_id": vote.option_id,
-                "option_label": vote.option_label,
-                "weight": vote.weight,
-                "created_at": _serialize_datetime(vote.created_at),
-            }
-            for vote in votes
-        ],
-    }
-
-    payload = json.dumps(bundle, indent=2, ensure_ascii=True)
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("meeting.json", payload)
-    buffer.seek(0)
+    bundle = _build_meeting_export_bundle(meeting, meeting_manager)
+    buffer = _build_meeting_export_zip(bundle)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     filename = f"meeting_{meeting.meeting_id}_{timestamp}.zip"
@@ -2283,6 +2373,74 @@ async def delete_meeting(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
         )
+
+
+@router.post("/{meeting_id}/archive", response_model=MeetingResponse)
+async def archive_meeting_endpoint(
+    meeting_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+) -> MeetingResponse:
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
+        )
+
+    _assert_meeting_access(meeting, user, require_facilitator=True)
+    archived = meeting_manager.archive_meeting(meeting_id)
+    if not archived:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to archive meeting",
+        )
+    try:
+        _write_meeting_archive_bundle(archived, meeting_manager)
+    except Exception as exc:
+        logger.exception(
+            "Archived meeting %s but failed to write archive bundle: %s",
+            meeting_id,
+            exc,
+        )
+
+    return MeetingResponse.model_validate(archived)
+
+
+@router.post("/{meeting_id}/restore", response_model=MeetingResponse)
+async def restore_meeting_endpoint(
+    meeting_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+) -> MeetingResponse:
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
+        )
+
+    _assert_meeting_access(meeting, user, require_facilitator=True)
+    updated = meeting_manager.update_meeting(meeting_id, {"status": "completed"})
+    if not updated:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to restore meeting",
+        )
+
+    return MeetingResponse.model_validate(updated)
 
 
 @router.post("/join", response_model=JoinMeetingResponse)
