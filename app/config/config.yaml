@@ -51,9 +51,9 @@ meeting_activity_log:
   max_items: 100
 ui_refresh:
   enabled: true
-  dashboard_interval_seconds: 10
-  admin_users_interval_seconds: 5
-  hidden_interval_seconds: 15
+  dashboard_interval_seconds: 20
+  admin_users_interval_seconds: 20
+  hidden_interval_seconds: 60
   failure_backoff_seconds: 90
 
 # Frontend retry/backoff defaults for auth and in-meeting write reliability.

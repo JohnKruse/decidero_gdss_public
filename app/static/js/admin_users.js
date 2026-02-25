@@ -23,7 +23,8 @@
     users: [],
     refreshTimer: null,
     refreshFailures: 0,
-    refreshInFlight: false
+    refreshInFlight: false,
+    tableInteractionActive: false
   };
   const notify = () => {};
 
@@ -160,9 +161,12 @@
   }
 
   async function refresh() {
+    if (isInteractingWithTable()) {
+      return;
+    }
     const users = await fetchUsers();
     state.users = sortUsers(users);
-    if (!isEditingResetInput()) {
+    if (!isInteractingWithTable()) {
       renderUsers(applyFilter(state.users));
     }
   }
@@ -192,7 +196,12 @@
 
   function isEditingResetInput() {
     const active = document.activeElement;
-    if (active && active.classList && active.classList.contains('user-reset-input')) {
+    if (
+      active &&
+      active.closest &&
+      active.closest('#users-table') &&
+      ['INPUT', 'SELECT', 'BUTTON', 'TEXTAREA'].includes(active.tagName)
+    ) {
       return true;
     }
     const inputs = document.querySelectorAll('.user-reset-input');
@@ -202,6 +211,10 @@
       }
     }
     return false;
+  }
+
+  function isInteractingWithTable() {
+    return state.tableInteractionActive || isEditingResetInput();
   }
 
   function stopRefresh() {
@@ -384,8 +397,22 @@
     }
   }
 
+  function wireInteractionPause() {
+    const table = document.querySelector('#users-table');
+    if (!table) {
+      return;
+    }
+    table.addEventListener('mouseenter', () => {
+      state.tableInteractionActive = true;
+    });
+    table.addEventListener('mouseleave', () => {
+      state.tableInteractionActive = false;
+    });
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
     wireActions();
+    wireInteractionPause();
     refresh();
     if (refreshConfig.enabled) {
       document.addEventListener('visibilitychange', () => {
