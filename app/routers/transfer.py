@@ -22,6 +22,7 @@ from app.services.transfer_source import build_transfer_items
 from app.services.transfer_transforms import apply_transfer_transform
 from app.services.voting_manager import VotingManager
 from app.services.categorization_manager import CategorizationManager
+from app.services.rank_order_voting_manager import RankOrderVotingManager
 from app.utils.transfer_metadata import append_transfer_history, ensure_transfer_metadata
 from app.utils.websocket_manager import websocket_manager
 
@@ -537,6 +538,45 @@ async def commit_transfer(
                     bool(comments_by_parent),
                 )
         config.setdefault("mode", "FACILITATOR_LIVE")
+    if target_tool == "rank_order_voting":
+        incoming_ideas = config.get("ideas")
+        ideas_missing = (
+            inherited_config_from_donor
+            or not isinstance(incoming_ideas, list)
+            or not incoming_ideas
+        )
+        if ideas_missing:
+            mapped_ideas: List[Dict[str, Any]] = []
+            for entry in ideas:
+                if not isinstance(entry, dict):
+                    continue
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                if payload.include_comments and comments_by_parent:
+                    content = _append_comments_to_content(entry, comments_by_parent)
+
+                mapped_entry = {
+                    "id": entry.get("id"),
+                    "content": content,
+                    "submitted_name": entry.get("submitted_name"),
+                    "parent_id": None,
+                    "created_at": entry.get("timestamp") or entry.get("created_at"),
+                    "metadata": dict(entry.get("metadata") or {}),
+                    "source": dict(entry.get("source") or {}),
+                }
+                mapped_ideas.append(mapped_entry)
+            if mapped_ideas:
+                config["ideas"] = mapped_ideas
+                logger.info(
+                    "transfer commit created rank-order ideas: count=%d include_comments=%s has_comments=%s",
+                    len(mapped_ideas),
+                    payload.include_comments,
+                    bool(comments_by_parent),
+                )
+        config.setdefault("show_results_immediately", False)
+        config.setdefault("allow_reset", True)
+        config.setdefault("randomize_order", True)
     agenda_payload = AgendaActivityCreate(
         tool_type=target_tool or target.tool_type,
         title=title,
@@ -560,6 +600,10 @@ async def commit_transfer(
             meeting_id=meeting_id,
             activity=created,
             actor_user_id=current_user.user_id,
+        )
+    if target_tool == "rank_order_voting":
+        RankOrderVotingManager(meeting_manager.db).reset_activity_state(
+            meeting_id, created.activity_id, clear_bundles=True
         )
 
     bundle_metadata = dict(payload.metadata or {})

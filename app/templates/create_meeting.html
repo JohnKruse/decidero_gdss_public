@@ -211,6 +211,17 @@ endblock %}
                 },
             },
             {
+                tool_type: 'rank_order_voting',
+                label: 'Rank Order Voting',
+                description: 'Participants rank ideas from most to least preferred; results aggregate using Borda scoring.',
+                default_config: {
+                    ideas: ['Edit ranked idea here'],
+                    randomize_order: true,
+                    show_results_immediately: false,
+                    allow_reset: true,
+                },
+            },
+            {
                 tool_type: 'categorization',
                 label: 'Bucketing - Facilitator',
                 description: 'Sort ideas into facilitator-defined buckets with an always-available Unsorted lane.',
@@ -307,6 +318,9 @@ endblock %}
             'show_results_immediately': 'Show results to participants before submission',
             'options': 'Vote candidates',
             'randomize_participant_order': 'Randomize participant idea order',
+            'ideas': 'Ideas to rank',
+            'randomize_order': 'Randomize participant idea order',
+            'allow_reset': 'Allow participants to clear submitted ranking',
             'mode': 'Categorization mode',
             'items': 'Ideas to categorize',
             'buckets': 'Buckets',
@@ -317,6 +331,55 @@ endblock %}
             return key.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
         }
 
+        function cloneJsonValue(value) {
+            try {
+                return JSON.parse(JSON.stringify(value));
+            } catch (_error) {
+                return value;
+            }
+        }
+
+        function arrayValueToEditableLines(value) {
+            if (Array.isArray(value)) {
+                return value
+                    .map((entry) => {
+                        if (typeof entry === 'string') return entry.trim();
+                        if (entry && typeof entry === 'object') {
+                            const preferred = [entry.content, entry.label, entry.title, entry.name, entry.text]
+                                .find((candidate) => typeof candidate === 'string' && candidate.trim().length > 0);
+                            if (preferred) return preferred.trim();
+                        }
+                        return String(entry ?? '').trim();
+                    })
+                    .filter((line) => line.length > 0);
+            }
+            if (typeof value === 'string') {
+                return value
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter((line) => line.length > 0);
+            }
+            return [];
+        }
+
+        function serializeArrayInput(meta) {
+            const lines = meta.input.value
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter((line) => line.length > 0);
+            if (meta.arrayMode === 'object_content') {
+                const signature = lines.join('\n');
+                if (
+                    Array.isArray(meta.originalArraySource)
+                    && String(meta.originalLineSignature || '') === signature
+                ) {
+                    return cloneJsonValue(meta.originalArraySource);
+                }
+                return lines.map((line) => ({ content: line }));
+            }
+            return lines;
+        }
+
         function collectConfigValues(rowState) {
             const result = {}; if (!rowState.configInputs) return result;
             Object.entries(rowState.configInputs).forEach(([key, meta]) => {
@@ -324,7 +387,7 @@ endblock %}
                 if (meta.type === 'boolean') { result[key] = meta.input.checked; }
                 else if (meta.type === 'number') { const v = Number(meta.input.value); result[key] = Number.isNaN(v) ? 0 : v; }
                 else if (meta.type === 'json') { const raw = meta.input.value.trim(); try { result[key] = raw ? JSON.parse(raw) : {}; } catch { result[key] = raw || {}; } }
-                else if (meta.type === 'array') { result[key] = meta.input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); }
+                else if (meta.type === 'array') { result[key] = serializeArrayInput(meta); }
                 else { result[key] = meta.input.value; }
             });
             return result;
@@ -387,9 +450,8 @@ endblock %}
             itemsInput.rows = 6;
             itemsInput.placeholder = 'One idea per line.';
             const itemsSource = resolveValue('items', defaults.items || []);
-            itemsInput.value = Array.isArray(itemsSource)
-                ? itemsSource.join('\n')
-                : String(itemsSource || '').trim();
+            const itemLines = arrayValueToEditableLines(itemsSource);
+            itemsInput.value = itemLines.join('\n');
             itemsInput.dataset.configKey = 'items';
             const itemsCount = document.createElement('span');
             itemsCount.className = 'agenda-config-count';
@@ -401,7 +463,16 @@ endblock %}
             updateItemsCount();
             itemsField.append(itemsInput, itemsCount);
             rowState.configContainer.appendChild(itemsField);
-            rowState.configInputs.items = { input: itemsInput, type: 'array', parseAsJson: false, requireValues: false, field: itemsField };
+            rowState.configInputs.items = {
+                input: itemsInput,
+                type: 'array',
+                parseAsJson: false,
+                requireValues: false,
+                field: itemsField,
+                arrayMode: Array.isArray(itemsSource) && itemsSource.some((entry) => entry && typeof entry === 'object') ? 'object_content' : 'string',
+                originalArraySource: Array.isArray(itemsSource) ? cloneJsonValue(itemsSource) : null,
+                originalLineSignature: itemLines.join('\n'),
+            };
 
             const bucketsField = createStackedField('Categories / buckets');
             const bucketsHint = document.createElement('span');
@@ -412,9 +483,8 @@ endblock %}
             bucketsInput.rows = 5;
             bucketsInput.placeholder = 'One bucket/category per line.';
             const bucketsSource = resolveValue('buckets', defaults.buckets || []);
-            bucketsInput.value = Array.isArray(bucketsSource)
-                ? bucketsSource.join('\n')
-                : String(bucketsSource || '').trim();
+            const bucketLines = arrayValueToEditableLines(bucketsSource);
+            bucketsInput.value = bucketLines.join('\n');
             bucketsInput.dataset.configKey = 'buckets';
             const bucketsCount = document.createElement('span');
             bucketsCount.className = 'agenda-config-count';
@@ -426,7 +496,16 @@ endblock %}
             updateBucketsCount();
             bucketsField.append(bucketsInput, bucketsCount);
             rowState.configContainer.appendChild(bucketsField);
-            rowState.configInputs.buckets = { input: bucketsInput, type: 'array', parseAsJson: false, requireValues: false, field: bucketsField };
+            rowState.configInputs.buckets = {
+                input: bucketsInput,
+                type: 'array',
+                parseAsJson: false,
+                requireValues: false,
+                field: bucketsField,
+                arrayMode: Array.isArray(bucketsSource) && bucketsSource.some((entry) => entry && typeof entry === 'object') ? 'object_content' : 'string',
+                originalArraySource: Array.isArray(bucketsSource) ? cloneJsonValue(bucketsSource) : null,
+                originalLineSignature: bucketLines.join('\n'),
+            };
         }
 
         function renderConfig(rowState, moduleDef, overrideConfig = {}) {
@@ -502,8 +581,8 @@ endblock %}
                     const labelSpan = document.createElement('span');
                     labelSpan.textContent = formatConfigLabel(key);
                     field.appendChild(labelSpan);
-                    const valueOverride = overrideConfig[key]; let input; let metaType = typeof defaultValue; let parseAsJson = false;
-                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); let source = valueOverride; if (!Array.isArray(source)) { if (typeof source === 'string') { source = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { source = defaultValue; } } input.value = Array.isArray(source) ? source.join('\n') : ''; metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${lines.length} candidate${lines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } if (toolType === 'categorization' && (key === 'items' || key === 'buckets')) { input.placeholder = key === 'items' ? 'One idea per line.' : 'One bucket/category per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = input.placeholder; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); const noun = key === 'items' ? 'idea' : 'bucket'; count.textContent = `${lines.length} ${noun}${lines.length === 1 ? '' : 's'}`; }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
+                    const valueOverride = overrideConfig[key]; let input; let metaType = typeof defaultValue; let parseAsJson = false; let arraySource = null; let arrayLines = [];
+                    if (Array.isArray(defaultValue)) { input = document.createElement('textarea'); input.rows = Math.max((defaultValue.length || 0), 3); arraySource = valueOverride; if (!Array.isArray(arraySource)) { if (typeof arraySource === 'string') { arraySource = arraySource.split(/\r?\n/).map((line) => line.trim()).filter(Boolean); } else { arraySource = defaultValue; } } arrayLines = arrayValueToEditableLines(arraySource); input.value = arrayLines.join('\n'); metaType = 'array'; if (toolType === 'voting' && key === 'options') { labelSpan.textContent = 'Vote candidates'; input.placeholder = 'One idea or vote candidate per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = 'One idea or vote candidate per line.'; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const localLines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); count.textContent = `${localLines.length} candidate${localLines.length === 1 ? '' : 's'}`; syncVotingMaxVotesCap(rowState); }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } if (toolType === 'categorization' && (key === 'items' || key === 'buckets')) { input.placeholder = key === 'items' ? 'One idea per line.' : 'One bucket/category per line.'; const hint = document.createElement('span'); hint.className = 'agenda-config-hint'; hint.textContent = input.placeholder; const count = document.createElement('span'); count.className = 'agenda-config-count'; const updateCount = () => { const localLines = input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); const noun = key === 'items' ? 'idea' : 'bucket'; count.textContent = `${localLines.length} ${noun}${localLines.length === 1 ? '' : 's'}`; }; input.addEventListener('input', updateCount); updateCount(); field.appendChild(hint); field.appendChild(count); } }
                     else if (metaType === 'number') {
                         input = document.createElement('input');
                         input.type = 'number';
@@ -551,7 +630,15 @@ endblock %}
                     else { input = document.createElement('input'); input.type = 'text'; input.value = valueOverride !== undefined ? String(valueOverride) : (defaultValue !== undefined && defaultValue !== null ? String(defaultValue) : ''); metaType = 'string'; }
                     input.dataset.configKey = key; field.appendChild(input); rowState.configContainer.appendChild(field);
                     const requiresValues = key === 'options' && (moduleDef?.tool_type || '').toLowerCase() !== 'voting';
-                    rowState.configInputs[key] = { input, type: metaType, parseAsJson, requireValues: requiresValues, field };
+                    const meta = { input, type: metaType, parseAsJson, requireValues: requiresValues, field };
+                    if (metaType === 'array') {
+                        meta.arrayMode = Array.isArray(arraySource) && arraySource.some((entry) => entry && typeof entry === 'object')
+                            ? 'object_content'
+                            : 'string';
+                        meta.originalArraySource = Array.isArray(arraySource) ? cloneJsonValue(arraySource) : null;
+                        meta.originalLineSignature = arrayLines.join('\n');
+                    }
+                    rowState.configInputs[key] = meta;
                 });
             };
 
@@ -1228,7 +1315,7 @@ endblock %}
                     if (meta.type === 'boolean') config[key] = meta.input.checked;
                     else if (meta.type === 'number') { const numericValue = Number(meta.input.value); config[key] = Number.isNaN(numericValue) ? 0 : numericValue; }
                     else if (meta.type === 'json' && meta.parseAsJson) { const raw = meta.input.value.trim(); if (!raw) config[key] = {}; else { try { config[key] = JSON.parse(raw); } catch (e) { errors.push(`Configuration "${formatConfigLabel(key)}" must be valid JSON.`); } } }
-                    else if (meta.type === 'array') { const values = meta.input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); if (meta.requireValues && values.length === 0) { errors.push(`${moduleDef.label || toolType} requires at least one ${formatConfigLabel(key)} value.`); } config[key] = values; }
+                    else if (meta.type === 'array') { const values = meta.input.value.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.length > 0); if (meta.requireValues && values.length === 0) { errors.push(`${moduleDef.label || toolType} requires at least one ${formatConfigLabel(key)} value.`); } config[key] = serializeArrayInput(meta); }
                     else config[key] = meta.input.value;
                 });
                 if (toolType === 'categorization') {

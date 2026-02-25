@@ -117,6 +117,7 @@ bounded retry/idempotency behavior per activity operation. The backend always in
 4. Keep `open_activity` idempotent so restart/reopen does not duplicate seeded state.
 5. Emit transfer-compatible output bundle payloads from `close_activity`.
 6. For any write UI action, use the shared reliable wrapper (`runReliableWriteAction` in `app/static/js/meeting.js`) and map an action key in `reliability_policy` when custom tuning is needed.
+7. Support transfer in and out: incoming transfer must populate required config/state, and transfer source/count methods must return empty results instead of raising when no ideas are configured.
 
 ## Activity Context API
 Plugins receive an `ActivityContext` with DB access and helper methods:

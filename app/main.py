@@ -23,6 +23,7 @@ from app.routers import meetings as meetings_router
 from app.routers import brainstorming as brainstorming_router
 from app.routers import transfer as transfer_router
 from app.routers import voting as voting_router
+from app.routers import rank_order_voting as rank_order_voting_router
 from app.routers import categorization as categorization_router
 from app.routers import realtime as realtime_router
 from app.auth.auth import auth_middleware  # Updated middleware name
@@ -200,6 +201,7 @@ app.include_router(realtime_router.router)
 app.include_router(brainstorming_router.brainstorming_router)
 app.include_router(transfer_router.transfer_router)
 app.include_router(voting_router.router)
+app.include_router(rank_order_voting_router.router)
 app.include_router(categorization_router.router)
 
 

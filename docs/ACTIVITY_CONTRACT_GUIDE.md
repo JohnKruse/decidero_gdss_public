@@ -75,6 +75,9 @@ python3 -m pytest app/tests/test_transfer_transforms.py -q
 5. Output should be portable to downstream activities through standard bundle shape:
    - `items: []`
    - optional `metadata: {}`
+6. Transfer compatibility is mandatory in both directions:
+   - inbound transfer must seed runnable activity state (no empty-config hard failures)
+   - outbound transfer/count APIs must fail soft (return zero/empty), not break meeting or agenda payloads
 
 ## Interface Lifecycle
 

@@ -146,6 +146,43 @@
                 },
             },
             {
+                tool_type: "rank_order_voting",
+                label: "Rank Order Voting",
+                description: "Rank ideas from most to least preferred and compare group agreement.",
+                default_config: {
+                    ideas: ["Edit ranked idea here"],
+                    randomize_order: true,
+                    show_results_immediately: false,
+                    allow_reset: true,
+                },
+                reliability_policy: {
+                    write_default: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 350,
+                        max_delay_ms: 1800,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                    submit_ranking: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 300,
+                        max_delay_ms: 1500,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                    reset_ranking: {
+                        retryable_statuses: [429, 502, 503, 504],
+                        max_retries: 2,
+                        base_delay_ms: 300,
+                        max_delay_ms: 1500,
+                        jitter_ratio: 0.2,
+                        idempotency_header: "X-Idempotency-Key",
+                    },
+                },
+            },
+            {
                 tool_type: "categorization",
                 label: "Bucketing - Facilitator",
                 description: "Sort ideas into facilitator-defined buckets.",
@@ -177,6 +214,9 @@
             show_results_immediately: "Show results to participants before submission",
             options: "Vote candidates",
             randomize_participant_order: "Randomize participant idea order",
+            ideas: "Ideas to rank",
+            randomize_order: "Randomize participant idea order",
+            allow_reset: "Allow ranking reset",
             mode: "Categorization mode",
             items: "Ideas to categorize",
             buckets: "Buckets",
@@ -317,6 +357,25 @@
             resultsBody: document.getElementById("votingResultsBody"),
             closeResultsModal: document.getElementById("closeVotingResultsModal"),
             timingDebug: document.getElementById("votingTimingDebug"),
+        };
+
+        const rankOrder = {
+            root: document.querySelector("[data-rank-order-root]"),
+            list: document.getElementById("rankOrderOptionsList"),
+            instructions: document.getElementById("rankOrderInstructions"),
+            submissionProgress: document.getElementById("rankOrderSubmissionProgress"),
+            notice: document.getElementById("rankOrderResultsNotice"),
+            error: document.getElementById("rankOrderError"),
+            footer: document.getElementById("rankOrderFooter"),
+            progress: document.getElementById("rankOrderProgressMessage"),
+            submit: document.getElementById("rankOrderSubmitButton"),
+            reset: document.getElementById("rankOrderResetButton"),
+            status: document.getElementById("rankOrderStatus"),
+            viewResultsButton: document.getElementById("rankOrderViewResultsButton"),
+            resultsModal: document.getElementById("rankOrderResultsModal"),
+            resultsTable: document.getElementById("rankOrderResultsTable"),
+            resultsBody: document.getElementById("rankOrderResultsBody"),
+            closeResultsModal: document.getElementById("closeRankOrderResultsModal"),
         };
 
         const categorization = {
@@ -600,6 +659,16 @@
         let votingDraftVotes = new Map();
         let votingCommittedVotes = new Map();
         let activeVotingConfig = {};
+        let rankOrderSummary = null;
+        let rankOrderActivityId = null;
+        let rankOrderRequestInFlight = false;
+        let rankOrderSummaryInFlight = false;
+        let rankOrderIsActive = false;
+        let rankOrderDraftOrder = [];
+        let rankOrderCommittedOrder = [];
+        let rankOrderDraftDirty = false;
+        let rankOrderDraggedOptionId = null;
+        let activeRankOrderConfig = {};
         const votingTiming = (() => {
             const params = new URLSearchParams(window.location.search || "");
             const enabledFromQuery = params.get("votingTiming") === "1";
@@ -4383,6 +4452,422 @@
             }
         }
 
+        function setRankOrderError(message) {
+            if (!rankOrder.error) {
+                return;
+            }
+            if (!message) {
+                rankOrder.error.textContent = "";
+                rankOrder.error.hidden = true;
+                return;
+            }
+            rankOrder.error.textContent = message;
+            rankOrder.error.hidden = false;
+        }
+
+        function setRankOrderStatus(message, variant = "") {
+            if (!rankOrder.status) {
+                return;
+            }
+            rankOrder.status.textContent = message || "";
+            rankOrder.status.dataset.variant = variant || "";
+        }
+
+        function normalizeRankOrderDraftFromSummary(summary) {
+            if (!summary || !Array.isArray(summary.options)) {
+                rankOrderCommittedOrder = [];
+                rankOrderDraftOrder = [];
+                rankOrderDraftDirty = false;
+                return;
+            }
+            const submitted = Boolean(summary.submitted);
+            const base = [...summary.options];
+            if (!submitted && Array.isArray(rankOrderDraftOrder) && rankOrderDraftDirty) {
+                return;
+            }
+            if (submitted) {
+                base.sort((a, b) => {
+                    const aRank = Number.parseInt(a?.user_rank, 10);
+                    const bRank = Number.parseInt(b?.user_rank, 10);
+                    const safeA = Number.isFinite(aRank) ? aRank : 999999;
+                    const safeB = Number.isFinite(bRank) ? bRank : 999999;
+                    if (safeA !== safeB) {
+                        return safeA - safeB;
+                    }
+                    return String(a?.label || "").localeCompare(String(b?.label || ""));
+                });
+            }
+            rankOrderCommittedOrder = base.map((option) => String(option.option_id || ""));
+            rankOrderDraftOrder = [...rankOrderCommittedOrder];
+            rankOrderDraftDirty = false;
+        }
+
+        function applyRankOrderMove(optionId, targetIndex) {
+            if (!optionId || !Array.isArray(rankOrderDraftOrder)) {
+                return;
+            }
+            const fromIndex = rankOrderDraftOrder.indexOf(optionId);
+            if (fromIndex < 0) {
+                return;
+            }
+            const clampedTarget = Math.max(0, Math.min(rankOrderDraftOrder.length - 1, targetIndex));
+            if (fromIndex === clampedTarget) {
+                return;
+            }
+            const next = [...rankOrderDraftOrder];
+            const [moved] = next.splice(fromIndex, 1);
+            next.splice(clampedTarget, 0, moved);
+            rankOrderDraftOrder = next;
+            rankOrderDraftDirty =
+                JSON.stringify(rankOrderDraftOrder) !== JSON.stringify(rankOrderCommittedOrder);
+            updateRankOrderFooter(rankOrderSummary);
+            renderRankOrderSummary(rankOrderSummary);
+        }
+
+        function getRankOrderOptionMap(summary) {
+            const map = new Map();
+            (summary?.options || []).forEach((entry) => {
+                const optionId = String(entry?.option_id || "");
+                if (!optionId) {
+                    return;
+                }
+                map.set(optionId, entry);
+            });
+            return map;
+        }
+
+        function updateRankOrderFooter(summary) {
+            if (!rankOrder.footer || !rankOrder.progress || !rankOrder.submit || !rankOrder.reset) {
+                return;
+            }
+            const hasSummary = Boolean(summary);
+            rankOrder.footer.hidden = !hasSummary;
+            if (!hasSummary) {
+                rankOrder.progress.textContent = "";
+                rankOrder.submit.disabled = true;
+                rankOrder.reset.disabled = true;
+                if (rankOrder.submissionProgress) {
+                    rankOrder.submissionProgress.textContent = "0/0";
+                }
+                if (rankOrder.viewResultsButton) {
+                    rankOrder.viewResultsButton.hidden = true;
+                }
+                return;
+            }
+
+            const submitted = Boolean(summary.submitted);
+            const canSubmit = Boolean(summary.is_active) && !rankOrderRequestInFlight;
+            const activeCount = Number.parseInt(summary.active_participant_count, 10);
+            const submissionCount = Number.parseInt(summary.submission_count, 10);
+            const safeActiveCount = Number.isFinite(activeCount) ? activeCount : 0;
+            const safeSubmissionCount = Number.isFinite(submissionCount) ? submissionCount : 0;
+            if (rankOrder.submissionProgress) {
+                rankOrder.submissionProgress.textContent = `${safeSubmissionCount}/${safeActiveCount}`;
+            }
+            rankOrder.progress.textContent = submitted
+                ? "Ranking submitted. You can reorder and resubmit while this activity stays open."
+                : "Drag ideas into your preferred order, then submit.";
+            rankOrder.submit.disabled = !canSubmit || !rankOrderDraftOrder.length || !rankOrderDraftDirty;
+            rankOrder.reset.disabled = rankOrderRequestInFlight || (!rankOrderDraftDirty && !(submitted && summary.allow_reset));
+
+            if (rankOrder.viewResultsButton) {
+                rankOrder.viewResultsButton.hidden = !Boolean(summary.can_view_results);
+            }
+        }
+
+        function renderRankOrderResultsTable(summary) {
+            if (!rankOrder.resultsBody) {
+                return;
+            }
+            const rows = Array.isArray(summary?.results) ? summary.results : [];
+            rankOrder.resultsBody.innerHTML = "";
+            if (!rows.length) {
+                const empty = document.createElement("tr");
+                empty.innerHTML = '<td colspan="4">No results available yet.</td>';
+                rankOrder.resultsBody.appendChild(empty);
+                return;
+            }
+            rows.forEach((row) => {
+                const tr = document.createElement("tr");
+                const borda = Number(row?.borda_score || 0);
+                const avgRank = Number(row?.avg_rank || 0);
+                const topShare = Number(row?.top_choice_share || 0);
+                tr.innerHTML = `
+                    <td>${borda.toFixed(1)}</td>
+                    <td>${String(row?.label || "")}</td>
+                    <td>${avgRank > 0 ? avgRank.toFixed(2) : "—"}</td>
+                    <td>${(topShare * 100).toFixed(1)}%</td>
+                `;
+                rankOrder.resultsBody.appendChild(tr);
+            });
+        }
+
+        function openRankOrderResultsModal() {
+            if (!rankOrder.resultsModal || !rankOrderSummary) {
+                return;
+            }
+            renderRankOrderResultsTable(rankOrderSummary);
+            rankOrder.resultsModal.hidden = false;
+        }
+
+        function closeRankOrderResultsModal() {
+            if (!rankOrder.resultsModal) {
+                return;
+            }
+            rankOrder.resultsModal.hidden = true;
+        }
+
+        function renderRankOrderSummary(summary) {
+            rankOrderSummary = summary || null;
+            normalizeRankOrderDraftFromSummary(rankOrderSummary);
+
+            if (rankOrder.notice) {
+                if (!summary) {
+                    rankOrder.notice.textContent = "";
+                } else if (summary.can_view_results) {
+                    rankOrder.notice.textContent = "Aggregate results update as participants submit.";
+                } else {
+                    rankOrder.notice.textContent = "Results remain hidden until the facilitator reveals them.";
+                }
+            }
+
+            if (!rankOrder.list) {
+                updateRankOrderFooter(summary);
+                return;
+            }
+
+            if (!summary || !Array.isArray(summary.options) || summary.options.length === 0) {
+                const empty = document.createElement("li");
+                empty.className = "voting-option voting-option-empty";
+                empty.textContent = "No ranked ideas configured for this activity.";
+                rankOrder.list.replaceChildren(empty);
+                updateRankOrderFooter(summary);
+                return;
+            }
+
+            const optionMap = getRankOrderOptionMap(summary);
+            const fragment = document.createDocumentFragment();
+            rankOrderDraftOrder.forEach((optionId, index) => {
+                const option = optionMap.get(optionId);
+                if (!option) {
+                    return;
+                }
+                const li = document.createElement("li");
+                li.className = "voting-option rank-order-item";
+                li.dataset.optionId = optionId;
+                li.draggable = Boolean(rankOrderIsActive && !rankOrderRequestInFlight);
+                if (rankOrderDraftDirty) {
+                    li.dataset.dirty = "true";
+                }
+
+                li.addEventListener("dragstart", (event) => {
+                    rankOrderDraggedOptionId = optionId;
+                    li.classList.add("is-dragging");
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", optionId);
+                });
+                li.addEventListener("dragend", () => {
+                    li.classList.remove("is-dragging");
+                    rankOrderDraggedOptionId = null;
+                });
+                li.addEventListener("dragover", (event) => {
+                    if (!rankOrderDraggedOptionId) return;
+                    event.preventDefault();
+                });
+                li.addEventListener("drop", (event) => {
+                    if (!rankOrderDraggedOptionId) return;
+                    event.preventDefault();
+                    applyRankOrderMove(rankOrderDraggedOptionId, index);
+                });
+
+                const handle = document.createElement("span");
+                handle.className = "rank-order-handle";
+                handle.textContent = String(index + 1);
+
+                const main = document.createElement("div");
+                main.className = "voting-option-main";
+                const label = document.createElement("div");
+                label.className = "rank-order-label";
+                label.textContent = String(option.label || "");
+                main.appendChild(label);
+
+                if (summary.can_view_results && option.borda_score !== null && option.borda_score !== undefined) {
+                    const meta = document.createElement("div");
+                    meta.className = "rank-order-meta";
+                    const avg = Number(option.avg_rank || 0);
+                    const topShare = Number(option.top_choice_share || 0);
+                    meta.textContent = `Borda ${Number(option.borda_score || 0).toFixed(1)} • Avg rank ${avg > 0 ? avg.toFixed(2) : "—"} • Top choice ${(topShare * 100).toFixed(1)}%`;
+                    main.appendChild(meta);
+                }
+
+                li.append(handle, main);
+                fragment.appendChild(li);
+            });
+
+            rankOrder.list.replaceChildren(fragment);
+            updateRankOrderFooter(summary);
+            if (rankOrder.resultsModal && !rankOrder.resultsModal.hidden) {
+                renderRankOrderResultsTable(summary);
+            }
+        }
+
+        async function loadRankOrderSummary(activityId, config = {}, { force = false } = {}) {
+            if (!rankOrder.root || !activityId) {
+                return;
+            }
+            if (rankOrderSummaryInFlight && !force) {
+                return;
+            }
+            rankOrderSummaryInFlight = true;
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/rank-order-voting/summary?activity_id=${encodeURIComponent(activityId)}`,
+                    { credentials: "include" },
+                );
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || "Unable to load rank-order voting data.");
+                }
+                const summary = await response.json();
+                rankOrderActivityId = summary?.activity_id || activityId;
+                rankOrderIsActive = Boolean(summary?.is_active);
+                activeRankOrderConfig = config || {};
+                setRankOrderError(null);
+                setRankOrderStatus("");
+                renderRankOrderSummary(summary);
+            } catch (error) {
+                setRankOrderError(error.message || "Unable to load rank-order voting data.");
+                renderRankOrderSummary(null);
+            } finally {
+                rankOrderSummaryInFlight = false;
+            }
+        }
+
+        async function submitRankOrderDraft() {
+            const summary = rankOrderSummary;
+            if (!summary || !rankOrderDraftDirty || rankOrderRequestInFlight || !rankOrderIsActive) {
+                return;
+            }
+            if (!Array.isArray(rankOrderDraftOrder) || rankOrderDraftOrder.length === 0) {
+                return;
+            }
+            if (rankOrderDraftOrder.length !== (summary.options || []).length) {
+                setRankOrderError("Ranking must include every idea before submission.");
+                return;
+            }
+
+            rankOrderRequestInFlight = true;
+            updateRankOrderFooter(summary);
+            setRankOrderStatus("Submitting ranking…", "info");
+            setRankOrderError(null);
+
+            try {
+                const response = await runReliableWriteAction({
+                    toolType: "rank_order_voting",
+                    actionName: "submit_ranking",
+                    queueName: "rank-order-submit",
+                    requestFactory: ({ attempt, requestId, policy }) =>
+                        fetch(
+                            `/api/meetings/${encodeURIComponent(context.meetingId)}/rank-order-voting/rankings`,
+                            {
+                                method: "POST",
+                                credentials: "include",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    [policy.idempotencyHeader]: requestId || "",
+                                    "X-Retry-Attempt": String(attempt),
+                                },
+                                body: JSON.stringify({
+                                    activity_id: rankOrderActivityId,
+                                    ordered_option_ids: rankOrderDraftOrder,
+                                }),
+                            },
+                        ),
+                    onRetry: ({ attempt }) => {
+                        setRankOrderStatus(`Retrying submit (attempt ${attempt + 1})…`, "warning");
+                    },
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || "Unable to submit ranking.");
+                }
+                const latest = await response.json();
+                rankOrderDraftDirty = false;
+                renderRankOrderSummary(latest || summary);
+                setRankOrderStatus("Ranking submitted.", "success");
+            } catch (error) {
+                setRankOrderError(error.message || "Unable to submit ranking.");
+                setRankOrderStatus("", "");
+            } finally {
+                rankOrderRequestInFlight = false;
+                updateRankOrderFooter(rankOrderSummary);
+            }
+        }
+
+        async function resetRankOrderDraft() {
+            const summary = rankOrderSummary;
+            if (!summary || rankOrderRequestInFlight) {
+                return;
+            }
+
+            if (rankOrderDraftDirty) {
+                rankOrderDraftOrder = [...rankOrderCommittedOrder];
+                rankOrderDraftDirty = false;
+                renderRankOrderSummary(summary);
+                setRankOrderStatus("Draft reset.", "info");
+                return;
+            }
+
+            if (!summary.submitted || !summary.allow_reset || !rankOrderIsActive) {
+                return;
+            }
+
+            rankOrderRequestInFlight = true;
+            updateRankOrderFooter(summary);
+            setRankOrderStatus("Clearing submitted ranking…", "info");
+            setRankOrderError(null);
+            try {
+                const response = await runReliableWriteAction({
+                    toolType: "rank_order_voting",
+                    actionName: "reset_ranking",
+                    queueName: "rank-order-reset",
+                    requestFactory: ({ attempt, requestId, policy }) =>
+                        fetch(
+                            `/api/meetings/${encodeURIComponent(context.meetingId)}/rank-order-voting/reset`,
+                            {
+                                method: "POST",
+                                credentials: "include",
+                                headers: {
+                                    "Content-Type": "application/json",
+                                    [policy.idempotencyHeader]: requestId || "",
+                                    "X-Retry-Attempt": String(attempt),
+                                },
+                                body: JSON.stringify({
+                                    activity_id: rankOrderActivityId,
+                                }),
+                            },
+                        ),
+                    onRetry: ({ attempt }) => {
+                        setRankOrderStatus(`Retrying reset (attempt ${attempt + 1})…`, "warning");
+                    },
+                });
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || "Unable to reset ranking.");
+                }
+                const latest = await response.json();
+                rankOrderDraftDirty = false;
+                renderRankOrderSummary(latest || summary);
+                setRankOrderStatus("Submitted ranking cleared.", "success");
+            } catch (error) {
+                setRankOrderError(error.message || "Unable to reset ranking.");
+                setRankOrderStatus("", "");
+            } finally {
+                rankOrderRequestInFlight = false;
+                updateRankOrderFooter(rankOrderSummary);
+            }
+        }
+
         function setCategorizationError(message) {
             if (!categorization.error) {
                 return;
@@ -5776,7 +6261,7 @@
             if (!ui.genericPanel.root) {
                 return;
             }
-            const useGeneric = Boolean(toolType) && !["brainstorming", "voting", "categorization"].includes(toolType);
+            const useGeneric = Boolean(toolType) && !["brainstorming", "voting", "rank_order_voting", "categorization"].includes(toolType);
             if (!useGeneric) {
                 ui.genericPanel.root.hidden = true;
                 return;
@@ -5806,11 +6291,13 @@
             const showTool = Boolean(hasTool && canEnter && (isActive || state.isFacilitator));
             let showBrainstorming = showTool && toolType === "brainstorming";
             let showVoting = showTool && toolType === "voting";
+            let showRankOrder = showTool && toolType === "rank_order_voting";
             let showCategorization = showTool && toolType === "categorization";
             const showTransfer = transferState.active && state.isFacilitator;
             if (showTransfer) {
                 showBrainstorming = false;
                 showVoting = false;
+                showRankOrder = false;
                 showCategorization = false;
             }
 
@@ -5939,6 +6426,49 @@
                 }
             }
 
+            if (rankOrder.root) {
+                rankOrder.root.hidden = !showRankOrder;
+                if (showRankOrder) {
+                    activeRankOrderConfig = activityConfig || {};
+                    rankOrderIsActive = Boolean(isActive && canEnter);
+                    if (rankOrder.instructions) {
+                        rankOrder.instructions.textContent =
+                            instructions ||
+                            (isActive
+                                ? "Drag ideas into your preferred rank order and submit."
+                                : "This rank-order voting activity is closed.");
+                    }
+                    if (rankOrderActivityId !== eligibility?.activityId || !rankOrderSummary) {
+                        loadRankOrderSummary(eligibility?.activityId, activityConfig);
+                    }
+                    updateRankOrderFooter(rankOrderSummary);
+                } else {
+                    const waitingCopy = !hasTool
+                        ? "The facilitator will open rank-order voting when ready."
+                        : eligibility?.restricted
+                            ? "You're not assigned to this ranking round. Please wait for the next activity."
+                            : state.isFacilitator
+                                ? "This rank-order voting activity is closed. Select another agenda item to continue."
+                                : "The facilitator will open rank-order voting when ready.";
+                    rankOrderSummary = null;
+                    rankOrderActivityId = null;
+                    rankOrderIsActive = false;
+                    activeRankOrderConfig = {};
+                    rankOrderDraftOrder = [];
+                    rankOrderCommittedOrder = [];
+                    rankOrderDraftDirty = false;
+                    setRankOrderError(null);
+                    setRankOrderStatus("");
+                    if (rankOrder.instructions) {
+                        rankOrder.instructions.textContent = waitingCopy;
+                    }
+                    if (rankOrder.notice) {
+                        rankOrder.notice.textContent = "";
+                    }
+                    updateRankOrderFooter(null);
+                }
+            }
+
             if (categorization.root) {
                 categorization.root.hidden = !showCategorization;
                 if (showCategorization) {
@@ -5982,7 +6512,7 @@
                 }
             }
 
-            const showGeneric = showTool && !showBrainstorming && !showVoting && !showCategorization && !showTransfer && toolType;
+            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showCategorization && !showTransfer && toolType;
             showActiveToolPanel(
                 showGeneric ? toolType : null,
                 showGeneric ? activeActivity : null,
@@ -6119,11 +6649,15 @@
                 ).toLowerCase();
                 if (
                     activityId &&
-                    requestedTool === "voting" &&
+                    (requestedTool === "voting" || requestedTool === "rank_order_voting") &&
                     (action === "start_tool" || action === "resume_tool")
                 ) {
-                    votingTiming.mark("control_forced_refresh", { action, activity_id: activityId });
-                    loadVotingOptions(activityId, state.agendaMap.get(activityId)?.config || activeVotingConfig || {});
+                    if (requestedTool === "voting") {
+                        votingTiming.mark("control_forced_refresh", { action, activity_id: activityId });
+                        loadVotingOptions(activityId, state.agendaMap.get(activityId)?.config || activeVotingConfig || {});
+                    } else {
+                        loadRankOrderSummary(activityId, state.agendaMap.get(activityId)?.config || activeRankOrderConfig || {}, { force: true });
+                    }
                 }
                 setFacilitatorFeedback(actionLabel, "success");
             } catch (error) {
@@ -6272,6 +6806,11 @@
                 case "voting_update":
                     if (payload && votingActivityId === payload.activity_id) {
                         loadVotingOptions(payload.activity_id);
+                    }
+                    break;
+                case "rank_order_voting_update":
+                    if (payload && rankOrderActivityId === payload.activity_id) {
+                        loadRankOrderSummary(payload.activity_id, activeRankOrderConfig, { force: true });
                     }
                     break;
                 case "categorization_update":
@@ -6423,7 +6962,7 @@
             if (meetingRefreshInFlight || !meetingRefreshConfig.enabled) {
                 return;
             }
-            if (brainstormingSubmitInFlight || votingRequestInFlight) {
+            if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight) {
                 // Prioritise writes during clumpy bursts.
                 startMeetingRefresh();
                 return;
@@ -6470,6 +7009,9 @@
                 if (voting.root && !voting.root.hidden && votingActivityId) {
                     loadVotingOptions(votingActivityId, activeVotingConfig);
                 }
+                if (rankOrder.root && !rankOrder.root.hidden && rankOrderActivityId) {
+                    loadRankOrderSummary(rankOrderActivityId, activeRankOrderConfig, { force: true });
+                }
                 meetingRefreshFailures = 0;
             } catch (error) {
                 meetingRefreshFailures += 1;
@@ -6488,7 +7030,7 @@
             if (meetingRefreshBackpressureUntil > now) {
                 return withRefreshJitter(meetingRefreshConfig.overloadBackoffMs);
             }
-            if (brainstormingSubmitInFlight || votingRequestInFlight) {
+            if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight) {
                 return withRefreshJitter(meetingRefreshConfig.writePriorityBackoffMs);
             }
             return withRefreshJitter(
@@ -6752,6 +7294,38 @@
             });
         }
 
+        if (rankOrder.submit) {
+            rankOrder.submit.addEventListener("click", () => {
+                submitRankOrderDraft();
+            });
+        }
+
+        if (rankOrder.reset) {
+            rankOrder.reset.addEventListener("click", () => {
+                resetRankOrderDraft();
+            });
+        }
+
+        if (rankOrder.viewResultsButton) {
+            rankOrder.viewResultsButton.addEventListener("click", () => {
+                openRankOrderResultsModal();
+            });
+        }
+
+        if (rankOrder.closeResultsModal) {
+            rankOrder.closeResultsModal.addEventListener("click", () => {
+                closeRankOrderResultsModal();
+            });
+        }
+
+        if (rankOrder.resultsModal) {
+            rankOrder.resultsModal.addEventListener("click", (event) => {
+                if (event.target === rankOrder.resultsModal) {
+                    closeRankOrderResultsModal();
+                }
+            });
+        }
+
         if (categorization.refresh) {
             categorization.refresh.addEventListener("click", () => {
                 if (categorizationActivityId) {
@@ -6908,6 +7482,9 @@
         document.addEventListener("keydown", (event) => {
             if (event.key === "Escape" && voting.resultsModal && !voting.resultsModal.hidden) {
                 closeVotingResultsModal();
+            }
+            if (event.key === "Escape" && rankOrder.resultsModal && !rankOrder.resultsModal.hidden) {
+                closeRankOrderResultsModal();
             }
         });
 

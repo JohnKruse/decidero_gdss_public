@@ -89,6 +89,8 @@ cp .env.example .env
 ./start_local.sh
 ```
 
+Virtual environment convention: this project standard is `venv/` (not `.venv/`). Startup scripts and docs assume `venv`.
+
 ### Verify
 
 Open `http://localhost:8000`.

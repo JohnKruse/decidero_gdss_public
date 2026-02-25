@@ -633,6 +633,81 @@ def test_update_categorization_parallel_fields_blocked_after_submitted_ballots(
     assert exc.value.status_code == 409
     assert "agreement_threshold" in str(exc.value.detail)
 
+
+def test_update_rank_order_config_rejects_object_placeholder_lines(
+    meeting_manager_instance: MeetingManager,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Rank Config Validation",
+        description="Reject object placeholder lines in rank-order ideas.",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="rank_order_voting",
+                title="Rank",
+                config={"ideas": ["Idea A"]},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+
+    with pytest.raises(HTTPException) as exc:
+        meeting_manager_instance.update_agenda_activity(
+            meeting.meeting_id,
+            activity.activity_id,
+            AgendaActivityUpdate(config={"ideas": ["[object Object]", "Idea B"]}),
+        )
+    assert exc.value.status_code == 422
+    assert "object" in str(exc.value.detail).lower()
+
+
+def test_add_voting_config_rejects_object_placeholder_lines(
+    meeting_manager_instance: MeetingManager,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Voting Config Validation",
+        description="Reject object placeholder lines in voting options.",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideas")],
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        meeting_manager_instance.add_agenda_activity(
+            meeting.meeting_id,
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Vote",
+                config={"options": ["[object Object]", "Idea B"]},
+            ),
+        )
+    assert exc.value.status_code == 422
+    assert "object" in str(exc.value.detail).lower()
+
+
 def test_update_meeting_configuration_seeds_categorization_with_items_only(
     meeting_manager_instance: MeetingManager,
     db_session: Session,

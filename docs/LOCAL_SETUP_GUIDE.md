@@ -33,6 +33,8 @@ cp .env.example .env
 ./start_local.sh
 ```
 
+Virtual environment convention: use `venv/` for this repository. Do not create `.venv/`; scripts and operational docs are standardized on `venv`.
+
 Open: `http://localhost:8000`
 
 ## Windows (PowerShell)

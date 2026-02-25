@@ -1117,6 +1117,123 @@ def test_transfer_commit_to_categorization_populates_items(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
+def test_transfer_commit_to_rank_order_voting_populates_ideas_and_meeting_stays_readable(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Rank Order Seed Test",
+            description="Ensure rank-order ideas are seeded from transfer items.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Ideas",
+                config={"allow_subcomments": True},
+            )
+        ],
+    )
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_id,
+                    "agendaItemId": activity_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        parent_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Adopt async API gateway"},
+        )
+        assert parent_resp.status_code == 201, parent_resp.json()
+        parent = parent_resp.json()
+        comment_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Needs retry semantics", "parent_id": parent["id"]},
+        )
+        assert comment_resp.status_code == 201, comment_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": activity_id, "include_comments": "true"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": activity_id,
+                "include_comments": True,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"tool_type": "rank_order_voting"},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+        new_activity = commit_resp.json()["new_activity"]
+        new_activity_id = new_activity["activity_id"]
+
+        refreshed = meeting_manager.get_meeting(meeting.meeting_id)
+        created = next(
+            item
+            for item in refreshed.agenda_activities
+            if item.activity_id == new_activity_id
+        )
+        seeded_ideas = created.config.get("ideas") or []
+        assert seeded_ideas
+        assert any(
+            "Adopt async API gateway" in str(idea.get("content") or "")
+            for idea in seeded_ideas
+            if isinstance(idea, dict)
+        )
+        assert any(
+            "Comments:" in str(idea.get("content") or "")
+            for idea in seeded_ideas
+            if isinstance(idea, dict)
+        )
+
+        summary_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+            params={"activity_id": new_activity_id},
+        )
+        assert summary_resp.status_code == 200, summary_resp.json()
+        assert len(summary_resp.json().get("options", [])) >= 1
+
+        meeting_resp = authenticated_client.get(f"/api/meetings/{meeting.meeting_id}")
+        assert meeting_resp.status_code == 200, meeting_resp.json()
+        agenda = meeting_resp.json().get("agenda", [])
+        assert len(agenda) >= 2
+        assert any(
+            item.get("activity_id") == activity_id and item.get("transfer_count", 0) >= 1
+            for item in agenda
+        )
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_transfer_bundles_from_categorization_support_profiles(
     authenticated_client: TestClient,
     user_manager_with_admin,

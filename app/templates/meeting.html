@@ -241,6 +241,43 @@
             </section>
             {% endgrab %}
 
+            {% grab id="meeting-rank-order-panel" %}
+            <section class="content-card activity-panel rank-order-panel" data-rank-order-root hidden>
+                {{ section_header('Rank Order Voting', 'Rank ideas from most to least preferred and compare group agreement.') }}
+                <div class="section-body">
+                    <p id="rankOrderInstructions" class="voting-description">
+                        The facilitator will open rank-order voting when ready.
+                    </p>
+                    <p id="rankOrderResultsNotice" class="voting-notice"></p>
+                    <p class="voting-remaining">
+                        Submitted rankings:
+                        <strong id="rankOrderSubmissionProgress">0/0</strong>
+                    </p>
+                    <div id="rankOrderError" class="brainstorming-error" hidden></div>
+                    <ul class="rank-order-options" id="rankOrderOptionsList">
+                        <li class="voting-option voting-option-empty">Rank-order voting is not active.</li>
+                    </ul>
+                    <div class="voting-footer" id="rankOrderFooter" hidden>
+                        <div class="voting-footer-main">
+                            <p class="voting-footer-progress" id="rankOrderProgressMessage"></p>
+                            <div class="voting-footer-actions">
+                                <button type="button" class="control-btn sm" id="rankOrderResetButton" disabled>
+                                    Reset
+                                </button>
+                                <button type="button" class="control-btn sm primary" id="rankOrderSubmitButton" disabled>
+                                    Submit Ranking
+                                </button>
+                                <button type="button" class="control-btn sm" id="rankOrderViewResultsButton" hidden>
+                                    View Results
+                                </button>
+                            </div>
+                        </div>
+                        <div id="rankOrderStatus" class="control-feedback" aria-live="polite"></div>
+                    </div>
+                </div>
+            </section>
+            {% endgrab %}
+
             {% grab id="meeting-categorization-panel" %}
             <section class="content-card activity-panel categorization-panel" data-categorization-root hidden>
                 {{ section_header('Bucketing - Facilitator', 'Group ideas into buckets and refine categories in real time.') }}
@@ -507,11 +544,37 @@
         </div>
     </div>
 
+    <div id="rankOrderResultsModal" class="modal-overlay" hidden>
+        <div class="modal-content voting-results-modal">
+            <div class="modal-header">
+                <h2>Rank Order Results</h2>
+                <button type="button" class="close-button" id="closeRankOrderResultsModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <table id="rankOrderResultsTable" class="voting-results-table">
+                    <thead>
+                        <tr>
+                            <th class="votes-col">Borda Score</th>
+                            <th class="idea-col">Idea</th>
+                            <th class="votes-col">Avg Rank</th>
+                            <th class="votes-col">Top Choice %</th>
+                        </tr>
+                    </thead>
+                    <tbody id="rankOrderResultsBody">
+                        <tr>
+                            <td colspan="4">No results available.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
 
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260217g"></script>
+<script src="/static/js/meeting.js?v=20260225a"></script>
 {% endblock %}

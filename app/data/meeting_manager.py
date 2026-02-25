@@ -126,6 +126,7 @@ class MeetingManager:
         tool_config_id = generate_tool_config_id(activity_id, meeting.meeting_id)
         config = dict(definition.get("default_config", {}))
         config.update(payload.config or {})
+        self._validate_activity_config_placeholders(payload.tool_type, config)
         if payload.tool_type == "voting":
             self._enforce_voting_limits(config)
 
@@ -160,6 +161,49 @@ class MeetingManager:
             return
         if max_votes_per_option > max_votes:
             config["max_votes_per_option"] = max_votes
+
+    @staticmethod
+    def _contains_object_placeholder(value: Any) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() == "[object object]"
+        if isinstance(value, list):
+            return any(
+                isinstance(item, str)
+                and item.strip().lower() == "[object object]"
+                for item in value
+            )
+        return False
+
+    def _validate_activity_config_placeholders(
+        self,
+        tool_type: str,
+        config: Dict[str, Any],
+    ) -> None:
+        normalized_tool = (tool_type or "").lower()
+        watched_keys: List[str] = []
+        if normalized_tool == "voting":
+            watched_keys = ["options"]
+        elif normalized_tool == "rank_order_voting":
+            watched_keys = ["ideas"]
+        elif normalized_tool == "categorization":
+            watched_keys = ["items", "buckets"]
+        if not watched_keys:
+            return
+
+        bad_keys = [
+            key
+            for key in watched_keys
+            if key in config and self._contains_object_placeholder(config.get(key))
+        ]
+        if bad_keys:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Invalid configuration payload: one or more list values resolved "
+                    f"to '[object Object]' for {', '.join(sorted(bad_keys))}. "
+                    "Use plain text lines or structured objects with content/label fields."
+                ),
+            )
 
     @staticmethod
     def _changed_config_keys(
@@ -617,6 +661,9 @@ class MeetingManager:
 
             updated_config = dict(activity.config or {})
             updated_config.update(payload.config)
+            self._validate_activity_config_placeholders(
+                activity.tool_type, updated_config
+            )
             if activity.tool_type == "voting":
                 self._enforce_voting_limits(updated_config)
             activity.config = updated_config

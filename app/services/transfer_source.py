@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.data.activity_bundle_manager import ActivityBundleManager
@@ -10,6 +12,8 @@ from app.models.meeting import AgendaActivity, Meeting
 from app.plugins.context import ActivityContext
 from app.plugins.registry import get_activity_registry
 from app.utils.user_colors import get_user_color
+
+logger = logging.getLogger(__name__)
 
 
 def build_transfer_items(
@@ -23,14 +27,33 @@ def build_transfer_items(
     plugin = get_activity_registry().get_plugin(tool_type)
     if plugin:
         context = ActivityContext(db=db, meeting=meeting, activity=activity)
-        result = plugin.get_transfer_source(
-            context, include_comments=include_comments
-        )
-        if result is not None:
-            items = _filter_transfer_items(
-                list(result.items or []), include_comments=include_comments
+        try:
+            result = plugin.get_transfer_source(
+                context, include_comments=include_comments
             )
-            return items, result.source or "plugin", dict(result.metadata or {})
+        except HTTPException as exc:
+            logger.warning(
+                "transfer source plugin failed tool=%s activity=%s meeting=%s status=%s detail=%s",
+                tool_type,
+                getattr(activity, "activity_id", None),
+                getattr(meeting, "meeting_id", None),
+                getattr(exc, "status_code", None),
+                getattr(exc, "detail", None),
+            )
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.exception(
+                "transfer source plugin error tool=%s activity=%s meeting=%s error=%s",
+                tool_type,
+                getattr(activity, "activity_id", None),
+                getattr(meeting, "meeting_id", None),
+                exc,
+            )
+        else:
+            if result is not None:
+                items = _filter_transfer_items(
+                    list(result.items or []), include_comments=include_comments
+                )
+                return items, result.source or "plugin", dict(result.metadata or {})
 
     items, source = _default_transfer_items(db, meeting, activity)
     items = _filter_transfer_items(items, include_comments=include_comments)
@@ -49,15 +72,33 @@ def get_transfer_count(
     plugin = get_activity_registry().get_plugin(tool_type)
     if plugin:
         context = ActivityContext(db=db, meeting=meeting, activity=activity)
-        count = plugin.get_transfer_count(context)
-        if count is not None:
-            return max(int(count or 0), 0), "plugin"
-        result = plugin.get_transfer_source(context, include_comments=False)
-        if result is not None:
-            items = _filter_transfer_items(
-                list(result.items or []), include_comments=False
+        try:
+            count = plugin.get_transfer_count(context)
+            if count is not None:
+                return max(int(count or 0), 0), "plugin"
+            result = plugin.get_transfer_source(context, include_comments=False)
+            if result is not None:
+                items = _filter_transfer_items(
+                    list(result.items or []), include_comments=False
+                )
+                return len(items), result.source or "plugin"
+        except HTTPException as exc:
+            logger.warning(
+                "transfer count plugin failed tool=%s activity=%s meeting=%s status=%s detail=%s",
+                tool_type,
+                getattr(activity, "activity_id", None),
+                getattr(meeting, "meeting_id", None),
+                getattr(exc, "status_code", None),
+                getattr(exc, "detail", None),
             )
-            return len(items), result.source or "plugin"
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            logger.exception(
+                "transfer count plugin error tool=%s activity=%s meeting=%s error=%s",
+                tool_type,
+                getattr(activity, "activity_id", None),
+                getattr(meeting, "meeting_id", None),
+                exc,
+            )
 
     activity_id = activity.activity_id
     if tool_type == "brainstorming":
