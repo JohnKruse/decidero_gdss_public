@@ -668,7 +668,7 @@
         let rankOrderCommittedOrder = [];
         let rankOrderDraftDirty = false;
         let rankOrderDraggedOptionId = null;
-        let rankOrderDropIndex = null;
+        let rankOrderDropTarget = null;
         let activeRankOrderConfig = {};
         const votingTiming = (() => {
             const params = new URLSearchParams(window.location.search || "");
@@ -4525,26 +4525,56 @@
             renderRankOrderSummary(rankOrderSummary);
         }
 
-        function setRankOrderDropTargetVisual(targetIndex) {
+        function setRankOrderDropTargetVisual(target) {
             if (!rankOrder.list) {
                 return;
             }
-            const nextIndex = Number.isInteger(targetIndex) ? targetIndex : null;
-            if (rankOrderDropIndex === nextIndex) {
+            const normalized = (
+                target
+                && Number.isInteger(target.rowIndex)
+                && (target.position === "before" || target.position === "after")
+                && Number.isInteger(target.targetIndex)
+            )
+                ? {
+                    rowIndex: target.rowIndex,
+                    position: target.position,
+                    targetIndex: target.targetIndex,
+                }
+                : null;
+            const sameTarget = (
+                (rankOrderDropTarget === null && normalized === null)
+                || (
+                    rankOrderDropTarget !== null
+                    && normalized !== null
+                    && rankOrderDropTarget.rowIndex === normalized.rowIndex
+                    && rankOrderDropTarget.position === normalized.position
+                    && rankOrderDropTarget.targetIndex === normalized.targetIndex
+                )
+            );
+            if (sameTarget) {
                 return;
             }
-            rankOrderDropIndex = nextIndex;
+            rankOrderDropTarget = normalized;
             const rows = rankOrder.list.querySelectorAll("li.rank-order-item");
             rows.forEach((row) => {
                 const rowIndex = Number(row.dataset.rankIndex);
+                const match = (
+                    rankOrderDropTarget !== null
+                    && Number.isInteger(rowIndex)
+                    && rowIndex === rankOrderDropTarget.rowIndex
+                );
                 row.classList.toggle(
-                    "is-drop-target",
-                    nextIndex !== null && Number.isInteger(rowIndex) && rowIndex === nextIndex,
+                    "is-drop-target-before",
+                    Boolean(match && rankOrderDropTarget.position === "before"),
+                );
+                row.classList.toggle(
+                    "is-drop-target-after",
+                    Boolean(match && rankOrderDropTarget.position === "after"),
                 );
             });
         }
 
-        function getRankOrderDropIndexFromPointer(clientY) {
+        function getRankOrderDropTargetFromPointer(clientY) {
             if (!rankOrder.list || !rankOrderDraggedOptionId || !Array.isArray(rankOrderDraftOrder) || rankOrderDraftOrder.length === 0) {
                 return null;
             }
@@ -4575,14 +4605,19 @@
             });
 
             if (nearestIndex === null || nearestCenterY === null) {
-                return fromIndex;
+                return null;
             }
 
-            let targetIndex = clientY < nearestCenterY ? nearestIndex : nearestIndex + 1;
+            const position = clientY < nearestCenterY ? "before" : "after";
+            let targetIndex = position === "before" ? nearestIndex : nearestIndex + 1;
             if (targetIndex > fromIndex) {
                 targetIndex -= 1;
             }
-            return Math.max(0, Math.min(rankOrderDraftOrder.length - 1, targetIndex));
+            return {
+                rowIndex: nearestIndex,
+                position,
+                targetIndex: Math.max(0, Math.min(rankOrderDraftOrder.length - 1, targetIndex)),
+            };
         }
 
         function getRankOrderOptionMap(summary) {
@@ -4698,6 +4733,7 @@
             }
 
             if (!summary || !Array.isArray(summary.options) || summary.options.length === 0) {
+                setRankOrderDropTargetVisual(null);
                 const empty = document.createElement("li");
                 empty.className = "voting-option voting-option-empty";
                 empty.textContent = "No ranked ideas configured for this activity.";
@@ -4721,8 +4757,12 @@
                 if (rankOrderDraftDirty) {
                     li.dataset.dirty = "true";
                 }
-                if (rankOrderDropIndex !== null && rankOrderDropIndex === index) {
-                    li.classList.add("is-drop-target");
+                if (rankOrderDropTarget && rankOrderDropTarget.rowIndex === index) {
+                    li.classList.add(
+                        rankOrderDropTarget.position === "before"
+                            ? "is-drop-target-before"
+                            : "is-drop-target-after",
+                    );
                 }
 
                 li.addEventListener("dragstart", (event) => {
@@ -7363,8 +7403,8 @@
                     return;
                 }
                 event.preventDefault();
-                const targetIndex = getRankOrderDropIndexFromPointer(event.clientY);
-                setRankOrderDropTargetVisual(targetIndex);
+                const target = getRankOrderDropTargetFromPointer(event.clientY);
+                setRankOrderDropTargetVisual(target);
             });
 
             rankOrder.list.addEventListener("dragleave", (event) => {
@@ -7381,12 +7421,12 @@
                     return;
                 }
                 event.preventDefault();
-                const targetIndex = getRankOrderDropIndexFromPointer(event.clientY);
+                const target = getRankOrderDropTargetFromPointer(event.clientY);
                 setRankOrderDropTargetVisual(null);
-                if (targetIndex === null) {
+                if (!target || !Number.isInteger(target.targetIndex)) {
                     return;
                 }
-                applyRankOrderMove(rankOrderDraggedOptionId, targetIndex);
+                applyRankOrderMove(rankOrderDraggedOptionId, target.targetIndex);
             });
         }
 
