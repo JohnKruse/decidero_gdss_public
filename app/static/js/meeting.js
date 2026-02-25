@@ -669,6 +669,7 @@
         let rankOrderDraftDirty = false;
         let rankOrderDraggedOptionId = null;
         let rankOrderDropTarget = null;
+        let rankOrderDragImageEl = null;
         let activeRankOrderConfig = {};
         const votingTiming = (() => {
             const params = new URLSearchParams(window.location.search || "");
@@ -4620,6 +4621,35 @@
             };
         }
 
+        function buildRankOrderDragImage(sourceItem, sourceEvent) {
+            if (!sourceItem || !sourceEvent?.dataTransfer) {
+                return;
+            }
+            if (rankOrderDragImageEl) {
+                rankOrderDragImageEl.remove();
+                rankOrderDragImageEl = null;
+            }
+            const clone = sourceItem.cloneNode(true);
+            clone.style.position = "fixed";
+            clone.style.top = "-9999px";
+            clone.style.left = "-9999px";
+            clone.style.width = `${Math.ceil(sourceItem.getBoundingClientRect().width)}px`;
+            clone.style.margin = "0";
+            clone.style.opacity = "1";
+            clone.style.background = "#ffffff";
+            clone.style.borderColor = "rgba(11, 61, 145, 0.32)";
+            clone.style.boxShadow = "0 8px 18px rgba(11, 61, 145, 0.28)";
+            clone.style.pointerEvents = "none";
+            clone.style.zIndex = "9999";
+            document.body.appendChild(clone);
+            rankOrderDragImageEl = clone;
+
+            const rect = sourceItem.getBoundingClientRect();
+            const offsetX = Math.max(0, Math.min(rect.width - 1, sourceEvent.clientX - rect.left));
+            const offsetY = Math.max(0, Math.min(rect.height - 1, sourceEvent.clientY - rect.top));
+            sourceEvent.dataTransfer.setDragImage(clone, offsetX, offsetY);
+        }
+
         function getRankOrderOptionMap(summary) {
             const map = new Map();
             (summary?.options || []).forEach((entry) => {
@@ -4770,11 +4800,16 @@
                     li.classList.add("is-dragging");
                     event.dataTransfer.effectAllowed = "move";
                     event.dataTransfer.setData("text/plain", optionId);
+                    buildRankOrderDragImage(li, event);
                 });
                 li.addEventListener("dragend", () => {
                     li.classList.remove("is-dragging");
                     rankOrderDraggedOptionId = null;
                     setRankOrderDropTargetVisual(null);
+                    if (rankOrderDragImageEl) {
+                        rankOrderDragImageEl.remove();
+                        rankOrderDragImageEl = null;
+                    }
                 });
 
                 const handle = document.createElement("span");

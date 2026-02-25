@@ -1227,6 +1227,10 @@
   flex-shrink: 0;
 }
 
+.rank-order-item.is-dragging {
+  opacity: 0.98;
+}
+
 .rank-order-item.is-dragging .rank-order-handle {
   cursor: grabbing;
 }
