@@ -668,6 +668,7 @@
         let rankOrderCommittedOrder = [];
         let rankOrderDraftDirty = false;
         let rankOrderDraggedOptionId = null;
+        let rankOrderDropIndex = null;
         let activeRankOrderConfig = {};
         const votingTiming = (() => {
             const params = new URLSearchParams(window.location.search || "");
@@ -4524,6 +4525,66 @@
             renderRankOrderSummary(rankOrderSummary);
         }
 
+        function setRankOrderDropTargetVisual(targetIndex) {
+            if (!rankOrder.list) {
+                return;
+            }
+            const nextIndex = Number.isInteger(targetIndex) ? targetIndex : null;
+            if (rankOrderDropIndex === nextIndex) {
+                return;
+            }
+            rankOrderDropIndex = nextIndex;
+            const rows = rankOrder.list.querySelectorAll("li.rank-order-item");
+            rows.forEach((row) => {
+                const rowIndex = Number(row.dataset.rankIndex);
+                row.classList.toggle(
+                    "is-drop-target",
+                    nextIndex !== null && Number.isInteger(rowIndex) && rowIndex === nextIndex,
+                );
+            });
+        }
+
+        function getRankOrderDropIndexFromPointer(clientY) {
+            if (!rankOrder.list || !rankOrderDraggedOptionId || !Array.isArray(rankOrderDraftOrder) || rankOrderDraftOrder.length === 0) {
+                return null;
+            }
+            const rows = Array.from(rankOrder.list.querySelectorAll("li.rank-order-item"));
+            if (!rows.length) {
+                return null;
+            }
+            const fromIndex = rankOrderDraftOrder.indexOf(rankOrderDraggedOptionId);
+            if (fromIndex < 0) {
+                return null;
+            }
+
+            let nearestIndex = null;
+            let nearestCenterY = null;
+            let nearestDistance = Number.POSITIVE_INFINITY;
+            rows.forEach((row, index) => {
+                if (String(row.dataset.optionId || "") === String(rankOrderDraggedOptionId)) {
+                    return;
+                }
+                const rect = row.getBoundingClientRect();
+                const centerY = rect.top + (rect.height / 2);
+                const distance = Math.abs(clientY - centerY);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearestIndex = index;
+                    nearestCenterY = centerY;
+                }
+            });
+
+            if (nearestIndex === null || nearestCenterY === null) {
+                return fromIndex;
+            }
+
+            let targetIndex = clientY < nearestCenterY ? nearestIndex : nearestIndex + 1;
+            if (targetIndex > fromIndex) {
+                targetIndex -= 1;
+            }
+            return Math.max(0, Math.min(rankOrderDraftOrder.length - 1, targetIndex));
+        }
+
         function getRankOrderOptionMap(summary) {
             const map = new Map();
             (summary?.options || []).forEach((entry) => {
@@ -4655,9 +4716,13 @@
                 const li = document.createElement("li");
                 li.className = "voting-option rank-order-item";
                 li.dataset.optionId = optionId;
+                li.dataset.rankIndex = String(index);
                 li.draggable = Boolean(rankOrderIsActive && !rankOrderRequestInFlight);
                 if (rankOrderDraftDirty) {
                     li.dataset.dirty = "true";
+                }
+                if (rankOrderDropIndex !== null && rankOrderDropIndex === index) {
+                    li.classList.add("is-drop-target");
                 }
 
                 li.addEventListener("dragstart", (event) => {
@@ -4669,15 +4734,7 @@
                 li.addEventListener("dragend", () => {
                     li.classList.remove("is-dragging");
                     rankOrderDraggedOptionId = null;
-                });
-                li.addEventListener("dragover", (event) => {
-                    if (!rankOrderDraggedOptionId) return;
-                    event.preventDefault();
-                });
-                li.addEventListener("drop", (event) => {
-                    if (!rankOrderDraggedOptionId) return;
-                    event.preventDefault();
-                    applyRankOrderMove(rankOrderDraggedOptionId, index);
+                    setRankOrderDropTargetVisual(null);
                 });
 
                 const handle = document.createElement("span");
@@ -7297,6 +7354,39 @@
         if (rankOrder.submit) {
             rankOrder.submit.addEventListener("click", () => {
                 submitRankOrderDraft();
+            });
+        }
+
+        if (rankOrder.list) {
+            rankOrder.list.addEventListener("dragover", (event) => {
+                if (!rankOrderDraggedOptionId) {
+                    return;
+                }
+                event.preventDefault();
+                const targetIndex = getRankOrderDropIndexFromPointer(event.clientY);
+                setRankOrderDropTargetVisual(targetIndex);
+            });
+
+            rankOrder.list.addEventListener("dragleave", (event) => {
+                if (!rankOrderDraggedOptionId) {
+                    return;
+                }
+                if (!rankOrder.list.contains(event.relatedTarget)) {
+                    setRankOrderDropTargetVisual(null);
+                }
+            });
+
+            rankOrder.list.addEventListener("drop", (event) => {
+                if (!rankOrderDraggedOptionId) {
+                    return;
+                }
+                event.preventDefault();
+                const targetIndex = getRankOrderDropIndexFromPointer(event.clientY);
+                setRankOrderDropTargetVisual(null);
+                if (targetIndex === null) {
+                    return;
+                }
+                applyRankOrderMove(rankOrderDraggedOptionId, targetIndex);
             });
         }
 
