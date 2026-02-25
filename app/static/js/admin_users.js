@@ -160,13 +160,13 @@
     });
   }
 
-  async function refresh() {
-    if (isInteractingWithTable()) {
+  async function refresh({ force = false } = {}) {
+    if (!force && isInteractingWithTable()) {
       return;
     }
     const users = await fetchUsers();
     state.users = sortUsers(users);
-    if (!isInteractingWithTable()) {
+    if (force || !isInteractingWithTable()) {
       renderUsers(applyFilter(state.users));
     }
   }
@@ -267,7 +267,7 @@
         const res = await fetch(`/api/users/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'same-origin' });
         if (res.ok) {
           notify('User deleted.', 'success');
-          refresh();
+          refresh({ force: true });
         } else {
           notify('Failed to delete user.', 'error');
         }
@@ -311,7 +311,7 @@
       if (res.ok) {
         select.dataset.currentRole = newRole;
         notify('Role updated.', 'success');
-        refresh();
+        refresh({ force: true });
       } else {
         let msg = 'Failed to update role.';
         try { const errBody = await res.json(); msg = errBody.detail || msg; } catch {}
@@ -350,7 +350,7 @@
             try { const errBody = await res.json(); msg += ` ${errBody.detail || ''}`; } catch {}
             notify(msg, 'error');
           }
-          refresh();
+          refresh({ force: true });
         } catch (err) {
           console.error(err);
           notify('Network error on pattern batch.', 'error');
@@ -381,7 +381,7 @@
             try { const errBody = await res.json(); msg += ` ${errBody.detail || ''}`; } catch {}
             notify(msg, 'error');
           }
-          refresh();
+          refresh({ force: true });
         } catch (err) {
           console.error(err);
           notify('Network error on email batch.', 'error');
