@@ -158,6 +158,32 @@ async def dashboard(
     return templates.TemplateResponse(request, "dashboard.html", context)
 
 
+@router.get("/settings", response_class=HTMLResponse, response_model=None)
+async def settings_page(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Settings page — accessible to Facilitators and Admins."""
+    if current_user.role not in {
+        UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN
+    }:
+        return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
+
+    is_admin = current_user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
+    ui_refresh = get_ui_refresh_settings()
+    return templates.TemplateResponse(
+        request,
+        "settings.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "UserRole": UserRole,
+            "is_admin": is_admin,
+            "ui_refresh": ui_refresh,
+        },
+    )
+
+
 @router.get("/login", response_class=HTMLResponse, response_model=None)
 async def login(
     request: Request,

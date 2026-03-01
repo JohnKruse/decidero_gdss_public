@@ -1,0 +1,494 @@
+{% extends "_base.html" %}
+
+{% block title %}DECIDERO GDSS – Settings{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/settings.css">
+{% endblock %}
+
+{% block content %}
+<div class="settings-page">
+
+    {# ── Page header ─────────────────────────────────────────────────────── #}
+    <div class="settings-page-header">
+        <h2>⚙ SETTINGS</h2>
+        <a href="/dashboard" class="settings-back-btn">← Dashboard</a>
+    </div>
+
+    {# ── Loading / error placeholders ─────────────────────────────────────── #}
+    <div id="settingsLoading" style="text-align:center;padding:2rem;color:var(--silver);">
+        Loading settings…
+    </div>
+    <div id="settingsPageError" class="settings-feedback error" hidden></div>
+
+    {# ── Tab bar ──────────────────────────────────────────────────────────── #}
+    <nav class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button class="settings-tab-btn active"
+                role="tab" aria-selected="true"
+                data-tab="tab-ai">
+            AI Config
+            {% if not is_admin %}<span class="tab-lock" title="Admin only">🔒</span>{% endif %}
+        </button>
+        <button class="settings-tab-btn"
+                role="tab" aria-selected="false"
+                data-tab="tab-meetings">
+            Meeting Defaults
+            {% if not is_admin %}<span class="tab-lock" title="Admin only">🔒</span>{% endif %}
+        </button>
+        <button class="settings-tab-btn"
+                role="tab" aria-selected="false"
+                data-tab="tab-brainstorming">
+            Brainstorming
+        </button>
+        <button class="settings-tab-btn"
+                role="tab" aria-selected="false"
+                data-tab="tab-security">
+            Security
+            {% if not is_admin %}<span class="tab-lock" title="Admin only">🔒</span>{% endif %}
+        </button>
+    </nav>
+
+    {# ═══════════════════════════════════════════════════════════════════════
+       TAB 1 — AI Configuration
+       ═══════════════════════════════════════════════════════════════════════ #}
+    <div id="tab-ai" class="settings-tab-panel active" role="tabpanel">
+
+        {% if not is_admin %}
+        <div class="admin-only-banner">
+            <span class="banner-icon">🔒</span>
+            <span>AI configuration requires <strong>Administrator</strong> access.
+            You can view current values but cannot change them. Contact your admin to update these settings.</span>
+        </div>
+        {% endif %}
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">
+                AI Meeting Designer
+                <span class="section-badge admin-badge">Admin Only</span>
+            </h3>
+
+            {# Status row — populated by JS #}
+            <div class="settings-status-row" id="ai-status-row">
+                <span class="status-dot warn" id="ai-status-dot"></span>
+                <span id="ai-status-text">Loading…</span>
+            </div>
+
+            {# Provider #}
+            <div class="settings-field">
+                <label for="ai-provider">
+                    Provider
+                    <span class="override-dot" data-dot="ai-provider" hidden title="Override set via Settings UI"></span>
+                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                </label>
+                <select id="ai-provider" {% if not is_admin %}disabled{% endif %}>
+                    <option value="">— select provider —</option>
+                    <option value="anthropic">Anthropic (Claude)</option>
+                    <option value="openai">OpenAI (GPT)</option>
+                    <option value="openai_compatible">OpenAI-Compatible (Azure, OpenRouter, Ollama…)</option>
+                </select>
+                {% if not is_admin %}<span class="admin-only-notice">Administrator access required to change this.</span>{% endif %}
+            </div>
+
+            {# API Key #}
+            <div class="settings-field">
+                <label>
+                    API Key
+                    <span class="override-dot" data-dot="ai-key-input" hidden title="Override set via Settings UI"></span>
+                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                </label>
+                {# Preview row (shown when key is already set) #}
+                <div class="key-preview-row" id="ai-key-preview-row" hidden>
+                    <span class="key-preview-text" id="ai-key-preview-text"></span>
+                    <button class="secret-btn" id="ai-key-replace-btn" type="button"
+                            {% if not is_admin %}disabled{% endif %}>Replace</button>
+                    <button class="secret-btn danger" id="ai-key-clear-btn" type="button"
+                            {% if not is_admin %}disabled{% endif %}>Clear</button>
+                </div>
+                {# Replace wrapper (shown when entering a new key) #}
+                <div class="secret-field-wrapper" id="ai-key-replace-wrapper" hidden>
+                    <input type="password" id="ai-key-input" placeholder="Paste API key…"
+                           autocomplete="new-password"
+                           {% if not is_admin %}disabled{% endif %}>
+                </div>
+                <span class="field-hint">Never shared with participants. Stored encrypted in the database.</span>
+                {% if not is_admin %}<span class="admin-only-notice">Administrator access required to change this.</span>{% endif %}
+            </div>
+
+            {# Model #}
+            <div class="settings-field">
+                <label for="ai-model">
+                    Model
+                    <span class="override-dot" data-dot="ai-model" hidden></span>
+                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                </label>
+                <input type="text" id="ai-model"
+                       placeholder="e.g. claude-opus-4-5, gpt-4o, meta-llama/llama-3.3-70b-instruct"
+                       {% if not is_admin %}disabled{% endif %}>
+                <span class="field-hint">Exact model identifier for the selected provider.</span>
+                {% if not is_admin %}<span class="admin-only-notice">Administrator access required.</span>{% endif %}
+            </div>
+
+            {# Endpoint URL (openai_compatible only) #}
+            <div class="settings-field" id="ai-endpoint-url-row" hidden>
+                <label for="ai-endpoint-url">
+                    Custom Endpoint URL
+                    <span class="override-dot" data-dot="ai-endpoint-url" hidden></span>
+                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                </label>
+                <input type="url" id="ai-endpoint-url"
+                       placeholder="https://your-endpoint/v1"
+                       {% if not is_admin %}disabled{% endif %}>
+                <span class="field-hint">
+                    Azure: <code>https://&lt;resource&gt;.openai.azure.com/openai/deployments/&lt;deployment&gt;/chat/completions?api-version=2024-02-01</code><br>
+                    OpenRouter: <code>https://openrouter.ai/api/v1</code>
+                </span>
+            </div>
+
+            {# Max tokens + temperature (side by side) #}
+            <div class="settings-grid-2">
+                <div class="settings-field">
+                    <label for="ai-max-tokens">
+                        Max Tokens
+                        <span class="override-dot" data-dot="ai-max-tokens" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="ai-max-tokens" min="1" max="32000"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="field-hint">Max tokens per AI response (1–32000).</span>
+                </div>
+                <div class="settings-field">
+                    <label for="ai-temperature">
+                        Temperature
+                        <span class="override-dot" data-dot="ai-temperature" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="ai-temperature" min="0" max="1" step="0.1"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="field-hint">0.0 = deterministic; 1.0 = creative.</span>
+                </div>
+            </div>
+
+            {# Actions #}
+            {% if is_admin %}
+            <div class="settings-actions">
+                <button class="btn-primary" onclick="saveAiSettings()">SAVE AI SETTINGS</button>
+                <button class="btn-test" id="ai-test-btn" onclick="testAiConnection()">
+                    ▷ TEST CONNECTION
+                </button>
+                <span id="ai-test-result" class="settings-feedback" style="flex:1"></span>
+                <span id="ai-feedback" class="settings-feedback" aria-live="polite"></span>
+            </div>
+            {% else %}
+            <p style="font-size:0.82rem;color:var(--silver);margin-top:1rem;">
+                Contact an Administrator to update AI settings.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ═══════════════════════════════════════════════════════════════════════
+       TAB 2 — Meeting Defaults
+       ═══════════════════════════════════════════════════════════════════════ #}
+    <div id="tab-meetings" class="settings-tab-panel" role="tabpanel">
+
+        {% if not is_admin %}
+        <div class="admin-only-banner">
+            <span class="banner-icon">🔒</span>
+            <span>Meeting defaults require <strong>Administrator</strong> access to change.</span>
+        </div>
+        {% endif %}
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">
+                Meeting Defaults
+                <span class="section-badge admin-badge">Admin Only</span>
+            </h3>
+
+            {# Max participants + session duration (side by side) #}
+            <div class="settings-grid-2">
+                <div class="settings-field">
+                    <label for="meetings-max-participants">
+                        Max Participants per Meeting
+                        <span class="override-dot" data-dot="meetings-max-participants" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="meetings-max-participants" min="1" max="500"
+                           {% if not is_admin %}disabled{% endif %}>
+                    {% if not is_admin %}<span class="admin-only-notice">Administrator access required.</span>{% endif %}
+                </div>
+                <div class="settings-field">
+                    <label for="meetings-session-expire">
+                        Session Duration (minutes)
+                        <span class="override-dot" data-dot="meetings-session-expire" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="meetings-session-expire" min="30"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="field-hint">2880 min = 48 hours (recommended for full-day workshops).</span>
+                    {% if not is_admin %}<span class="admin-only-notice">Administrator access required.</span>{% endif %}
+                </div>
+            </div>
+
+            {# Toggles #}
+            <div class="toggle-row">
+                <div class="toggle-label">
+                    Recording Enabled by Default
+                    <span class="override-dot" data-dot="meetings-recording-enabled" hidden></span>
+                    <small>New meetings will default to recording enabled.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="meetings-recording-enabled"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="margin-top:.75rem">
+                <div class="toggle-label">
+                    Activity Participant Exclusivity
+                    <span class="override-dot" data-dot="meetings-participant-exclusivity" hidden></span>
+                    <small>When on, participants may only join one activity at a time.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="meetings-participant-exclusivity"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="margin-top:.75rem">
+                <div class="toggle-label">
+                    Allow Guest (Unauthenticated) Join
+                    <span class="override-dot" data-dot="meetings-allow-guest-join" hidden></span>
+                    <small>⚠ Enables unauthenticated access to meetings — use with caution.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="meetings-allow-guest-join"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+        </div>
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">
+                Default User Password
+                <span class="section-badge admin-badge">Admin Only</span>
+            </h3>
+            <p style="font-size:0.84rem;color:var(--silver);margin-bottom:1rem;">
+                Temporary password assigned to newly created accounts. Users are prompted to change it on first login.
+            </p>
+
+            <div class="settings-field">
+                <label>
+                    Default Password
+                    <span class="override-dot" data-dot="meetings-password-input" hidden></span>
+                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                </label>
+                <div class="key-preview-row" id="meetings-password-preview-row" hidden>
+                    <span class="key-preview-text" id="meetings-password-preview-text"></span>
+                    <button class="secret-btn" id="meetings-password-replace-btn" type="button"
+                            {% if not is_admin %}disabled{% endif %}>Replace</button>
+                    <button class="secret-btn danger" id="meetings-password-clear-btn" type="button"
+                            {% if not is_admin %}disabled{% endif %}>Clear</button>
+                </div>
+                <div class="secret-field-wrapper" id="meetings-password-replace-wrapper" hidden>
+                    <input type="password" id="meetings-password-input"
+                           placeholder="New default password…"
+                           autocomplete="new-password"
+                           {% if not is_admin %}disabled{% endif %}>
+                </div>
+                {% if not is_admin %}<span class="admin-only-notice">Administrator access required.</span>{% endif %}
+            </div>
+
+            {% if is_admin %}
+            <div class="settings-actions">
+                <button class="btn-primary" onclick="saveMeetingsSettings()">SAVE MEETING SETTINGS</button>
+                <span id="meetings-feedback" class="settings-feedback" aria-live="polite"></span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ═══════════════════════════════════════════════════════════════════════
+       TAB 3 — Brainstorming
+       ═══════════════════════════════════════════════════════════════════════ #}
+    <div id="tab-brainstorming" class="settings-tab-panel" role="tabpanel">
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">
+                Brainstorming Defaults
+                <span class="section-badge shared-badge">Admin + Facilitator</span>
+            </h3>
+            <p style="font-size:0.84rem;color:var(--silver);margin-bottom:1.25rem;">
+                These defaults apply to new brainstorming activities. They can be overridden per-activity when creating a meeting.
+            </p>
+
+            <div class="settings-grid-2">
+                <div class="settings-field">
+                    <label for="bs-char-limit">
+                        Idea Character Limit
+                        <span class="override-dot" data-dot="bs-char-limit" hidden></span>
+                    </label>
+                    <input type="number" id="bs-char-limit" min="50" max="5000">
+                    <span class="field-hint">Maximum characters per idea submission (50–5000).</span>
+                </div>
+                <div class="settings-field">
+                    <label for="bs-max-ideas">
+                        Max Ideas per User
+                        <span class="override-dot" data-dot="bs-max-ideas" hidden></span>
+                    </label>
+                    <input type="number" id="bs-max-ideas" min="1" max="500">
+                    <span class="field-hint">Maximum number of ideas each participant can submit.</span>
+                </div>
+            </div>
+
+            <div class="toggle-row">
+                <div class="toggle-label">
+                    Default: Maintain Anonymity
+                    <span class="override-dot" data-dot="bs-anonymity" hidden></span>
+                    <small>Ideas are submitted without showing the author's name.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="bs-anonymity">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="margin-top:.75rem">
+                <div class="toggle-label">
+                    Default: Allow Sub-Comments
+                    <span class="override-dot" data-dot="bs-subcomments" hidden></span>
+                    <small>Participants can comment on each other's ideas.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="bs-subcomments">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="toggle-row" style="margin-top:.75rem">
+                <div class="toggle-label">
+                    Default: Auto-Jump to New Ideas
+                    <span class="override-dot" data-dot="bs-auto-jump" hidden></span>
+                    <small>Automatically scroll to newly submitted ideas in real time.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="bs-auto-jump">
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="settings-actions">
+                <button class="btn-primary" onclick="saveBrainstormingSettings()">SAVE BRAINSTORMING SETTINGS</button>
+                <span id="brainstorming-feedback" class="settings-feedback" aria-live="polite"></span>
+            </div>
+        </div>
+    </div>
+
+    {# ═══════════════════════════════════════════════════════════════════════
+       TAB 4 — Security
+       ═══════════════════════════════════════════════════════════════════════ #}
+    <div id="tab-security" class="settings-tab-panel" role="tabpanel">
+
+        {% if not is_admin %}
+        <div class="admin-only-banner">
+            <span class="banner-icon">🔒</span>
+            <span>Security settings require <strong>Administrator</strong> access to change.</span>
+        </div>
+        {% endif %}
+
+        <div class="settings-section">
+            <h3 class="settings-section-title">
+                Login Rate Limiting
+                <span class="section-badge admin-badge">Admin Only</span>
+            </h3>
+            <p style="font-size:0.84rem;color:var(--silver);margin-bottom:1.25rem;">
+                Protects against brute-force attacks by temporarily locking accounts and IP addresses after too many failed login attempts.
+                Environment variable overrides take priority over these UI settings.
+            </p>
+
+            <div class="toggle-row">
+                <div class="toggle-label">
+                    Rate Limiting Enabled
+                    <span class="override-dot" data-dot="sec-rate-limit-enabled" hidden></span>
+                    <small>Disabling is not recommended in production.</small>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="sec-rate-limit-enabled"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="toggle-track"></span>
+                </label>
+            </div>
+
+            <div class="settings-grid-2" style="margin-top:1.1rem">
+                <div class="settings-field">
+                    <label for="sec-rate-limit-window">
+                        Rate Window (seconds)
+                        <span class="override-dot" data-dot="sec-rate-limit-window" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="sec-rate-limit-window" min="10"
+                           class="sec-rate-subfield"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="field-hint">Time window for counting failures.</span>
+                </div>
+                <div class="settings-field">
+                    <label for="sec-rate-limit-lockout">
+                        Lockout Duration (seconds)
+                        <span class="override-dot" data-dot="sec-rate-limit-lockout" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="sec-rate-limit-lockout" min="10"
+                           class="sec-rate-subfield"
+                           {% if not is_admin %}disabled{% endif %}>
+                    <span class="field-hint">How long the account/IP is locked after threshold hit.</span>
+                </div>
+                <div class="settings-field">
+                    <label for="sec-rate-limit-max-user">
+                        Max Failures per Username
+                        <span class="override-dot" data-dot="sec-rate-limit-max-user" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="sec-rate-limit-max-user" min="1"
+                           class="sec-rate-subfield"
+                           {% if not is_admin %}disabled{% endif %}>
+                </div>
+                <div class="settings-field">
+                    <label for="sec-rate-limit-max-ip">
+                        Max Failures per IP
+                        <span class="override-dot" data-dot="sec-rate-limit-max-ip" hidden></span>
+                        {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
+                    </label>
+                    <input type="number" id="sec-rate-limit-max-ip" min="1"
+                           class="sec-rate-subfield"
+                           {% if not is_admin %}disabled{% endif %}>
+                </div>
+            </div>
+
+            {% if is_admin %}
+            <div class="settings-actions">
+                <button class="btn-primary" onclick="saveSecuritySettings()">SAVE SECURITY SETTINGS</button>
+                <span id="security-feedback" class="settings-feedback" aria-live="polite"></span>
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="settings-section" style="font-size:0.84rem;color:var(--silver);">
+            <h3 class="settings-section-title" style="font-size:0.9rem;">Infrastructure Settings</h3>
+            <p>The following security settings are <strong>environment-variable and config-file only</strong> and cannot be changed here:</p>
+            <ul style="margin-top:.6rem;padding-left:1.25rem;line-height:1.8">
+                <li><code>auth.secure_cookies</code> — whether auth cookies use the Secure flag (also <code>DECIDERO_SECURE_COOKIES</code> env var)</li>
+                <li><code>JWT_SECRET_KEY</code> — token signing key (env var only)</li>
+                <li><code>DECIDERO_ENCRYPTION_KEY</code> — data encryption key (env var only)</li>
+            </ul>
+            <p style="margin-top:.75rem">See <code>docs/SETTINGS_GUIDE.md</code> for the full configuration reference.</p>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/settings.js?v=1"></script>
+{% endblock %}

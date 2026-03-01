@@ -74,6 +74,29 @@ _DEFAULT_FRONTEND_RELIABILITY = {
 }
 
 
+# ── DB settings overlay ──────────────────────────────────────────────────────
+# Each public getter below checks the runtime settings DB before falling back
+# to config.yaml.  The import is lazy to avoid a circular dependency:
+#   database.py → load_config (in loader.py) → settings_store → database.py
+#
+# Priority: DB override  →  config.yaml  →  hardcoded default
+
+def _db_get(key: str) -> Any:
+    """Return the DB-stored override for *key*, or ``None`` if not set.
+
+    Never raises; logs and returns ``None`` on any error so that callers
+    always fall through to their config.yaml / hardcoded fallback.
+    """
+    try:
+        from app.config.settings_store import get_setting  # noqa: PLC0415
+        return get_setting(key)
+    except Exception as exc:  # noqa: BLE001
+        logging.debug("_db_get(%r) skipped (DB not ready?): %s", key, exc)
+        return None
+
+
+# ── YAML loader ──────────────────────────────────────────────────────────────
+
 def load_config() -> Dict[str, Any]:
     """Load the application config from YAML, returning an empty mapping on error."""
     try:
@@ -95,18 +118,41 @@ def load_config() -> Dict[str, Any]:
         return {}
 
 
+# ── Shared coercion helpers ───────────────────────────────────────────────────
+
+def _coerce_jitter_ratio(value: Any, fallback: float) -> float:
+    try:
+        candidate = float(value)
+    except Exception:  # noqa: BLE001
+        candidate = fallback
+    return max(0.0, min(1.0, candidate))
+
+
+def _coerce_positive_int(value: Any, fallback: int) -> int:
+    try:
+        candidate = int(value)
+        return candidate if candidate > 0 else fallback
+    except Exception:  # noqa: BLE001
+        return fallback
+
+
+def _coerce_bool(value: Any, fallback: bool) -> bool:
+    if value is None:
+        return fallback
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+# ── Public getters ────────────────────────────────────────────────────────────
+
 def get_brainstorming_limits() -> Dict[str, int]:
-    """Return brainstorming limits sourced from config with safe defaults."""
+    """Return brainstorming limits. DB overrides take priority over config.yaml."""
     config = load_config()
     section = config.get("brainstorming") or {}
     limits = dict(_DEFAULT_BRAINSTORMING_LIMITS)
-
-    def _coerce_positive_int(value: Any, fallback: int) -> int:
-        try:
-            candidate = int(value)
-            return candidate if candidate > 0 else fallback
-        except Exception:  # noqa: BLE001
-            return fallback
 
     limits["idea_character_limit"] = _coerce_positive_int(
         section.get("idea_character_limit"), limits["idea_character_limit"]
@@ -114,50 +160,68 @@ def get_brainstorming_limits() -> Dict[str, int]:
     limits["max_ideas_per_user"] = _coerce_positive_int(
         section.get("max_ideas_per_user"), limits["max_ideas_per_user"]
     )
+
+    # DB overlays (Settings UI → highest priority)
+    db_char = _db_get("brainstorming.idea_character_limit")
+    if db_char is not None:
+        limits["idea_character_limit"] = _coerce_positive_int(
+            db_char, limits["idea_character_limit"]
+        )
+    db_max = _db_get("brainstorming.max_ideas_per_user")
+    if db_max is not None:
+        limits["max_ideas_per_user"] = _coerce_positive_int(
+            db_max, limits["max_ideas_per_user"]
+        )
+
     return limits
 
 
 def get_brainstorming_defaults() -> Dict[str, bool]:
-    """Return default brainstorming activity config from config file."""
+    """Return default brainstorming activity config. DB overrides take priority."""
     config = load_config()
     section = config.get("brainstorming") or {}
+
+    allow_anonymous = _coerce_bool(section.get("default_maintain_anonymity"), False)
+    allow_subcomments = _coerce_bool(section.get("default_allow_subcomments"), False)
+    auto_jump = _coerce_bool(section.get("default_auto_jump_new_ideas"), True)
+
+    # DB overlays
+    db_anon = _db_get("brainstorming.default_maintain_anonymity")
+    if db_anon is not None:
+        allow_anonymous = _coerce_bool(db_anon, allow_anonymous)
+    db_sub = _db_get("brainstorming.default_allow_subcomments")
+    if db_sub is not None:
+        allow_subcomments = _coerce_bool(db_sub, allow_subcomments)
+    db_jump = _db_get("brainstorming.default_auto_jump_new_ideas")
+    if db_jump is not None:
+        auto_jump = _coerce_bool(db_jump, auto_jump)
+
     return {
-        "allow_anonymous": bool(section.get("default_maintain_anonymity", False)),
-        "allow_subcomments": bool(section.get("default_allow_subcomments", False)),
-        "auto_jump_new_ideas": bool(section.get("default_auto_jump_new_ideas", True)),
+        "allow_anonymous": allow_anonymous,
+        "allow_subcomments": allow_subcomments,
+        "auto_jump_new_ideas": auto_jump,
     }
 
 
 def get_activity_participant_exclusivity() -> bool:
     """Return whether participants must be exclusive across concurrent activities."""
     config = load_config()
-    value = config.get("activity_participant_exclusivity")
-    if value is None:
-        return True
-    return bool(value)
+    yaml_value = config.get("activity_participant_exclusivity")
+    base = True if yaml_value is None else _coerce_bool(yaml_value, True)
+
+    db_val = _db_get("meetings.activity_participant_exclusivity")
+    if db_val is not None:
+        return _coerce_bool(db_val, base)
+    return base
 
 
 def get_meeting_refresh_settings() -> Dict[str, Any]:
-    """Return meeting refresh polling settings sourced from config with safe defaults."""
+    """Return meeting refresh polling settings sourced from config with safe defaults.
+
+    These are infrastructure-level settings not exposed in the Settings UI.
+    """
     config = load_config()
     section = config.get("meeting_refresh") or {}
-
-    def _coerce_positive_int(value: Any, fallback: int) -> int:
-        try:
-            candidate = int(value)
-            return candidate if candidate > 0 else fallback
-        except Exception:  # noqa: BLE001
-            return fallback
-
-    def _coerce_bool(value: Any, fallback: bool) -> bool:
-        if value is None:
-            return fallback
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(value)
-
     defaults = dict(_DEFAULT_MEETING_REFRESH)
     return {
         "enabled": _coerce_bool(section.get("enabled"), defaults["enabled"]),
@@ -185,14 +249,6 @@ def get_meeting_refresh_settings() -> Dict[str, Any]:
             defaults["jitter_ratio"],
         ),
     }
-
-
-def _coerce_jitter_ratio(value: Any, fallback: float) -> float:
-    try:
-        candidate = float(value)
-    except Exception:  # noqa: BLE001
-        candidate = fallback
-    return max(0.0, min(1.0, candidate))
 
 
 def _normalise_retry_policy(
@@ -244,7 +300,10 @@ def _normalise_retry_policy(
 
 
 def get_frontend_reliability_settings() -> Dict[str, Any]:
-    """Return frontend retry/backoff defaults used by auth and meeting UI paths."""
+    """Return frontend retry/backoff defaults used by auth and meeting UI paths.
+
+    Infrastructure-level settings; not exposed in the Settings UI.
+    """
     config = load_config()
     section = config.get("frontend_reliability") or {}
     defaults = _DEFAULT_FRONTEND_RELIABILITY
@@ -274,26 +333,12 @@ def get_frontend_reliability_settings() -> Dict[str, Any]:
 
 
 def get_ui_refresh_settings() -> Dict[str, Any]:
-    """Return UI refresh polling settings sourced from config with safe defaults."""
+    """Return UI refresh polling settings sourced from config with safe defaults.
+
+    Infrastructure-level settings; not exposed in the Settings UI.
+    """
     config = load_config()
     section = config.get("ui_refresh") or {}
-
-    def _coerce_positive_int(value: Any, fallback: int) -> int:
-        try:
-            candidate = int(value)
-            return candidate if candidate > 0 else fallback
-        except Exception:  # noqa: BLE001
-            return fallback
-
-    def _coerce_bool(value: Any, fallback: bool) -> bool:
-        if value is None:
-            return fallback
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(value)
-
     defaults = dict(_DEFAULT_UI_REFRESH)
     return {
         "enabled": _coerce_bool(section.get("enabled"), defaults["enabled"]),
@@ -320,14 +365,6 @@ def get_meeting_activity_log_settings() -> Dict[str, Any]:
     """Return meeting activity log settings sourced from config with safe defaults."""
     config = load_config()
     section = config.get("meeting_activity_log") or {}
-
-    def _coerce_positive_int(value: Any, fallback: int) -> int:
-        try:
-            candidate = int(value)
-            return candidate if candidate > 0 else fallback
-        except Exception:  # noqa: BLE001
-            return fallback
-
     defaults = dict(_DEFAULT_MEETING_ACTIVITY_LOG)
     return {
         "max_items": _coerce_positive_int(section.get("max_items"), defaults["max_items"]),
@@ -338,17 +375,12 @@ def get_guest_join_enabled() -> bool:
     """Return whether unauthenticated guest meeting joins are enabled."""
     config = load_config()
     section = config.get("auth") or {}
+    base = _coerce_bool(section.get("allow_guest_join"), False)
 
-    def _coerce_bool(value: Any, fallback: bool) -> bool:
-        if value is None:
-            return fallback
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(value)
-
-    return _coerce_bool(section.get("allow_guest_join"), False)
+    db_val = _db_get("meetings.allow_guest_join")
+    if db_val is not None:
+        return _coerce_bool(db_val, base)
+    return base
 
 
 def get_secure_cookies_enabled() -> bool:
@@ -356,7 +388,7 @@ def get_secure_cookies_enabled() -> bool:
     Return whether auth cookies should be marked Secure.
 
     Priority:
-    1) DECIDERO_SECURE_COOKIES env var
+    1) DECIDERO_SECURE_COOKIES env var  (infrastructure — not in Settings UI)
     2) config.yaml auth.secure_cookies
     3) default False (local HTTP-friendly)
     """
@@ -377,7 +409,10 @@ def get_secure_cookies_enabled() -> bool:
 
 
 def get_auth_login_rate_limit_settings() -> Dict[str, Any]:
-    """Return failed-login rate limiting settings with env/config overrides."""
+    """Return failed-login rate limiting settings.
+
+    Priority: env vars → DB override → config.yaml → hardcoded defaults.
+    """
     config = load_config()
     auth_section = config.get("auth") or {}
     section = auth_section.get("login_rate_limit") or {}
@@ -398,82 +433,74 @@ def get_auth_login_rate_limit_settings() -> Dict[str, Any]:
         except Exception:  # noqa: BLE001
             return None
 
-    def _coerce_positive_int(value: Any, fallback: int) -> int:
-        try:
-            candidate = int(value)
-            return candidate if candidate > 0 else fallback
-        except Exception:  # noqa: BLE001
-            return fallback
-
-    def _coerce_bool(value: Any, fallback: bool) -> bool:
-        if value is None:
-            return fallback
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.strip().lower() in {"1", "true", "yes", "on"}
-        return bool(value)
-
+    # Env vars (highest priority for security settings)
     enabled = _env_bool("DECIDERO_LOGIN_RATE_LIMIT_ENABLED")
-    if enabled is None:
-        enabled = section.get("enabled")
     window_seconds = _env_int("DECIDERO_LOGIN_RATE_LIMIT_WINDOW_SECONDS")
-    if window_seconds is None:
-        window_seconds = section.get("window_seconds")
     max_fail_user = _env_int("DECIDERO_LOGIN_RATE_LIMIT_MAX_FAILURES_PER_USERNAME")
-    if max_fail_user is None:
-        max_fail_user = section.get("max_failures_per_username")
     max_fail_ip = _env_int("DECIDERO_LOGIN_RATE_LIMIT_MAX_FAILURES_PER_IP")
-    if max_fail_ip is None:
-        max_fail_ip = section.get("max_failures_per_ip")
     lockout_seconds = _env_int("DECIDERO_LOGIN_RATE_LIMIT_LOCKOUT_SECONDS")
+
+    # DB overlays (when env var is not set)
+    if enabled is None:
+        db_en = _db_get("security.login_rate_limit_enabled")
+        enabled = db_en if db_en is not None else section.get("enabled")
+    if window_seconds is None:
+        db_ws = _db_get("security.login_rate_limit_window_seconds")
+        window_seconds = db_ws if db_ws is not None else section.get("window_seconds")
+    if max_fail_user is None:
+        db_mfu = _db_get("security.login_rate_limit_max_failures_per_username")
+        max_fail_user = db_mfu if db_mfu is not None else section.get("max_failures_per_username")
+    if max_fail_ip is None:
+        db_mfi = _db_get("security.login_rate_limit_max_failures_per_ip")
+        max_fail_ip = db_mfi if db_mfi is not None else section.get("max_failures_per_ip")
     if lockout_seconds is None:
-        lockout_seconds = section.get("lockout_seconds")
+        db_ls = _db_get("security.login_rate_limit_lockout_seconds")
+        lockout_seconds = db_ls if db_ls is not None else section.get("lockout_seconds")
 
     return {
         "enabled": _coerce_bool(enabled, defaults["enabled"]),
-        "window_seconds": _coerce_positive_int(
-            window_seconds, defaults["window_seconds"]
-        ),
+        "window_seconds": _coerce_positive_int(window_seconds, defaults["window_seconds"]),
         "max_failures_per_username": _coerce_positive_int(
             max_fail_user, defaults["max_failures_per_username"]
         ),
-        "max_failures_per_ip": _coerce_positive_int(
-            max_fail_ip, defaults["max_failures_per_ip"]
-        ),
-        "lockout_seconds": _coerce_positive_int(
-            lockout_seconds, defaults["lockout_seconds"]
-        ),
+        "max_failures_per_ip": _coerce_positive_int(max_fail_ip, defaults["max_failures_per_ip"]),
+        "lockout_seconds": _coerce_positive_int(lockout_seconds, defaults["lockout_seconds"]),
     }
 
 
 def get_meeting_designer_settings() -> Dict[str, Any]:
-    """Return Meeting Designer AI model settings from config.
+    """Return Meeting Designer AI model settings.
 
+    Priority: DB override (Settings UI) → config.yaml → disabled.
     The feature is enabled only when provider, api_key, and model are all non-empty.
-    Returns a dict with keys: enabled, provider, api_key, endpoint_url, model,
-    max_tokens, temperature.
     """
     config = load_config()
     section = config.get("meeting_designer_model") or {}
 
-    def _str(key: str) -> str:
-        value = section.get(key)
+    def _str_field(yaml_key: str, db_key: str) -> str:
+        # DB override wins if present
+        db_val = _db_get(db_key)
+        if db_val is not None:
+            return str(db_val).strip()
+        value = section.get(yaml_key)
         return str(value).strip() if value is not None else ""
 
-    def _coerce_positive_int(value: Any, fallback: int) -> int:
-        try:
-            candidate = int(value)
-            return candidate if candidate > 0 else fallback
-        except Exception:  # noqa: BLE001
-            return fallback
+    provider = _str_field("provider", "ai.provider").lower()
+    api_key = _str_field("api_key", "ai.api_key")
+    model = _str_field("model", "ai.model")
+    endpoint_url = _str_field("endpoint_url", "ai.endpoint_url")
 
-    provider = _str("provider").lower()
-    api_key = _str("api_key")
-    model = _str("model")
-    endpoint_url = _str("endpoint_url")
-    max_tokens = _coerce_positive_int(section.get("max_tokens"), 2048)
-    temperature = _coerce_jitter_ratio(section.get("temperature"), 0.7)
+    # Numeric fields
+    db_max_tokens = _db_get("ai.max_tokens")
+    max_tokens = _coerce_positive_int(
+        db_max_tokens if db_max_tokens is not None else section.get("max_tokens"),
+        2048,
+    )
+    db_temp = _db_get("ai.temperature")
+    temperature = _coerce_jitter_ratio(
+        db_temp if db_temp is not None else section.get("temperature"),
+        0.7,
+    )
 
     enabled = bool(provider and api_key and model)
 
@@ -486,6 +513,51 @@ def get_meeting_designer_settings() -> Dict[str, Any]:
         "max_tokens": max_tokens,
         "temperature": temperature,
     }
+
+
+def get_default_user_password() -> str:
+    """Return the default password for newly created users.
+
+    Priority: DB override → config.yaml → empty string.
+    """
+    db_val = _db_get("meetings.default_user_password")
+    if db_val is not None:
+        return str(db_val)
+    config = load_config()
+    return str(config.get("default_user_password", "") or "")
+
+
+def get_default_meeting_settings() -> Dict[str, Any]:
+    """Return default meeting creation settings with DB overrides applied."""
+    config = load_config()
+    section = config.get("default_meeting_settings") or {}
+
+    max_participants = _coerce_positive_int(section.get("max_participants"), 100)
+    recording_enabled = _coerce_bool(section.get("recording_enabled"), True)
+
+    db_mp = _db_get("meetings.max_participants")
+    if db_mp is not None:
+        max_participants = _coerce_positive_int(db_mp, max_participants)
+    db_rec = _db_get("meetings.recording_enabled")
+    if db_rec is not None:
+        recording_enabled = _coerce_bool(db_rec, recording_enabled)
+
+    return {
+        "max_participants": max_participants,
+        "recording_enabled": recording_enabled,
+    }
+
+
+def get_session_expire_minutes() -> int:
+    """Return the access token lifetime in minutes with DB override support."""
+    config = load_config()
+    section = config.get("auth") or {}
+    base = _coerce_positive_int(section.get("access_token_expire_minutes"), 2880)
+
+    db_val = _db_get("meetings.access_token_expire_minutes")
+    if db_val is not None:
+        return _coerce_positive_int(db_val, base)
+    return base
 
 
 def get_autosave_seconds() -> int:

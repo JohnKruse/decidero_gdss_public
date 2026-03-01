@@ -1,0 +1,459 @@
+/* ═══════════════════════════════════════════════════════════════
+   settings.css  —  Styles for the Admin/Facilitator Settings page
+   Complements dashboard.css (CSS variables are defined there).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Page shell ────────────────────────────────────────────────── */
+.settings-page {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 1rem 3rem;
+}
+
+.settings-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1.75rem;
+    flex-wrap: wrap;
+}
+
+.settings-page-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--navy-blue);
+    letter-spacing: 0.04em;
+    margin: 0;
+}
+
+.settings-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 1rem;
+    border: 1.5px solid rgba(11, 61, 145, 0.3);
+    border-radius: 6px;
+    color: var(--navy-blue);
+    background: transparent;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s, border-color 0.15s;
+}
+.settings-back-btn:hover {
+    background: rgba(11, 61, 145, 0.06);
+    border-color: var(--navy-blue);
+}
+
+/* ── Tab bar ──────────────────────────────────────────────────── */
+.settings-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid rgba(11, 61, 145, 0.15);
+    margin-bottom: 1.75rem;
+    overflow-x: auto;
+}
+
+.settings-tab-btn {
+    padding: 0.7rem 1.25rem;
+    border: none;
+    border-bottom: 3px solid transparent;
+    background: transparent;
+    color: var(--silver);
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -2px; /* overlap the tab bar border */
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.settings-tab-btn:hover {
+    color: var(--navy-blue);
+}
+.settings-tab-btn.active {
+    color: var(--navy-blue);
+    border-bottom-color: var(--navy-blue);
+}
+.settings-tab-btn .tab-lock {
+    font-size: 0.75rem;
+    opacity: 0.6;
+}
+
+/* ── Tab panels ───────────────────────────────────────────────── */
+.settings-tab-panel {
+    display: none;
+}
+.settings-tab-panel.active {
+    display: block;
+}
+
+/* ── Section card ─────────────────────────────────────────────── */
+.settings-section {
+    background: var(--white);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(11, 61, 145, 0.10);
+    padding: 1.5rem;
+    margin-bottom: 1.25rem;
+}
+
+.settings-section-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--navy-blue);
+    margin: 0 0 1.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid rgba(11, 61, 145, 0.08);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.settings-section-title .section-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.section-badge.admin-badge {
+    background: rgba(11, 61, 145, 0.12);
+    color: var(--navy-blue);
+}
+.section-badge.shared-badge {
+    background: rgba(126, 192, 238, 0.25);
+    color: #2266aa;
+}
+
+/* ── Status pill ──────────────────────────────────────────────── */
+.settings-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+    padding: 0.65rem 0.9rem;
+    border-radius: 8px;
+    background: rgba(11, 61, 145, 0.04);
+    font-size: 0.88rem;
+}
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.status-dot.ok   { background: #22c55e; }
+.status-dot.warn { background: #f59e0b; }
+.status-dot.err  { background: var(--nasa-red); }
+
+/* ── Form fields ──────────────────────────────────────────────── */
+.settings-field {
+    margin-bottom: 1.1rem;
+}
+.settings-field:last-child {
+    margin-bottom: 0;
+}
+
+.settings-field label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--navy-blue);
+    margin-bottom: 0.4rem;
+}
+
+.field-lock {
+    font-size: 0.75rem;
+    color: var(--silver);
+}
+
+.settings-field input[type="text"],
+.settings-field input[type="number"],
+.settings-field input[type="url"],
+.settings-field input[type="password"],
+.settings-field select {
+    width: 100%;
+    padding: 0.55rem 0.8rem;
+    border: 1.5px solid rgba(11, 61, 145, 0.2);
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    color: var(--navy-blue);
+    background: var(--white);
+    transition: border-color 0.15s, box-shadow 0.15s;
+    appearance: auto;
+}
+.settings-field input:focus,
+.settings-field select:focus {
+    outline: none;
+    border-color: var(--navy-blue);
+    box-shadow: 0 0 0 3px rgba(11, 61, 145, 0.12);
+}
+
+/* Disabled / admin-only fields */
+.settings-field input:disabled,
+.settings-field select:disabled {
+    opacity: 0.50;
+    cursor: not-allowed;
+    background: #f0f2f7;
+}
+
+.field-hint {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--silver);
+    margin-top: 0.3rem;
+}
+.admin-only-notice {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--silver);
+    margin-top: 0.25rem;
+    font-style: italic;
+}
+
+/* Password / API-key field with toggle and preview */
+.secret-field-wrapper {
+    display: flex;
+    gap: 0.5rem;
+    align-items: stretch;
+}
+.secret-field-wrapper input {
+    flex: 1;
+    min-width: 0;
+}
+.secret-btn {
+    padding: 0 0.75rem;
+    border: 1.5px solid rgba(11, 61, 145, 0.2);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--navy-blue);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+.secret-btn:hover { background: rgba(11, 61, 145, 0.06); }
+.secret-btn.danger:hover { background: rgba(255, 0, 0, 0.07); color: var(--nasa-red); border-color: var(--nasa-red); }
+
+.key-preview-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.8rem;
+    border: 1.5px solid rgba(11, 61, 145, 0.15);
+    border-radius: 7px;
+    background: #f8f9fc;
+    font-family: monospace;
+    font-size: 0.88rem;
+    color: var(--navy-blue);
+}
+.key-preview-row .key-preview-text { flex: 1; letter-spacing: 0.05em; }
+
+/* ── Toggle switch ────────────────────────────────────────────── */
+.toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.4rem 0;
+}
+.toggle-label {
+    font-size: 0.88rem;
+    color: var(--navy-blue);
+    font-weight: 500;
+}
+.toggle-label small {
+    display: block;
+    font-size: 0.76rem;
+    font-weight: 400;
+    color: var(--silver);
+}
+
+.toggle-switch {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+}
+.toggle-track {
+    position: absolute;
+    inset: 0;
+    background: #c8d0dc;
+    border-radius: 24px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.toggle-switch input:checked + .toggle-track {
+    background: var(--navy-blue);
+}
+.toggle-track::after {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.2s;
+}
+.toggle-switch input:checked + .toggle-track::after {
+    transform: translateX(20px);
+}
+.toggle-switch input:disabled + .toggle-track {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* ── Two-column layout for numeric fields ─────────────────────── */
+.settings-grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+@media (max-width: 540px) {
+    .settings-grid-2 { grid-template-columns: 1fr; }
+}
+
+/* ── Admin-only notice banner ─────────────────────────────────── */
+.admin-only-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: rgba(192, 192, 192, 0.15);
+    border: 1px solid rgba(192, 192, 192, 0.4);
+    font-size: 0.84rem;
+    color: #555;
+    margin-bottom: 1.25rem;
+}
+.admin-only-banner .banner-icon { font-size: 1rem; }
+
+/* ── Action buttons ───────────────────────────────────────────── */
+.settings-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 1.25rem;
+    padding-top: 1.1rem;
+    border-top: 1px solid rgba(11, 61, 145, 0.08);
+}
+
+.btn-primary {
+    padding: 0.6rem 1.4rem;
+    background: var(--navy-blue);
+    color: var(--white);
+    border: none;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+}
+.btn-primary:hover { background: var(--primary-color-dark); }
+.btn-primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-secondary {
+    padding: 0.6rem 1.1rem;
+    background: transparent;
+    color: var(--navy-blue);
+    border: 1.5px solid rgba(11, 61, 145, 0.3);
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+.btn-secondary:hover { background: rgba(11, 61, 145, 0.06); border-color: var(--navy-blue); }
+.btn-secondary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-test {
+    padding: 0.6rem 1.1rem;
+    background: transparent;
+    color: #2266aa;
+    border: 1.5px solid #2266aa;
+    border-radius: 7px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.btn-test:hover  { background: rgba(34, 102, 170, 0.08); }
+.btn-test:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ── Feedback messages ────────────────────────────────────────── */
+.settings-feedback {
+    font-size: 0.84rem;
+    font-weight: 500;
+    min-height: 1.2em;
+}
+.settings-feedback.success { color: #16a34a; }
+.settings-feedback.error   { color: var(--nasa-red); }
+.settings-feedback.info    { color: #2266aa; }
+
+/* Test-connection result badge */
+.test-result {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.84rem;
+    font-weight: 600;
+    padding: 0.3rem 0.7rem;
+    border-radius: 20px;
+}
+.test-result.ok  { background: rgba(34, 197, 94, 0.12);  color: #16a34a; }
+.test-result.err { background: rgba(255,   0,   0, 0.08); color: #c00; }
+
+/* DB override indicator (small dot on label) */
+.override-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--gold);
+    display: inline-block;
+    flex-shrink: 0;
+    title: "Value overridden via Settings UI";
+}
+
+/* ── Spinner ──────────────────────────────────────────────────── */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+}

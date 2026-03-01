@@ -82,6 +82,21 @@ source venv/bin/activate
 
 Press `Ctrl+C` in the terminal running the server.
 
+## Configuring AI Features (AI Meeting Designer)
+
+After logging in as Admin, you can configure the AI Meeting Designer **without editing any files**:
+
+1. Click **⚙ SETTINGS** on the right side of the Quick Actions bar on the Dashboard.
+2. Go to the **AI Config** tab.
+3. Select your provider, paste your API key, enter the model name.
+4. Click **Test Connection**, then **Save AI Settings**.
+
+The API key is stored **encrypted in the database** — more secure than putting it in `config.yaml`.
+
+If you prefer to configure via `config.yaml` instead, see the `meeting_designer_model` section in `app/config/config.yaml` (Section B).  Note that keys stored in `config.yaml` are plain text; using the Settings UI is recommended.
+
+For the full settings reference, see `docs/SETTINGS_GUIDE.md`.
+
 ## Common Issues
 
 ### `uvicorn: command not found`

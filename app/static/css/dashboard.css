@@ -89,10 +89,75 @@ body {
     margin-bottom: 2rem;
 }
 
+/* Header row: "QUICK ACTIONS" title on the left, Settings button on the right */
+.quick-actions-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.quick-actions-header h2 {
+    margin: 0;
+}
+
+/* Settings button — compact, secondary style to distinguish from action buttons */
+.settings-btn {
+    font-size: 0.8rem;
+    padding: 0.4rem 0.9rem;
+    opacity: 0.85;
+    letter-spacing: 0.06em;
+}
+.settings-btn:hover {
+    opacity: 1;
+}
+
 .action-buttons {
     display: flex;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 1rem;
     margin-top: 1rem;
+}
+
+/* CREATE A MEETING group inside Quick Actions */
+.meeting-create-group {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    border: 2px solid rgba(11, 61, 145, 0.3);
+    border-radius: 10px;
+    padding: 0.55rem 0.75rem 0.65rem;
+    background: rgba(11, 61, 145, 0.04);
+}
+
+.meeting-create-group__label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--navy-blue);
+    opacity: 0.6;
+    line-height: 1;
+}
+
+.meeting-create-group__buttons {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.meeting-create-group--ghost {
+    border-color: transparent;
+    background: transparent;
+}
+
+.meeting-create-group__btn--ai {
+    background: linear-gradient(135deg, #0B3D91 0%, #1565c0 100%);
+}
+
+.meeting-create-group__btn--ai:hover {
+    background: linear-gradient(135deg, #0a2d6e 0%, #0d47a1 100%);
 }
 
 /* Overview */
@@ -928,6 +993,19 @@ button {
 @media (max-width: 768px) {
     .action-buttons {
         flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .meeting-create-group {
+        width: 100%;
+    }
+
+    .meeting-create-group__buttons {
+        width: 100%;
+    }
+
+    .meeting-create-group__buttons .action-btn {
+        flex: 1;
     }
     
     .meetings-grid {

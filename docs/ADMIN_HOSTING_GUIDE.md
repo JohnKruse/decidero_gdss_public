@@ -58,6 +58,44 @@ If you are using a fork/private copy, clone that repo instead.
 ls README.md requirements.txt start_local.sh start_remote_tunnel.sh
 ```
 
+## Runtime Configuration (Settings Page)
+
+After the server is running and you have logged in as an **Admin**, you can configure operational settings without editing files or restarting the server.
+
+Click **⚙ SETTINGS** on the right side of the Quick Actions bar on the Dashboard to open the Settings page.
+
+### What you can change in the UI
+
+| Tab | What | Who |
+|---|---|---|
+| **AI Config** | AI provider, API key (encrypted), model, temperature, max tokens | Admin only |
+| **Meeting Defaults** | Max participants, session duration, guest join, default password | Admin only |
+| **Brainstorming** | Character limits, idea caps, anonymity/subcomment defaults | Admin + Facilitator |
+| **Security** | Login rate limiting thresholds | Admin only |
+
+### AI Meeting Designer — recommended setup flow
+
+1. Open Settings → AI Config tab
+2. Select your provider (Anthropic, OpenAI, or OpenAI-Compatible)
+3. Paste your API key (stored encrypted; never logged or returned to the browser)
+4. Enter the model name
+5. Click **Test Connection** to verify the key and endpoint
+6. Click **Save AI Settings**
+
+The AI Meeting Designer will become available immediately — no restart required.
+
+### What stays in config.yaml (infrastructure settings)
+
+The following require editing `app/config/config.yaml` and restarting the server:
+- Database URL, pool settings, SQLite tuning
+- Polling intervals (`meeting_refresh`, `ui_refresh`)
+- Frontend retry/backoff behaviour
+- `auth.secure_cookies` (also overridable via `DECIDERO_SECURE_COOKIES` env var)
+
+For the full settings reference, see `docs/SETTINGS_GUIDE.md`.
+
+---
+
 ## Mode A: Local (single machine)
 
 ### Actions

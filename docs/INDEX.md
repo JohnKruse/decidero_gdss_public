@@ -11,6 +11,27 @@ Use this page as the entry point for all project docs.
 5. Local/VPS load testing + burst rehearsal: `docs/LOAD_TESTING_PLAN_LOCAL.md`
 6. Reliability rehearsal report template: `docs/RELIABILITY_REHEARSAL_REPORT_TEMPLATE.md`
 
+## Runtime Configuration
+
+1. Admin/Facilitator Settings page reference: `docs/SETTINGS_GUIDE.md`
+   - What can be changed via the UI vs. config.yaml
+   - AI provider setup (Anthropic, OpenAI, Azure, OpenRouter, Ollama)
+   - Role permissions per settings section
+   - API key encryption and security model
+   - How DB overrides interact with config.yaml defaults
+
+## Frontend & Template Development
+
+If you are adding new pages, UI components, or modifying the navigation, start here.
+
+1. Frontend and template conventions: `docs/FRONTEND_DEV_GUIDE.md`
+   - How to add a new page (template + route + CSS + JS)
+   - Header protection model — why it never disappears
+   - Role system and how to check roles safely in Python and Jinja2
+   - Quick Actions dashboard pattern for new tools
+   - CSS design system and layout primitives
+   - Common mistakes to avoid
+
 ## Activity Development (Critical Path)
 
 If you are new to activity development, start with the first link below. It explains the mental model in plain language before the technical details.

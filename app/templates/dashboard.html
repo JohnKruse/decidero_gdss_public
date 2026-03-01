@@ -8,41 +8,78 @@
     {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
     {% grab id="dashboard-quick-actions" %}
     <section class="layout-card quick-actions">
-        <h2>QUICK ACTIONS</h2>
+        <div class="quick-actions-header">
+            <h2>QUICK ACTIONS</h2>
+            <button
+                class="action-btn settings-btn"
+                type="button"
+                onclick="navigateTo('/settings')"
+                title="Application Settings"
+                aria-label="Open Settings"
+            >
+                ⚙ SETTINGS
+            </button>
+        </div>
         <div class="action-buttons">
             {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
-                <button
-                    class="action-btn create-meeting"
-                    type="button"
-                    data-requires-role="facilitator"
-                    onclick="navigateTo('/meeting/create')"
-                >
-                    NEW MEETING
-                </button>
-                <button
-                    class="action-btn import-meeting"
-                    type="button"
-                    data-requires-role="facilitator"
-                    id="importMeetingButton"
-                >
-                    IMPORT MEETING
-                </button>
-                <input
-                    type="file"
-                    id="importMeetingFile"
-                    accept=".zip,application/zip"
-                    hidden
-                />
-            {% endif %}
-            {% if current_user.role in ['admin', 'super_admin'] %}
-                <button
-                    class="action-btn manage-users"
-                    type="button"
-                    data-requires-role="admin"
-                    onclick="navigateTo('/admin/users')"
-                >
-                    MANAGE USERS
-                </button>
+                <div class="meeting-create-group">
+                    <span class="meeting-create-group__label">Create a Meeting</span>
+                    <div class="meeting-create-group__buttons">
+                        <button
+                            class="action-btn meeting-create-group__btn--ai"
+                            type="button"
+                            data-requires-role="facilitator"
+                            onclick="navigateTo('/meeting/design')"
+                        >
+                            DESIGN WITH AI
+                        </button>
+                        <button
+                            class="action-btn"
+                            type="button"
+                            data-requires-role="facilitator"
+                            onclick="navigateTo('/meeting/create')"
+                        >
+                            DESIGN YOURSELF
+                        </button>
+                        <button
+                            class="action-btn import-meeting"
+                            type="button"
+                            data-requires-role="facilitator"
+                            id="importMeetingButton"
+                        >
+                            IMPORT MEETING
+                        </button>
+                        <input
+                            type="file"
+                            id="importMeetingFile"
+                            accept=".zip,application/zip"
+                            hidden
+                        />
+                    </div>
+                </div>
+                <div class="meeting-create-group meeting-create-group--ghost">
+                    <span class="meeting-create-group__label" aria-hidden="true">&nbsp;</span>
+                    <div class="meeting-create-group__buttons">
+                        <button
+                            class="action-btn"
+                            type="button"
+                            data-requires-role="facilitator"
+                            onclick="navigateTo('/activity-library')"
+                        >
+                            ACTIVITY LIBRARY
+                        </button>
+                        {% if current_user.role in ['admin', 'super_admin'] %}
+                            <button
+                                class="action-btn manage-users"
+                                type="button"
+                                data-requires-role="admin"
+                                onclick="navigateTo('/admin/users')"
+                            >
+                                MANAGE USERS
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
             {% endif %}
         </div>
     </section>

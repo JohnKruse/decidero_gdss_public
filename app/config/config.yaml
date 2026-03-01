@@ -1,13 +1,42 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DECIDERO GDSS — Application Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+#  ┌─────────────────────────────────────────────────────────────────────────┐
+#  │  SECTION A — Infrastructure  (requires app restart to change)           │
+#  │                                                                         │
+#  │  These values are read at startup and are NOT exposed in the Settings   │
+#  │  UI.  Edit this file and restart the server to apply changes.           │
+#  └─────────────────────────────────────────────────────────────────────────┘
+#
+#  ┌─────────────────────────────────────────────────────────────────────────┐
+#  │  SECTION B — Operational Defaults  (Settings UI overrides these)        │
+#  │                                                                         │
+#  │  These are INITIAL values used when no Admin has saved an override via  │
+#  │  the Settings page (/settings → Admin Settings).  Once an Admin saves   │
+#  │  a value in the UI, the database value takes precedence over what is    │
+#  │  written here.                                                           │
+#  │                                                                         │
+#  │  To revert a value back to what is written here, use the "Reset to      │
+#  │  Default" button in the Settings UI (or DELETE the row from the         │
+#  │  app_settings database table).                                           │
+#  └─────────────────────────────────────────────────────────────────────────┘
+
+
+# ─── SECTION A: Infrastructure ─────────────────────────────────────────────────
+
 data_directory: "data"
-backup_interval_seconds: 300  # Periodicity of data storage
+backup_interval_seconds: 300        # Periodicity of data storage
 database_url: "sqlite:///./decidero.db"  # Path to the SQLite database file
-autosave_seconds: 10  # Default activity autosave interval
+autosave_seconds: 10                # Default activity autosave interval (startup-time)
+
 sqlite:
   journal_mode: "WAL"
   synchronous: "NORMAL"
   busy_timeout_ms: 30000
   write_retries: 5
   retry_backoff_ms: 200
+
 database_pool:
   # SQLite tuning for workshop bursts. Keep conservative to avoid runaway
   # connection pressure while still supporting ~100 concurrent attendees.
@@ -15,28 +44,30 @@ database_pool:
   max_overflow: 40
   pool_timeout_seconds: 15
   pool_recycle_seconds: 1800
-# Allow participants to join multiple concurrent activities (disable exclusivity checks)
-activity_participant_exclusivity: false
-default_meeting_settings:
-  max_participants: 100
-  recording_enabled: true
-default_user_password: "TempPass123!"
+
 auth:
-  # Keep sessions alive for longer workshops (48 hours here; adjust as needed)
-  access_token_expire_minutes: 2880
-  # Set true when serving via HTTPS (tunnel or reverse proxy) so auth cookies use Secure.
+  # ── Infrastructure-only (Section A) ──
+  # Set via DECIDERO_SECURE_COOKIES env var in production (takes priority over this).
   secure_cookies: true
+
+  # ── Operational defaults (Section B) — overrideable via Settings UI ──
+  # Keep sessions alive for longer workshops (48 hours; adjust as needed).
+  access_token_expire_minutes: 2880
   # Guest join toggle: keep false for strict auth-only meetings.
   # Flip to true to allow unauthenticated join flow (/meeting/join + /api/meetings/join).
   allow_guest_join: false
-brainstorming:
-  idea_character_limit: 500
-  max_ideas_per_user: 50
-  # Default activity configuration (can be overridden per activity)
-  default_maintain_anonymity: false
-  default_allow_subcomments: false
-  default_auto_jump_new_ideas: true
+  # Login rate limiting — also overrideable via env vars (highest priority):
+  #   DECIDERO_LOGIN_RATE_LIMIT_ENABLED, _WINDOW_SECONDS, _MAX_FAILURES_PER_USERNAME,
+  #   _MAX_FAILURES_PER_IP, _LOCKOUT_SECONDS
+  login_rate_limit:
+    enabled: true
+    window_seconds: 60
+    max_failures_per_username: 8
+    max_failures_per_ip: 40
+    lockout_seconds: 60
+
 meeting_refresh:
+  # Polling tuning — devops/sysadmin level. Not exposed in Settings UI.
   enabled: true
   interval_seconds: 8
   hidden_interval_seconds: 45
@@ -47,16 +78,19 @@ meeting_refresh:
   overload_backoff_seconds: 12
   # Randomize refresh timing to avoid synchronized polling spikes.
   jitter_ratio: 0.2
+
 meeting_activity_log:
   max_items: 100
+
 ui_refresh:
+  # Polling tuning — not exposed in Settings UI.
   enabled: true
   dashboard_interval_seconds: 20
   admin_users_interval_seconds: 20
   hidden_interval_seconds: 60
   failure_backoff_seconds: 90
 
-# Frontend retry/backoff defaults for auth and in-meeting write reliability.
+# Frontend retry/backoff — baked into shipped JS. Not exposed in Settings UI.
 frontend_reliability:
   write_default:
     retryable_statuses: [429, 502, 503, 504]
@@ -86,10 +120,40 @@ frontend_reliability:
     max_delay_ms: 1800
     jitter_ratio: 0.2
 
-# ── Meeting Designer AI Model ──────────────────────────────────────────────────
+
+# ─── SECTION B: Operational Defaults ──────────────────────────────────────────
+#
+#  All settings below are overrideable at runtime via the Settings page.
+#  Database overrides take priority over these values.
+#  Reset to these values by using "Reset to Default" in the Settings UI.
+
+# Overrideable in Settings UI → Meeting Defaults tab
+default_user_password: "TempPass123!"
+
+# Overrideable in Settings UI → Meeting Defaults tab
+default_meeting_settings:
+  max_participants: 100
+  recording_enabled: true
+
+# Allow participants to join multiple concurrent activities (disable exclusivity checks).
+# Overrideable in Settings UI → Meeting Defaults tab
+activity_participant_exclusivity: false
+
+# Overrideable in Settings UI → Brainstorming tab
+brainstorming:
+  idea_character_limit: 500
+  max_ideas_per_user: 50
+  # Default activity configuration (can be overridden per-activity when creating a meeting)
+  default_maintain_anonymity: false
+  default_allow_subcomments: false
+  default_auto_jump_new_ideas: true
+
+# ── AI Meeting Designer ────────────────────────────────────────────────────────
 # Configures the AI model used by the AI Meeting Designer feature.
-# The feature is DISABLED until provider, api_key, and model are all set.
-# No default provider is assumed — you must choose and supply credentials.
+# The feature is DISABLED until provider, api_key, and model are all non-empty.
+#
+# RECOMMENDED: Configure via Settings UI → AI Config tab.  The UI stores the
+# api_key encrypted in the database, which is more secure than plain text here.
 #
 # Supported providers:
 #   anthropic         — Anthropic Claude (claude-opus-4-5, claude-sonnet-4-5, ...)
@@ -104,7 +168,7 @@ frontend_reliability:
 #
 meeting_designer_model:
   provider: ""          # anthropic | openai | openai_compatible
-  api_key: ""           # Your API key for the chosen provider
+  api_key: ""           # Your API key — prefer setting via Settings UI for encrypted storage
   endpoint_url: ""      # Required for openai_compatible; optional base URL override for openai
   model: ""             # e.g. claude-opus-4-5, gpt-4o, meta-llama/llama-3.3-70b-instruct
   max_tokens: 2048      # Maximum tokens per AI response
