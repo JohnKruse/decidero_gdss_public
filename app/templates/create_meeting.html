@@ -1687,6 +1687,51 @@ endblock %}
             setupParticipantDirectoryControls();
             let meetingPrefill = null;
             const activityParam = new URLSearchParams(window.location.search).get('activity_id');
+
+            // ── AI Meeting Designer handoff ────────────────────────────────────
+            // When coming from /meeting/design?from=designer, pick up the
+            // generated agenda stored in sessionStorage and pre-fill the form.
+            const fromDesigner = new URLSearchParams(window.location.search).get('from') === 'designer';
+            if (fromDesigner && !isEditMode) {
+                try {
+                    const raw = sessionStorage.getItem('md_agenda');
+                    sessionStorage.removeItem('md_agenda'); // consume immediately
+                    if (raw) {
+                        const mdData = JSON.parse(raw);
+                        if (Array.isArray(mdData.agenda) && mdData.agenda.length > 0) {
+                            // Convert designer format → create_meeting prefill format
+                            const designerItems = mdData.agenda.map((item, idx) => ({
+                                tool_type: item.tool_type,
+                                title: item.title || '',
+                                instructions: item.instructions || '',
+                                config: item.config_overrides || {},
+                                order_index: idx + 1,
+                            }));
+                            meetingPrefill = { agenda: designerItems };
+
+                            // Show a non-intrusive banner
+                            const banner = document.createElement('div');
+                            banner.id = 'mdHandoffBanner';
+                            banner.style.cssText = [
+                                'background:#e8f5e9','color:#2e7d32','padding:0.65rem 1.25rem',
+                                'border-radius:8px','font-size:0.85rem','font-weight:600',
+                                'margin-bottom:1rem','display:flex','align-items:center','gap:0.5rem',
+                            ].join(';');
+                            banner.innerHTML = `
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                AI Meeting Designer agenda loaded — ${designerItems.length} activit${designerItems.length === 1 ? 'y' : 'ies'} pre-filled. Review and adjust below.
+                                <button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;cursor:pointer;color:inherit;font-size:1.1rem;line-height:1;">&times;</button>
+                            `;
+                            const form = document.getElementById('meetingForm') || document.querySelector('form');
+                            if (form) form.prepend(banner);
+                        }
+                    }
+                } catch (e) {
+                    // Non-critical; ignore storage/parse errors silently
+                    sessionStorage.removeItem('md_agenda');
+                }
+            }
+            // ── End AI Meeting Designer handoff ────────────────────────────────
             const backLink = document.getElementById('meetingBackLink');
             if (backLink && activityParam) {
                 backLink.href = `${backLink.href}?activity_id=${encodeURIComponent(activityParam)}`;

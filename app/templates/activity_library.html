@@ -1,0 +1,174 @@
+{% extends "_base.html" %}
+
+{% block title %}Activity Library - DECIDERO GDSS{% endblock %}
+
+{% from "components/macros.html" import section_header %}
+
+{% block content %}
+<div class="layout-grid">
+  <section class="layout-card activity-library">
+    {{ section_header('Activity Library', 'Browse collaborative activities and their research-grounded design guidance') }}
+
+    <div class="al-filter-bar">
+      <button type="button" class="al-filter-chip active" data-pattern="all">All</button>
+      <button type="button" class="al-filter-chip" data-pattern="Generate">Generate</button>
+      <button type="button" class="al-filter-chip" data-pattern="Reduce">Reduce</button>
+      <button type="button" class="al-filter-chip" data-pattern="Clarify">Clarify</button>
+      <button type="button" class="al-filter-chip" data-pattern="Organize">Organize</button>
+      <button type="button" class="al-filter-chip" data-pattern="Evaluate">Evaluate</button>
+      <button type="button" class="al-filter-chip" data-pattern="Build Consensus">Build Consensus</button>
+    </div>
+
+    <div id="activityCards" class="al-cards-grid">
+      <!-- Populated by JS -->
+    </div>
+
+    <div id="activityEmpty" class="al-empty" style="display:none;">
+      No activities match the selected pattern.
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/activity_library.css">
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  'use strict';
+
+  const PATTERN_COLORS = {
+    'Generate':        { bg: '#e8f5e9', text: '#2e7d32' },
+    'Clarify':         { bg: '#e3f2fd', text: '#1565c0' },
+    'Reduce':          { bg: '#fff3e0', text: '#e65100' },
+    'Organize':        { bg: '#f3e5f5', text: '#6a1b9a' },
+    'Evaluate':        { bg: '#e0f2f1', text: '#00695c' },
+    'Build Consensus': { bg: '#fce4ec', text: '#ad1457' },
+  };
+
+  let catalog = [];
+  let activePattern = 'all';
+
+  async function loadCatalog() {
+    try {
+      const resp = await fetch('/api/meetings/modules/enriched');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      catalog = await resp.json();
+      render();
+    } catch (err) {
+      console.error('Failed to load activity catalog:', err);
+      document.getElementById('activityCards').innerHTML =
+        '<p class="al-error">Failed to load activities. Please try refreshing the page.</p>';
+    }
+  }
+
+  function render() {
+    const container = document.getElementById('activityCards');
+    const emptyMsg = document.getElementById('activityEmpty');
+
+    const filtered = activePattern === 'all'
+      ? catalog
+      : catalog.filter(a => (a.collaboration_patterns || []).includes(activePattern));
+
+    if (filtered.length === 0) {
+      container.innerHTML = '';
+      emptyMsg.style.display = 'block';
+      return;
+    }
+    emptyMsg.style.display = 'none';
+    container.innerHTML = filtered.map(renderCard).join('');
+  }
+
+  function renderCard(activity) {
+    const patterns = (activity.collaboration_patterns || []).map(p => {
+      const c = PATTERN_COLORS[p] || { bg: '#f5f5f5', text: '#424242' };
+      return `<span class="al-pattern-badge" style="background:${c.bg};color:${c.text}">${esc(p)}</span>`;
+    }).join(' ');
+
+    const groupRange = activity.group_size_range || {};
+    const durationRange = activity.typical_duration_minutes || {};
+
+    const useCases = (activity.use_cases || []).map(u =>
+      `<li>${esc(u)}</li>`
+    ).join('');
+
+    const biasItems = (activity.bias_mitigation || []).map(b =>
+      `<li>${esc(b)}</li>`
+    ).join('');
+
+    return `
+      <div class="al-card" data-tool="${esc(activity.tool_type)}">
+        <div class="al-card-header">
+          <h3 class="al-card-title">${esc(activity.label)}</h3>
+          <span class="al-tool-badge">${esc(activity.tool_type)}</span>
+        </div>
+        <p class="al-card-desc">${esc(activity.description)}</p>
+        <div class="al-card-patterns">${patterns}</div>
+
+        <div class="al-card-meta">
+          ${groupRange.min != null ? `<span class="al-meta-item" title="Recommended group size">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            ${groupRange.min}&ndash;${groupRange.max}
+          </span>` : ''}
+          ${durationRange.min != null ? `<span class="al-meta-item" title="Typical duration (minutes)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${durationRange.min}&ndash;${durationRange.max} min
+          </span>` : ''}
+        </div>
+
+        <details class="al-details">
+          <summary>When to use</summary>
+          <p>${esc(activity.when_to_use)}</p>
+        </details>
+
+        <details class="al-details">
+          <summary>When NOT to use</summary>
+          <p>${esc(activity.when_not_to_use)}</p>
+        </details>
+
+        ${useCases ? `<details class="al-details">
+          <summary>Use cases</summary>
+          <ul class="al-list">${useCases}</ul>
+        </details>` : ''}
+
+        ${biasItems ? `<details class="al-details">
+          <summary>Bias mitigation</summary>
+          <ul class="al-list">${biasItems}</ul>
+        </details>` : ''}
+
+        ${activity.input_requirements ? `<details class="al-details">
+          <summary>Input requirements</summary>
+          <p>${esc(activity.input_requirements)}</p>
+        </details>` : ''}
+
+        ${activity.output_characteristics ? `<details class="al-details">
+          <summary>Output characteristics</summary>
+          <p>${esc(activity.output_characteristics)}</p>
+        </details>` : ''}
+      </div>
+    `;
+  }
+
+  function esc(str) {
+    if (!str) return '';
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // Filter chip clicks
+  document.querySelector('.al-filter-bar').addEventListener('click', function(e) {
+    const chip = e.target.closest('.al-filter-chip');
+    if (!chip) return;
+    document.querySelectorAll('.al-filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activePattern = chip.dataset.pattern;
+    render();
+  });
+
+  loadCatalog();
+})();
+</script>
+{% endblock %}

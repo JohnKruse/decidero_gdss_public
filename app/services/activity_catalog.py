@@ -100,6 +100,35 @@ def get_activity_catalog() -> List[Dict[str, Any]]:
     return catalog
 
 
+def get_enriched_activity_catalog() -> List[Dict[str, Any]]:
+    """Return the full enriched catalog with collaboration engineering metadata."""
+    catalog: List[Dict[str, Any]] = []
+    registry = get_activity_registry()
+    for plugin in registry.list_plugins():
+        manifest = plugin.manifest
+        entry = {
+            "tool_type": manifest.tool_type,
+            "label": manifest.label,
+            "description": manifest.description,
+            "stem": derive_activity_prefix(manifest.tool_type),
+            "default_config": dict(manifest.default_config or {}),
+            "reliability_policy": normalise_reliability_policy(
+                manifest.reliability_policy
+            ),
+            "collaboration_patterns": list(manifest.collaboration_patterns or []),
+            "use_cases": list(manifest.use_cases or []),
+            "when_to_use": manifest.when_to_use or "",
+            "when_not_to_use": manifest.when_not_to_use or "",
+            "group_size_range": dict(manifest.group_size_range or {}),
+            "typical_duration_minutes": dict(manifest.typical_duration_minutes or {}),
+            "bias_mitigation": list(manifest.bias_mitigation or []),
+            "input_requirements": manifest.input_requirements or "",
+            "output_characteristics": manifest.output_characteristics or "",
+        }
+        catalog.append(entry)
+    return catalog
+
+
 def get_activity_definition(tool_type: str) -> Optional[Dict[str, Any]]:
     """Return the catalog entry for the given tool type, if registered."""
     normalised = (tool_type or "").strip().lower()

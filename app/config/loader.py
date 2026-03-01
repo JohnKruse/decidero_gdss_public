@@ -447,6 +447,47 @@ def get_auth_login_rate_limit_settings() -> Dict[str, Any]:
     }
 
 
+def get_meeting_designer_settings() -> Dict[str, Any]:
+    """Return Meeting Designer AI model settings from config.
+
+    The feature is enabled only when provider, api_key, and model are all non-empty.
+    Returns a dict with keys: enabled, provider, api_key, endpoint_url, model,
+    max_tokens, temperature.
+    """
+    config = load_config()
+    section = config.get("meeting_designer_model") or {}
+
+    def _str(key: str) -> str:
+        value = section.get(key)
+        return str(value).strip() if value is not None else ""
+
+    def _coerce_positive_int(value: Any, fallback: int) -> int:
+        try:
+            candidate = int(value)
+            return candidate if candidate > 0 else fallback
+        except Exception:  # noqa: BLE001
+            return fallback
+
+    provider = _str("provider").lower()
+    api_key = _str("api_key")
+    model = _str("model")
+    endpoint_url = _str("endpoint_url")
+    max_tokens = _coerce_positive_int(section.get("max_tokens"), 2048)
+    temperature = _coerce_jitter_ratio(section.get("temperature"), 0.7)
+
+    enabled = bool(provider and api_key and model)
+
+    return {
+        "enabled": enabled,
+        "provider": provider,
+        "api_key": api_key,
+        "endpoint_url": endpoint_url,
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+
+
 def get_autosave_seconds() -> int:
     """Return the default autosave interval in seconds."""
     config = load_config()

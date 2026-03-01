@@ -20,6 +20,49 @@ class CategorizationPlugin(ActivityPlugin):
             "buckets": [],
             "single_assignment_only": True,
         },
+        collaboration_patterns=["Reduce", "Organize"],
+        use_cases=[
+            "Grouping brainstormed ideas into thematic categories for structured evaluation",
+            "Filtering ideas into keep/discard/maybe buckets to narrow the field (Reduce)",
+            "Building shared taxonomies that reveal relationships between concepts",
+            "Organizing cross-functional input into domain-specific themes before voting",
+            "Preparing categorized output as structured input for prioritization activities",
+        ],
+        when_to_use=(
+            "Use after a Generate phase to bring structure to a large set of ideas. "
+            "Facilitator-led categorization ensures consistency and speed. Best suited "
+            "when the group needs shared understanding of themes before evaluating "
+            "options. Use the Reduce pattern (keep/discard buckets) to narrow a long "
+            "list; use the Organize pattern (thematic buckets) to reveal relationships "
+            "and group related ideas together."
+        ),
+        when_not_to_use=(
+            "Not ideal when ideas are already well-structured or when the group "
+            "needs to generate more ideas rather than organize existing ones. Avoid "
+            "when the group needs to evaluate relative value — use voting or "
+            "rank-order voting instead. Not suitable as a first activity since it "
+            "requires items from a prior activity."
+        ),
+        group_size_range={"min": 2, "max": 50},
+        typical_duration_minutes={"min": 5, "max": 25},
+        bias_mitigation=[
+            "Facilitator-led sorting ensures consistent categorization criteria "
+            "are applied across all items, preventing ad-hoc grouping biases",
+            "Pre-defined buckets prevent suppression of inconvenient themes — all "
+            "categories are visible, making it harder to quietly discard ideas",
+            "Categorization before voting prevents premature convergence by ensuring "
+            "the group sees the full landscape of ideas organized by theme",
+        ],
+        input_requirements=(
+            "Requires a set of items from a prior activity. Typically receives "
+            "brainstorming output via the activity transfer pipeline. Items can "
+            "include sub-comments which are folded into parent content."
+        ),
+        output_characteristics=(
+            "Categorized list of items with bucket assignments, category metadata, "
+            "and agreement metrics. Output feeds into voting or rank-order voting "
+            "activities with categorization context preserved in item metadata."
+        ),
     )
 
     def open_activity(self, context, input_bundle=None) -> None:

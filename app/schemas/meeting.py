@@ -405,6 +405,18 @@ class ActivityCatalogEntry(BaseModel):
     reliability_policy: Dict[str, Any] = Field(default_factory=dict)
 
 
+class EnrichedActivityCatalogEntry(ActivityCatalogEntry):
+    collaboration_patterns: List[str] = Field(default_factory=list)
+    use_cases: List[str] = Field(default_factory=list)
+    when_to_use: str = ""
+    when_not_to_use: str = ""
+    group_size_range: Dict[str, int] = Field(default_factory=dict)
+    typical_duration_minutes: Dict[str, int] = Field(default_factory=dict)
+    bias_mitigation: List[str] = Field(default_factory=list)
+    input_requirements: str = ""
+    output_characteristics: str = ""
+
+
 class MeetingStateSnapshot(BaseModel):
     meetingId: str
     status: Optional[str] = None

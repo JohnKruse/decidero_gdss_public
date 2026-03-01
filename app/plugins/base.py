@@ -22,6 +22,16 @@ class ActivityPluginManifest:
     default_config: Dict[str, Any] = field(default_factory=dict)
     reliability_policy: Dict[str, Any] = field(default_factory=dict)
     autosave_seconds: Optional[int] = None
+    # Collaboration engineering metadata for AI Meeting Designer & Activity Library
+    collaboration_patterns: List[str] = field(default_factory=list)
+    use_cases: List[str] = field(default_factory=list)
+    when_to_use: str = ""
+    when_not_to_use: str = ""
+    group_size_range: Dict[str, int] = field(default_factory=dict)
+    typical_duration_minutes: Dict[str, int] = field(default_factory=dict)
+    bias_mitigation: List[str] = field(default_factory=list)
+    input_requirements: str = ""
+    output_characteristics: str = ""
 
 
 class ActivityPlugin(ABC):

@@ -16,6 +16,7 @@ from app.schemas.meeting import (
     AgendaActivityUpdate,
     AgendaActivityResponse,
     ActivityCatalogEntry,
+    EnrichedActivityCatalogEntry,
     JoinMeetingRequest,
     JoinMeetingResponse,
     AgendaReorderPayload,
@@ -900,6 +901,18 @@ async def list_agenda_modules(
     """Expose the catalog of available agenda modules."""
     entries = meeting_manager.get_activity_catalog_entries()
     return [ActivityCatalogEntry.model_validate(entry) for entry in entries]
+
+
+@router.get("/modules/enriched", response_model=List[EnrichedActivityCatalogEntry])
+async def list_enriched_agenda_modules(
+    current_user: str = Depends(get_current_user),
+    _: bool = Depends(check_permission(Permission.CREATE_MEETING)),
+) -> List[EnrichedActivityCatalogEntry]:
+    """Expose the enriched catalog with collaboration engineering metadata."""
+    from app.services.activity_catalog import get_enriched_activity_catalog
+
+    entries = get_enriched_activity_catalog()
+    return [EnrichedActivityCatalogEntry.model_validate(entry) for entry in entries]
 
 
 @router.get("/{meeting_id}/agenda", response_model=List[AgendaActivityResponse])

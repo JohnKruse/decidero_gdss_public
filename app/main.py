@@ -26,6 +26,7 @@ from app.routers import voting as voting_router
 from app.routers import rank_order_voting as rank_order_voting_router
 from app.routers import categorization as categorization_router
 from app.routers import realtime as realtime_router
+from app.routers import meeting_designer as meeting_designer_router
 from app.auth.auth import auth_middleware  # Updated middleware name
 from app.models.meeting import meeting_facilitators_table
 from app.utils.logging_config import setup_logging
@@ -203,6 +204,7 @@ app.include_router(transfer_router.transfer_router)
 app.include_router(voting_router.router)
 app.include_router(rank_order_voting_router.router)
 app.include_router(categorization_router.router)
+app.include_router(meeting_designer_router.router)
 
 
 @app.exception_handler(Exception)

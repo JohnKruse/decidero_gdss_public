@@ -224,6 +224,70 @@ async def register(
 #
 
 
+@router.get("/meeting/design", response_class=HTMLResponse, response_model=None)
+async def meeting_designer(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+):
+    """AI Meeting Designer chat interface — requires facilitator/admin."""
+    if current_user is None:
+        cached_user = getattr(request.state, "user", None)
+        if cached_user is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Authenticated user not available.",
+            )
+        current_user = cached_user
+    if current_user.role not in [UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only facilitators and administrators can use the AI Meeting Designer",
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "meeting_designer.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "role": current_user.role,
+            "UserRole": UserRole,
+        },
+    )
+
+
+@router.get("/activity-library", response_class=HTMLResponse, response_model=None)
+async def activity_library(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+):
+    """Browsable Activity Library - requires facilitator/admin."""
+    if current_user is None:
+        cached_user = getattr(request.state, "user", None)
+        if cached_user is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Authenticated user not available.",
+            )
+        current_user = cached_user
+    if current_user.role not in [UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only facilitators and administrators can view the activity library",
+        )
+
+    return templates.TemplateResponse(
+        request,
+        "activity_library.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "role": current_user.role,
+            "UserRole": UserRole,
+        },
+    )
+
+
 @router.get("/meeting/create", response_class=HTMLResponse, response_model=None)
 async def create_meeting(
     request: Request,

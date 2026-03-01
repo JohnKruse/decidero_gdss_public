@@ -1,0 +1,504 @@
+{% extends "_base.html" %}
+
+{% block title %}AI Meeting Designer - DECIDERO GDSS{% endblock %}
+
+{% from "components/macros.html" import section_header %}
+
+{% block content %}
+<div class="layout-grid md-layout">
+
+  <!-- ── Left panel: Chat ──────────────────────────────────── -->
+  <section class="layout-card md-chat-panel">
+    <div class="md-chat-header">
+      <div>
+        <h2 class="md-chat-title">AI Meeting Designer</h2>
+        <p class="md-chat-subtitle">Describe your meeting goal and I'll design a research-grounded agenda.</p>
+      </div>
+      <div id="mdStatusBadge" class="md-status-badge md-status-checking">
+        <span class="md-status-dot"></span>
+        <span class="md-status-label">Checking…</span>
+      </div>
+    </div>
+
+    <!-- Message thread -->
+    <div id="mdMessages" class="md-messages" aria-live="polite" aria-label="Conversation">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- Input area -->
+    <div class="md-input-area">
+      <textarea
+        id="mdInput"
+        class="md-textarea"
+        placeholder="Type your message…"
+        rows="3"
+        maxlength="4000"
+        aria-label="Your message"
+        disabled
+      ></textarea>
+      <div class="md-input-actions">
+        <span id="mdCharCount" class="md-char-count">0 / 4000</span>
+        <button id="mdSendBtn" class="md-send-btn" disabled>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Send
+        </button>
+      </div>
+    </div>
+
+    <!-- Generate button — appears after first assistant message -->
+    <div id="mdGenerateBar" class="md-generate-bar" style="display:none;">
+      <p class="md-generate-hint">Ready to create your agenda? Click below when you've shared enough context.</p>
+      <button id="mdGenerateBtn" class="md-generate-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        Generate Agenda
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Right panel: Agenda review ───────────────────────── -->
+  <aside class="layout-card md-agenda-panel" id="mdAgendaPanel" style="display:none;">
+    <div class="md-agenda-header">
+      <h3 class="md-agenda-title">Generated Agenda</h3>
+      <button id="mdEditAgendaBtn" class="md-edit-btn" title="Edit in Meeting Creator">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        Use This Agenda
+      </button>
+    </div>
+
+    <div id="mdAgendaSummary" class="md-agenda-summary"></div>
+    <div id="mdAgendaRationale" class="md-agenda-rationale"></div>
+
+    <div id="mdAgendaList" class="md-agenda-list">
+      <!-- Populated by JS -->
+    </div>
+
+    <div id="mdAgendaLoading" class="md-agenda-loading" style="display:none;">
+      <div class="md-spinner"></div>
+      <span>Generating agenda…</span>
+    </div>
+  </aside>
+
+</div>
+
+<!-- Detail modal for rationale/bias info -->
+<div id="mdModal" class="md-modal" role="dialog" aria-modal="true" aria-labelledby="mdModalTitle" style="display:none;">
+  <div class="md-modal-backdrop"></div>
+  <div class="md-modal-box">
+    <div class="md-modal-header">
+      <h4 id="mdModalTitle" class="md-modal-title">Activity Detail</h4>
+      <button class="md-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="mdModalBody" class="md-modal-body"></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/meeting_designer.css">
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  'use strict';
+
+  // ── State ──────────────────────────────────────────────────
+  const state = {
+    configured: false,
+    messages: [],          // [{role, content}]
+    streaming: false,
+    agendaData: null,
+  };
+
+  // ── Elements ───────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const msgEl        = $('mdMessages');
+  const inputEl      = $('mdInput');
+  const sendBtn      = $('mdSendBtn');
+  const charCount    = $('mdCharCount');
+  const statusBadge  = $('mdStatusBadge');
+  const statusDot    = statusBadge.querySelector('.md-status-dot');
+  const statusLabel  = statusBadge.querySelector('.md-status-label');
+  const generateBar  = $('mdGenerateBar');
+  const generateBtn  = $('mdGenerateBtn');
+  const agendaPanel  = $('mdAgendaPanel');
+  const agendaList   = $('mdAgendaList');
+  const agendaSummary = $('mdAgendaSummary');
+  const agendaRationale = $('mdAgendaRationale');
+  const agendaLoading = $('mdAgendaLoading');
+  const editAgendaBtn = $('mdEditAgendaBtn');
+  const modal        = $('mdModal');
+  const modalTitle   = $('mdModalTitle');
+  const modalBody    = $('mdModalBody');
+
+  const PATTERN_COLORS = {
+    'Generate':        { bg: '#e8f5e9', text: '#2e7d32' },
+    'Clarify':         { bg: '#e3f2fd', text: '#1565c0' },
+    'Reduce':          { bg: '#fff3e0', text: '#e65100' },
+    'Organize':        { bg: '#f3e5f5', text: '#6a1b9a' },
+    'Evaluate':        { bg: '#e0f2f1', text: '#00695c' },
+    'Build Consensus': { bg: '#fce4ec', text: '#ad1457' },
+  };
+
+  // ── Status check ───────────────────────────────────────────
+  async function checkStatus() {
+    try {
+      const resp = await fetch('/api/meeting-designer/status');
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      state.configured = data.configured;
+
+      if (data.configured) {
+        statusBadge.className = 'md-status-badge md-status-ready';
+        statusLabel.textContent = `${data.provider} / ${data.model}`;
+        enableInput();
+        startConversation();
+      } else {
+        statusBadge.className = 'md-status-badge md-status-error';
+        statusLabel.textContent = 'Not configured';
+        appendSystemMessage(
+          'The AI Meeting Designer is not yet configured. An administrator needs to set ' +
+          'the <code>meeting_designer_model</code> section in <code>config.yaml</code> ' +
+          'before this feature can be used.'
+        );
+      }
+    } catch (err) {
+      statusBadge.className = 'md-status-badge md-status-error';
+      statusLabel.textContent = 'Error';
+      appendSystemMessage('Failed to connect to the meeting designer service. Please reload the page.');
+    }
+  }
+
+  // ── Conversation init ──────────────────────────────────────
+  async function startConversation() {
+    // Send an empty-history first message so the AI introduces itself
+    await sendToAI('Hello! I\'d like to design a meeting agenda.', isFirstMessage=true);
+  }
+
+  // ── Input controls ─────────────────────────────────────────
+  function enableInput() {
+    inputEl.disabled = false;
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+
+  function disableInput() {
+    inputEl.disabled = true;
+    sendBtn.disabled = true;
+  }
+
+  inputEl.addEventListener('input', () => {
+    charCount.textContent = `${inputEl.value.length} / 4000`;
+  });
+
+  inputEl.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  });
+
+  sendBtn.addEventListener('click', handleSend);
+
+  function handleSend() {
+    const text = inputEl.value.trim();
+    if (!text || state.streaming) return;
+    inputEl.value = '';
+    charCount.textContent = '0 / 4000';
+    sendUserMessage(text);
+  }
+
+  // ── Message rendering ──────────────────────────────────────
+  function appendMessage(role, content, id) {
+    const wrapper = document.createElement('div');
+    wrapper.className = `md-msg md-msg-${role}`;
+    if (id) wrapper.id = id;
+
+    const bubble = document.createElement('div');
+    bubble.className = 'md-bubble';
+    bubble.innerHTML = formatContent(content);
+
+    wrapper.appendChild(bubble);
+    msgEl.appendChild(wrapper);
+    msgEl.scrollTop = msgEl.scrollHeight;
+    return bubble;
+  }
+
+  function appendSystemMessage(html) {
+    const div = document.createElement('div');
+    div.className = 'md-msg md-msg-system';
+    div.innerHTML = `<div class="md-bubble">${html}</div>`;
+    msgEl.appendChild(div);
+    msgEl.scrollTop = msgEl.scrollHeight;
+  }
+
+  function formatContent(text) {
+    // Basic markdown-lite: bold, code, line breaks
+    return esc(text)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\n/g, '<br>');
+  }
+
+  function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str;
+    return d.innerHTML;
+  }
+
+  // ── Send user message + stream response ───────────────────
+  function sendUserMessage(text) {
+    appendMessage('user', text);
+    state.messages.push({ role: 'user', content: text });
+    sendToAI(text);
+  }
+
+  async function sendToAI(userText, isFirstMessage = false) {
+    state.streaming = true;
+    disableInput();
+    generateBtn.disabled = true;
+
+    // Create a placeholder bubble for the streaming response
+    const msgId = `md-stream-${Date.now()}`;
+    const historyForRequest = isFirstMessage ? [] : state.messages.slice(0, -1); // exclude latest user msg
+
+    // Show typing indicator
+    const typingEl = document.createElement('div');
+    typingEl.className = 'md-msg md-msg-assistant';
+    typingEl.innerHTML = '<div class="md-bubble md-typing"><span></span><span></span><span></span></div>';
+    typingEl.id = msgId + '-typing';
+    msgEl.appendChild(typingEl);
+    msgEl.scrollTop = msgEl.scrollHeight;
+
+    let fullText = '';
+    let bubble = null;
+
+    try {
+      const resp = await fetch('/api/meeting-designer/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: historyForRequest,
+          new_message: userText,
+        }),
+      });
+
+      if (!resp.ok) {
+        throw new Error(`HTTP ${resp.status}`);
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line
+
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const dataStr = line.slice(5).trim();
+          if (!dataStr) continue;
+
+          let event;
+          try { event = JSON.parse(dataStr); } catch { continue; }
+
+          if (event.error) {
+            typingEl.remove();
+            const errMsg = event.error === 'not_configured'
+              ? 'The AI model is not configured. Please contact your administrator.'
+              : `Error: ${event.message || 'AI provider error'}`;
+            appendSystemMessage(errMsg);
+            state.streaming = false;
+            enableInput();
+            return;
+          }
+
+          if (event.chunk) {
+            if (!bubble) {
+              typingEl.remove();
+              bubble = appendMessage('assistant', '');
+              bubble.innerHTML = ''; // Start fresh
+            }
+            fullText += event.chunk;
+            bubble.innerHTML = formatContent(fullText);
+            msgEl.scrollTop = msgEl.scrollHeight;
+          }
+
+          if (event.done) break;
+        }
+      }
+    } catch (err) {
+      typingEl.remove();
+      appendSystemMessage(`Connection error: ${err.message}. Please try again.`);
+      state.streaming = false;
+      enableInput();
+      generateBtn.disabled = false;
+      return;
+    }
+
+    // Store assistant message
+    if (fullText) {
+      state.messages.push({ role: 'assistant', content: fullText });
+    }
+
+    // Show generate bar after first AI response
+    if (state.messages.filter(m => m.role === 'assistant').length >= 1) {
+      generateBar.style.display = 'block';
+    }
+
+    state.streaming = false;
+    if (!isFirstMessage || state.configured) {
+      enableInput();
+    }
+    generateBtn.disabled = false;
+  }
+
+  // ── Agenda generation ──────────────────────────────────────
+  generateBtn.addEventListener('click', async () => {
+    if (state.streaming || state.messages.length < 2) return;
+
+    // Show agenda panel in loading state
+    agendaPanel.style.display = 'flex';
+    agendaList.innerHTML = '';
+    agendaSummary.innerHTML = '';
+    agendaRationale.innerHTML = '';
+    agendaLoading.style.display = 'flex';
+    generateBtn.disabled = true;
+    disableInput();
+
+    try {
+      const resp = await fetch('/api/meeting-designer/generate-agenda', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: state.messages }),
+      });
+
+      agendaLoading.style.display = 'none';
+
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        appendSystemMessage(`Failed to generate agenda: ${err.detail || resp.statusText}`);
+        generateBtn.disabled = false;
+        enableInput();
+        return;
+      }
+
+      const data = await resp.json();
+      state.agendaData = data;
+      renderAgenda(data);
+      generateBtn.disabled = false;
+      enableInput();
+
+      // Add a brief confirmation message to chat
+      const confirmText = `I've generated a ${data.agenda.length}-activity agenda for you. Review it on the right, then click "Use This Agenda" to pre-fill the meeting creator.`;
+      appendMessage('assistant', confirmText);
+      state.messages.push({ role: 'assistant', content: confirmText });
+
+    } catch (err) {
+      agendaLoading.style.display = 'none';
+      appendSystemMessage(`Error generating agenda: ${err.message}`);
+      generateBtn.disabled = false;
+      enableInput();
+    }
+  });
+
+  // ── Agenda rendering ───────────────────────────────────────
+  function renderAgenda(data) {
+    agendaSummary.innerHTML = data.meeting_summary
+      ? `<p class="md-agenda-desc">${esc(data.meeting_summary)}</p>` : '';
+    agendaRationale.innerHTML = data.design_rationale
+      ? `<p class="md-agenda-desc md-agenda-rationale-text">${esc(data.design_rationale)}</p>` : '';
+
+    agendaList.innerHTML = (data.agenda || []).map((item, i) => {
+      const c = PATTERN_COLORS[item.collaboration_pattern] || { bg: '#f5f5f5', text: '#424242' };
+      return `
+        <div class="md-agenda-item">
+          <div class="md-agenda-item-header">
+            <span class="md-agenda-num">${i + 1}</span>
+            <div class="md-agenda-item-meta">
+              <span class="md-agenda-item-title">${esc(item.title || item.tool_type)}</span>
+              <span class="md-agenda-pattern-badge" style="background:${c.bg};color:${c.text}">
+                ${esc(item.collaboration_pattern || '')}
+              </span>
+            </div>
+            <span class="md-agenda-duration">${item.duration_minutes || '?'} min</span>
+            <button class="md-info-btn" data-idx="${i}" title="View rationale &amp; details" aria-label="View details for activity ${i+1}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </button>
+          </div>
+          <div class="md-agenda-tool-badge">${esc(item.tool_type)}</div>
+        </div>
+      `;
+    }).join('');
+
+    // Info button handlers
+    agendaList.querySelectorAll('.md-info-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx, 10);
+        showActivityDetail(data.agenda[idx], idx);
+      });
+    });
+  }
+
+  function showActivityDetail(item, idx) {
+    modalTitle.textContent = item.title || item.tool_type;
+    const c = PATTERN_COLORS[item.collaboration_pattern] || { bg: '#f5f5f5', text: '#424242' };
+    modalBody.innerHTML = `
+      <div class="md-modal-section">
+        <span class="md-modal-pattern" style="background:${c.bg};color:${c.text}">${esc(item.collaboration_pattern || '')}</span>
+        <span class="md-modal-tool">${esc(item.tool_type)}</span>
+        <span class="md-modal-dur">${item.duration_minutes || '?'} min</span>
+      </div>
+      ${item.instructions ? `
+        <div class="md-modal-section">
+          <div class="md-modal-label">Participant Instructions</div>
+          <p>${esc(item.instructions)}</p>
+        </div>` : ''}
+      ${item.rationale ? `
+        <div class="md-modal-section">
+          <div class="md-modal-label">Design Rationale</div>
+          <p>${esc(item.rationale)}</p>
+        </div>` : ''}
+      ${item.config_overrides && Object.keys(item.config_overrides).length ? `
+        <div class="md-modal-section">
+          <div class="md-modal-label">Configuration</div>
+          <ul class="md-modal-config">
+            ${Object.entries(item.config_overrides).map(([k,v]) =>
+              `<li><code>${esc(k)}</code>: <code>${esc(JSON.stringify(v))}</code></li>`
+            ).join('')}
+          </ul>
+        </div>` : ''}
+    `;
+    modal.style.display = 'flex';
+    modal.querySelector('.md-modal-close').focus();
+  }
+
+  // Modal close
+  modal.querySelector('.md-modal-close').addEventListener('click', closeModal);
+  modal.querySelector('.md-modal-backdrop').addEventListener('click', closeModal);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+  function closeModal() { modal.style.display = 'none'; }
+
+  // ── Use This Agenda → sessionStorage handoff ───────────────
+  editAgendaBtn.addEventListener('click', () => {
+    if (!state.agendaData) return;
+    try {
+      sessionStorage.setItem('md_agenda', JSON.stringify(state.agendaData));
+      window.location.href = '/meeting/create?from=designer';
+    } catch (err) {
+      appendSystemMessage('Failed to store agenda. Please try again.');
+    }
+  });
+
+  // ── Boot ───────────────────────────────────────────────────
+  checkStatus();
+})();
+</script>
+{% endblock %}

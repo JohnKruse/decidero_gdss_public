@@ -39,6 +39,52 @@ class RankOrderVotingPlugin(ActivityPlugin):
                 "idempotency_header": "X-Idempotency-Key",
             },
         },
+        collaboration_patterns=["Evaluate"],
+        use_cases=[
+            "Formal prioritization requiring complete orderings from every participant",
+            "Multi-criteria evaluation where relative position matters more than binary choice",
+            "Borda-count aggregation to produce a fair, balanced group ranking",
+            "Detecting disagreement via rank variance metrics to surface hidden conflicts",
+            "Final prioritization of a shortlist after initial dot voting or categorization",
+        ],
+        when_to_use=(
+            "Use when the group needs a rigorous, complete ordering of options "
+            "rather than a simple vote count. Borda-style aggregation gives balanced "
+            "weight to all preferences, making it ideal for high-stakes prioritization "
+            "where every participant's full ranking matters. Best suited for moderate "
+            "option sets (3-15 items) where participants can meaningfully compare all "
+            "options. Enable randomized order to reduce anchoring effects."
+        ),
+        when_not_to_use=(
+            "Not ideal for very large option sets (>15 items) where full ranking "
+            "becomes cognitively burdensome. Avoid when a quick temperature check "
+            "suffices — dot voting is faster and more intuitive for simple "
+            "prioritization. Not suitable when the group is still generating or "
+            "organizing ideas."
+        ),
+        group_size_range={"min": 2, "max": 50},
+        typical_duration_minutes={"min": 5, "max": 20},
+        bias_mitigation=[
+            "Borda-count aggregation gives balanced weight to all rank positions, "
+            "preventing tyranny of the majority on a single top pick",
+            "Randomized presentation order reduces anchoring bias and prevents the "
+            "first-listed option from receiving systematically higher rankings",
+            "Rank variance metrics reveal hidden disagreement — low variance indicates "
+            "genuine consensus while high variance exposes polarized preferences",
+            "Complete orderings prevent strategic single-issue voting by requiring "
+            "participants to express preferences across all options",
+        ],
+        input_requirements=(
+            "Requires a set of options (ideas) to rank. Options can be manually "
+            "entered or automatically populated from a prior activity (brainstorming, "
+            "categorization, or dot voting output) via the activity transfer pipeline."
+        ),
+        output_characteristics=(
+            "Fully ordered list with Borda scores, average ranks, rank variance, "
+            "and top-choice share metrics per option. Output provides rich analytical "
+            "data for facilitator debrief and can feed into further categorization "
+            "or discussion activities."
+        ),
     )
 
     def open_activity(self, context, input_bundle=None) -> None:

@@ -85,3 +85,27 @@ frontend_reliability:
     base_delay_ms: 450
     max_delay_ms: 1800
     jitter_ratio: 0.2
+
+# ── Meeting Designer AI Model ──────────────────────────────────────────────────
+# Configures the AI model used by the AI Meeting Designer feature.
+# The feature is DISABLED until provider, api_key, and model are all set.
+# No default provider is assumed — you must choose and supply credentials.
+#
+# Supported providers:
+#   anthropic         — Anthropic Claude (claude-opus-4-5, claude-sonnet-4-5, ...)
+#   openai            — OpenAI GPT (gpt-4o, gpt-4o-mini, ...)
+#   openai_compatible — Any OpenAI-compatible endpoint:
+#                       Azure OpenAI, OpenRouter, Ollama, LM Studio, etc.
+#
+# Azure OpenAI: set provider: openai_compatible, supply your deployment endpoint URL:
+#   https://<resource>.openai.azure.com/openai/deployments/<deployment>/chat/completions?api-version=2024-02-01
+#
+# OpenRouter: set provider: openai_compatible, endpoint_url: https://openrouter.ai/api/v1
+#
+meeting_designer_model:
+  provider: ""          # anthropic | openai | openai_compatible
+  api_key: ""           # Your API key for the chosen provider
+  endpoint_url: ""      # Required for openai_compatible; optional base URL override for openai
+  model: ""             # e.g. claude-opus-4-5, gpt-4o, meta-llama/llama-3.3-70b-instruct
+  max_tokens: 2048      # Maximum tokens per AI response
+  temperature: 0.7      # Sampling temperature (0.0–1.0; lower = more deterministic)
