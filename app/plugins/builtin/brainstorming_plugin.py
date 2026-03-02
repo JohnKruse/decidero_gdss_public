@@ -66,6 +66,10 @@ class BrainstormingPlugin(ActivityPlugin):
             "Sub-comments allow in-context clarification without interrupting "
             "the generation flow or creating verbal dominance",
         ],
+        thinklets=[
+            "FreeBrainstorm (anonymous, parallel — maximises idea volume)",
+            "LeafHopper (sub-comments for inline Clarify without interruption)",
+        ],
         input_requirements=(
             "None required. Can optionally receive a seed prompt or topic framing "
             "to focus ideation."

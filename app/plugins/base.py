@@ -30,6 +30,7 @@ class ActivityPluginManifest:
     group_size_range: Dict[str, int] = field(default_factory=dict)
     typical_duration_minutes: Dict[str, int] = field(default_factory=dict)
     bias_mitigation: List[str] = field(default_factory=list)
+    thinklets: List[str] = field(default_factory=list)
     input_requirements: str = ""
     output_characteristics: str = ""
 

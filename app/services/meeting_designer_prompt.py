@@ -3,6 +3,10 @@ PRISM-structured system prompt for the AI Meeting Designer.
 
 PRISM = Purpose · Rules · Identity · Structure · Motion
 (From the academic Collaboration Engineering framework in the Decidero design doc)
+
+The STRUCTURE section (available activities) is generated dynamically from the
+plugin registry via get_enriched_activity_catalog(), so it stays in sync with
+the Activity Library automatically whenever a new activity is added or changed.
 """
 from __future__ import annotations
 
@@ -10,10 +14,10 @@ from typing import Any, Dict, List
 
 
 # ---------------------------------------------------------------------------
-# System prompt — sent on every conversation turn
+# Prompt sections that never change — pure static text
 # ---------------------------------------------------------------------------
 
-MEETING_DESIGNER_SYSTEM_PROMPT = """You are the Decidero AI Meeting Designer — an expert Collaboration Engineer embedded in a Group Decision Support System (GDSS). Your job is to help facilitators design research-grounded, bias-aware collaborative meeting agendas.
+_PROMPT_PREFIX = """You are the Decidero AI Meeting Designer — an expert Collaboration Engineer embedded in a Group Decision Support System (GDSS). Your job is to help facilitators design research-grounded, bias-aware collaborative meeting agendas.
 
 ═══════════════════════════════════════════
 PURPOSE
@@ -26,7 +30,7 @@ RULES
 1. Ask focused questions — no more than 2 per message. Be conversational, not clinical.
 2. Ground all recommendations in established Collaboration Engineering theory. Name patterns when relevant.
 3. Actively design against cognitive biases. Consider: groupthink, Abilene Paradox, HiPPO effect (deference to highest-paid person), production blocking, hidden profiles, evaluation apprehension, and status/social desirability bias.
-4. Only recommend activities available in Decidero: brainstorming, voting, rank_order_voting, categorization.
+4. Only recommend activities available in Decidero: {activity_list}.
 5. Be warm and pragmatic — you speak like an experienced facilitator, not an academic.
 6. Never generate the final agenda until the facilitator explicitly signals readiness (says "generate", "create agenda", "I'm ready", or similar), OR until you have collected all four information areas (goal, group, dynamics, constraints).
 7. When generating the final agenda, output ONLY valid JSON — no prose before or after the JSON block.
@@ -49,39 +53,9 @@ COLLABORATION PATTERNS:
 • Build Consensus — Reach visible, binding group commitment
 
 DECIDERO ACTIVITIES:
+"""
 
-1. brainstorming
-   Patterns: Generate, Clarify
-   Description: Parallel, electronic idea submission. Optional anonymous mode and sub-comments.
-   ThinkLets: FreeBrainstorm (anonymous, parallel), LeafHopper (sub-comments for Clarify)
-   Best for: Opening divergent phase. Anonymous mode when power asymmetry or evaluation apprehension is a risk (HiPPO mitigation). Sub-comments when participants need to annotate ideas without verbal interruption.
-   Bias mitigated: Production blocking (everyone submits simultaneously), HiPPO effect (anonymity hides seniority), evaluation apprehension (no judgment during generation).
-   Config options: allow_anonymous (bool), allow_subcomments (bool)
-
-2. voting
-   Patterns: Evaluate, Build Consensus
-   Description: Dot voting — participants allocate a fixed vote budget across options.
-   ThinkLets: StrawPoll (temperature check), FastFocus (multi-vote prioritization)
-   Best for: Quick prioritization, temperature checks, final agreement after convergence.
-   Bias mitigated: Bandwagon effect (hide results until all vote), primacy bias (randomize option order).
-   Config options: max_votes (int), show_results_immediately (bool, default false), randomize_participant_order (bool)
-
-3. rank_order_voting
-   Patterns: Evaluate
-   Description: Participants produce complete orderings; Borda count aggregates across all rankings.
-   ThinkLets: Borda Vote (rigorous rank aggregation)
-   Best for: Rigorous prioritization of 3–15 options when the full ordering matters.
-   Bias mitigated: Borda count prevents tyranny-of-majority on a single top pick; variance metrics reveal hidden disagreement (high variance = polarized preferences, not consensus).
-   Config options: randomize_order (bool)
-
-4. categorization
-   Patterns: Reduce, Organize
-   Description: Facilitator-led drag-and-drop sorting of items into buckets. Items typically come from a prior brainstorming activity.
-   ThinkLets: BucketWalk (thematic grouping), FastFocus (keep/discard Reduce)
-   Best for: Bringing structure to brainstorming output before evaluation. Use Reduce mode (keep/maybe/discard buckets) to narrow a long list, or Organize mode (thematic buckets) to reveal relationships.
-   Bias mitigated: Pre-defined buckets prevent suppression of inconvenient themes; facilitator consistency prevents ad-hoc grouping bias.
-   Config options: buckets (list of bucket names)
-
+_PROMPT_SUFFIX = """
 STANDARD SEQUENCES (ThinkLet Patterns):
 • Simple Consensus:    brainstorming → voting
 • Classic:             brainstorming → categorization → voting
@@ -112,6 +86,95 @@ Phase 4 — AGENDA GENERATION (only when facilitator is ready):
   On the generate call, output ONLY the JSON object below — nothing else.
 
 BEGIN: Start by warmly introducing yourself in 2–3 sentences, then ask your first question about the meeting goal. Keep it friendly and brief."""
+
+
+# ---------------------------------------------------------------------------
+# Activity block builder
+# ---------------------------------------------------------------------------
+
+def _format_config_options(default_config: Dict[str, Any]) -> str:
+    """Render the config_overrides the AI may set, derived from default_config keys."""
+    # Skip internal/structural keys that aren't meaningful design choices for the AI
+    skip = {"options", "ideas", "items", "buckets", "mode", "vote_type"}
+    parts = []
+    for key, val in default_config.items():
+        if key in skip:
+            continue
+        type_name = type(val).__name__
+        parts.append(f"{key} ({type_name})")
+    return ", ".join(parts) if parts else "none"
+
+
+def _format_activity_block(index: int, activity: Dict[str, Any]) -> str:
+    """Render a single activity's description block for the system prompt."""
+    tool_type = activity.get("tool_type", "")
+    label = activity.get("label", tool_type)
+    patterns = activity.get("collaboration_patterns") or []
+    description = activity.get("description", "")
+    thinklets = activity.get("thinklets") or []
+    when_to_use = activity.get("when_to_use", "")
+    bias_mitigation = activity.get("bias_mitigation") or []
+    duration = activity.get("typical_duration_minutes") or {}
+    default_config = activity.get("default_config") or {}
+
+    duration_str = (
+        f"{duration['min']}–{duration['max']} min"
+        if "min" in duration and "max" in duration
+        else "varies"
+    )
+
+    lines = [
+        f"{index}. {tool_type}",
+        f"   Label: {label}",
+        f"   Patterns: {', '.join(patterns)}",
+        f"   Description: {description}",
+    ]
+
+    if thinklets:
+        lines.append(f"   ThinkLets: {'; '.join(thinklets)}")
+
+    if when_to_use:
+        lines.append(f"   Best for: {when_to_use}")
+
+    if bias_mitigation:
+        # Join multiple bias items into a single readable line
+        bias_text = "; ".join(b.split("\n")[0] for b in bias_mitigation)
+        lines.append(f"   Bias mitigated: {bias_text}")
+
+    lines.append(f"   Typical duration: {duration_str}")
+    lines.append(f"   Config options: {_format_config_options(default_config)}")
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def build_system_prompt() -> str:
+    """Build the Meeting Designer system prompt with the live activity catalog.
+
+    The STRUCTURE section is generated at call time from the plugin registry,
+    so it stays in sync with the Activity Library automatically.
+    """
+    from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
+
+    catalog = get_enriched_activity_catalog()
+
+    # Rule 4 — comma-separated list of tool_type names
+    activity_list = ", ".join(a["tool_type"] for a in catalog)
+
+    # DECIDERO ACTIVITIES block — one numbered entry per plugin
+    activity_blocks = "\n\n".join(
+        _format_activity_block(i + 1, activity) for i, activity in enumerate(catalog)
+    )
+
+    prompt = (
+        _PROMPT_PREFIX.format(activity_list=activity_list)
+        + activity_blocks
+        + _PROMPT_SUFFIX
+    )
+    return prompt
 
 
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ from app.services.ai_provider import (
     chat_stream,
 )
 from app.services.meeting_designer_prompt import (
-    MEETING_DESIGNER_SYSTEM_PROMPT,
+    build_system_prompt,
     build_generation_messages,
     parse_agenda_json,
 )
@@ -41,7 +41,7 @@ router = APIRouter(prefix="/api/meeting-designer", tags=["meeting-designer"])
 # ---------------------------------------------------------------------------
 
 def _require_facilitator(user_manager: UserManager, user_id: str):
-    user = user_manager.get_by_id(user_id)
+    user = user_manager.get_user_by_login(user_id)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unknown user")
     if user.role not in (UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN):
@@ -126,7 +126,7 @@ async def chat(
 
     async def event_generator():
         try:
-            async for chunk in chat_stream(settings, history, MEETING_DESIGNER_SYSTEM_PROMPT):
+            async for chunk in chat_stream(settings, history, build_system_prompt()):
                 payload = json.dumps({"chunk": chunk, "done": False})
                 yield f"data: {payload}\n\n"
             # Signal completion
@@ -194,7 +194,7 @@ async def generate_agenda(
         raw = await chat_complete(
             settings,
             generation_messages,
-            MEETING_DESIGNER_SYSTEM_PROMPT,
+            build_system_prompt(),
         )
     except AIProviderNotConfiguredError as exc:
         raise HTTPException(

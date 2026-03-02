@@ -53,6 +53,10 @@ class CategorizationPlugin(ActivityPlugin):
             "Categorization before voting prevents premature convergence by ensuring "
             "the group sees the full landscape of ideas organized by theme",
         ],
+        thinklets=[
+            "BucketWalk (thematic grouping — organise items into named topic buckets)",
+            "FastFocus (keep/discard Reduce — narrow a long list to a workable shortlist)",
+        ],
         input_requirements=(
             "Requires a set of items from a prior activity. Typically receives "
             "brainstorming output via the activity transfer pipeline. Items can "

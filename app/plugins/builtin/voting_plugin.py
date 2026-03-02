@@ -57,6 +57,10 @@ class VotingPlugin(ActivityPlugin):
             "Multi-vote allocation (dot voting) reduces the impact of single-issue "
             "voters by distributing influence across preferences",
         ],
+        thinklets=[
+            "StrawPoll (temperature check — quick single-round vote to gauge sentiment)",
+            "FastFocus (multi-vote prioritisation — distribute vote budget across options)",
+        ],
         input_requirements=(
             "Requires a set of options to vote on. Options can be manually entered "
             "or automatically populated from a prior activity (brainstorming or "

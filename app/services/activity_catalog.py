@@ -122,6 +122,7 @@ def get_enriched_activity_catalog() -> List[Dict[str, Any]]:
             "group_size_range": dict(manifest.group_size_range or {}),
             "typical_duration_minutes": dict(manifest.typical_duration_minutes or {}),
             "bias_mitigation": list(manifest.bias_mitigation or []),
+            "thinklets": list(manifest.thinklets or []),
             "input_requirements": manifest.input_requirements or "",
             "output_characteristics": manifest.output_characteristics or "",
         }
