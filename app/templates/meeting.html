@@ -6,10 +6,6 @@
     <link rel="stylesheet" href="/static/css/meeting.css?v=20260211a">
 {% endblock %}
 
-{% block top_nav_right %}
-<a href="/dashboard" class="profile-link">Back to Dashboard</a>
-{% endblock %}
-
 {% block content %}
 {% from "components/macros.html" import section_header %}
 <div class="meeting-page page-shell" data-meeting-root data-meeting-id="{{ meeting_id }}"

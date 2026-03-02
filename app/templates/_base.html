@@ -22,6 +22,15 @@
          data-ui-refresh-admin-users-interval-seconds="{{ ui_refresh.get('admin_users_interval_seconds', '') if ui_refresh else '' }}"
          data-ui-refresh-hidden-interval-seconds="{{ ui_refresh.get('hidden_interval_seconds', '') if ui_refresh else '' }}"
          data-ui-refresh-failure-backoff-seconds="{{ ui_refresh.get('failure_backoff_seconds', '') if ui_refresh else '' }}">
+        {#
+          HEADER — intentionally NOT inside a {% block %}.
+          Child templates cannot override or remove it, so Welcome / My Profile /
+          Dashboard / Logout are always visible on every authenticated page.
+
+          Rule: every authenticated page MUST use {% extends "_base.html" %}.
+          Exception: pages that need NO header (login, register) are standalone
+          templates and must NOT extend _base.html.
+        #}
         <header class="layout-header top-nav">
             <div class="logo-section">
                 <img
@@ -39,10 +48,7 @@
                 {% if current_user %}
                     <span class="user-name">Welcome, {{ current_user.first_name or current_user.login }}</span>
                     <a href="/profile" class="profile-link">My Profile</a>
-                    {% if current_user and current_user.role and (current_user.role.value if current_user.role.value is defined else current_user.role)|lower in ['facilitator', 'admin', 'super_admin'] %}
-                    <a href="/meeting/design" class="profile-link" title="AI Meeting Designer">✦ AI Designer</a>
-                    <a href="/activity-library" class="profile-link" title="Activity Library">Activity Library</a>
-                    {% endif %}
+                    <a href="/dashboard" class="nav-link">Dashboard</a>
                     <button class="logout-btn" onclick="(window.logout ? window.logout() : (async () => { try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) { console.error(e); } finally { localStorage.clear(); sessionStorage.clear(); window.location.href = '/'; } })())">LOGOUT</button>
                 {% else %}
                     <a href="/login" class="profile-link">Sign in</a>

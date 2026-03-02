@@ -3,8 +3,10 @@ Multi-provider AI client for the Meeting Designer.
 
 Uses httpx directly (no vendor SDKs required). Supports:
   - anthropic         — Anthropic Messages API
-  - openai            — OpenAI Chat Completions API
-  - openai_compatible — Any OpenAI-compatible endpoint (Azure, OpenRouter, Ollama, etc.)
+  - openai            — OpenAI Chat Completions API (uses max_completion_tokens)
+  - google            — Google Gemini via OpenAI-compatibility endpoint
+  - openrouter        — OpenRouter via OpenAI-compatibility endpoint
+  - openai_compatible — Any other OpenAI-compatible endpoint (Azure, Ollama, etc.)
 """
 from __future__ import annotations
 
@@ -168,11 +170,17 @@ def _build_openai_body(
     max_tokens: int,
     temperature: float,
     stream: bool,
+    use_completion_tokens: bool = False,
 ) -> Dict[str, Any]:
+    # OpenAI reasoning models (o1, o3, o4-*) require max_completion_tokens and
+    # reject max_tokens.  GPT-4o and earlier accept both; we use max_completion_tokens
+    # for all OpenAI calls.  Other providers (OpenRouter, Google, custom) still
+    # expect the older max_tokens parameter.
+    token_key = "max_completion_tokens" if use_completion_tokens else "max_tokens"
     return {
         "model": model,
         "messages": _build_openai_messages(system_prompt, messages),
-        "max_tokens": max_tokens,
+        token_key: max_tokens,
         "temperature": temperature,
         "stream": stream,
     }
@@ -197,9 +205,13 @@ async def _openai_stream(
     messages: List[Dict[str, str]],
     max_tokens: int,
     temperature: float,
+    use_completion_tokens: bool = False,
 ) -> AsyncGenerator[str, None]:
     url = _resolve_openai_url(endpoint_url)
-    body = _build_openai_body(model, system_prompt, messages, max_tokens, temperature, stream=True)
+    body = _build_openai_body(
+        model, system_prompt, messages, max_tokens, temperature,
+        stream=True, use_completion_tokens=use_completion_tokens,
+    )
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
         try:
@@ -243,9 +255,13 @@ async def _openai_complete(
     messages: List[Dict[str, str]],
     max_tokens: int,
     temperature: float,
+    use_completion_tokens: bool = False,
 ) -> str:
     url = _resolve_openai_url(endpoint_url)
-    body = _build_openai_body(model, system_prompt, messages, max_tokens, temperature, stream=False)
+    body = _build_openai_body(
+        model, system_prompt, messages, max_tokens, temperature,
+        stream=False, use_completion_tokens=use_completion_tokens,
+    )
     headers = _build_openai_headers(api_key)
     headers["Accept"] = "application/json"
 
@@ -273,6 +289,11 @@ async def _openai_complete(
 
 def _is_anthropic(provider: str) -> bool:
     return provider.lower() == "anthropic"
+
+
+def _is_openai_native(provider: str) -> bool:
+    """True only for the official OpenAI provider (requires max_completion_tokens)."""
+    return provider.lower() == "openai"
 
 
 async def chat_stream(
@@ -313,8 +334,11 @@ async def chat_stream(
         ):
             yield chunk
     else:
+        # google, openrouter, openai_compatible all use the OpenAI-compat path.
+        # For the native openai provider, use max_completion_tokens (required by o1/o3/o4 models).
         async for chunk in _openai_stream(
-            api_key, endpoint_url, model, system_prompt, messages, max_tokens, temperature
+            api_key, endpoint_url, model, system_prompt, messages, max_tokens, temperature,
+            use_completion_tokens=_is_openai_native(provider),
         ):
             yield chunk
 
@@ -350,6 +374,9 @@ async def chat_complete(
             api_key, endpoint_url or "", model, system_prompt, messages, max_tokens, temperature
         )
     else:
+        # google, openrouter, openai_compatible all use the OpenAI-compat path.
+        # For the native openai provider, use max_completion_tokens (required by o1/o3/o4 models).
         return await _openai_complete(
-            api_key, endpoint_url, model, system_prompt, messages, max_tokens, temperature
+            api_key, endpoint_url, model, system_prompt, messages, max_tokens, temperature,
+            use_completion_tokens=_is_openai_native(provider),
         )

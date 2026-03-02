@@ -18,7 +18,6 @@ endblock %}
 {% if is_edit_mode and meeting_id %}
 <a href="/meeting/{{ meeting_id }}" class="profile-link" id="meetingBackLink">Back to Meeting</a>
 {% endif %}
-<a href="/dashboard" class="profile-link">Back to Dashboard</a>
 {% endblock %}
 
 {% block content %}
@@ -157,7 +156,6 @@ endblock %}
 
             <div class="actions-row">
                 <button type="submit" class="primary-btn" id="submitBtn">{{ submit_label }}</button>
-                <button type="button" class="secondary-btn" onclick="window.location.href='/dashboard'">Cancel</button>
             </div>
         </form>
         {% endcall %}

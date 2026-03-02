@@ -61,95 +61,36 @@
         </div>
         {% endif %}
 
+        {# ── Provider cards — JS renders one card per provider ──────────────── #}
         <div class="settings-section">
             <h3 class="settings-section-title">
-                AI Meeting Designer
+                AI Provider Configuration
                 <span class="section-badge admin-badge">Admin Only</span>
             </h3>
-
-            {# Status row — populated by JS #}
-            <div class="settings-status-row" id="ai-status-row">
-                <span class="status-dot warn" id="ai-status-dot"></span>
-                <span id="ai-status-text">Loading…</span>
-            </div>
-
-            {# Provider #}
-            <div class="settings-field">
-                <label for="ai-provider">
-                    Provider
-                    <span class="override-dot" data-dot="ai-provider" hidden title="Override set via Settings UI"></span>
-                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
-                </label>
-                <select id="ai-provider" {% if not is_admin %}disabled{% endif %}>
-                    <option value="">— select provider —</option>
-                    <option value="anthropic">Anthropic (Claude)</option>
-                    <option value="openai">OpenAI (GPT)</option>
-                    <option value="openai_compatible">OpenAI-Compatible (Azure, OpenRouter, Ollama…)</option>
-                </select>
-                {% if not is_admin %}<span class="admin-only-notice">Administrator access required to change this.</span>{% endif %}
-            </div>
-
-            {# API Key #}
-            <div class="settings-field">
-                <label>
-                    API Key
-                    <span class="override-dot" data-dot="ai-key-input" hidden title="Override set via Settings UI"></span>
-                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
-                </label>
-                {# Preview row (shown when key is already set) #}
-                <div class="key-preview-row" id="ai-key-preview-row" hidden>
-                    <span class="key-preview-text" id="ai-key-preview-text"></span>
-                    <button class="secret-btn" id="ai-key-replace-btn" type="button"
-                            {% if not is_admin %}disabled{% endif %}>Replace</button>
-                    <button class="secret-btn danger" id="ai-key-clear-btn" type="button"
-                            {% if not is_admin %}disabled{% endif %}>Clear</button>
+            <p style="font-size:0.84rem;color:var(--silver);margin:0 0 1rem;">
+                Save an API key and select a model for each provider you want to use.
+                Click the radio button on a card to make that provider active for the AI Meeting Designer.
+            </p>
+            {# Cards injected by _renderAiTab() in settings.js #}
+            <div id="provider-cards-container" class="provider-cards-grid">
+                <div style="text-align:center;padding:2rem;color:var(--silver);grid-column:1/-1;">
+                    Loading providers…
                 </div>
-                {# Replace wrapper (shown when entering a new key) #}
-                <div class="secret-field-wrapper" id="ai-key-replace-wrapper" hidden>
-                    <input type="password" id="ai-key-input" placeholder="Paste API key…"
-                           autocomplete="new-password"
-                           {% if not is_admin %}disabled{% endif %}>
-                </div>
-                <span class="field-hint">Never shared with participants. Stored encrypted in the database.</span>
-                {% if not is_admin %}<span class="admin-only-notice">Administrator access required to change this.</span>{% endif %}
             </div>
+        </div>
 
-            {# Model #}
-            <div class="settings-field">
-                <label for="ai-model">
-                    Model
-                    <span class="override-dot" data-dot="ai-model" hidden></span>
-                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
-                </label>
-                <input type="text" id="ai-model"
-                       placeholder="e.g. claude-opus-4-5, gpt-4o, meta-llama/llama-3.3-70b-instruct"
-                       {% if not is_admin %}disabled{% endif %}>
-                <span class="field-hint">Exact model identifier for the selected provider.</span>
-                {% if not is_admin %}<span class="admin-only-notice">Administrator access required.</span>{% endif %}
-            </div>
-
-            {# Endpoint URL (openai_compatible only) #}
-            <div class="settings-field" id="ai-endpoint-url-row" hidden>
-                <label for="ai-endpoint-url">
-                    Custom Endpoint URL
-                    <span class="override-dot" data-dot="ai-endpoint-url" hidden></span>
-                    {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
-                </label>
-                <input type="url" id="ai-endpoint-url"
-                       placeholder="https://your-endpoint/v1"
-                       {% if not is_admin %}disabled{% endif %}>
-                <span class="field-hint">
-                    Azure: <code>https://&lt;resource&gt;.openai.azure.com/openai/deployments/&lt;deployment&gt;/chat/completions?api-version=2024-02-01</code><br>
-                    OpenRouter: <code>https://openrouter.ai/api/v1</code>
-                </span>
-            </div>
-
-            {# Max tokens + temperature (side by side) #}
-            <div class="settings-grid-2">
+        {# ── Shared generation parameters ────────────────────────────────────── #}
+        <div class="settings-section" id="ai-shared-params-section" hidden>
+            <h3 class="settings-section-title">
+                Generation Parameters
+                <span class="section-badge admin-badge">Admin Only</span>
+            </h3>
+            <div class="ai-shared-params">
                 <div class="settings-field">
                     <label for="ai-max-tokens">
                         Max Tokens
-                        <span class="override-dot" data-dot="ai-max-tokens" hidden></span>
+                        <span class="override-dot" data-key="ai.max_tokens" hidden
+                              title="Override set via Settings UI"></span>
                         {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
                     </label>
                     <input type="number" id="ai-max-tokens" min="1" max="32000"
@@ -159,7 +100,8 @@
                 <div class="settings-field">
                     <label for="ai-temperature">
                         Temperature
-                        <span class="override-dot" data-dot="ai-temperature" hidden></span>
+                        <span class="override-dot" data-key="ai.temperature" hidden
+                              title="Override set via Settings UI"></span>
                         {% if not is_admin %}<span class="field-lock">🔒</span>{% endif %}
                     </label>
                     <input type="number" id="ai-temperature" min="0" max="1" step="0.1"
@@ -167,23 +109,18 @@
                     <span class="field-hint">0.0 = deterministic; 1.0 = creative.</span>
                 </div>
             </div>
-
-            {# Actions #}
             {% if is_admin %}
             <div class="settings-actions">
-                <button class="btn-primary" onclick="saveAiSettings()">SAVE AI SETTINGS</button>
-                <button class="btn-test" id="ai-test-btn" onclick="testAiConnection()">
-                    ▷ TEST CONNECTION
-                </button>
-                <span id="ai-test-result" class="settings-feedback" style="flex:1"></span>
-                <span id="ai-feedback" class="settings-feedback" aria-live="polite"></span>
+                <button class="btn-primary" onclick="saveAiSharedParams()">SAVE PARAMETERS</button>
+                <span id="ai-params-feedback" class="settings-feedback" aria-live="polite"></span>
             </div>
             {% else %}
-            <p style="font-size:0.82rem;color:var(--silver);margin-top:1rem;">
-                Contact an Administrator to update AI settings.
+            <p style="font-size:0.82rem;color:var(--silver);margin-top:.75rem;">
+                Contact an Administrator to change these parameters.
             </p>
             {% endif %}
         </div>
+
     </div>
 
     {# ═══════════════════════════════════════════════════════════════════════
@@ -490,5 +427,5 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="/static/js/settings.js?v=1"></script>
+<script src="/static/js/settings.js?v=3"></script>
 {% endblock %}

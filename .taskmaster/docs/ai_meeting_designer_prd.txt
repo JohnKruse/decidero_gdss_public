@@ -1,0 +1,123 @@
+# AI Meeting Designer - Product Requirements Document
+
+## Overview
+Build an AI-driven Meeting Designer for the Decidero GDSS platform that acts as an automated Collaboration Engineer. Through a conversational interface, it elicits meeting goals, group dynamics, and constraints from the facilitator, then generates a research-grounded agenda of sequenced collaborative activities with explanations for every design choice. The generated agenda pre-fills the existing Create Meeting page via sessionStorage handoff.
+
+## Architecture
+- Backend: Python FastAPI, SQLite, Jinja2 templates
+- Frontend: Vanilla JavaScript (no framework), custom CSS design system
+- AI: Multi-provider support (Anthropic, OpenAI, Azure, Google, custom endpoints) via vendor-agnostic client
+- Integration: Extends existing plugin system (ActivityPluginManifest), reuses existing meeting creation flow
+
+## Phase 1: Activity Library Enrichment
+
+### Task: Extend ActivityPluginManifest with Collaboration Metadata Fields
+Priority: high
+Add optional enrichment fields to the ActivityPluginManifest frozen dataclass in app/plugins/base.py: collaboration_patterns (List[str]), use_cases (List[str]), when_to_use (str), when_not_to_use (str), group_size_range (Dict min/max), typical_duration_minutes (Dict min/max), bias_mitigation (List[str]), input_requirements (str), output_characteristics (str). All fields default to empty for backward compatibility.
+
+### Task: Enrich Brainstorming Plugin Manifest
+Priority: high
+Dependencies: Extend ActivityPluginManifest
+Populate collaboration metadata on brainstorming plugin: collaboration_patterns=["Generate", "Clarify"], use_cases for divergent ideation and anonymous generation, group_size_range={min:2, max:100}, typical_duration_minutes={min:5, max:30}, bias_mitigation for anonymous mode and simultaneous submission.
+
+### Task: Enrich Voting Plugin Manifest
+Priority: high
+Dependencies: Extend ActivityPluginManifest
+Populate collaboration metadata on dot voting plugin: collaboration_patterns=["Evaluate", "Build Consensus"], use_cases for prioritization and consensus building, group_size_range={min:2, max:100}, typical_duration_minutes={min:3, max:15}, bias_mitigation for randomized order and hidden results.
+
+### Task: Enrich Rank-Order Voting Plugin Manifest
+Priority: high
+Dependencies: Extend ActivityPluginManifest
+Populate collaboration metadata on rank-order voting plugin: collaboration_patterns=["Evaluate"], use_cases for formal prioritization with Borda aggregation, group_size_range={min:2, max:50}, typical_duration_minutes={min:5, max:20}, bias_mitigation for balanced weighting and variance metrics.
+
+### Task: Enrich Categorization Plugin Manifest
+Priority: high
+Dependencies: Extend ActivityPluginManifest
+Populate collaboration metadata on categorization plugin: collaboration_patterns=["Reduce", "Organize"], use_cases for grouping ideas into themes and filtering, group_size_range={min:2, max:50}, typical_duration_minutes={min:5, max:25}, bias_mitigation for facilitator consistency and pre-defined buckets.
+
+### Task: Create Enriched Activity Catalog Service and API Endpoint
+Priority: high
+Dependencies: Enrich Brainstorming Plugin, Enrich Voting Plugin, Enrich Rank-Order Voting Plugin, Enrich Categorization Plugin
+Add get_enriched_activity_catalog() to app/services/activity_catalog.py returning full metadata. Add EnrichedActivityCatalogEntry schema extending ActivityCatalogEntry in app/schemas/meeting.py. Expose via GET /api/meetings/modules/enriched endpoint. This catalog is also injected into the AI system prompt.
+
+### Task: Create Activity Library Browsable Page
+Priority: medium
+Dependencies: Enriched Activity Catalog Service
+Create app/templates/activity_library.html with card-based layout showing all activities with enriched metadata. Filter tabs by collaboration pattern: All|Generate|Reduce|Clarify|Organize|Evaluate|Build Consensus. Create CSS following existing design system. Add GET /activity-library route in pages.py with facilitator+ access.
+
+## Phase 2: AI Conversation Engine
+
+### Task: Add AI Provider Dependencies and Meeting Designer Config
+Priority: high
+Add anthropic and openai to requirements.in. Add meeting_designer section to config.yaml with meeting_designer_model subsection: provider (anthropic/openai/azure_openai/google/custom), model, api_key_env (env var name for API key), endpoint_url (optional custom endpoint), max_tokens, temperature. All model fields blank - admin must configure. Add get_meeting_designer_settings() to config/loader.py.
+
+### Task: Create Vendor-Agnostic AI Provider Client
+Priority: high
+Dependencies: AI Provider Dependencies
+Create app/services/ai_provider.py with AIProviderClient class exposing chat(system_prompt, messages) -> str. Supports: anthropic (anthropic SDK), openai (openai SDK), azure_openai (openai+azure config), custom (openai SDK with base_url for OpenRouter/vLLM/LiteLLM). Error handling for missing keys, unsupported providers, rate limits, connection failures.
+
+### Task: Create AI Meeting Designer Service with Session Management
+Priority: high
+Dependencies: Enriched Activity Catalog, AI Provider Client
+Create app/services/meeting_designer.py with DesignerSession dataclass (session_id, user_id, messages, collected_parameters, generated_agenda, status), DesignerSessionStore (in-memory dict with TTL cleanup), and MeetingDesignerService (start_session, send_message, refine_agenda, get_session_agenda). Builds system prompt dynamically with enriched catalog. Parses agenda JSON from fenced code blocks. Validates against plugin registry.
+
+### Task: Write PRISM System Prompt for Meeting Designer
+Priority: high
+Dependencies: Enriched Activity Catalog
+Write app/services/prompts/meeting_designer_system.txt implementing PRISM framework: [P]urpose=collaboration engineering expert, [R]ules=6 patterns with sequential dependencies and time constraints, [I]dentity=expert facilitator + psychologist, [S]tructure=JSON in agenda-json fences with explanations, [M]otion=elicit in 3-5 turns. Include ThinkLet-to-Decidero mapping and {{ACTIVITY_CATALOG}} placeholder.
+
+### Task: Create Meeting Designer API Router and Schemas
+Priority: high
+Dependencies: Meeting Designer Service
+Create app/routers/meeting_designer.py with POST /api/meeting-designer/start, POST /message, POST /refine, GET /session/{id}/agenda. All require facilitator+ auth. Create app/schemas/meeting_designer.py with DesignerStartResponse, DesignerMessageRequest, DesignerMessageResponse. Register router in app/main.py.
+
+## Phase 3: Meeting Designer UI
+
+### Task: Create Meeting Designer Page Template and CSS
+Priority: high
+Dependencies: Meeting Designer API Router
+Create app/templates/meeting_designer.html with two-column layout: left (60%) for chat conversation, right (40%) for agenda preview. Extends _base.html. Create app/static/css/meeting_designer.css following existing design system. Add GET /meeting/design route in pages.py before the /meeting/{meeting_id} catch-all. Facilitator+ access.
+
+### Task: Implement Chat Conversation UI
+Priority: high
+Dependencies: Meeting Designer Page Template
+Implement chat interface JavaScript in meeting_designer.html IIFE. On load: POST /start for session_id and opening message. Scrollable message container with user/assistant bubbles. Text input with send button and Thinking indicator. Auto-scroll. Error handling for expired sessions and API errors. Enter to send, Shift+Enter for newline. Double-send prevention.
+
+### Task: Implement Agenda Preview Panel with Explanations
+Priority: high
+Dependencies: Chat Conversation UI
+Right-column agenda preview with activity cards showing: order number, title, tool badge, duration, pattern badge (color-coded), [i] info button expanding explanation panel (rationale, bias mitigation, ThinkLet). Drag-and-drop reordering via HTML5 API. Remove button per card. Total duration footer. Accept & Create Meeting button.
+
+## Phase 4: Agenda Generation and Review
+
+### Task: Implement Agenda Validation and sessionStorage Handoff
+Priority: high
+Dependencies: Agenda Preview Panel
+Accept & Create Meeting: strip explanation metadata, validate required fields, serialize as AgendaActivityCreate[] to sessionStorage ai_designer_agenda, redirect to /meeting/create.
+
+### Task: Add sessionStorage Pickup Logic to create_meeting.html
+Priority: high
+Dependencies: sessionStorage Handoff
+In create_meeting.html initialize(): check sessionStorage ai_designer_agenda, parse, populate agenda rows via existing functions, clear storage, show info feedback. Edit mode ignores it. Add AI Meeting Designer button near Add Agenda Activity button.
+
+## Phase 5: Polish and Integration
+
+### Task: Implement Iterative Agenda Refinement via Chat
+Priority: medium
+Dependencies: Agenda Preview Panel
+After agenda generation, route messages to POST /refine. Service appends current agenda as context. Frontend re-renders preview on updated agenda. Support natural language modifications.
+
+### Task: Add Bias Detection Badges and Navigation Integration
+Priority: medium
+Dependencies: Agenda Preview Panel
+Visual badges on agenda cards: shield (anonymous), shuffle (randomized), clock (time-boxed), balance (equal-weight). Dashboard: Design with AI button. Activity Library: link to designer. Cross-navigation between all pages.
+
+### Task: Write Unit and API Tests for Meeting Designer
+Priority: high
+Dependencies: Meeting Designer Service, Meeting Designer API Router
+Create test_meeting_designer.py (session lifecycle, prompt construction, response parsing, agenda validation, session expiry), test_meeting_designer_api.py (all endpoints, auth, full lifecycle), test_activity_catalog_enriched.py (enriched catalog, backward compatibility).
+
+### Task: End-to-End Integration Testing
+Priority: high
+Dependencies: sessionStorage Pickup, Iterative Refinement, Bias Badges, Unit Tests
+Full happy path: design -> conversation -> review -> refine -> accept -> create meeting. Edge cases: missing API key, session expiry, short/long meetings, large groups. Activity Library display. Navigation. Backward compatibility.

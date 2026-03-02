@@ -468,29 +468,23 @@ def get_auth_login_rate_limit_settings() -> Dict[str, Any]:
     }
 
 
+_PROVIDER_SLUGS = ("anthropic", "openai", "google", "openrouter", "openai_compatible")
+_OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1"
+_GOOGLE_OPENAI_COMPAT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+
 def get_meeting_designer_settings() -> Dict[str, Any]:
     """Return Meeting Designer AI model settings.
 
-    Priority: DB override (Settings UI) → config.yaml → disabled.
+    Priority: per-provider DB keys (new) → legacy single-key DB/config.yaml → disabled.
     The feature is enabled only when provider, api_key, and model are all non-empty.
+    The return dict shape is always:
+        {enabled, provider, api_key, endpoint_url, model, max_tokens, temperature}
     """
     config = load_config()
     section = config.get("meeting_designer_model") or {}
 
-    def _str_field(yaml_key: str, db_key: str) -> str:
-        # DB override wins if present
-        db_val = _db_get(db_key)
-        if db_val is not None:
-            return str(db_val).strip()
-        value = section.get(yaml_key)
-        return str(value).strip() if value is not None else ""
-
-    provider = _str_field("provider", "ai.provider").lower()
-    api_key = _str_field("api_key", "ai.api_key")
-    model = _str_field("model", "ai.model")
-    endpoint_url = _str_field("endpoint_url", "ai.endpoint_url")
-
-    # Numeric fields
+    # ── Shared numeric fields (same regardless of provider path) ──
     db_max_tokens = _db_get("ai.max_tokens")
     max_tokens = _coerce_positive_int(
         db_max_tokens if db_max_tokens is not None else section.get("max_tokens"),
@@ -502,10 +496,46 @@ def get_meeting_designer_settings() -> Dict[str, Any]:
         0.7,
     )
 
-    enabled = bool(provider and api_key and model)
+    # ── New per-provider path (used once admin saves from the new UI) ──
+    active = _db_get("ai.active_provider")
+    if active and active in _PROVIDER_SLUGS:
+        api_key = str(_db_get(f"ai.{active}.api_key") or "")
+        model = str(_db_get(f"ai.{active}.model") or "")
+
+        if active == "openai_compatible":
+            endpoint_url = str(_db_get("ai.openai_compatible.endpoint_url") or "")
+        elif active == "openrouter":
+            endpoint_url = _OPENROUTER_ENDPOINT
+        elif active == "google":
+            endpoint_url = _GOOGLE_OPENAI_COMPAT_ENDPOINT
+        else:
+            endpoint_url = ""
+
+        return {
+            "enabled": bool(api_key and model),
+            "provider": active,
+            "api_key": api_key,
+            "endpoint_url": endpoint_url,
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+
+    # ── Legacy single-key path (backward compat) ──
+    def _str_field(yaml_key: str, db_key: str) -> str:
+        db_val = _db_get(db_key)
+        if db_val is not None:
+            return str(db_val).strip()
+        value = section.get(yaml_key)
+        return str(value).strip() if value is not None else ""
+
+    provider = _str_field("provider", "ai.provider").lower()
+    api_key = _str_field("api_key", "ai.api_key")
+    model = _str_field("model", "ai.model")
+    endpoint_url = _str_field("endpoint_url", "ai.endpoint_url")
 
     return {
-        "enabled": enabled,
+        "enabled": bool(provider and api_key and model),
         "provider": provider,
         "api_key": api_key,
         "endpoint_url": endpoint_url,

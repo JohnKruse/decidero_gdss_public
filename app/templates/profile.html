@@ -1,39 +1,12 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Profile - Decidero</title>
-    <link rel="stylesheet" href="/static/css/dashboard.css">
-</head>
-<body>
-    <div class="dashboard-container">
-        <!-- Navigation Header -->
-        {% grab id="profile-top-nav" %}
-        <header class="top-nav">
-            <div class="logo-section">
-                <img
-                    src="/static/assets/images/logo-180.png"
-                    srcset="/static/assets/images/logo-180.png 1x, /static/assets/images/logo-360.png 2x, /static/assets/images/logo-720.png 4x"
-                    alt="Decidero Logo"
-                    class="decidero-logo"
-                >
-                <h1>DECIDERO GDSS</h1>
-            </div>
-            <div class="user-section">
-                <span class="user-name">Welcome, {{ current_user.first_name }}</span>
-                <a href="/dashboard" class="nav-link">Dashboard</a>
-                <a href="/profile" class="profile-link">My Profile</a>
-                <button class="logout-btn" onclick="window.logout ? window.logout() : (async () => { try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) { console.error(e); } finally { localStorage.clear(); sessionStorage.clear(); window.location.href = '/'; } })()">LOGOUT</button>
-            </div>
-        </header>
-        {% endgrab %}
+{% extends "_base.html" %}
 
-        {% block content %}
+{% block title %}My Profile - Decidero{% endblock %}
+
+{% block content %}
         <div class="layout-grid">
             <section class="layout-card">
                 <h1 style="margin-bottom: 1.5rem; color: var(--navy-blue);">My Profile</h1>
-                
+
                 {% grab id="profile-view-card" %}
                 <div id="profile-view">
                     <div id="profile-svg-container" style="margin-bottom: 1rem;"></div>
@@ -48,7 +21,7 @@
                     <button id="edit-profile-button" class="action-btn">Edit Profile</button>
                 </div>
                 {% endgrab %}
-                
+
                 {% grab id="profile-edit-card" %}
                 <div id="profile-edit" style="display: none;">
                     <h2 style="margin-bottom: 1rem;">Edit Profile</h2>
@@ -136,10 +109,8 @@
                 {% endgrab %}
             </section>
         </div>
-        {% endblock %}    <!-- Link to JS file (will be created later) -->
-    <script src="/static/js/profile.js"></script>
-    {% if grab_enabled() %}
-    <script src="/static/grab.js"></script>
-    {% endif %}
-</body>
-</html>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/profile.js"></script>
+{% endblock %}

@@ -33,9 +33,15 @@ logger = logging.getLogger(__name__)
 # ── Encryption ──────────────────────────────────────────────────────────────
 
 #: Keys whose values are encrypted in DB storage.
-SENSITIVE_KEYS: frozenset[str] = frozenset(
-    {"ai.api_key", "meetings.default_user_password"}
-)
+SENSITIVE_KEYS: frozenset[str] = frozenset({
+    "ai.api_key",                       # legacy — kept for backward compat
+    "ai.anthropic.api_key",
+    "ai.openai.api_key",
+    "ai.google.api_key",
+    "ai.openrouter.api_key",
+    "ai.openai_compatible.api_key",
+    "meetings.default_user_password",
+})
 
 _ENC_PREFIX = "enc:"
 _KEY_FILE = Path("data/.settings_key")
@@ -120,7 +126,11 @@ def get_setting(key: str) -> Optional[Any]:
             raw = _decrypt(raw)
         return json.loads(raw)
     except Exception as exc:  # noqa: BLE001
-        logger.warning("settings_store.get_setting(%r) failed: %s", key, exc)
+        # "no such table" is expected on first startup before create_all runs
+        if "no such table" in str(exc):
+            logger.debug("settings_store.get_setting(%r) skipped (table not yet created)", key)
+        else:
+            logger.warning("settings_store.get_setting(%r) failed: %s", key, exc)
         return None
     finally:
         db.close()
@@ -146,7 +156,10 @@ def get_all_settings() -> Dict[str, Any]:
                 result[row.key] = raw
         return result
     except Exception as exc:  # noqa: BLE001
-        logger.warning("settings_store.get_all_settings() failed: %s", exc)
+        if "no such table" in str(exc):
+            logger.debug("settings_store.get_all_settings() skipped (table not yet created)")
+        else:
+            logger.warning("settings_store.get_all_settings() failed: %s", exc)
         return {}
     finally:
         db.close()
