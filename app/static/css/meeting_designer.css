@@ -534,3 +534,275 @@
   color: #444;
   line-height: 1.8;
 }
+
+/* ── Complexity badge ──────────────────────────────────────── */
+.md-complexity-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.md-complexity-icon { font-size: 0.9rem; }
+
+.md-complexity-multi_phase {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+
+.md-complexity-multi_track {
+  background: #f3e5f5;
+  color: #6a1b9a;
+}
+
+/* ── Evaluation criteria chips ─────────────────────────────── */
+.md-criteria-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+.md-criteria-label {
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-weight: 600;
+  margin-right: 0.25rem;
+}
+.md-criteria-chip {
+  font-size: 0.72rem;
+  padding: 0.15rem 0.5rem;
+  background: #ecfdf5;
+  color: #065f46;
+  border-radius: 999px;
+  border: 1px solid #a7f3d0;
+}
+
+/* ── Phase groups ──────────────────────────────────────────── */
+.md-phase-group {
+  border-left: 3px solid rgba(11, 61, 145, 0.2);
+  padding-left: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.md-phase-group:last-child { margin-bottom: 0; }
+
+.md-phase-parallel {
+  border-left-color: #6a1b9a;
+}
+
+.md-phase-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.4rem;
+}
+
+.md-phase-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  background: var(--navy-blue, #0B3D91);
+  color: #fff;
+  white-space: nowrap;
+}
+
+.md-phase-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #1a1a2e;
+}
+
+.md-parallel-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.12rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: #f3e5f5;
+  color: #6a1b9a;
+  white-space: nowrap;
+}
+
+.md-phase-duration {
+  font-size: 0.72rem;
+  color: #777;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.md-phase-desc {
+  font-size: 0.78rem;
+  color: #666;
+  line-height: 1.55;
+  margin: 0 0 0.5rem;
+}
+
+/* ── Track grid (parallel phases) ──────────────────────────── */
+.md-tracks-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--track-count, 2), 1fr);
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+@media (max-width: 600px) {
+  .md-tracks-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.md-track-column {
+  border: 1.5px solid rgba(106, 27, 154, 0.15);
+  border-radius: 10px;
+  padding: 0.6rem;
+  background: rgba(243, 229, 245, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.md-track-label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: #6a1b9a;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(106, 27, 154, 0.12);
+}
+
+.md-track-participants {
+  font-size: 0.7rem;
+  color: #888;
+  margin-top: -0.15rem;
+  margin-bottom: 0.15rem;
+}
+
+/* Tighter activity cards inside track columns */
+.md-track-column .md-agenda-item {
+  padding: 0.5rem 0.6rem;
+}
+
+.md-track-column .md-agenda-item-title {
+  max-width: 100px;
+  font-size: 0.8rem;
+}
+
+.md-track-column .md-agenda-num {
+  width: 18px;
+  height: 18px;
+  font-size: 0.62rem;
+}
+
+/* ── Multi-meeting creation modal ──────────────────────────── */
+.md-create-modal-box {
+  max-width: 560px;
+}
+
+.md-create-intro {
+  font-size: 0.875rem;
+  color: #444;
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.md-create-meeting-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.md-create-meeting-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
+  background: #f9fafb;
+  border: 1px solid rgba(11, 61, 145, 0.1);
+  border-radius: 10px;
+}
+
+.md-create-meeting-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.md-create-title-input {
+  width: 100%;
+  border: 1.5px solid rgba(11, 61, 145, 0.2);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.md-create-title-input:focus {
+  outline: none;
+  border-color: var(--navy-blue, #0B3D91);
+  box-shadow: 0 0 0 2px rgba(11, 61, 145, 0.1);
+}
+
+.md-create-meeting-meta {
+  font-size: 0.72rem;
+  color: #888;
+}
+
+.md-create-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(11, 61, 145, 0.08);
+  margin-top: 1rem;
+}
+
+.md-create-progress {
+  font-size: 0.82rem;
+  color: #555;
+}
+
+.md-create-success {
+  text-align: center;
+  padding: 0.5rem 0;
+}
+
+.md-create-success p {
+  font-size: 1rem;
+  color: #2e7d32;
+  margin: 0 0 0.75rem;
+}
+
+.md-create-links {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.md-create-links a {
+  color: var(--navy-blue, #0B3D91);
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.md-create-links a:hover { text-decoration: underline; }

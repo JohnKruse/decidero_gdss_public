@@ -227,6 +227,10 @@ async def generate_agenda(
     return {
         "success": True,
         "meeting_summary": agenda_data.get("meeting_summary", ""),
+        "session_name": agenda_data.get("session_name", ""),
+        "evaluation_criteria": agenda_data.get("evaluation_criteria", []),
         "design_rationale": agenda_data.get("design_rationale", ""),
+        "complexity": agenda_data.get("complexity", "simple"),
+        "phases": agenda_data.get("phases", []),
         "agenda": agenda_data.get("agenda", []),
     }

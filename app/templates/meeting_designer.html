@@ -65,6 +65,12 @@
       </button>
     </div>
 
+    <!-- Complexity badge — shown for multi-phase/multi-track -->
+    <div id="mdComplexityBadge" class="md-complexity-badge" style="display:none;"></div>
+
+    <!-- Evaluation criteria chips — shown when criteria are defined -->
+    <div id="mdCriteriaRow" class="md-criteria-row" style="display:none;"></div>
+
     <div id="mdAgendaSummary" class="md-agenda-summary"></div>
     <div id="mdAgendaRationale" class="md-agenda-rationale"></div>
 
@@ -89,6 +95,24 @@
       <button class="md-modal-close" aria-label="Close">&times;</button>
     </div>
     <div id="mdModalBody" class="md-modal-body"></div>
+  </div>
+</div>
+
+<!-- Multi-meeting creation modal -->
+<div id="mdCreateModal" class="md-modal" role="dialog" aria-modal="true" aria-labelledby="mdCreateModalTitle" style="display:none;">
+  <div class="md-modal-backdrop"></div>
+  <div class="md-modal-box md-create-modal-box">
+    <div class="md-modal-header">
+      <h4 id="mdCreateModalTitle" class="md-modal-title">Create Meetings</h4>
+      <button class="md-create-modal-close md-modal-close" aria-label="Close">&times;</button>
+    </div>
+    <div id="mdCreateModalBody" class="md-modal-body">
+      <!-- Populated by JS -->
+    </div>
+    <div class="md-create-modal-footer">
+      <button id="mdCreateAllBtn" class="md-generate-btn">Create All Meetings</button>
+      <span id="mdCreateProgress" class="md-create-progress" style="display:none;"></span>
+    </div>
   </div>
 </div>
 
@@ -396,7 +420,17 @@
       enableInput();
 
       // Add a brief confirmation message to chat
-      const confirmText = `I've generated a ${data.agenda.length}-activity agenda for you. Review it on the right, then click "Use This Agenda" to pre-fill the meeting creator.`;
+      const complexity = data.complexity || 'simple';
+      const phaseCount = (data.phases || []).length;
+      const trackCount = (data.phases || []).reduce((n, p) => n + ((p.tracks || []).length), 0);
+      let confirmText = '';
+      if (complexity === 'multi_track') {
+        confirmText = `I've generated a multi-track agenda with ${phaseCount} phases, ${trackCount} parallel tracks, and ${data.agenda.length} total activities. Review the structure on the right — "Use This Agenda" will create separate meetings for each track.`;
+      } else if (complexity === 'multi_phase') {
+        confirmText = `I've generated a ${phaseCount}-phase agenda with ${data.agenda.length} activities. Review it on the right, then click "Use This Agenda" to pre-fill the meeting creator.`;
+      } else {
+        confirmText = `I've generated a ${data.agenda.length}-activity agenda for you. Review it on the right, then click "Use This Agenda" to pre-fill the meeting creator.`;
+      }
       appendMessage('assistant', confirmText);
       state.messages.push({ role: 'assistant', content: confirmText });
 
@@ -409,35 +443,175 @@
   });
 
   // ── Agenda rendering ───────────────────────────────────────
+  const complexityBadge = $('mdComplexityBadge');
+
   function renderAgenda(data) {
     agendaSummary.innerHTML = data.meeting_summary
       ? `<p class="md-agenda-desc">${esc(data.meeting_summary)}</p>` : '';
     agendaRationale.innerHTML = data.design_rationale
       ? `<p class="md-agenda-desc md-agenda-rationale-text">${esc(data.design_rationale)}</p>` : '';
 
-    agendaList.innerHTML = (data.agenda || []).map((item, i) => {
-      const c = PATTERN_COLORS[item.collaboration_pattern] || { bg: '#f5f5f5', text: '#424242' };
-      return `
-        <div class="md-agenda-item">
-          <div class="md-agenda-item-header">
-            <span class="md-agenda-num">${i + 1}</span>
-            <div class="md-agenda-item-meta">
-              <span class="md-agenda-item-title">${esc(item.title || item.tool_type)}</span>
-              <span class="md-agenda-pattern-badge" style="background:${c.bg};color:${c.text}">
-                ${esc(item.collaboration_pattern || '')}
-              </span>
-            </div>
-            <span class="md-agenda-duration">${item.duration_minutes || '?'} min</span>
-            <button class="md-info-btn" data-idx="${i}" title="View rationale &amp; details" aria-label="View details for activity ${i+1}">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
-            </button>
-          </div>
-          <div class="md-agenda-tool-badge">${esc(item.tool_type)}</div>
-        </div>
-      `;
-    }).join('');
+    const complexity = data.complexity || 'simple';
+    const phases = data.phases || [];
 
-    // Info button handlers
+    // Show complexity badge for non-simple agendas
+    if (complexity !== 'simple' && phases.length > 0) {
+      const totalActivities = (data.agenda || []).length;
+      const trackCount = phases.reduce((n, p) => n + ((p.tracks || []).length), 0);
+      let badgeText = `${phases.length} phases, ${totalActivities} activities`;
+      if (trackCount > 0) badgeText += `, ${trackCount} parallel tracks`;
+      complexityBadge.innerHTML = `<span class="md-complexity-icon">${complexity === 'multi_track' ? '&#x2694;' : '&#x25B6;'}</span> ${esc(badgeText)}`;
+      complexityBadge.className = `md-complexity-badge md-complexity-${complexity}`;
+      complexityBadge.style.display = '';
+    } else {
+      complexityBadge.style.display = 'none';
+    }
+
+    // Show evaluation criteria chips if present
+    const criteria = data.evaluation_criteria || [];
+    const criteriaContainer = document.getElementById('mdCriteriaRow');
+    if (criteriaContainer) {
+      if (criteria.length > 0) {
+        criteriaContainer.innerHTML =
+          '<span class="md-criteria-label">Evaluation Criteria:</span>' +
+          criteria.map(c => `<span class="md-criteria-chip">${esc(c)}</span>`).join('');
+        criteriaContainer.style.display = '';
+      } else {
+        criteriaContainer.style.display = 'none';
+      }
+    }
+
+    // Route to the right renderer
+    if (complexity === 'simple' || phases.length === 0) {
+      renderFlatAgenda(data);
+    } else {
+      renderPhasedAgenda(data);
+    }
+  }
+
+  /** Simple flat rendering — same as before */
+  function renderFlatAgenda(data) {
+    agendaList.innerHTML = (data.agenda || []).map((item, i) => renderActivityCard(item, i)).join('');
+    bindInfoButtons(data);
+  }
+
+  /** Phase-aware rendering — groups activities by phase, shows tracks side-by-side */
+  function renderPhasedAgenda(data) {
+    const phases = data.phases || [];
+    const agenda = data.agenda || [];
+    // Build a lookup: phase_id → phase metadata
+    const phaseLookup = {};
+    phases.forEach(p => { if (p.phase_id) phaseLookup[p.phase_id] = p; });
+
+    // Group activities by phase_id (preserve order)
+    const phaseGroups = [];
+    const seenPhases = new Set();
+    agenda.forEach((item, i) => {
+      const pid = item.phase_id || '_unphased';
+      if (!seenPhases.has(pid)) {
+        seenPhases.add(pid);
+        phaseGroups.push({ phase_id: pid, items: [] });
+      }
+      phaseGroups.find(g => g.phase_id === pid).items.push({ item, globalIdx: i });
+    });
+
+    let html = '';
+    let activityNum = 0;
+
+    phaseGroups.forEach((group, gi) => {
+      const phase = phaseLookup[group.phase_id];
+      const phaseTitle = phase ? phase.title : '';
+      const phaseDesc = phase ? phase.description : '';
+      const phaseType = phase ? phase.phase_type : 'plenary';
+      const phaseDuration = phase ? phase.suggested_duration_minutes : 0;
+      const tracks = (phase && phase.tracks) || [];
+      const isParallel = phaseType === 'parallel' && tracks.length > 0;
+
+      html += `<div class="md-phase-group${isParallel ? ' md-phase-parallel' : ''}">`;
+
+      // Phase header
+      if (phaseTitle) {
+        html += `<div class="md-phase-header">
+          <span class="md-phase-badge">Phase ${gi + 1}</span>
+          <span class="md-phase-title">${esc(phaseTitle)}</span>`;
+        if (isParallel) {
+          html += `<span class="md-parallel-indicator">${tracks.length} parallel tracks</span>`;
+        }
+        if (phaseDuration) {
+          html += `<span class="md-phase-duration">${phaseDuration} min</span>`;
+        }
+        html += `</div>`;
+        if (phaseDesc) {
+          html += `<p class="md-phase-desc">${esc(phaseDesc)}</p>`;
+        }
+      }
+
+      if (isParallel) {
+        // Render tracks side-by-side
+        html += `<div class="md-tracks-grid" style="--track-count:${tracks.length}">`;
+        tracks.forEach(track => {
+          const trackItems = group.items.filter(e => e.item.track_id === track.track_id);
+          html += `<div class="md-track-column">
+            <div class="md-track-label">${esc(track.label || track.track_id)}</div>`;
+          if (track.participant_subset) {
+            html += `<div class="md-track-participants">${esc(track.participant_subset)}</div>`;
+          }
+          trackItems.forEach(e => {
+            activityNum++;
+            html += renderActivityCard(e.item, e.globalIdx, activityNum);
+          });
+          html += `</div>`;
+        });
+        // Catch any items in this phase without a matching track_id
+        const untracked = group.items.filter(e => !tracks.some(t => t.track_id === e.item.track_id));
+        if (untracked.length) {
+          untracked.forEach(e => {
+            activityNum++;
+            html += renderActivityCard(e.item, e.globalIdx, activityNum);
+          });
+        }
+        html += `</div>`;
+      } else {
+        // Plenary — render sequentially
+        group.items.forEach(e => {
+          activityNum++;
+          html += renderActivityCard(e.item, e.globalIdx, activityNum);
+        });
+      }
+
+      html += `</div>`; // close md-phase-group
+    });
+
+    agendaList.innerHTML = html;
+    bindInfoButtons(data);
+  }
+
+  /** Render a single activity card */
+  function renderActivityCard(item, globalIdx, displayNum) {
+    const num = displayNum != null ? displayNum : globalIdx + 1;
+    const c = PATTERN_COLORS[item.collaboration_pattern] || { bg: '#f5f5f5', text: '#424242' };
+    return `
+      <div class="md-agenda-item">
+        <div class="md-agenda-item-header">
+          <span class="md-agenda-num">${num}</span>
+          <div class="md-agenda-item-meta">
+            <span class="md-agenda-item-title">${esc(item.title || item.tool_type)}</span>
+            <span class="md-agenda-pattern-badge" style="background:${c.bg};color:${c.text}">
+              ${esc(item.collaboration_pattern || '')}
+            </span>
+          </div>
+          <span class="md-agenda-duration">${item.duration_minutes || '?'} min</span>
+          <button class="md-info-btn" data-idx="${globalIdx}" title="View rationale &amp; details" aria-label="View details for activity ${num}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </button>
+        </div>
+        <div class="md-agenda-tool-badge">${esc(item.tool_type)}</div>
+      </div>
+    `;
+  }
+
+  /** Bind info buttons to the detail modal */
+  function bindInfoButtons(data) {
     agendaList.querySelectorAll('.md-info-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const idx = parseInt(btn.dataset.idx, 10);
@@ -482,19 +656,190 @@
   // Modal close
   modal.querySelector('.md-modal-close').addEventListener('click', closeModal);
   modal.querySelector('.md-modal-backdrop').addEventListener('click', closeModal);
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeCreateModal(); } });
 
   function closeModal() { modal.style.display = 'none'; }
 
-  // ── Use This Agenda → sessionStorage handoff ───────────────
+  // ── Use This Agenda → single meeting or multi-meeting flow ──
+  const createModal     = $('mdCreateModal');
+  const createModalBody = $('mdCreateModalBody');
+  const createAllBtn    = $('mdCreateAllBtn');
+  const createProgress  = $('mdCreateProgress');
+
+  createModal.querySelector('.md-create-modal-close').addEventListener('click', closeCreateModal);
+  createModal.querySelector('.md-modal-backdrop').addEventListener('click', closeCreateModal);
+
+  function closeCreateModal() { createModal.style.display = 'none'; }
+
   editAgendaBtn.addEventListener('click', () => {
     if (!state.agendaData) return;
-    try {
-      sessionStorage.setItem('md_agenda', JSON.stringify(state.agendaData));
-      window.location.href = '/meeting/create?from=designer';
-    } catch (err) {
-      appendSystemMessage('Failed to store agenda. Please try again.');
+    const complexity = state.agendaData.complexity || 'simple';
+
+    if (complexity === 'multi_track') {
+      showMultiMeetingModal();
+    } else {
+      // Simple or multi-phase → single meeting (existing flow)
+      try {
+        sessionStorage.setItem('md_agenda', JSON.stringify(state.agendaData));
+        window.location.href = '/meeting/create?from=designer';
+      } catch (err) {
+        appendSystemMessage('Failed to store agenda. Please try again.');
+      }
     }
+  });
+
+  // ── Multi-meeting creation ──────────────────────────────────
+  function splitAgendasByTrack(data) {
+    const phases = data.phases || [];
+    const agenda = data.agenda || [];
+    const baseName = data.session_name || 'Session';
+    const meetings = [];
+
+    // If no phases (simple/legacy), fall back to a single meeting
+    if (phases.length === 0) {
+      if (agenda.length > 0) {
+        meetings.push({
+          suggested_title: baseName,
+          description: data.meeting_summary || '',
+          agenda: agenda,
+        });
+      }
+      return meetings;
+    }
+
+    // Walk phases in order to produce hierarchically numbered meetings
+    const assigned = new Set(); // track which agenda items we've assigned
+    let phaseNum = 1;
+
+    for (const phase of phases) {
+      const phaseActivities = agenda.filter(a => a.phase_id === phase.phase_id);
+
+      if (phase.phase_type === 'parallel' && Array.isArray(phase.tracks)) {
+        // Parallel phase: one meeting per track, numbered N.1, N.2, ...
+        phase.tracks.forEach((track, trackIdx) => {
+          const trackActivities = phaseActivities.filter(a => a.track_id === track.track_id);
+          if (trackActivities.length > 0) {
+            trackActivities.forEach(a => assigned.add(a));
+            meetings.push({
+              suggested_title: `${phaseNum}.${trackIdx + 1} ${baseName} \u2014 ${track.label || track.track_id} Breakout`,
+              description: track.participant_subset ? `Participants: ${track.participant_subset}` : '',
+              agenda: trackActivities,
+            });
+          }
+        });
+      } else {
+        // Plenary phase: single meeting numbered N.0
+        if (phaseActivities.length > 0) {
+          phaseActivities.forEach(a => assigned.add(a));
+          meetings.push({
+            suggested_title: `${phaseNum}.0 ${baseName} \u2014 ${phase.title || 'Plenary'}`,
+            description: phase.description || '',
+            agenda: phaseActivities,
+          });
+        }
+      }
+      phaseNum++;
+    }
+
+    // Catch any orphan activities not matched to a phase
+    const orphans = agenda.filter(a => !assigned.has(a));
+    if (orphans.length > 0) {
+      meetings.push({
+        suggested_title: `${baseName} \u2014 Additional Activities`,
+        description: '',
+        agenda: orphans,
+      });
+    }
+
+    return meetings;
+  }
+
+  function showMultiMeetingModal() {
+    const meetings = splitAgendasByTrack(state.agendaData);
+    state._pendingMeetings = meetings;
+
+    createModalBody.innerHTML = `
+      <p class="md-create-intro">This multi-track agenda will create <strong>${meetings.length} separate meetings</strong>.
+      Each breakout track becomes its own meeting. You can edit titles below.</p>
+      <div class="md-create-meeting-list">
+        ${meetings.map((m, i) => `
+          <div class="md-create-meeting-row">
+            <span class="md-agenda-num">${i + 1}</span>
+            <div class="md-create-meeting-info">
+              <input type="text" class="md-create-title-input" data-idx="${i}" value="${esc(m.suggested_title)}" />
+              <span class="md-create-meeting-meta">${m.agenda.length} activities${m.description ? ' · ' + esc(m.description) : ''}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    createProgress.style.display = 'none';
+    createAllBtn.disabled = false;
+    createModal.style.display = 'flex';
+  }
+
+  createAllBtn.addEventListener('click', async () => {
+    if (!state._pendingMeetings) return;
+    createAllBtn.disabled = true;
+
+    const meetings = state._pendingMeetings;
+    // Read edited titles from inputs
+    createModalBody.querySelectorAll('.md-create-title-input').forEach(input => {
+      const idx = parseInt(input.dataset.idx, 10);
+      if (meetings[idx]) meetings[idx].suggested_title = input.value.trim() || meetings[idx].suggested_title;
+    });
+
+    const created = [];
+    for (let i = 0; i < meetings.length; i++) {
+      const m = meetings[i];
+      createProgress.textContent = `Creating meeting ${i + 1} of ${meetings.length}…`;
+      createProgress.style.display = '';
+
+      try {
+        const agendaPayload = m.agenda.map((item, idx) => ({
+          tool_type: item.tool_type,
+          title: item.title || '',
+          instructions: item.instructions || '',
+          config: item.config_overrides || {},
+          order_index: idx + 1,
+        }));
+
+        const resp = await fetch('/api/meetings/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: m.suggested_title,
+            description: m.description || 'Created by AI Meeting Designer',
+            agenda: agendaPayload,
+          }),
+        });
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          throw new Error(err.detail || resp.statusText);
+        }
+
+        const result = await resp.json();
+        created.push({ title: m.suggested_title, meeting_id: result.meeting_id });
+      } catch (err) {
+        createProgress.textContent = `Error creating "${m.suggested_title}": ${err.message}`;
+        createAllBtn.disabled = false;
+        return;
+      }
+    }
+
+    // Success — show links
+    createModalBody.innerHTML = `
+      <div class="md-create-success">
+        <p><strong>${created.length} meetings created successfully!</strong></p>
+        <ul class="md-create-links">
+          ${created.map(c => `<li><a href="/meeting/${c.meeting_id}">${esc(c.title)}</a></li>`).join('')}
+        </ul>
+        <a href="/dashboard" class="md-generate-btn" style="text-decoration:none;display:inline-flex;margin-top:0.75rem;">Go to Dashboard</a>
+      </div>
+    `;
+    createProgress.style.display = 'none';
+    createAllBtn.style.display = 'none';
   });
 
   // ── Boot ───────────────────────────────────────────────────
