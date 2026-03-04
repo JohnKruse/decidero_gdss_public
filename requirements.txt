@@ -54,6 +54,10 @@ idna==3.10
     # via
     #   anyio
     #   email-validator
+json-repair==0.58.3
+    # via
+    #   -r requirements.in
+    #   meeting_designer_prompt (AI JSON repair fallback)
     #   httpx
 jinja2==3.1.6
     # via fastapi

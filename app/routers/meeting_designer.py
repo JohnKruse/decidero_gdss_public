@@ -208,10 +208,11 @@ async def generate_agenda(
             detail=f"AI provider error: {exc}",
         ) from exc
 
+    logger.debug("Raw agenda JSON from AI (first 1000 chars): %s", raw[:1000])
     try:
         agenda_data = parse_agenda_json(raw)
     except ValueError as exc:
-        logger.error("Failed to parse agenda JSON: %s | Raw: %s", exc, raw[:500])
+        logger.error("Failed to parse agenda JSON: %s | Full raw output: %s", exc, raw)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="The AI returned an invalid agenda format. Please try again.",

@@ -32,8 +32,8 @@ RULES
 3. Actively design against cognitive biases. Consider: groupthink, Abilene Paradox, HiPPO effect (deference to highest-paid person), production blocking, hidden profiles, evaluation apprehension, and status/social desirability bias.
 4. Only recommend activities available in Decidero: {activity_list}.
 5. Be warm and pragmatic — you speak like an experienced facilitator, not an academic.
-6. Never generate the final agenda until the facilitator explicitly signals readiness (says "generate", "create agenda", "I'm ready", or similar), OR until you have collected all four information areas (goal, group, dynamics, constraints).
-7. When generating the final agenda, output ONLY valid JSON — no prose before or after the JSON block.
+6. Never generate the final agenda yourself. Your role in the conversation is to gather information and discuss the design. When the facilitator is ready, direct them to click the "Generate Agenda" button. Agenda generation is handled by a separate system process.
+7. Never output JSON, code blocks, or structured data in the conversation. All your responses should be natural, conversational prose. If a user asks you to generate the agenda in the chat, politely redirect them to click the "Generate Agenda" button instead.
 
 ═══════════════════════════════════════════
 IDENTITY
@@ -89,10 +89,16 @@ BREAKOUT TRACK DESIGN GUIDELINES:
 • Each parallel track becomes a separate Decidero meeting with its own participant subset.
 • The facilitator assigns participants to tracks after agenda generation — note this in your design rationale.
 • Target 8–15 people per breakout track for optimal engagement. With 40 people and 3 tracks, suggest roughly equal splits.
-• Every breakout track activity should produce a tangible artifact (ranked list, categorized themes, or action items) that can be shared during reconvergence.
 • Name tracks descriptively based on the sub-problem they address (e.g., "AI Threats Track", "Market Expansion Track").
 • Mirror the activity structure across tracks when possible — this makes facilitation easier and outputs more comparable.
-• For the reconvergence phase, seed brainstorming instructions that ask participants to react to the other tracks' outputs.
+
+MANDATORY RECONVERGENCE RULES (hard requirements for multi-track designs):
+• Every parallel phase MUST be followed by a plenary reconvergence phase. A multi-track agenda must never end on a parallel phase.
+• Each breakout track must produce a specific, named deliverable — not just "tangible artifacts" but explicitly stated products (e.g., "Top 5 ranked initiatives with rationale", "Categorized risk matrix", "3 recommended actions with owner assignments"). Name the deliverable in the track's activity instructions.
+• The last activity in every breakout track MUST include instructions that reference preparing a summary or presentation for the full group (e.g., "Review your track's top 3 priorities and prepare a 2-minute summary to present to the full group during reconvergence").
+• The plenary reconvergence phase MUST include at minimum: a brainstorming activity with sub-comments enabled (allow_subcomments: true) where each track's outputs are presented and all participants react, question, and build on other tracks' work.
+• Reconvergence activity instructions must explicitly name which tracks are reporting back and what deliverable they are presenting (e.g., "Each track will present their top 5 priorities. Use sub-comments to ask questions, flag overlaps, or suggest cross-track synergies").
+• If the session includes multiple rounds of breakout work (e.g., ideation breakouts followed by evaluation breakouts), each round requires its own reconvergence phase — do not batch reconvergence at the end.
 
 ═══════════════════════════════════════════
 MOTION — Conversation Flow
@@ -143,13 +149,15 @@ Phase 4.5 — EVALUATION CRITERIA (ask before design discussion):
 Phase 5 — DESIGN DISCUSSION (for multi-phase and multi-track only):
   If the session is multi-phase or multi-track, discuss the structure in more detail:
   • For multi-track: confirm the number of tracks, what each track focuses on, and approximate time allocation per phase.
+  • For multi-track: discuss what specific deliverable each breakout track will produce (e.g., "a ranked list of top 5 initiatives", "a categorized risk matrix", "3 recommended actions with owners"). Confirm with the facilitator how these deliverables will feed into the reconvergence phase. Ask: "What should each track bring back to the full group? A ranked shortlist? A set of action items? Something else?"
+  • For multi-track: explain the reconvergence plan — how tracks will present their outputs and how the full group will integrate across tracks (e.g., cross-pollination brainstorming, combined voting).
   • For multi-phase: confirm the phase sequence and what each phase aims to achieve.
   • Walk the facilitator through the proposed activity flow for at least one track so they understand the depth of each breakout.
   Do not rush to generation — complex sessions deserve thorough design conversations.
 
 Phase 6 — AGENDA GENERATION (only when facilitator is ready):
-  When the facilitator says they're ready (or you have gathered all areas above), confirm briefly that you have enough context, then ask them to click "Generate Agenda" or say "generate" to proceed.
-  On the generate call, output ONLY the JSON object below — nothing else.
+  When the facilitator indicates they're ready (or you have gathered all areas above), confirm briefly that you have enough context, summarize the key design decisions you've agreed on, then ask them to click the "Generate Agenda" button in the interface to proceed.
+  Do NOT generate the agenda yourself or output any JSON. The generation is handled by a separate system process when the button is clicked.
 
 BEGIN: Start by warmly introducing yourself in 2–3 sentences, then ask your first question about the meeting goal. Keep it friendly and brief."""
 
@@ -310,6 +318,14 @@ Activity calibration:
 - For multi-track designs, mirror the activity structure across breakout tracks when possible
 - Note in the design_rationale that the facilitator will need to assign participants to breakout tracks
 
+Reconvergence rules (mandatory for multi_track complexity):
+- Every phase with phase_type "parallel" MUST be immediately followed by a phase with phase_type "plenary" that serves as reconvergence. The agenda must never end on a parallel phase.
+- The reconvergence plenary phase MUST contain at least one brainstorming activity with config_overrides {"allow_subcomments": true} for cross-track report-back and discussion.
+- The reconvergence brainstorming instructions must name each track and state what deliverable each track is presenting (e.g., "Track A will share their top 5 priorities. Track B will present their risk assessment. Add sub-comments to ask questions or identify cross-track synergies.").
+- The last activity in each breakout track (i.e., the final activity with a given track_id before a reconvergence phase) must include in its instructions a directive to prepare a summary for the full group (e.g., "As your final step, consolidate your track's top 3 recommendations into a clear summary to present during the reconvergence session.").
+- Each breakout track activity's instructions must reference the specific deliverable the track is working toward (e.g., "Rank these initiatives — your track's top 5 will be presented to the full group for cross-pollination").
+- If the agenda contains multiple parallel phases, each parallel phase must have its own subsequent reconvergence phase — do not defer all reconvergence to the end.
+
 Evaluation criteria rules:
 - If the facilitator provided evaluation criteria, include them in the "evaluation_criteria" array and reference them in the instructions of any voting or rank_order_voting activities (e.g., "Consider these criteria when ranking: cost, feasibility, and strategic alignment").
 - If the facilitator chose to have the group decide criteria, include a "Criteria Setting" brainstorming activity early in the agenda (before any evaluation activities) with instructions like "What criteria should we use to evaluate our options? Suggest metrics like cost, risk, impact, feasibility, etc." Follow it with a short voting activity to lock in the top criteria.
@@ -335,11 +351,19 @@ def build_generation_messages(
     ]
 
 
-def parse_agenda_json(raw_text: str) -> Dict[str, Any]:
+def parse_agenda_json(raw_text: str, *, save_dir: str = "/tmp") -> Dict[str, Any]:
     """Extract and parse the JSON agenda from the model's raw output.
 
     The model should output only JSON, but may occasionally wrap it in
-    markdown code fences. This handles both cases gracefully.
+    markdown code fences or produce slightly malformed JSON. This function
+    handles those cases gracefully with a two-pass strategy:
+
+    Pass 1 — strict json.loads()
+    Pass 2 — json_repair (handles missing commas, trailing commas, etc.)
+
+    The raw AI output is always saved to ``{save_dir}/decidero_last_agenda_raw.txt``
+    so failures can be inspected easily. On success the parsed dict is also
+    saved to ``{save_dir}/decidero_last_agenda_parsed.json``.
 
     Normalises the new complexity/phases/track fields for backward
     compatibility — if they are absent the result degrades gracefully to
@@ -348,31 +372,73 @@ def parse_agenda_json(raw_text: str) -> Dict[str, Any]:
     Returns the parsed dict, or raises ValueError on failure.
     """
     import json
+    import logging
     import re
+    from pathlib import Path
+
+    logger = logging.getLogger(__name__)
+
+    # ── Always save the raw output so failures can be inspected ──────────
+    try:
+        Path(save_dir, "decidero_last_agenda_raw.txt").write_text(
+            raw_text, encoding="utf-8"
+        )
+    except OSError:
+        pass  # don't let a disk error mask the real problem
 
     text = raw_text.strip()
 
-    # Strip markdown code fences if present
+    # ── Extract the JSON object from any surrounding prose / fences ───────
     fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
     if fence_match:
         text = fence_match.group(1).strip()
     else:
-        # Find the first { and last } to extract the JSON object
         start = text.find("{")
         end = text.rfind("}")
         if start != -1 and end != -1:
             text = text[start : end + 1]
 
-    # Strip JS-style // line comments — the AI sometimes mirrors them from the schema template.
-    # Must avoid stripping URLs like "https://..." so only strip from after whitespace/comma/brace.
+    # ── Strip JS-style // line comments ───────────────────────────────────
+    # The AI sometimes mirrors them from the schema template.
+    # Careful not to strip URLs ("https://...") — only strip after
+    # whitespace, comma, or opening brace/bracket.
     text = re.sub(r'(?<=[,\{\[\s])(\s*)//[^\n]*', r'\1', text)
 
+    # ── Pass 1: strict parse ──────────────────────────────────────────────
     try:
         data = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"AI returned invalid JSON. Raw output (first 500 chars): {raw_text[:500]}"
-        ) from exc
+        logger.debug("Agenda JSON parsed successfully (strict pass).")
+    except json.JSONDecodeError as strict_exc:
+        # ── Pass 2: lenient repair ────────────────────────────────────────
+        logger.warning(
+            "Strict JSON parse failed (%s). Attempting repair with json_repair.", strict_exc
+        )
+        try:
+            from json_repair import repair_json  # type: ignore[import]
+            repaired = repair_json(text, return_objects=True)
+            if not isinstance(repaired, dict):
+                raise ValueError("Repaired JSON is not a dict object.")
+            data = repaired
+            logger.warning("json_repair recovered a valid dict — generation may need review.")
+        except Exception as repair_exc:
+            logger.error(
+                "Both strict parse and json_repair failed.\n"
+                "Strict error: %s\nRepair error: %s\n"
+                "Full raw output saved to %s/decidero_last_agenda_raw.txt",
+                strict_exc, repair_exc, save_dir,
+            )
+            raise ValueError(
+                f"AI returned invalid JSON (strict: {strict_exc}; repair: {repair_exc}). "
+                f"Raw output saved to {save_dir}/decidero_last_agenda_raw.txt"
+            ) from strict_exc
+
+    # ── Save parsed result on success ─────────────────────────────────────
+    try:
+        Path(save_dir, "decidero_last_agenda_parsed.json").write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except OSError:
+        pass
 
     return _normalise_agenda(data)
 
