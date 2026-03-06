@@ -16,6 +16,7 @@ import pytest
 from app.services.meeting_designer_prompt import (
     _normalise_agenda,
     build_generation_messages,
+    build_generation_system_prompt,
     build_system_prompt,
     get_generation_prompt,
     parse_agenda_json,
@@ -409,6 +410,17 @@ class TestBuildSystemPrompt:
         generation_prompt = get_generation_prompt()
         for field in ["session_name", "evaluation_criteria", "complexity", "phases", "agenda"]:
             assert field in generation_prompt, f"Missing field in schema: {field}"
+
+
+class TestBuildGenerationSystemPrompt:
+    def test_requires_json_only_output(self):
+        prompt = build_generation_system_prompt()
+        assert "Output ONLY JSON" in prompt
+        assert "one top-level JSON object" in prompt
+
+    def test_lists_allowed_tool_types(self):
+        prompt = build_generation_system_prompt()
+        assert "Allowed tool_type values:" in prompt
 
 
 # ---------------------------------------------------------------------------

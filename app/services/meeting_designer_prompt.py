@@ -109,6 +109,29 @@ def build_system_prompt() -> str:
     return prompt
 
 
+def build_generation_system_prompt() -> str:
+    """Build the dedicated system prompt for agenda generation mode.
+
+    This avoids conflicts with chat-only rules (for example, "never output JSON")
+    while remaining provider/model agnostic.
+    """
+    from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
+
+    catalog = get_enriched_activity_catalog()
+    activity_list = ", ".join(a["tool_type"] for a in catalog)
+
+    return (
+        "You are the Decidero AI Meeting Designer in AGENDA GENERATION MODE.\n"
+        "Your task is to convert the prior conversation into one valid JSON object "
+        "that matches the user schema/instructions.\n"
+        f"Allowed tool_type values: {activity_list}.\n"
+        "Output requirements:\n"
+        "- Output ONLY JSON (no prose, no markdown fences, no commentary).\n"
+        "- Return exactly one top-level JSON object.\n"
+        "- If uncertain, make best-effort assumptions but still return valid JSON."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Generation prompt — appended when the facilitator triggers agenda generation
 # ---------------------------------------------------------------------------
