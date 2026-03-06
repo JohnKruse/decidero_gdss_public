@@ -297,9 +297,11 @@ def test_meeting_designer_prompt_templates_file_source(monkeypatch, tmp_path):
 
     templates = loader.get_meeting_designer_prompt_templates()
 
-    assert templates["system_prefix"] == "Prefix with {activity_list}\n"
-    assert templates["system_suffix"] == "Suffix text\n"
-    assert templates["generate_agenda"] == "Generate text\n"
+    # YAML block scalars may or may not preserve the terminal newline depending
+    # on file formatting/chomping, so assert semantic content.
+    assert templates["system_prefix"].rstrip("\n") == "Prefix with {activity_list}"
+    assert templates["system_suffix"].rstrip("\n") == "Suffix text"
+    assert templates["generate_agenda"].rstrip("\n") == "Generate text"
 
 
 def test_meeting_designer_prompt_templates_inline_source(monkeypatch, tmp_path):
