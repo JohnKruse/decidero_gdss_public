@@ -17,6 +17,7 @@ from app.services.meeting_designer_prompt import (
     _normalise_agenda,
     build_generation_messages,
     build_system_prompt,
+    get_generation_prompt,
     parse_agenda_json,
 )
 
@@ -389,25 +390,25 @@ class TestBuildSystemPrompt:
         assert "output ONLY valid JSON" not in prompt
 
     def test_generate_prompt_contains_reconvergence_rules(self):
-        from app.services.meeting_designer_prompt import GENERATE_AGENDA_PROMPT
-        assert "Reconvergence rules" in GENERATE_AGENDA_PROMPT
-        assert "MUST be immediately followed" in GENERATE_AGENDA_PROMPT
+        generation_prompt = get_generation_prompt()
+        assert "Reconvergence rules" in generation_prompt
+        assert "MUST be immediately followed" in generation_prompt
 
     def test_no_js_comments_in_json_schema(self):
         """The JSON schema block must not contain // comments (breaks AI output)."""
-        from app.services.meeting_designer_prompt import GENERATE_AGENDA_PROMPT
+        generation_prompt = get_generation_prompt()
         # Find the JSON block
-        start = GENERATE_AGENDA_PROMPT.find("{")
-        end = GENERATE_AGENDA_PROMPT.rfind("}")
-        json_block = GENERATE_AGENDA_PROMPT[start:end + 1]
+        start = generation_prompt.find("{")
+        end = generation_prompt.rfind("}")
+        json_block = generation_prompt[start:end + 1]
         assert "//" not in json_block, (
             "Found // comment inside JSON schema block — AI will copy it and produce invalid JSON"
         )
 
     def test_generate_prompt_contains_required_fields(self):
-        from app.services.meeting_designer_prompt import GENERATE_AGENDA_PROMPT
+        generation_prompt = get_generation_prompt()
         for field in ["session_name", "evaluation_criteria", "complexity", "phases", "agenda"]:
-            assert field in GENERATE_AGENDA_PROMPT, f"Missing field in schema: {field}"
+            assert field in generation_prompt, f"Missing field in schema: {field}"
 
 
 # ---------------------------------------------------------------------------

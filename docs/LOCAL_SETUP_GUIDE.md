@@ -93,7 +93,8 @@ After logging in as Admin, you can configure the AI Meeting Designer **without e
 
 The API key is stored **encrypted in the database** — more secure than putting it in `config.yaml`.
 
-If you prefer to configure via `config.yaml` instead, see the `meeting_designer_model` section in `app/config/config.yaml` (Section B).  Note that keys stored in `config.yaml` are plain text; using the Settings UI is recommended.
+Do **not** store API keys in `config.yaml`. Keep keys in the Settings UI only.
+`config.yaml` should only contain non-secret AI defaults (provider endpoints, HTTP timeouts, prompt template source).
 
 For the full settings reference, see `docs/SETTINGS_GUIDE.md`.
 

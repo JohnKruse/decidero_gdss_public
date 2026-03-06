@@ -28,6 +28,8 @@ from pydantic import BaseModel, Field
 
 from app.auth.auth import get_current_user
 from app.config.loader import (
+    get_ai_http_settings,
+    get_ai_provider_defaults,
     get_auth_login_rate_limit_settings,
     get_brainstorming_defaults,
     get_brainstorming_limits,
@@ -377,7 +379,8 @@ async def test_ai_connection(
         elif provider == "google":
             result_text = await _test_google(api_key, model)
         elif provider == "openrouter":
-            result_text = await _test_openai(api_key, _OPENROUTER_BASE, model)
+            openrouter_base = _ai_defaults()["openrouter"]["endpoint_url"]
+            result_text = await _test_openai(api_key, openrouter_base, model)
         else:
             # openai or openai_compatible
             result_text = await _test_openai(api_key, endpoint_url, model)
@@ -400,12 +403,18 @@ class _TestError(Exception):
     """Human-readable error for the test-AI endpoint."""
 
 
-_TEST_TIMEOUT = httpx.Timeout(connect=8.0, read=30.0, write=10.0, pool=5.0)
-_ANTHROPIC_API_VERSION = "2023-06-01"
-_DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com"
-_DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
-_OPENROUTER_BASE = "https://openrouter.ai/api/v1"
-_GOOGLE_BASE = "https://generativelanguage.googleapis.com/v1beta"
+def _ai_defaults() -> Dict[str, Dict[str, str]]:
+    return get_ai_provider_defaults()
+
+
+def _test_timeout() -> httpx.Timeout:
+    settings = get_ai_http_settings().get("settings_test_client", {})
+    return httpx.Timeout(
+        connect=float(settings.get("connect", 8.0)),
+        read=float(settings.get("read", 30.0)),
+        write=float(settings.get("write", 10.0)),
+        pool=float(settings.get("pool", 5.0)),
+    )
 
 
 def _resolve_api_key(raw: str, provider: str = "") -> str:
@@ -432,11 +441,12 @@ def _resolve_api_key(raw: str, provider: str = "") -> str:
 
 
 async def _test_anthropic(api_key: str, endpoint_url: str, model: str) -> str:
-    base = (endpoint_url or _DEFAULT_ANTHROPIC_BASE).rstrip("/")
+    defaults = _ai_defaults()
+    base = (endpoint_url or defaults["anthropic"]["endpoint_url"]).rstrip("/")
     url = f"{base}/v1/messages"
     headers = {
         "x-api-key": api_key,
-        "anthropic-version": _ANTHROPIC_API_VERSION,
+        "anthropic-version": defaults["anthropic"]["api_version"],
         "content-type": "application/json",
     }
     body = {
@@ -444,7 +454,7 @@ async def _test_anthropic(api_key: str, endpoint_url: str, model: str) -> str:
         "max_tokens": 8,
         "messages": [{"role": "user", "content": "Hi"}],
     }
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.post(url, headers=headers, json=body)
         except httpx.TimeoutException:
@@ -466,6 +476,7 @@ async def _test_anthropic(api_key: str, endpoint_url: str, model: str) -> str:
 
 
 async def _test_openai(api_key: str, endpoint_url: str, model: str) -> str:
+    defaults = _ai_defaults()
     if endpoint_url:
         base = endpoint_url.rstrip("/")
         if "chat/completions" in base:
@@ -473,7 +484,7 @@ async def _test_openai(api_key: str, endpoint_url: str, model: str) -> str:
         else:
             url = f"{base}/chat/completions"
     else:
-        url = f"{_DEFAULT_OPENAI_BASE}/chat/completions"
+        url = f"{defaults['openai']['endpoint_url'].rstrip('/')}/chat/completions"
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -486,7 +497,7 @@ async def _test_openai(api_key: str, endpoint_url: str, model: str) -> str:
         "max_completion_tokens": 8,
         "messages": [{"role": "user", "content": "Hi"}],
     }
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.post(url, headers=headers, json=body)
         except httpx.TimeoutException:
@@ -509,12 +520,13 @@ async def _test_openai(api_key: str, endpoint_url: str, model: str) -> str:
 
 async def _test_google(api_key: str, model: str) -> str:
     """Test Google Gemini by making a minimal generateContent call."""
-    url = f"{_GOOGLE_BASE}/models/{model}:generateContent?key={api_key}"
+    base = _ai_defaults()["google"]["api_base_url"].rstrip("/")
+    url = f"{base}/models/{model}:generateContent?key={api_key}"
     body = {
         "contents": [{"parts": [{"text": "Hi"}]}],
         "generationConfig": {"maxOutputTokens": 8},
     }
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.post(url, json=body)
         except httpx.TimeoutException:
@@ -594,13 +606,14 @@ _TIER_SCORE: Dict[str, int] = {"opus": 3, "sonnet": 2, "haiku": 1}
 
 
 async def _fetch_anthropic_models(api_key: str, endpoint_url: str = "") -> List[str]:
-    base = (endpoint_url or _DEFAULT_ANTHROPIC_BASE).rstrip("/")
+    defaults = _ai_defaults()
+    base = (endpoint_url or defaults["anthropic"]["endpoint_url"]).rstrip("/")
     url = f"{base}/v1/models"
     headers = {
         "x-api-key": api_key,
-        "anthropic-version": _ANTHROPIC_API_VERSION,
+        "anthropic-version": defaults["anthropic"]["api_version"],
     }
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.get(url, headers=headers)
         except httpx.RequestError as exc:
@@ -634,10 +647,11 @@ async def _fetch_anthropic_models(api_key: str, endpoint_url: str = "") -> List[
 
 
 async def _fetch_openai_models(api_key: str, endpoint_url: str = "") -> List[str]:
-    base = (endpoint_url or _DEFAULT_OPENAI_BASE).rstrip("/")
+    defaults = _ai_defaults()
+    base = (endpoint_url or defaults["openai"]["endpoint_url"]).rstrip("/")
     url = f"{base}/models"
     headers = {"Authorization": f"Bearer {api_key}"}
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.get(url, headers=headers)
         except httpx.RequestError as exc:
@@ -681,8 +695,9 @@ async def _fetch_openai_models(api_key: str, endpoint_url: str = "") -> List[str
 
 
 async def _fetch_google_models(api_key: str) -> List[str]:
-    url = f"{_GOOGLE_BASE}/models?key={api_key}"
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    base = _ai_defaults()["google"]["api_base_url"].rstrip("/")
+    url = f"{base}/models?key={api_key}"
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.get(url)
         except httpx.RequestError as exc:
@@ -731,9 +746,10 @@ async def _fetch_google_models(api_key: str) -> List[str]:
 
 
 async def _fetch_openrouter_models(api_key: str) -> List[str]:
-    url = f"{_OPENROUTER_BASE}/models"
+    base = _ai_defaults()["openrouter"]["endpoint_url"].rstrip("/")
+    url = f"{base}/models"
     headers = {"Authorization": f"Bearer {api_key}"}
-    async with httpx.AsyncClient(timeout=_TEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_test_timeout()) as client:
         try:
             resp = await client.get(url, headers=headers)
         except httpx.RequestError as exc:

@@ -148,6 +148,44 @@ brainstorming:
   default_allow_subcomments: false
   default_auto_jump_new_ideas: true
 
+# ── AI Runtime Defaults (non-secret) ──────────────────────────────────────────
+# These values are safe defaults and seed behavior across AI integrations.
+# DO NOT put API keys here. Keys are entered via Settings UI and stored encrypted in DB.
+ai:
+  provider_defaults:
+    anthropic:
+      endpoint_url: "https://api.anthropic.com"
+      api_version: "2023-06-01"
+    openai:
+      endpoint_url: "https://api.openai.com/v1"
+    openrouter:
+      endpoint_url: "https://openrouter.ai/api/v1"
+    google:
+      openai_compat_endpoint_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+      api_base_url: "https://generativelanguage.googleapis.com/v1beta"
+
+  http:
+    timeouts:
+      provider_client:
+        connect: 10
+        read: 90
+        write: 30
+        pool: 5
+      settings_test_client:
+        connect: 8
+        read: 30
+        write: 10
+        pool: 5
+
+  prompts:
+    meeting_designer:
+      source: "file"                         # file | inline
+      file_path: "prompts/meeting_designer.yaml"  # relative to app/config
+      # Used when source=inline
+      system_prefix: ""
+      system_suffix: ""
+      generate_agenda: ""
+
 # ── AI Meeting Designer ────────────────────────────────────────────────────────
 # Configures the AI model used by the AI Meeting Designer feature.
 # The feature is DISABLED until provider, api_key, and model are all non-empty.

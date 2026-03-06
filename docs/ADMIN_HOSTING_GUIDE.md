@@ -91,6 +91,9 @@ The following require editing `app/config/config.yaml` and restarting the server
 - Polling intervals (`meeting_refresh`, `ui_refresh`)
 - Frontend retry/backoff behaviour
 - `auth.secure_cookies` (also overridable via `DECIDERO_SECURE_COOKIES` env var)
+- Non-secret AI defaults (`ai.provider_defaults`, `ai.http.timeouts`, `ai.prompts.*`)
+
+Do not store AI API keys in `config.yaml`; keep keys in Settings UI so they stay encrypted in `app_settings`.
 
 For the full settings reference, see `docs/SETTINGS_GUIDE.md`.
 
