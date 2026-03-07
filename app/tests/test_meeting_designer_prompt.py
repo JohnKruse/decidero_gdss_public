@@ -8,18 +8,27 @@ Covers:
   - build_system_prompt() / build_generation_messages() — smoke tests
 """
 import json
+import inspect
 import textwrap
 from pathlib import Path
 
 import pytest
 
 from app.services.meeting_designer_prompt import (
+    _extract_json_object,
+    _build_config_overrides_block,
+    _build_duration_guidance,
+    _build_tool_type_enum,
     _normalise_agenda,
+    build_generation_prompt,
     build_generation_messages,
     build_generation_system_prompt,
+    build_outline_messages,
+    build_outline_prompt,
     build_system_prompt,
     get_generation_prompt,
     parse_agenda_json,
+    parse_outline_json,
 )
 
 # ---------------------------------------------------------------------------
@@ -55,6 +64,64 @@ def _minimal_agenda(**overrides) -> dict:
 
 def _json(d: dict) -> str:
     return json.dumps(d)
+
+
+def _catalog_for_helpers() -> list[dict]:
+    return [
+        {
+            "tool_type": "brainstorming",
+            "default_config": {
+                "allow_anonymous": False,
+                "allow_subcomments": True,
+            },
+            "typical_duration_minutes": {"min": 5, "max": 30},
+        },
+        {
+            "tool_type": "voting",
+            "default_config": {
+                "options": [],
+                "vote_type": "updown",
+                "max_votes": 3,
+            },
+            "typical_duration_minutes": {"min": 3, "max": 15},
+        },
+        {
+            "tool_type": "rank_order_voting",
+            "default_config": {
+                "max_votes": 5,
+            },
+            "typical_duration_minutes": {"min": 10, "max": 20},
+        },
+        {
+            "tool_type": "categorization",
+            "default_config": {
+                "allow_new_buckets": True,
+            },
+            "typical_duration_minutes": {"min": 15, "max": 45},
+        },
+    ]
+
+
+def _synthetic_catalog(n: int = 4) -> list[dict]:
+    """Return synthetic enriched-catalog entries with unique tool_type values."""
+    greek = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"]
+    names = greek[:n]
+    catalog: list[dict] = []
+    for idx, name in enumerate(names, start=1):
+        catalog.append(
+            {
+                "tool_type": name,
+                "label": name.title(),
+                "description": f"Synthetic {name} activity",
+                "default_config": {
+                    "flag_enabled": idx % 2 == 0,
+                    "threshold": idx,
+                },
+                "typical_duration_minutes": {"min": idx, "max": idx + 5},
+                "collaboration_patterns": ["Generate", "Evaluate"],
+            }
+        )
+    return catalog
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +490,287 @@ class TestBuildGenerationSystemPrompt:
         assert "Allowed tool_type values:" in prompt
 
 
+class TestBuildGenerationPrompt:
+    def test_build_generation_prompt_contains_all_tool_types(self):
+        from app.services.activity_catalog import get_enriched_activity_catalog
+
+        prompt = build_generation_prompt()
+        catalog = get_enriched_activity_catalog()
+        for activity in catalog:
+            tool_type = activity.get("tool_type")
+            if isinstance(tool_type, str) and tool_type:
+                assert tool_type in prompt
+
+    def test_build_generation_prompt_no_hardcoded_tool_types(self):
+        source = inspect.getsource(build_generation_prompt)
+        for forbidden in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
+            assert forbidden not in source
+
+    def test_build_generation_prompt_includes_json_schema(self):
+        prompt = build_generation_prompt()
+        for field in ["tool_type", "title", "instructions", "config_overrides", "duration_minutes"]:
+            assert field in prompt
+
+    def test_build_generation_prompt_without_outline(self):
+        prompt = build_generation_prompt()
+        assert "activity outline has been approved" not in prompt
+
+    def test_build_generation_prompt_with_outline(self):
+        outline = [
+            {"tool_type": "alpha", "title": "First activity"},
+            {"tool_type": "beta", "title": "Second activity"},
+            {"tool_type": "gamma", "title": "Third activity"},
+        ]
+        prompt = build_generation_prompt(outline=outline)
+        assert "activity outline has been approved" in prompt
+        first_pos = prompt.find("First activity")
+        second_pos = prompt.find("Second activity")
+        third_pos = prompt.find("Third activity")
+        assert first_pos != -1 and second_pos != -1 and third_pos != -1
+        assert first_pos < second_pos < third_pos
+
+    def test_generate_prompt_output_only_instruction(self):
+        prompt = build_generation_prompt()
+        assert "Output ONLY" in prompt
+
+
+class TestBuildOutlinePrompt:
+    def test_build_outline_prompt_contains_tool_types(self):
+        from app.services.activity_catalog import get_enriched_activity_catalog
+
+        prompt = build_outline_prompt()
+        catalog = get_enriched_activity_catalog()
+        for activity in catalog:
+            tool_type = activity.get("tool_type")
+            if isinstance(tool_type, str) and tool_type:
+                assert tool_type in prompt
+
+    def test_build_outline_prompt_no_hardcoded_tool_types(self):
+        source = inspect.getsource(build_outline_prompt)
+        for forbidden in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
+            assert forbidden not in source
+
+    def test_build_outline_prompt_excludes_config_schema(self):
+        prompt = build_outline_prompt()
+        assert '"config_overrides"' not in prompt
+        assert '"instructions"' not in prompt
+
+    def test_build_outline_prompt_includes_outline_key(self):
+        prompt = build_outline_prompt()
+        assert '"outline"' in prompt
+
+    def test_build_outline_prompt_output_only(self):
+        prompt = build_outline_prompt()
+        assert "Output ONLY" in prompt
+
+
+class TestBuildOutlineMessages:
+    def test_build_outline_messages_appends_prompt(self):
+        history = [
+            {"role": "assistant", "content": "Hello"},
+            {"role": "user", "content": "Need a workshop agenda"},
+        ]
+        msgs = build_outline_messages(history)
+        assert len(msgs) == 3
+        assert msgs[-1]["role"] == "user"
+        assert msgs[-1]["content"] == build_outline_prompt()
+
+    def test_build_outline_messages_preserves_history(self):
+        history = [{"role": "user", "content": "test"}]
+        original_history = list(history)
+        build_outline_messages(history)
+        assert history == original_history
+
+
+class TestParseOutlineJson:
+    def test_parse_outline_json_clean(self):
+        raw = json.dumps(
+            {
+                "meeting_summary": "Test",
+                "outline": [
+                    {"tool_type": "brainstorming", "title": "Open", "duration_minutes": 10},
+                ],
+            }
+        )
+        parsed = parse_outline_json(raw)
+        assert isinstance(parsed, dict)
+        assert isinstance(parsed["outline"], list)
+
+    def test_parse_outline_json_markdown_fenced(self):
+        payload = {"meeting_summary": "Test", "outline": []}
+        raw = "```json\n" + json.dumps(payload) + "\n```"
+        parsed = parse_outline_json(raw)
+        assert parsed["outline"] == []
+
+    def test_parse_outline_json_with_preamble(self):
+        payload = {"meeting_summary": "Test", "outline": [{"title": "A"}]}
+        raw = "Here is the outline:\n" + json.dumps(payload) + "\nThanks."
+        parsed = parse_outline_json(raw)
+        assert parsed["outline"][0]["title"] == "A"
+
+    def test_parse_outline_json_missing_outline_key(self):
+        with pytest.raises(ValueError, match="outline"):
+            parse_outline_json(json.dumps({"meeting_summary": "Test"}))
+
+    def test_parse_outline_json_outline_not_list(self):
+        with pytest.raises(ValueError, match="outline"):
+            parse_outline_json(json.dumps({"outline": "wrong"}))
+
+    def test_parse_outline_json_invalid_json(self):
+        with pytest.raises(ValueError, match="invalid outline JSON"):
+            parse_outline_json("not-json")
+
+    def test_parse_agenda_json_still_works(self, tmp_path):
+        payload = _minimal_agenda()
+        plain = json.dumps(payload)
+        fenced = f"```json\n{plain}\n```"
+        preamble = f"Agenda follows:\n{plain}\nDone."
+
+        parsed_plain = parse_agenda_json(plain, save_dir=str(tmp_path))
+        parsed_fenced = parse_agenda_json(fenced, save_dir=str(tmp_path))
+        parsed_preamble = parse_agenda_json(preamble, save_dir=str(tmp_path))
+
+        assert parsed_plain["session_name"] == "Test Session"
+        assert parsed_fenced["session_name"] == "Test Session"
+        assert parsed_preamble["session_name"] == "Test Session"
+
+    def test_extract_json_object_shared(self):
+        outline_payload = {"meeting_summary": "Summary", "outline": []}
+        agenda_payload = _minimal_agenda()
+
+        wrapped_outline = f"prefix\n```json\n{json.dumps(outline_payload)}\n```\nsuffix"
+        wrapped_agenda = f"prefix\n```json\n{json.dumps(agenda_payload)}\n```\nsuffix"
+
+        assert _extract_json_object(wrapped_outline) == json.dumps(outline_payload)
+        assert _extract_json_object(wrapped_agenda) == json.dumps(agenda_payload)
+
+
+class TestStep6IntegrationAndAudit:
+    def test_hypothetical_5th_plugin_appears_in_generation_prompt(self, monkeypatch):
+        synthetic = _synthetic_catalog(5)
+        monkeypatch.setattr(
+            "app.services.activity_catalog.get_enriched_activity_catalog",
+            lambda: synthetic,
+        )
+        prompt = build_generation_prompt()
+        assert "epsilon" in prompt
+
+    def test_hypothetical_5th_plugin_appears_in_outline_prompt(self, monkeypatch):
+        synthetic = _synthetic_catalog(5)
+        monkeypatch.setattr(
+            "app.services.activity_catalog.get_enriched_activity_catalog",
+            lambda: synthetic,
+        )
+        prompt = build_outline_prompt()
+        assert "epsilon" in prompt
+
+    def test_no_hardcoded_tool_types_in_new_functions(self):
+        forbidden = ["brainstorming", "voting", "rank_order_voting", "categorization"]
+        for fn in [
+            build_generation_prompt,
+            build_outline_prompt,
+            _build_tool_type_enum,
+            _build_config_overrides_block,
+            _build_duration_guidance,
+        ]:
+            source = inspect.getsource(fn)
+            for token in forbidden:
+                assert token not in source
+
+    def test_build_system_prompt_unchanged(self):
+        prompt = build_system_prompt()
+        for token in ["PURPOSE", "RULES", "IDENTITY", "STANDARD SEQUENCES", "MOTION"]:
+            assert token in prompt
+
+    def test_full_round_trip_outline_then_generation(self):
+        history = [
+            {"role": "assistant", "content": "Let's design your meeting."},
+            {"role": "user", "content": "Need a 1-day prioritization workshop."},
+        ]
+        outline_messages = build_outline_messages(history)
+        assert outline_messages[-1]["role"] == "user"
+
+        outline_raw = json.dumps(
+            {
+                "meeting_summary": "Prioritization workshop",
+                "outline": [
+                    {"tool_type": "brainstorming", "title": "Collect options", "duration_minutes": 15},
+                    {"tool_type": "voting", "title": "Down-select options", "duration_minutes": 10},
+                ],
+            }
+        )
+        parsed_outline = parse_outline_json(outline_raw)
+        generation_messages = build_generation_messages(
+            history, outline=parsed_outline["outline"]
+        )
+        final_prompt = generation_messages[-1]["content"]
+        assert "Collect options" in final_prompt
+        assert "Down-select options" in final_prompt
+        for field in ["tool_type", "title", "instructions", "config_overrides", "duration_minutes"]:
+            assert field in final_prompt
+
+    def test_generation_prompt_with_synthetic_catalog(self, monkeypatch):
+        synthetic = _synthetic_catalog(5)
+        monkeypatch.setattr(
+            "app.services.activity_catalog.get_enriched_activity_catalog",
+            lambda: synthetic,
+        )
+        prompt = build_generation_prompt()
+        for tool_type in ["alpha", "beta", "gamma", "delta", "epsilon"]:
+            assert tool_type in prompt
+        for real_tool_type in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
+            assert real_tool_type not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Step 1 helper fragments — catalog-driven
+# ---------------------------------------------------------------------------
+
+class TestCatalogDrivenHelperFragments:
+    def test_tool_type_enum_from_catalog(self):
+        catalog = [
+            {"tool_type": "alpha"},
+            {"tool_type": "beta"},
+        ]
+        assert _build_tool_type_enum(catalog) == "alpha|beta"
+
+    def test_tool_type_enum_ordering(self):
+        catalog = [
+            {"tool_type": "zeta"},
+            {"tool_type": "alpha"},
+            {"tool_type": "gamma"},
+        ]
+        assert _build_tool_type_enum(catalog) == "zeta|alpha|gamma"
+
+    def test_config_overrides_block_contains_all_types(self):
+        block = _build_config_overrides_block(_catalog_for_helpers())
+        for tool_type in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
+            assert f"// {tool_type}:" in block
+
+    def test_config_overrides_block_skips_internal_keys(self):
+        block = _build_config_overrides_block(_catalog_for_helpers())
+        assert '"options" (' not in block
+        assert '"vote_type" (' not in block
+        assert '"max_votes" (int)' in block
+
+    def test_duration_guidance_all_types(self):
+        guidance = _build_duration_guidance(_catalog_for_helpers())
+        for tool_type in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
+            assert f"{tool_type}:" in guidance
+
+    def test_duration_guidance_missing_range(self):
+        guidance = _build_duration_guidance(
+            [
+                {
+                    "tool_type": "alpha",
+                    "default_config": {},
+                    "typical_duration_minutes": {},
+                }
+            ]
+        )
+        assert "alpha: varies" in guidance
+
+
 # ---------------------------------------------------------------------------
 # build_generation_messages — smoke test
 # ---------------------------------------------------------------------------
@@ -436,13 +784,34 @@ class TestBuildGenerationMessages:
         msgs = build_generation_messages(history)
         assert len(msgs) == 3
         assert msgs[-1]["role"] == "user"
-        assert "session_name" in msgs[-1]["content"]
+        assert msgs[-1]["content"] == build_generation_prompt()
 
     def test_does_not_mutate_input_history(self):
         history = [{"role": "user", "content": "test"}]
+        original_history = list(history)
         original_len = len(history)
         build_generation_messages(history)
         assert len(history) == original_len
+        assert history == original_history
+
+    def test_build_generation_messages_without_outline(self):
+        history = [{"role": "user", "content": "design a session"}]
+        msgs = build_generation_messages(history)
+        assert msgs[-1]["content"] == build_generation_prompt()
+
+    def test_build_generation_messages_with_outline(self):
+        history = [{"role": "user", "content": "design a session"}]
+        outline = [
+            {"tool_type": "alpha", "title": "Start"},
+            {"tool_type": "beta", "title": "Decide"},
+        ]
+        msgs = build_generation_messages(history, outline=outline)
+        assert msgs[-1]["content"] == build_generation_prompt(outline=outline)
+
+    def test_build_generation_messages_backward_compatible(self):
+        history = [{"role": "user", "content": "test"}]
+        msgs = build_generation_messages(history)
+        assert len(msgs) == 2
 
 
 # ---------------------------------------------------------------------------

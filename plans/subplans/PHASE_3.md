@@ -1,4 +1,4 @@
-# Phase 3 — Two-Stage Generation Pipeline
+# Phase 3 [COMPLETE] — Two-Stage Generation Pipeline
 
 > Global Canary: `BRASS-PELICAN-7`
 > Phase Canary: `IRON-OSPREY-4`
@@ -96,7 +96,7 @@ The Phase 1 validator (`validate_agenda`) expects an `agenda` key and requires `
 
 ---
 
-### Step 2 — Pipeline error class and validation-to-HTTP formatter
+### Step 2 [DONE] — Pipeline error class and validation-to-HTTP formatter
 
 Define a structured error type for pipeline stage failures and a helper that converts `AgendaValidationResult` errors into a human-readable string suitable for both HTTP error details and future retry prompts (Phase 4).
 
@@ -121,9 +121,13 @@ Define a structured error type for pipeline stage failures and a helper that con
 - Docstring on `GenerationPipelineError`: "Raised when a pipeline stage produces output that fails validation. Carries stage name, formatted error detail, individual error messages, and truncated raw output for logging."
 - Docstring on `_format_validation_errors`: "Converts an AgendaValidationResult into a GenerationPipelineError with human-readable error messages."
 
+**Technical deviations:**
+- `_format_validation_errors()` formats entries as `"Activity {idx}: {field} - {message}"` using an ASCII hyphen to match repository style in validator messages; behavior is equivalent to the spec’s em dash separator.
+- `GenerationPipelineError.raw_output` truncation to 500 chars is enforced in the exception constructor, so the guarantee holds for all call sites rather than depending on each caller to slice manually.
+
 ---
 
-### Step 3 — `_run_generation_pipeline()` — Stage 1 (outline)
+### Step 3 [DONE] — `_run_generation_pipeline()` — Stage 1 (outline)
 
 Extract the generation logic from `generate_agenda()` into a standalone async function. Implement Stage 1: generate the outline, parse it, validate it, and return the validated outline or raise `GenerationPipelineError`.
 
@@ -152,9 +156,13 @@ Extract the generation logic from `generate_agenda()` into a standalone async fu
 **Docs:**
 - Docstring on `_run_generation_pipeline`: "Orchestrates the two-stage agenda generation pipeline. Stage 1 generates and validates an activity outline. Stage 2 generates and validates the full agenda JSON using the validated outline. Raises GenerationPipelineError on validation failure. AIProviderError propagates uncaught."
 
+**Technical deviations:**
+- At Step 3 completion, `_run_generation_pipeline()` returned `{"outline": validated_outline}` as an intentional Stage 2 stub; this was completed in Step 4.
+- Parse-failure detail includes the original parser exception text (`Stage 'outline' produced invalid JSON: ...`) to improve diagnostics in current tests/logs.
+
 ---
 
-### Step 4 — `_run_generation_pipeline()` — Stage 2 (full JSON)
+### Step 4 [DONE] — `_run_generation_pipeline()` — Stage 2 (full JSON)
 
 Complete the pipeline function by adding Stage 2: inject the validated outline into the generation prompt, call `chat_complete` a second time, parse, validate, and return the final agenda.
 
@@ -191,9 +199,13 @@ Complete the pipeline function by adding Stage 2: inject the validated outline i
 **Docs:**
 - Update `_run_generation_pipeline` docstring to describe both stages, including the outline-injection into Stage 2
 
+**Technical deviations:**
+- Stage parse-failure details include parser exception text for both outline and full JSON stages (`Stage '...' produced invalid JSON: ...`) to preserve diagnostic context.
+- Existing Stage 3 test `test_stage1_calls_chat_complete_once` now validates two calls because Stage 2 is implemented in this step (name preserved for continuity with prior step history).
+
 ---
 
-### Step 5 — Rewire `generate_agenda()` endpoint
+### Step 5 [DONE] — Rewire `generate_agenda()` endpoint
 
 Replace the current single-call logic in `generate_agenda()` with a call to `_run_generation_pipeline()`. Map pipeline errors and provider errors to the correct HTTP responses. The response shape is unchanged.
 
@@ -233,9 +245,13 @@ Replace the current single-call logic in `generate_agenda()` with a call to `_ru
 **Docs:**
 - Update `generate_agenda()` docstring: "Generates a structured meeting agenda using a two-stage pipeline. Stage 1 produces and validates an activity outline. Stage 2 generates the full agenda JSON constrained by the validated outline. Returns the same response shape as the original single-stage implementation."
 
+**Technical deviations:**
+- `test_endpoint_returns_503_when_not_configured` simulates the not-configured path by making `_run_generation_pipeline()` raise `AIProviderNotConfiguredError`; this validates endpoint mapping behavior without coupling the test to provider internals.
+- Endpoint audit logging now stores the conversation `history` and final `result` payload for generate-agenda requests; Stage-level raw outputs remain captured on `GenerationPipelineError` via `exc.raw_output`.
+
 ---
 
-### Step 6 — End-to-end integration tests and regression guards
+### Step 6 [DONE] — End-to-end integration tests and regression guards
 
 Verify the complete pipeline with realistic multi-activity agendas, confirm the response contract is identical to the pre-Phase 3 contract, and ensure no regressions to chat or status endpoints.
 
@@ -258,6 +274,11 @@ Verify the complete pipeline with realistic multi-activity agendas, confirm the 
 **Docs:**
 - Add module docstring to `test_generation_pipeline.py` referencing `BRASS-PELICAN-7` and `IRON-OSPREY-4`
 - Ensure all test functions have a one-line docstring explaining what they verify
+
+**Technical deviations:**
+- `_valid_outline_json(n)` and `_valid_agenda_json(n)` use a deterministic in-test tool sequence (brainstorming/categorization/voting/rank_order_voting/voting) rather than querying the live catalog at runtime, keeping E2E tests stable and deterministic.
+- One-line docstrings were added for new Step 6 tests and retained prior test coverage; existing earlier tests in `test_generation_pipeline.py` predated this step and were left unchanged to avoid non-functional churn.
+- Phase-wide verification was run with `venv/bin/python -m pytest -q` (full suite) and passed (`392 passed, 2 skipped`); repository baseline includes skipped tests unrelated to this phase.
 
 ---
 

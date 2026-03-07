@@ -29,17 +29,155 @@ from app.services.ai_provider import (
     chat_complete,
     chat_stream,
 )
+from app.services.agenda_validator import (
+    AgendaValidationResult,
+    validate_agenda,
+    validate_outline,
+)
 from app.services.meeting_designer_prompt import (
     build_system_prompt,
-    build_generation_system_prompt,
     build_generation_messages,
+    build_outline_messages,
     parse_agenda_json,
+    parse_outline_json,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/meeting-designer", tags=["meeting-designer"])
 _MEETING_DESIGNER_LOG_TABLE_READY = False
+
+
+class GenerationPipelineError(Exception):
+    """Raised when a pipeline stage produces output that fails validation.
+
+    Carries stage name, formatted error detail, individual error messages, and
+    truncated raw output for logging.
+    """
+
+    def __init__(
+        self,
+        *,
+        stage: str,
+        detail: str,
+        validation_errors: Optional[List[str]] = None,
+        raw_output: str = "",
+    ) -> None:
+        super().__init__(detail)
+        self.stage = stage
+        self.detail = detail
+        self.validation_errors = validation_errors or []
+        self.raw_output = (raw_output or "")[:500]
+
+
+def _format_validation_errors(
+    result: AgendaValidationResult,
+    stage: str,
+) -> GenerationPipelineError:
+    """Converts an AgendaValidationResult into a GenerationPipelineError.
+
+    Builds human-readable error messages from validator errors.
+    """
+
+    formatted_errors = [
+        f"Activity {issue.activity_index}: {issue.field} - {issue.message}"
+        for issue in result.errors
+    ]
+    count = len(formatted_errors)
+    joined_errors = "; ".join(formatted_errors)
+    detail = f"Stage '{stage}' failed validation with {count} error(s): {joined_errors}"
+    return GenerationPipelineError(
+        stage=stage,
+        detail=detail,
+        validation_errors=formatted_errors,
+        raw_output="",
+    )
+
+
+async def _run_generation_pipeline(
+    settings: Dict[str, Any],
+    history: List[Dict[str, str]],
+    system_prompt: str,
+) -> Dict[str, Any]:
+    """Orchestrates the two-stage agenda generation pipeline.
+
+    Stage 1 generates and validates an activity outline. Stage 2 generates and
+    validates full agenda JSON using the validated outline injected into the
+    generation prompt. Raises GenerationPipelineError on parse/validation
+    failures. AIProviderError propagates uncaught.
+    """
+
+    outline_messages = build_outline_messages(history)
+    raw_outline = await chat_complete(settings, outline_messages, system_prompt)
+
+    try:
+        outline_data = parse_outline_json(raw_outline)
+    except ValueError as exc:
+        raise GenerationPipelineError(
+            stage="outline",
+            detail=f"Stage 'outline' produced invalid JSON: {exc}",
+            validation_errors=[],
+            raw_output=raw_outline,
+        ) from exc
+
+    outline_result = validate_outline(outline_data)
+    if not outline_result.valid:
+        pipeline_error = _format_validation_errors(outline_result, "outline")
+        pipeline_error.raw_output = raw_outline[:500]
+        raise pipeline_error
+
+    if outline_result.warnings:
+        logger.debug(
+            "Outline stage emitted %d warning(s): %s",
+            len(outline_result.warnings),
+            [warning.message for warning in outline_result.warnings],
+        )
+
+    validated_outline = outline_data.get("outline", [])
+    logger.info(
+        "Outline stage passed (%d activities). Proceeding to full generation.",
+        len(validated_outline),
+    )
+
+    generation_messages = build_generation_messages(history, outline=validated_outline)
+    raw_agenda = await chat_complete(settings, generation_messages, system_prompt)
+
+    try:
+        agenda_data = parse_agenda_json(raw_agenda)
+    except ValueError as exc:
+        raise GenerationPipelineError(
+            stage="full_json",
+            detail=f"Stage 'full_json' produced invalid JSON: {exc}",
+            validation_errors=[],
+            raw_output=raw_agenda,
+        ) from exc
+
+    agenda_result = validate_agenda(agenda_data)
+    if not agenda_result.valid:
+        pipeline_error = _format_validation_errors(agenda_result, "full_json")
+        pipeline_error.raw_output = raw_agenda[:500]
+        raise pipeline_error
+
+    if agenda_result.warnings:
+        logger.debug(
+            "Full generation stage emitted %d warning(s): %s",
+            len(agenda_result.warnings),
+            [warning.message for warning in agenda_result.warnings],
+        )
+
+    final_agenda = agenda_data.get("agenda", [])
+    logger.info(
+        "Full generation stage passed. Returning %d validated activities.",
+        len(final_agenda),
+    )
+
+    return {
+        "success": True,
+        "meeting_summary": agenda_data.get("meeting_summary", ""),
+        "design_rationale": agenda_data.get("design_rationale", ""),
+        "agenda": final_agenda,
+    }
+
 
 # ---------------------------------------------------------------------------
 # Permission guard — facilitator/admin only
@@ -288,10 +426,10 @@ async def generate_agenda(
     current_user: str = Depends(get_current_user),
     user_manager: UserManager = Depends(get_user_manager),
 ) -> Dict[str, Any]:
-    """Generate a structured meeting agenda from the conversation history.
+    """Generate a structured meeting agenda using a two-stage pipeline.
 
-    Sends the conversation + a generation prompt to the AI and parses
-    the returned JSON into a validated agenda structure.
+    Stage 1 produces and validates an activity outline. Stage 2 generates the
+    full agenda JSON constrained by the validated outline.
 
     Returns:
         {
@@ -316,13 +454,13 @@ async def generate_agenda(
     settings = get_meeting_designer_settings()
 
     history = [{"role": m.role, "content": m.content} for m in request.messages]
-    generation_messages = build_generation_messages(history)
+    system_prompt = build_system_prompt()
 
     try:
-        raw = await chat_complete(
-            settings,
-            generation_messages,
-            build_generation_system_prompt(),
+        result = await _run_generation_pipeline(
+            settings=settings,
+            history=history,
+            system_prompt=system_prompt,
         )
     except AIProviderNotConfiguredError as exc:
         _persist_meeting_designer_log(
@@ -330,7 +468,7 @@ async def generate_agenda(
             user_id=getattr(user, "user_id", None),
             user_login=getattr(user, "login", current_user),
             settings=settings,
-            request_messages=generation_messages,
+            request_messages=history,
             error_detail=str(exc),
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
@@ -345,7 +483,7 @@ async def generate_agenda(
             user_id=getattr(user, "user_id", None),
             user_login=getattr(user, "login", current_user),
             settings=settings,
-            request_messages=generation_messages,
+            request_messages=history,
             error_detail=str(exc),
             status_code=status.HTTP_502_BAD_GATEWAY,
         )
@@ -353,66 +491,34 @@ async def generate_agenda(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"AI provider error: {exc}",
         ) from exc
-
-    logger.debug("Raw agenda JSON from AI (first 1000 chars): %s", raw[:1000])
-    try:
-        agenda_data = parse_agenda_json(raw)
-    except ValueError as exc:
-        logger.error("Failed to parse agenda JSON: %s | Full raw output: %s", exc, raw)
+    except GenerationPipelineError as exc:
+        logger.error("Pipeline stage '%s' failed: %s | Raw: %s", exc.stage, exc.detail, exc.raw_output)
         _persist_meeting_designer_log(
             event_type="generate_agenda",
             user_id=getattr(user, "user_id", None),
             user_login=getattr(user, "login", current_user),
             settings=settings,
-            request_messages=generation_messages,
-            raw_output=raw,
-            error_detail=str(exc),
+            request_messages=history,
+            raw_output=exc.raw_output,
+            error_detail=exc.detail,
             status_code=status.HTTP_502_BAD_GATEWAY,
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The AI returned an invalid agenda format. Please try again.",
+            detail=exc.detail,
         ) from exc
-
-    # Validate minimum required structure
-    if "agenda" not in agenda_data or not isinstance(agenda_data["agenda"], list):
-        _persist_meeting_designer_log(
-            event_type="generate_agenda",
-            user_id=getattr(user, "user_id", None),
-            user_login=getattr(user, "login", current_user),
-            settings=settings,
-            request_messages=generation_messages,
-            raw_output=raw,
-            parsed_output=agenda_data if isinstance(agenda_data, dict) else {},
-            error_detail="The AI returned an agenda with missing or invalid structure.",
-            status_code=status.HTTP_502_BAD_GATEWAY,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="The AI returned an agenda with missing or invalid structure. Please try again.",
-        )
 
     _persist_meeting_designer_log(
         event_type="generate_agenda",
         user_id=getattr(user, "user_id", None),
         user_login=getattr(user, "login", current_user),
         settings=settings,
-        request_messages=generation_messages,
-        raw_output=raw,
-        parsed_output=agenda_data,
+        request_messages=history,
+        parsed_output=result,
         status_code=status.HTTP_200_OK,
     )
 
-    return {
-        "success": True,
-        "meeting_summary": agenda_data.get("meeting_summary", ""),
-        "session_name": agenda_data.get("session_name", ""),
-        "evaluation_criteria": agenda_data.get("evaluation_criteria", []),
-        "design_rationale": agenda_data.get("design_rationale", ""),
-        "complexity": agenda_data.get("complexity", "simple"),
-        "phases": agenda_data.get("phases", []),
-        "agenda": agenda_data.get("agenda", []),
-    }
+    return result
 
 
 @router.get("/logs")
