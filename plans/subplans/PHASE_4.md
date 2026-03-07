@@ -21,6 +21,16 @@ Retry budget (from the design discussion):
 
 Non-recoverable errors (`AIProviderError`, `AIProviderNotConfiguredError`) are never retried — they propagate immediately. Retry applies only to parse failures and validation failures, which are problems the AI can self-correct.
 
+### Codebase reality check (as of Phase 4 entry)
+
+These are the live interfaces and behaviors that Phase 4 must respect:
+
+- **System prompt**: the generation endpoint uses `build_generation_system_prompt()` (not `build_system_prompt()`) for agenda generation. This dedicated prompt is provider/model agnostic and scoped to JSON output mode.
+- **Response shape**: `generate_agenda()` returns `{success, meeting_summary, session_name, evaluation_criteria, design_rationale, complexity, phases, agenda}`. Phase 4 must not alter this.
+- **Audit logging**: `_persist_meeting_designer_log()` persists every generation attempt. The retry loop must log the **final outcome only** (success or exhausted), not each intermediate attempt — intermediate attempts are captured via `logger` at INFO level.
+- **Parsers**: `parse_agenda_json()` includes `json_repair` fallback and `_normalise_agenda()` post-processing (fills complexity, phases, session_name, evaluation_criteria defaults). `parse_outline_json()` is strict JSON only with `outline` list requirement.
+- **Validator**: `validate_agenda()` checks tool_type, title, instructions, duration, collaboration_pattern, config_overrides against the live catalog. `validate_outline()` (added in Phase 3) omits instructions/config_overrides checks.
+
 ---
 
 ## Interfaces consumed (from Phases 1–3)
@@ -28,20 +38,30 @@ Non-recoverable errors (`AIProviderError`, `AIProviderNotConfiguredError`) are n
 ```python
 # Phase 1 — app/services/agenda_validator.py
 validate_agenda(agenda_data: Dict) -> AgendaValidationResult
-validate_outline(outline_data: Dict) -> AgendaValidationResult
 AgendaValidationResult: { valid: bool, errors: List[AgendaFieldError], warnings: List[AgendaFieldError] }
 AgendaFieldError: { activity_index: int, field: str, message: str, level: "error"|"warning" }
 
+# Phase 3 — app/services/agenda_validator.py (added by Phase 3 Step 1)
+validate_outline(outline_data: Dict) -> AgendaValidationResult
+
 # Phase 2 — app/services/meeting_designer_prompt.py
+build_generation_system_prompt() -> str
 build_outline_messages(conversation_history: List[Dict]) -> List[Dict]
 build_generation_messages(conversation_history: List[Dict], outline: Optional[List[Dict]]) -> List[Dict]
 parse_outline_json(raw_text: str) -> Dict   # raises ValueError
-parse_agenda_json(raw_text: str) -> Dict    # raises ValueError
+parse_agenda_json(raw_text: str) -> Dict    # raises ValueError, includes json_repair + normalisation
 
 # Phase 3 — app/routers/meeting_designer.py
 GenerationPipelineError: { stage, detail, validation_errors, raw_output }
 _format_validation_errors(result: AgendaValidationResult, stage: str) -> GenerationPipelineError
 _run_generation_pipeline(settings, history, system_prompt) -> Dict  # async
+
+# Existing — app/routers/meeting_designer.py
+_persist_meeting_designer_log(event_type, user_id, user_login, settings, request_messages, ...) -> None
+
+# Existing — app/services/ai_provider.py
+chat_complete(settings, messages, system_prompt) -> str  # async
+AIProviderError, AIProviderNotConfiguredError
 ```
 
 ---
@@ -50,7 +70,7 @@ _run_generation_pipeline(settings, history, system_prompt) -> Dict  # async
 
 ### Step 1 — Correction prompt builder
 
-Build the function that converts a failed attempt into a "try again" user message. The correction prompt must tell the AI exactly what went wrong (parse error or specific validation errors) and restate the output-format requirement so the AI doesn't drift.
+Build the function that converts a failed attempt into a "try again" user message. The correction prompt must tell the AI exactly what went wrong (parse error or specific validation errors) and restate the output-format requirement so the AI doesn't drift. The schema reminders must match the actual schemas used by `build_outline_prompt()` and `build_generation_prompt()`.
 
 **Implement** (in `app/routers/meeting_designer.py`):
 
@@ -64,17 +84,17 @@ Build the function that converts a failed attempt into a "try again" user messag
     - Numbered list of each error: `"  {i}. Activity {activity_index}: {field} — {message}"`
     - Instruction: `"Please fix these issues and regenerate. Output ONLY the corrected JSON object."`
   - In both cases, append a schema reminder based on `stage`:
-    - If `stage == "outline"`: `"The JSON must have a top-level \"outline\" array with objects containing: tool_type, title, duration_minutes, collaboration_pattern, rationale."`
-    - If `stage == "full_json"`: `"The JSON must have a top-level \"agenda\" array with objects containing: tool_type, title, instructions, duration_minutes, collaboration_pattern, rationale, config_overrides."`
-  - Zero hardcoded tool_type names — the error messages from the validator already include the list of valid types when a tool_type check fails
+    - If `stage == "outline"`: `"The JSON must have a top-level \"outline\" array. Each item needs: tool_type, title, duration_minutes, collaboration_pattern, rationale. Do NOT include instructions or config_overrides."`
+    - If `stage == "full_json"`: `"The JSON must have top-level keys: meeting_summary, session_name, evaluation_criteria, design_rationale, complexity, phases, agenda. Each agenda item needs: tool_type, title, instructions, duration_minutes, collaboration_pattern, rationale, config_overrides, phase_id, track_id."`
+  - Zero hardcoded tool_type names anywhere in this function — the error messages from the validator already include the list of valid types when a tool_type check fails
 
 **Test** (in `app/tests/test_generation_pipeline.py`):
 
 - `test_correction_prompt_parse_failure_outline` — call with `parse_failed=True`, `stage="outline"` → output contains `"not valid JSON"`, the parse snippet, `"outline"` schema reminder
-- `test_correction_prompt_parse_failure_full_json` — call with `parse_failed=True`, `stage="full_json"` → output contains `"agenda"` schema reminder (not `"outline"`)
+- `test_correction_prompt_parse_failure_full_json` — call with `parse_failed=True`, `stage="full_json"` → output contains `"agenda"` and `"meeting_summary"` schema reminder (not `"outline"` schema)
 - `test_correction_prompt_validation_errors` — call with `parse_failed=False` and 2 `AgendaFieldError` items → output contains `"2 validation error(s)"`, both error messages, activity indices
 - `test_correction_prompt_no_hardcoded_tool_types` — `inspect.getsource(_build_correction_prompt)` contains none of `"brainstorming"`, `"voting"`, `"rank_order_voting"`, `"categorization"`
-- `test_correction_prompt_includes_raw_snippet` — call with a 500-char `parse_snippet` → only first 300 chars appear in the output (truncation)
+- `test_correction_prompt_truncates_raw_snippet` — call with a 500-char `parse_snippet` → only first 300 chars appear in the output
 
 **Docs:**
 - Docstring: "Builds a user-message correction prompt for a failed pipeline stage. Includes the specific error details and a schema reminder so the AI can self-correct. Used by the retry loop to append error feedback before re-attempting generation."
@@ -98,7 +118,7 @@ Define the attempt limits as module-level constants and extend `GenerationPipeli
   - `error_trail: Optional[List[List[str]]] = None` — list of error-message lists, one inner list per failed attempt (enables debugging across retries)
   - Store both as instance attributes
 
-- Update `_format_validation_errors()` to accept an optional `attempts_made` and `error_trail` parameter and pass them through to the `GenerationPipelineError` it creates. Update the `detail` string to include the attempt count: `"Stage '{stage}' failed validation after {attempts_made} attempt(s) with {N} error(s): {joined_errors}"`
+- Update `_format_validation_errors()` to accept optional `attempts_made` and `error_trail` parameters and pass them through to the `GenerationPipelineError` it creates. Update the `detail` string to include the attempt count: `"Stage '{stage}' failed validation after {attempts_made} attempt(s) with {N} error(s): {joined_errors}"`
 
 **Test** (in `app/tests/test_generation_pipeline.py`):
 
@@ -136,7 +156,7 @@ Build the async helper that encapsulates the parse → validate → correct → 
   - Loop logic for each attempt `i` in `range(max_attempts)`:
     1. `raw = await chat_complete(settings, messages, system_prompt)`
     2. Try `parsed = parser_fn(raw)` — catch `ValueError`:
-       - If attempts remain: build correction prompt (`parse_failed=True`), append `{"role": "assistant", "content": raw}` then `{"role": "user", "content": correction}` to `messages`, `continue`
+       - If attempts remain: build correction prompt (`parse_failed=True`, `parse_snippet=raw[:300]`), append `{"role": "assistant", "content": raw}` then `{"role": "user", "content": correction}` to `messages`, accumulate error trail, `continue`
        - If last attempt: raise `GenerationPipelineError(stage=stage, detail="...", raw_output=raw[:500], attempts_made=i+1, error_trail=accumulated_errors)`
     3. `result = validator_fn(parsed)`
     4. If `result.valid`: return `parsed`
@@ -147,14 +167,15 @@ Build the async helper that encapsulates the parse → validate → correct → 
 
 **Test** (in `app/tests/test_generation_pipeline.py`):
 
-- `test_stage_runner_succeeds_first_attempt` — mock `chat_complete` returns valid JSON on first call → returns parsed data, no retry
+- All stage-runner tests use `unittest.mock.AsyncMock` to mock `chat_complete`, patched at `app.routers.meeting_designer.chat_complete`
+- `test_stage_runner_succeeds_first_attempt` — mock returns valid JSON on first call → returns parsed data, no retry
 - `test_stage_runner_succeeds_after_retry` — first call returns invalid JSON, second call returns valid JSON → returns parsed data on attempt 2
-- `test_stage_runner_parse_error_then_recovery` — first call returns prose ("Here is your outline:..."), second call returns clean JSON → succeeds, correction prompt was appended
+- `test_stage_runner_parse_error_then_recovery` — first call returns prose (`"Here is your outline: {..."`) → second call returns clean JSON → succeeds, correction prompt was appended to messages
 - `test_stage_runner_validation_error_then_recovery` — first call has hallucinated tool_type, second call has valid tool_type → succeeds
 - `test_stage_runner_exhausts_all_attempts` — all calls return invalid data → raises `GenerationPipelineError` with `attempts_made == max_attempts` and non-empty `error_trail`
-- `test_stage_runner_appends_correction_messages` — after a failed attempt, inspect `messages` list → contains assistant message (AI's bad output) and user message (correction prompt) appended
+- `test_stage_runner_appends_correction_messages` — after a failed attempt, inspect `messages` list → last two appended entries are `{"role": "assistant", ...}` (AI's bad output) and `{"role": "user", ...}` (correction prompt)
 - `test_stage_runner_does_not_catch_provider_error` — mock raises `AIProviderError` → propagates as-is, not wrapped in `GenerationPipelineError`
-- `test_stage_runner_error_trail_accumulates` — 3 attempts with max_attempts=3, all fail → `error_trail` has 3 inner lists
+- `test_stage_runner_error_trail_accumulates` — 3 attempts with `max_attempts=3`, all fail → `error_trail` has 3 inner lists
 
 **Docs:**
 - Docstring: "Executes a pipeline stage (parse → validate) with automatic retry on failure. When parsing or validation fails, the AI's bad output and a correction prompt are appended to the message list, and the stage is re-attempted. Non-recoverable errors (AIProviderError) propagate immediately. Returns the parsed and validated data dict, or raises GenerationPipelineError after all attempts are exhausted."
@@ -201,7 +222,7 @@ Replace the direct parse-and-validate calls in `_run_generation_pipeline()` with
     )
     ```
 
-- Return statement unchanged — still returns `{success, meeting_summary, design_rationale, agenda}` from `agenda_data`
+- Return statement unchanged — still returns `{success, meeting_summary, session_name, evaluation_criteria, design_rationale, complexity, phases, agenda}` from `agenda_data`
 - Remove the inline parse/validate/raise code that Phase 3 added (now handled inside the stage runner)
 - The direct `chat_complete` calls in the pipeline body are removed — all calls now go through the stage runner
 
@@ -212,17 +233,17 @@ Replace the direct parse-and-validate calls in `_run_generation_pipeline()` with
 - `test_pipeline_both_stages_retry` — mock side_effect: [invalid outline, valid outline, invalid agenda, valid agenda] → pipeline returns success, `chat_complete` called 4 times
 - `test_pipeline_outline_exhausted` — mock returns 3 consecutive invalid outlines → raises `GenerationPipelineError(stage="outline", attempts_made=3)`
 - `test_pipeline_agenda_exhausted` — mock side_effect: [valid outline, 2 invalid agendas] → raises `GenerationPipelineError(stage="full_json", attempts_made=2)`
-- `test_pipeline_response_shape_unchanged` — successful pipeline with retry → response still has exactly `{success, meeting_summary, design_rationale, agenda}`
-- `test_pipeline_provider_error_no_retry` — mock raises `AIProviderError` on first call → propagates immediately, `chat_complete` called only once (no retry)
+- `test_pipeline_response_shape_unchanged` — successful pipeline with retry → response has exactly `{success, meeting_summary, session_name, evaluation_criteria, design_rationale, complexity, phases, agenda}`
+- `test_pipeline_provider_error_no_retry` — mock raises `AIProviderError` on first call → propagates immediately, `chat_complete` called only once
 
 **Docs:**
-- Update `_run_generation_pipeline` docstring: "Orchestrates the two-stage agenda generation pipeline with automatic retry. Stage 1 generates and validates an activity outline (up to {_OUTLINE_MAX_ATTEMPTS} attempts). Stage 2 generates and validates the full agenda JSON using the validated outline (up to {_AGENDA_MAX_ATTEMPTS} attempts). On validation failure, specific errors are fed back to the AI as a correction prompt before re-attempting. Raises GenerationPipelineError after all retries are exhausted. AIProviderError propagates uncaught."
+- Update `_run_generation_pipeline` docstring: "Orchestrates the two-stage agenda generation pipeline with automatic retry. Stage 1 generates and validates an activity outline (up to `_OUTLINE_MAX_ATTEMPTS` attempts). Stage 2 generates and validates the full agenda JSON using the validated outline (up to `_AGENDA_MAX_ATTEMPTS` attempts). On validation failure, specific errors are fed back to the AI as a correction prompt before re-attempting. Raises GenerationPipelineError after all retries are exhausted. AIProviderError propagates uncaught."
 
 ---
 
-### Step 5 — Logging and timing observability
+### Step 5 — Logging, timing, and audit-log integration
 
-Add structured logging so that retry behavior is visible in production logs. Each attempt should be logged at INFO level. Warnings from successful attempts should be logged at DEBUG level. Total pipeline wall-clock time should be logged. This is essential for tuning retry limits and prompt quality.
+Add structured logging so that retry behavior is visible in production logs. Each attempt should be logged at INFO level. Warnings from successful attempts are logged at DEBUG level. Total pipeline wall-clock time is logged. The existing `_persist_meeting_designer_log()` audit system must log the **final outcome only** — not each intermediate retry attempt.
 
 **Implement** (in `app/routers/meeting_designer.py`):
 
@@ -230,7 +251,7 @@ Add structured logging so that retry behavior is visible in production logs. Eac
   - Before each attempt: `logger.info("Stage '%s' attempt %d/%d", stage, i+1, max_attempts)`
   - On parse failure (with attempts remaining): `logger.info("Stage '%s' attempt %d/%d: parse error — retrying", stage, i+1, max_attempts)`
   - On validation failure (with attempts remaining): `logger.info("Stage '%s' attempt %d/%d: %d validation error(s) — retrying", stage, i+1, max_attempts, len(result.errors))`
-  - On successful validation after retry: `logger.info("Stage '%s' recovered on attempt %d/%d", stage, i+1, max_attempts)`
+  - On successful validation after retry (`i > 0`): `logger.info("Stage '%s' recovered on attempt %d/%d", stage, i+1, max_attempts)`
   - On successful validation first try: `logger.info("Stage '%s' passed on first attempt", stage)`
   - Warnings from successful validation: `logger.debug("Stage '%s' warnings: %s", stage, [w.message for w in result.warnings])`
 
@@ -241,16 +262,19 @@ Add structured logging so that retry behavior is visible in production logs. Eac
 
 - Add `import time` to the module imports
 
-- In `generate_agenda()` endpoint handler, when catching `GenerationPipelineError`:
-  - Log `exc.attempts_made` and `exc.stage`: `logger.error("Pipeline stage '%s' failed after %d attempt(s): %s", exc.stage, exc.attempts_made, exc.detail)`
+- In `generate_agenda()` endpoint handler, update the `GenerationPipelineError` catch block:
+  - Log retry metadata: `logger.error("Pipeline stage '%s' failed after %d attempt(s): %s", exc.stage, exc.attempts_made, exc.detail)`
+  - The `_persist_meeting_designer_log()` call already happens in `generate_agenda()` for the final error — no changes needed there, since the pipeline raises and the existing `except` path logs it once
+  - On success path: the existing `_persist_meeting_designer_log(event_type="generate_agenda", status_code=200, ...)` call remains — it captures the final validated output
 
 **Test** (in `app/tests/test_generation_pipeline.py`):
 
-- `test_logging_first_attempt_success` — successful first attempt → log output contains `"passed on first attempt"` (use `caplog` fixture)
-- `test_logging_retry_recovery` — success on second attempt → log output contains `"retrying"` and `"recovered on attempt 2"`
-- `test_logging_exhausted_attempts` — all attempts fail, catch the exception → endpoint log contains `"failed after 3 attempt(s)"` (for outline) or `"failed after 2 attempt(s)"` (for full_json)
-- `test_logging_pipeline_timing` — successful pipeline → log output contains two timing entries with `"completed in"` (one per stage)
-- `test_logging_warnings_at_debug` — successful validation with warnings → `"warnings"` appears at DEBUG level in caplog
+- `test_logging_first_attempt_success` — successful first attempt → `caplog` contains `"passed on first attempt"` at INFO level
+- `test_logging_retry_recovery` — success on second attempt → `caplog` contains `"retrying"` and `"recovered on attempt 2"`
+- `test_logging_exhausted_attempts` — all attempts fail, catch the exception → `caplog` contains `"failed after 3 attempt(s)"` (for outline)
+- `test_logging_pipeline_timing` — successful pipeline → `caplog` contains `"completed in"` entries for both stages
+- `test_logging_warnings_at_debug` — successful validation with warnings → `"warnings"` appears at DEBUG level in `caplog`
+- `test_audit_log_not_called_per_retry` — mock `_persist_meeting_designer_log`, run pipeline with 1 retry on outline → `_persist_meeting_designer_log` not called by the pipeline itself (audit logging responsibility stays in the endpoint handler)
 
 **Docs:**
 - Add a comment block above the logging statements: `"# Logging: INFO for attempt lifecycle, DEBUG for warnings and correction prompts"`
@@ -259,26 +283,27 @@ Add structured logging so that retry behavior is visible in production logs. Eac
 
 ### Step 6 — End-to-end retry integration tests and regression guards
 
-Verify the complete retry pipeline with realistic multi-activity agendas, confirm retry behavior matches the design spec, and ensure no regressions to the endpoint contract, chat endpoint, or status endpoint.
+Verify the complete retry pipeline with realistic multi-activity agendas, confirm retry behavior matches the design spec, and ensure no regressions to the endpoint contract, chat endpoint, status endpoint, or audit logging.
 
 **Implement:**
 
 - Create test helpers in `test_generation_pipeline.py`:
   - `_mock_chat_complete_sequence(*responses)` — returns an `AsyncMock` whose `side_effect` yields the given raw strings in order. Each string is returned on successive calls to `chat_complete`.
   - `_invalid_outline_json(error="hallucinated_type")` — returns a raw JSON string with a known validation error (e.g., `tool_type: "roundtable"` for hallucinated type, empty title for missing field)
-  - `_invalid_agenda_json(error="empty_instructions")` — returns a raw JSON string with a known validation error in the full agenda format
+  - `_invalid_agenda_json(error="empty_instructions")` — returns a raw JSON string with a known validation error in the full agenda format (includes session_name, complexity, phases, evaluation_criteria)
 
 **Test:**
 
 - `test_e2e_outline_self_corrects_hallucinated_type` — mock sequence: outline with `tool_type: "workshop"` → corrected outline with valid types → valid agenda → pipeline returns success with correct tool_types
-- `test_e2e_agenda_self_corrects_empty_instructions` — mock sequence: valid outline → agenda with empty instructions → corrected agenda with instructions → success
+- `test_e2e_agenda_self_corrects_empty_instructions` — mock sequence: valid outline → agenda with empty instructions → corrected agenda with filled instructions → success
 - `test_e2e_parse_error_then_valid_json` — mock sequence: `"Sure! Here's your outline: {..."` (prose-wrapped) → clean JSON outline → valid agenda → success
-- `test_e2e_all_retries_exhausted_returns_502` — mock sequence: 3 invalid outlines → endpoint returns 502, response body `detail` contains `"3 attempt(s)"` and the specific validation errors
-- `test_e2e_provider_error_returns_502_no_retry` — mock `chat_complete` raises `AIProviderError` → 502 response, `chat_complete` called once (no retry attempted)
-- `test_e2e_5_activity_pipeline_with_retry` — mock sequence: valid outline (5 activities) → invalid 5-activity agenda (one bad config key) → corrected 5-activity agenda → success, all 5 activities present
-- `test_response_contract_unchanged_after_retry` — successful pipeline after retry → response keys are exactly `{success, meeting_summary, design_rationale, agenda}` — no retry metadata leaked to the frontend
+- `test_e2e_all_retries_exhausted_returns_502` — mock sequence: 3 invalid outlines → endpoint returns 502, response body `detail` contains `"3 attempt(s)"` and specific validation errors
+- `test_e2e_provider_error_returns_502_no_retry` — mock `chat_complete` raises `AIProviderError` → 502 response, `chat_complete` called exactly once
+- `test_e2e_5_activity_pipeline_with_retry` — mock sequence: valid outline (5 activities) → invalid 5-activity agenda (one hallucinated tool_type) → corrected 5-activity agenda → success, all 5 activities present with valid tool_types
+- `test_response_contract_unchanged_after_retry` — successful pipeline after retry → response keys are exactly `{success, meeting_summary, session_name, evaluation_criteria, design_rationale, complexity, phases, agenda}` — no retry metadata leaked to the frontend
 - `test_chat_endpoint_unaffected_by_retry` — POST to `/api/meeting-designer/chat` → still works as SSE streaming, no retry logic involved
-- `test_status_endpoint_unaffected_by_retry` — GET `/api/meeting-designer/status` → unchanged
+- `test_status_endpoint_unaffected_by_retry` — GET `/api/meeting-designer/status` → still returns `StatusResponse` unchanged
+- `test_logs_endpoint_unaffected_by_retry` — GET `/api/meeting-designer/logs` → still returns audit records unchanged
 
 **Docs:**
 - Update `test_generation_pipeline.py` module docstring to reference `BRONZE-MERLIN-2` alongside `IRON-OSPREY-4`

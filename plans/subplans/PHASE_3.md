@@ -53,7 +53,7 @@ AIProviderError, AIProviderNotConfiguredError
 
 ## Atomic Steps
 
-### Step 1 — `validate_outline()` in the validator module
+### Step 1 [DONE] — `validate_outline()` in the validator module
 
 The Phase 1 validator (`validate_agenda`) expects an `agenda` key and requires `instructions` as a non-empty field. Outlines use an `outline` key and deliberately omit `instructions` and `config_overrides`. Add a sibling function `validate_outline()` to `agenda_validator.py` that reuses the same catalog lookup and tool_type/duration/pattern checks but with the correct schema expectations.
 
@@ -88,6 +88,11 @@ The Phase 1 validator (`validate_agenda`) expects an `agenda` key and requires `
 
 **Docs:**
 - Docstring on `validate_outline()`: "Validates an AI-generated outline (Stage 1 output) against the live activity catalog. Same validation logic as validate_agenda() but does not require instructions or config_overrides fields. Returns AgendaValidationResult."
+
+**Technical deviations:**
+- Implemented shared internal validation path via `_validate_activity_payload(...)` and `_build_catalog_lookup()` so `validate_agenda()` and `validate_outline()` reuse identical tool_type/duration/collaboration-pattern logic while toggling `instructions`/`config_overrides` requirements by mode.
+- Existing repository test file is `app/tests/test_agenda_validator.py` (not `test_generation_pipeline.py` yet), so Step 1 tests were added there as directed by this step’s test section.
+- Verification executed via `venv/bin/python -m pytest` because `pytest` is not on PATH in this environment.
 
 ---
 
