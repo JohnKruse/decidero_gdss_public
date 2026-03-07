@@ -1,4 +1,4 @@
-# Phase 2 — Dynamic Prompt Construction
+# Phase 2 [COMPLETE] — Dynamic Prompt Construction
 
 > Global Canary: `BRASS-PELICAN-7`
 > Phase Canary: `SILVER-FALCON-9`
@@ -19,7 +19,7 @@ This phase creates two new prompt-builder functions and a new parser, all catalo
 
 ## Atomic Steps
 
-### Step 1 — Catalog-driven fragment helpers
+### Step 1 [DONE] — Catalog-driven fragment helpers
 
 Build the reusable text fragments that replace every hardcoded value in the current `GENERATE_AGENDA_PROMPT`. Each helper reads from a catalog list (the same shape returned by `get_enriched_activity_catalog()`) and returns a formatted string.
 
@@ -48,9 +48,13 @@ All three are private functions. They accept the catalog list as a parameter (no
 **Docs:**
 - Docstring on each helper: one line explaining purpose, note that it accepts the catalog list (not fetched internally) for testability and single-fetch efficiency
 
+**Technical deviations:**
+- Existing repository test file is `app/tests/test_meeting_designer_prompt.py` (singular), so Step 1 tests were added there instead of the planned `test_meeting_designer_prompts.py`.
+- Local runner does not expose `pytest` on PATH; verification was executed with `venv/bin/python -m pytest` for equivalent coverage.
+
 ---
 
-### Step 2 — `build_generation_prompt()` replacing `GENERATE_AGENDA_PROMPT`
+### Step 2 [DONE] — `build_generation_prompt()` replacing `GENERATE_AGENDA_PROMPT`
 
 Create a function that produces the same conceptual prompt as the current constant, but assembled entirely from catalog data. Also accept an optional `outline` parameter so Phase 3 can pass in a validated outline to constrain the full generation.
 
@@ -78,9 +82,14 @@ Create a function that produces the same conceptual prompt as the current consta
 **Docs:**
 - Docstring explaining the dual-mode behavior (with and without outline), the catalog-driven approach, and that this replaces the former `GENERATE_AGENDA_PROMPT` constant
 
+**Technical deviations:**
+- The codebase already used `get_generation_prompt()` from config templates rather than an in-module `GENERATE_AGENDA_PROMPT` constant; Step 2 was implemented by introducing `build_generation_prompt(outline=None)` and making `get_generation_prompt()` a backward-compatible wrapper over it.
+- Existing repository test file is `app/tests/test_meeting_designer_prompt.py` (singular), so Step 2 tests were added there instead of the planned `test_meeting_designer_prompts.py`.
+- Verification executed via `venv/bin/python -m pytest` because `pytest` is not on PATH in this environment.
+
 ---
 
-### Step 3 — Update `build_generation_messages()` to use the new function
+### Step 3 [DONE] — Update `build_generation_messages()` to use the new function
 
 Wire `build_generation_messages()` to call `build_generation_prompt()` instead of referencing the deleted constant. Add the `outline` parameter passthrough.
 
@@ -112,9 +121,13 @@ Wire `build_generation_messages()` to call `build_generation_prompt()` instead o
 **Docs:**
 - Update existing docstring to document the new `outline` parameter: "When provided, the generation prompt locks in the outline's activity sequence and asks the AI to elaborate with instructions and config_overrides."
 
+**Technical deviations:**
+- Existing repository test file is `app/tests/test_meeting_designer_prompt.py` (singular), so Step 3 tests were added there instead of the planned `test_meeting_designer_prompts.py`.
+- Verification executed via `venv/bin/python -m pytest` because `pytest` is not on PATH in this environment.
+
 ---
 
-### Step 4 — Outline prompt and message builder
+### Step 4 [DONE] — Outline prompt and message builder
 
 Create the outline-stage prompt and its message builder. The outline prompt asks the AI for a lightweight activity sequence plan — tool_type, title, duration, collaboration_pattern, and rationale per activity — with no instructions or config_overrides.
 
@@ -162,9 +175,13 @@ Create the outline-stage prompt and its message builder. The outline prompt asks
 - Docstring on `build_outline_prompt()`: explains this is Stage 1 of the two-stage pipeline, produces a lightweight plan validated before full generation
 - Docstring on `build_outline_messages()`: mirrors `build_generation_messages()` pattern
 
+**Technical deviations:**
+- Existing repository test file is `app/tests/test_meeting_designer_prompt.py` (singular), so Step 4 tests were added there instead of the planned `test_meeting_designer_prompts.py`.
+- Verification executed via `venv/bin/python -m pytest` because `pytest` is not on PATH in this environment.
+
 ---
 
-### Step 5 — Outline JSON parser
+### Step 5 [DONE] — Outline JSON parser
 
 Create `parse_outline_json()` to extract and validate the outline structure from raw AI output. Follows the same defensive parsing strategy as `parse_agenda_json()` (markdown fence stripping, brace extraction) but validates the outline-specific schema.
 
@@ -194,9 +211,13 @@ Create `parse_outline_json()` to extract and validate the outline structure from
 - Docstring on `parse_outline_json()`: explains outline schema, error conditions, relationship to `parse_agenda_json()`
 - Docstring on `_extract_json_object()`: explains the shared extraction strategy (fence regex, brace fallback)
 
+**Technical deviations:**
+- Existing repository test file is `app/tests/test_meeting_designer_prompt.py` (singular), so Step 5 tests were added there instead of the planned `test_meeting_designer_prompts.py`.
+- Verification executed via `venv/bin/python -m pytest` because `pytest` is not on PATH in this environment.
+
 ---
 
-### Step 6 — Integration tests and zero-hardcoded-tool_type audit
+### Step 6 [DONE] — Integration tests and zero-hardcoded-tool_type audit
 
 Verify the full prompt module works end-to-end with realistic inputs, confirm no function in the module contains hardcoded tool_type strings (except the untouched `_PROMPT_SUFFIX` standard sequences), and verify existing chat behavior is unaffected.
 
@@ -217,6 +238,11 @@ Verify the full prompt module works end-to-end with realistic inputs, confirm no
 **Docs:**
 - Update module-level docstring on `meeting_designer_prompt.py` to document the new public API surface: `build_generation_prompt()`, `build_outline_prompt()`, `build_outline_messages()`, `parse_outline_json()` alongside the existing functions
 - Ensure every new public function has a complete docstring with Args, Returns, and Raises sections
+
+**Technical deviations:**
+- Existing repository test file is `app/tests/test_meeting_designer_prompt.py` (singular), so Step 6 tests were added there instead of the planned `test_meeting_designer_prompts.py`.
+- Regression guard for system prompt continuity was implemented against stable rendered prompt anchors (`PURPOSE`, `RULES`, `IDENTITY`, `STANDARD SEQUENCES`, `MOTION`) because this codebase uses template-driven system prompt assembly rather than literal `_PROMPT_PREFIX`/`_PROMPT_SUFFIX` constants.
+- Verification executed via `venv/bin/python -m pytest` because `pytest` is not on PATH in this environment.
 
 ---
 
