@@ -1,4 +1,4 @@
-# Phase 1 — Validation Engine
+# Phase 1 [COMPLETE] — Validation Engine
 
 > Global Canary: `BRASS-PELICAN-7`
 > Phase Canary: `COPPER-HERON-3`
@@ -18,7 +18,7 @@ This phase builds a standalone validation module that can judge AI-generated age
 
 ## Atomic Steps
 
-### Step 1 — Result data structures and module skeleton
+### Step 1 [DONE] — Result data structures and module skeleton
 
 Define the return types for the validator. The validator must communicate per-activity errors and warnings separately, with an overall pass/fail verdict.
 
@@ -40,9 +40,13 @@ Define the return types for the validator. The validator must communicate per-ac
 **Docs:**
 - Docstring on `validate_agenda` explaining: accepts the raw dict returned by `parse_agenda_json()`, returns `AgendaValidationResult`, pure function with no DB or network calls
 
+**Technical deviations:**
+- No functional deviation from Step 1 scope.
+- Added full `Args`/`Returns`/`Raises` docstring sections in `validate_agenda` to align with Step 7 documentation standards early.
+
 ---
 
-### Step 2 — Top-level structure validation
+### Step 2 [DONE] — Top-level structure validation
 
 Validate the envelope: `agenda` key must exist and be a non-empty list, `meeting_summary` and `design_rationale` must be non-empty strings.
 
@@ -64,9 +68,13 @@ Validate the envelope: `agenda` key must exist and be a non-empty list, `meeting
 **Docs:**
 - Update `validate_agenda` docstring to describe envelope checks
 
+**Technical deviations:**
+- Preserved Step 1 behavior where `agenda: []` was previously considered valid only by replacing it with the Step 2 requirement (`Agenda contains no activities` error), and updated the prior test accordingly.
+- Full-suite verification run has zero failures but includes existing unrelated skips in the baseline suite (`293 passed, 2 skipped`), so strict no-skip "100%" remains unmet at repository level.
+
 ---
 
-### Step 3 — tool_type validation against live catalog
+### Step 3 [DONE] — tool_type validation against live catalog
 
 Check each activity's `tool_type` against the plugin registry via `get_enriched_activity_catalog()`. This is the core check that eliminates hallucinated activity types.
 
@@ -87,9 +95,13 @@ Check each activity's `tool_type` against the plugin registry via `get_enriched_
 **Docs:**
 - Inline comment explaining why catalog is queried at call time (stays in sync with live registry, no hardcoded list)
 
+**Technical deviations:**
+- Added a defensive `activity` type guard (`if not isinstance(activity, dict): continue`) before reading `tool_type`; this is forward-compatible with later steps and avoids runtime errors on malformed list entries.
+- Full-suite verification remains green with existing repository baseline skips (`298 passed, 2 skipped`), so strict no-skip "100%" is still not met at repository level.
+
 ---
 
-### Step 4 — Required field presence validation
+### Step 4 [DONE] — Required field presence validation
 
 Check that each activity has non-empty `title` and `instructions` fields.
 
@@ -111,9 +123,13 @@ Check that each activity has non-empty `title` and `instructions` fields.
 **Docs:**
 - Docstring section explaining the error vs warning distinction: errors block generation, warnings are informational
 
+**Technical deviations:**
+- To preserve actionable output for retries, validation continues checking `title`/`instructions`/`duration_minutes`/`rationale` even when `tool_type` is invalid; this yields multi-error feedback in one pass rather than short-circuiting after the first tool_type error.
+- Full-suite verification remains free of failures but includes existing baseline skips (`304 passed, 2 skipped`), so strict no-skip "100%" remains unmet at repository level.
+
 ---
 
-### Step 5 — config_overrides key validation
+### Step 5 [DONE] — config_overrides key validation
 
 Check that any keys in `config_overrides` are recognized by the target plugin's `default_config`. Unknown keys indicate the AI is hallucinating config options.
 
@@ -134,9 +150,13 @@ Check that any keys in `config_overrides` are recognized by the target plugin's 
 **Docs:**
 - Inline comment explaining why unknown keys are warnings not errors (config merge via `dict.update()` silently ignores them downstream)
 
+**Technical deviations:**
+- Config-key warnings are emitted per unknown key (one warning each) to preserve precise retry feedback instead of collapsing multiple unknown keys into a single aggregated warning.
+- Full-suite verification remains free of failures but includes existing baseline skips (`309 passed, 2 skipped`), so strict no-skip "100%" remains unmet at repository level.
+
 ---
 
-### Step 6 — Duration range and collaboration_pattern validation
+### Step 6 [DONE] — Duration range and collaboration_pattern validation
 
 Check `duration_minutes` against the plugin's `typical_duration_minutes` range and `collaboration_pattern` against the plugin's `collaboration_patterns` list.
 
@@ -160,9 +180,14 @@ Check `duration_minutes` against the plugin's `typical_duration_minutes` range a
 **Docs:**
 - Docstring on any helper functions explaining the warning-not-error rationale for range checks (AI may intentionally deviate for pedagogical reasons)
 
+**Technical deviations:**
+- Range checks emit an additional `duration_minutes` warning when numeric values are both invalid for Step 4 semantics and outside the plugin range (for example `0`), preserving both signals for retry prompts.
+- `collaboration_pattern` validation runs only when the catalog provides at least one declared pattern; empty/missing pattern lists do not trigger warnings.
+- Full-suite verification remains free of failures but includes existing baseline skips (`315 passed, 2 skipped`), so strict no-skip "100%" remains unmet at repository level.
+
 ---
 
-### Step 7 — Integration test with realistic payloads and import isolation check
+### Step 7 [DONE] — Integration test with realistic payloads and import isolation check
 
 Build end-to-end tests with realistic multi-activity agendas (both valid and invalid) and verify the module's import graph.
 
@@ -180,6 +205,11 @@ Build end-to-end tests with realistic multi-activity agendas (both valid and inv
 **Docs:**
 - Update module docstring on `agenda_validator.py` with a usage example showing expected input and output
 - Ensure all public functions have complete docstrings with Args, Returns, and Raises sections
+
+**Technical deviations:**
+- Added `_activity_message()` helper and standardized message formatting to include activity index and field context directly in message strings (in addition to structured `activity_index`/`field` fields), so retry prompts can use messages without extra formatting logic.
+- Import-isolation test validates source-level import statements rather than runtime module graph traversal to keep the check deterministic and fast.
+- Full-suite verification remains free of failures but includes existing baseline skips (`320 passed, 2 skipped`), so strict no-skip "100%" remains unmet at repository level.
 
 ---
 
