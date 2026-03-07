@@ -1,4 +1,4 @@
-"""Tests for BRASS-PELICAN-7 / IRON-OSPREY-4 / BRONZE-MERLIN-2 generation pipeline behavior."""
+"""Tests for BRASS-PELICAN-7 / IRON-OSPREY-4 / BRONZE-MERLIN-2 / STEEL-KINGFISHER-5 pipeline behavior."""
 
 import inspect
 import json
@@ -10,6 +10,7 @@ from app.routers.meeting_designer import (
     GenerationPipelineError,
     _AGENDA_MAX_ATTEMPTS,
     _build_correction_prompt,
+    _estimate_stage2_max_tokens,
     _format_validation_errors,
     _OUTLINE_MAX_ATTEMPTS,
     _run_generation_pipeline,
@@ -97,6 +98,103 @@ def _valid_agenda_json(n: int = 3) -> str:
         {
             "meeting_summary": outline_data["meeting_summary"],
             "design_rationale": "Sequence follows diverge-converge flow.",
+            "agenda": agenda,
+        }
+    )
+
+
+def _valid_6_activity_outline_json() -> str:
+    """Build a valid 6-activity outline with live registry tool types."""
+    outline = [
+        {
+            "tool_type": "brainstorming",
+            "title": "Diverge Ideas",
+            "duration_minutes": 10,
+            "collaboration_pattern": "Generate",
+            "rationale": "Open broad option space.",
+        },
+        {
+            "tool_type": "categorization",
+            "title": "Cluster Themes",
+            "duration_minutes": 10,
+            "collaboration_pattern": "Organize",
+            "rationale": "Group related ideas for clarity.",
+        },
+        {
+            "tool_type": "voting",
+            "title": "Initial Signal Vote",
+            "duration_minutes": 10,
+            "collaboration_pattern": "Evaluate",
+            "rationale": "Find promising candidates quickly.",
+        },
+        {
+            "tool_type": "brainstorming",
+            "title": "Refine Top Options",
+            "duration_minutes": 10,
+            "collaboration_pattern": "Generate",
+            "rationale": "Improve strongest candidates.",
+        },
+        {
+            "tool_type": "rank_order_voting",
+            "title": "Rank Tradeoffs",
+            "duration_minutes": 15,
+            "collaboration_pattern": "Build Consensus",
+            "rationale": "Force comparative prioritization.",
+        },
+        {
+            "tool_type": "voting",
+            "title": "Final Commitment Vote",
+            "duration_minutes": 10,
+            "collaboration_pattern": "Evaluate",
+            "rationale": "Confirm preferred direction.",
+        },
+    ]
+    return json.dumps({"meeting_summary": "Six-step decision flow", "outline": outline})
+
+
+def _valid_6_activity_agenda_json() -> str:
+    """Build a valid 6-activity full agenda with enriched metadata fields."""
+    outline = json.loads(_valid_6_activity_outline_json())["outline"]
+    phases = [
+        {
+            "phase_id": "phase_1",
+            "title": "Discovery",
+            "description": "Diverge and organize candidate options.",
+            "phase_type": "plenary",
+            "suggested_duration_minutes": 30,
+        },
+        {
+            "phase_id": "phase_2",
+            "title": "Selection",
+            "description": "Converge on a decision.",
+            "phase_type": "plenary",
+            "suggested_duration_minutes": 35,
+        },
+    ]
+    agenda = []
+    for idx, item in enumerate(outline):
+        agenda.append(
+            {
+                "tool_type": item["tool_type"],
+                "title": item["title"],
+                "instructions": f"Run activity {idx + 1}: {item['title']}.",
+                "duration_minutes": item["duration_minutes"],
+                "collaboration_pattern": item["collaboration_pattern"],
+                "rationale": item["rationale"],
+                "config_overrides": {},
+                "phase_id": "phase_1" if idx < 3 else "phase_2",
+                "track_id": None,
+            }
+        )
+
+    return json.dumps(
+        {
+            "meeting_summary": "Six-step decision flow",
+            "session_name": "Steering Committee Decision Session",
+            "evaluation_criteria": ["impact", "feasibility", "speed"],
+            "design_rationale": "Diverge, cluster, then converge through ranking and confirmation.",
+            "complexity": "multi_phase",
+            "phases": phases,
             "agenda": agenda,
         }
     )
@@ -362,7 +460,7 @@ async def test_stage_runner_succeeds_first_attempt() -> None:
         "app.routers.meeting_designer.chat_complete",
         new=AsyncMock(return_value='{"valid": true}'),
     ) as chat_complete_mock:
-        result = await _run_stage_with_retry(
+        result, attempts_used = await _run_stage_with_retry(
             stage="outline",
             messages=messages,
             parser_fn=_json_parser,
@@ -370,9 +468,10 @@ async def test_stage_runner_succeeds_first_attempt() -> None:
             max_attempts=3,
             settings={},
             system_prompt="system",
-        )
+    )
 
     assert result["valid"] is True
+    assert attempts_used == 1
     assert chat_complete_mock.call_count == 1
 
 
@@ -383,7 +482,29 @@ async def test_stage_runner_succeeds_after_retry() -> None:
         "app.routers.meeting_designer.chat_complete",
         new=AsyncMock(side_effect=["not-json", '{"valid": true}']),
     ) as chat_complete_mock:
-        result = await _run_stage_with_retry(
+        result, attempts_used = await _run_stage_with_retry(
+            stage="outline",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+    )
+
+    assert result["valid"] is True
+    assert attempts_used == 2
+    assert chat_complete_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_returns_attempt_count() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(return_value='{"valid": true}'),
+    ):
+        parsed_data, attempts_used = await _run_stage_with_retry(
             stage="outline",
             messages=messages,
             parser_fn=_json_parser,
@@ -393,8 +514,29 @@ async def test_stage_runner_succeeds_after_retry() -> None:
             system_prompt="system",
         )
 
-    assert result["valid"] is True
-    assert chat_complete_mock.call_count == 2
+    assert parsed_data["valid"] is True
+    assert attempts_used == 1
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_returns_attempt_count_after_retry() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json", '{"valid": true}']),
+    ):
+        parsed_data, attempts_used = await _run_stage_with_retry(
+            stage="outline",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert parsed_data["valid"] is True
+    assert attempts_used == 2
 
 
 @pytest.mark.asyncio
@@ -404,7 +546,7 @@ async def test_stage_runner_parse_error_then_recovery() -> None:
         "app.routers.meeting_designer.chat_complete",
         new=AsyncMock(side_effect=["Here is your outline: {...", '{"valid": true}']),
     ):
-        result = await _run_stage_with_retry(
+        result, attempts_used = await _run_stage_with_retry(
             stage="outline",
             messages=messages,
             parser_fn=_json_parser,
@@ -415,6 +557,7 @@ async def test_stage_runner_parse_error_then_recovery() -> None:
         )
 
     assert result["valid"] is True
+    assert attempts_used == 2
     assert messages[-2]["role"] == "assistant"
     assert messages[-1]["role"] == "user"
     assert "not valid JSON" in messages[-1]["content"]
@@ -427,7 +570,7 @@ async def test_stage_runner_validation_error_then_recovery() -> None:
         "app.routers.meeting_designer.chat_complete",
         new=AsyncMock(side_effect=['{"valid": false}', '{"valid": true}']),
     ):
-        result = await _run_stage_with_retry(
+        result, attempts_used = await _run_stage_with_retry(
             stage="full_json",
             messages=messages,
             parser_fn=_json_parser,
@@ -438,6 +581,7 @@ async def test_stage_runner_validation_error_then_recovery() -> None:
         )
 
     assert result["valid"] is True
+    assert attempts_used == 2
 
 
 @pytest.mark.asyncio
@@ -576,6 +720,170 @@ async def test_pipeline_both_stages_retry() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pipeline_meta_present_in_response() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(3), _valid_agenda_json(3)]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert "_pipeline_meta" in result
+    assert set(result["_pipeline_meta"].keys()) == {
+        "outline_attempts",
+        "agenda_attempts",
+        "outline_activity_count",
+        "total_seconds",
+    }
+
+
+@pytest.mark.asyncio
+async def test_pipeline_meta_attempt_counts_correct() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json", _valid_outline_json(3), _valid_agenda_json(3)]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["_pipeline_meta"]["outline_attempts"] == 2
+    assert result["_pipeline_meta"]["agenda_attempts"] == 1
+
+
+@pytest.mark.asyncio
+async def test_pipeline_meta_total_seconds_is_number() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(2), _valid_agenda_json(2)]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert isinstance(result["_pipeline_meta"]["total_seconds"], float)
+    assert result["_pipeline_meta"]["total_seconds"] >= 0.0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_meta_outline_activity_count() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(4), _valid_agenda_json(4)]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["_pipeline_meta"]["outline_activity_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_generate_agenda_response_is_json_serializable() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(3), _valid_agenda_json(3)]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    encoded = json.dumps(result)
+    decoded = json.loads(encoded)
+    assert decoded["success"] is True
+    assert isinstance(decoded.get("agenda"), list)
+
+
+@pytest.mark.asyncio
+async def test_original_response_keys_unchanged() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(3), _valid_agenda_json(3)]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    for key in [
+        "success",
+        "meeting_summary",
+        "session_name",
+        "evaluation_criteria",
+        "design_rationale",
+        "complexity",
+        "phases",
+        "agenda",
+    ]:
+        assert key in result
+
+
+def test_estimate_tokens_small_agenda() -> None:
+    assert _estimate_stage2_max_tokens(activity_count=2, base_max_tokens=2048) == 2048
+
+
+def test_estimate_tokens_large_agenda() -> None:
+    assert _estimate_stage2_max_tokens(activity_count=8, base_max_tokens=2048) > 2048
+
+
+def test_estimate_tokens_never_shrinks() -> None:
+    assert _estimate_stage2_max_tokens(activity_count=1, base_max_tokens=4096) == 4096
+
+
+def test_estimate_tokens_ceiling() -> None:
+    assert _estimate_stage2_max_tokens(activity_count=100, base_max_tokens=2048) == 16384
+
+
+@pytest.mark.asyncio
+async def test_pipeline_passes_scaled_tokens_to_stage2() -> None:
+    with (
+        patch(
+            "app.routers.meeting_designer._estimate_stage2_max_tokens",
+            return_value=7777,
+        ) as estimate_mock,
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=AsyncMock(side_effect=[_valid_outline_json(5), _valid_agenda_json(5)]),
+        ) as chat_complete_mock,
+    ):
+        await _run_generation_pipeline(
+            settings={"max_tokens": 2048},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    estimate_mock.assert_called_once()
+    assert chat_complete_mock.call_args_list[1].args[0]["max_tokens"] == 7777
+
+
+@pytest.mark.asyncio
+async def test_pipeline_stage1_uses_original_tokens() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(3), _valid_agenda_json(3)]),
+    ) as chat_complete_mock:
+        await _run_generation_pipeline(
+            settings={"max_tokens": 4096},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert chat_complete_mock.call_args_list[0].args[0]["max_tokens"] == 4096
+
+
+@pytest.mark.asyncio
 async def test_pipeline_outline_exhausted() -> None:
     with patch(
         "app.routers.meeting_designer.chat_complete",
@@ -621,7 +929,17 @@ async def test_pipeline_response_shape_unchanged() -> None:
             system_prompt="system",
         )
 
-    assert set(result.keys()) == {"success", "meeting_summary", "design_rationale", "agenda"}
+    assert set(result.keys()) == {
+        "success",
+        "meeting_summary",
+        "session_name",
+        "evaluation_criteria",
+        "design_rationale",
+        "complexity",
+        "phases",
+        "agenda",
+        "_pipeline_meta",
+    }
 
 
 @pytest.mark.asyncio
@@ -706,6 +1024,36 @@ def test_logging_exhausted_attempts(authenticated_client) -> None:
 
     assert response.status_code == 502
     assert "3 attempt(s)" in response.json()["detail"]
+
+
+def test_502_detail_contains_stage_and_attempts(authenticated_client) -> None:
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    invalid_outline = _invalid_outline_json("hallucinated_type")
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(invalid_outline, invalid_outline, invalid_outline),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    detail = response.json()["detail"]
+    assert response.status_code == 502
+    assert "Stage 'outline'" in detail
+    assert "3 attempt(s)" in detail
+
+
+def test_502_detail_contains_individual_errors(authenticated_client) -> None:
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    bad_full_json = _invalid_agenda_json("empty_instructions")
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(_valid_outline_json(3), bad_full_json, bad_full_json),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    detail = response.json()["detail"]
+    assert response.status_code == 502
+    assert "instructions" in detail
+    assert "Activity 0" in detail
 
 
 @pytest.mark.asyncio
@@ -1043,7 +1391,17 @@ async def test_response_shape_matches_original() -> None:
             system_prompt="system",
         )
 
-    assert set(result.keys()) == {"success", "meeting_summary", "design_rationale", "agenda"}
+    assert set(result.keys()) == {
+        "success",
+        "meeting_summary",
+        "session_name",
+        "evaluation_criteria",
+        "design_rationale",
+        "complexity",
+        "phases",
+        "agenda",
+        "_pipeline_meta",
+    }
 
 
 def test_endpoint_returns_200_on_valid_pipeline(authenticated_client) -> None:
@@ -1057,7 +1415,36 @@ def test_endpoint_returns_200_on_valid_pipeline(authenticated_client) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["success"] is True
-    assert set(body.keys()) == {"success", "meeting_summary", "design_rationale", "agenda"}
+    assert set(body.keys()) == {
+        "success",
+        "meeting_summary",
+        "session_name",
+        "evaluation_criteria",
+        "design_rationale",
+        "complexity",
+        "phases",
+        "agenda",
+        "_pipeline_meta",
+    }
+
+
+def test_pipeline_meta_in_endpoint_response(authenticated_client) -> None:
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_two_stage(_valid_outline_json(3), _valid_agenda_json(3)),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    body = response.json()
+    assert response.status_code == 200
+    assert "_pipeline_meta" in body
+    assert set(body["_pipeline_meta"].keys()) == {
+        "outline_attempts",
+        "agenda_attempts",
+        "outline_activity_count",
+        "total_seconds",
+    }
 
 
 def test_endpoint_returns_502_on_outline_failure(authenticated_client) -> None:
@@ -1145,6 +1532,144 @@ def test_chat_endpoint_unchanged(authenticated_client) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
+
+
+# Phase 5 (STEEL-KINGFISHER-5): Integration, hardening, and end-to-end verification
+@pytest.mark.asyncio
+async def test_e2e_6_activity_agenda_succeeds() -> None:
+    """Verify six-activity end-to-end pipeline succeeds with metadata."""
+    outline_json = _valid_6_activity_outline_json()
+    agenda_json = _valid_6_activity_agenda_json()
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_two_stage(outline_json, agenda_json),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Design a full steering session"}],
+            system_prompt="system",
+        )
+
+    returned_tool_types = [item["tool_type"] for item in result["agenda"]]
+    assert result["success"] is True
+    assert len(result["agenda"]) == 6
+    assert returned_tool_types == [
+        "brainstorming",
+        "categorization",
+        "voting",
+        "brainstorming",
+        "rank_order_voting",
+        "voting",
+    ]
+    assert "_pipeline_meta" in result
+
+
+@pytest.mark.asyncio
+async def test_e2e_6_activity_with_retry_and_metadata() -> None:
+    """Verify retry metadata for six-activity outline-retry scenario."""
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(
+            "not-json",
+            _valid_6_activity_outline_json(),
+            _valid_6_activity_agenda_json(),
+        ),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need robust agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    assert result["_pipeline_meta"]["outline_attempts"] == 2
+    assert result["_pipeline_meta"]["agenda_attempts"] == 1
+
+
+@pytest.mark.asyncio
+async def test_e2e_max_tokens_scaled_for_large_agenda() -> None:
+    """Verify Stage 2 max_tokens is scaled above 2048 for six activities."""
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_two_stage(
+            _valid_6_activity_outline_json(),
+            _valid_6_activity_agenda_json(),
+        ),
+    ) as chat_complete_mock:
+        await _run_generation_pipeline(
+            settings={"max_tokens": 2048},
+            history=[{"role": "user", "content": "Need robust agenda"}],
+            system_prompt="system",
+        )
+
+    assert chat_complete_mock.call_args_list[1].args[0]["max_tokens"] > 2048
+
+
+@pytest.mark.asyncio
+async def test_e2e_max_tokens_not_scaled_for_small_agenda() -> None:
+    """Verify Stage 2 max_tokens does not shrink below configured base."""
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[_valid_outline_json(2), _valid_agenda_json(2)]),
+    ) as chat_complete_mock:
+        await _run_generation_pipeline(
+            settings={"max_tokens": 4096},
+            history=[{"role": "user", "content": "Need short agenda"}],
+            system_prompt="system",
+        )
+
+    assert chat_complete_mock.call_args_list[1].args[0]["max_tokens"] == 4096
+
+
+def test_e2e_pipeline_meta_not_leaked_to_audit_log(authenticated_client) -> None:
+    """Verify endpoint audit payload omits response-only pipeline metadata."""
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    with (
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=_mock_chat_complete_two_stage(
+                _valid_6_activity_outline_json(),
+                _valid_6_activity_agenda_json(),
+            ),
+        ),
+        patch("app.routers.meeting_designer._persist_meeting_designer_log") as audit_mock,
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    assert response.status_code == 200
+    assert audit_mock.called
+    parsed_output = audit_mock.call_args.kwargs.get("parsed_output")
+    assert isinstance(parsed_output, dict)
+    assert "agenda" in parsed_output
+    assert "_pipeline_meta" not in parsed_output
+
+
+def test_response_contract_backward_compatible(authenticated_client) -> None:
+    """Verify response keeps original keys and adds only _pipeline_meta."""
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_two_stage(
+            _valid_6_activity_outline_json(),
+            _valid_6_activity_agenda_json(),
+        ),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    body = response.json()
+    assert response.status_code == 200
+    for key in [
+        "success",
+        "meeting_summary",
+        "session_name",
+        "evaluation_criteria",
+        "design_rationale",
+        "complexity",
+        "phases",
+        "agenda",
+    ]:
+        assert key in body
+    assert "_pipeline_meta" in body
 
 
 @pytest.mark.asyncio
@@ -1361,7 +1886,17 @@ def test_response_contract_unchanged_after_retry(authenticated_client) -> None:
 
     body = response.json()
     assert response.status_code == 200
-    assert set(body.keys()) == {"success", "meeting_summary", "design_rationale", "agenda"}
+    assert set(body.keys()) == {
+        "success",
+        "meeting_summary",
+        "session_name",
+        "evaluation_criteria",
+        "design_rationale",
+        "complexity",
+        "phases",
+        "agenda",
+        "_pipeline_meta",
+    }
     assert "attempts_made" not in body
     assert "error_trail" not in body
     assert "validation_errors" not in body

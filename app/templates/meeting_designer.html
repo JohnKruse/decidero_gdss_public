@@ -73,6 +73,7 @@
 
     <div id="mdAgendaSummary" class="md-agenda-summary"></div>
     <div id="mdAgendaRationale" class="md-agenda-rationale"></div>
+    <div id="mdAgendaError" class="md-agenda-error" style="display:none;"></div>
 
     <div id="mdAgendaList" class="md-agenda-list">
       <!-- Populated by JS -->
@@ -80,7 +81,7 @@
 
     <div id="mdAgendaLoading" class="md-agenda-loading" style="display:none;">
       <div class="md-spinner"></div>
-      <span>Generating agenda…</span>
+      <span id="mdAgendaStatus">Analyzing conversation…</span>
     </div>
   </aside>
 
@@ -150,7 +151,9 @@
   const agendaList   = $('mdAgendaList');
   const agendaSummary = $('mdAgendaSummary');
   const agendaRationale = $('mdAgendaRationale');
+  const agendaError = $('mdAgendaError');
   const agendaLoading = $('mdAgendaLoading');
+  const agendaStatus = $('mdAgendaStatus');
   const editAgendaBtn = $('mdEditAgendaBtn');
   const modal        = $('mdModal');
   const modalTitle   = $('mdModalTitle');
@@ -382,8 +385,62 @@
     generateBtn.disabled = false;
   }
 
+  function _parseGenerationErrorDetail(detail) {
+    const text = String(detail || '');
+    const stageMatch = text.match(/Stage '([^']+)'/);
+    const attemptsMatch = text.match(/after (\d+) attempt\(s\)/);
+    const stageRaw = stageMatch ? stageMatch[1] : '';
+    const stageLabel = stageRaw === 'outline' ? 'outline' : 'agenda';
+    const attempts = attemptsMatch ? parseInt(attemptsMatch[1], 10) : null;
+
+    // Parses Phase 4 pipeline error detail format: "Stage '{stage}' failed validation after {N} attempt(s) with {M} error(s): ..."
+    let issues = [];
+    const validationTailMatch = text.match(/error\(s\):\s*(.+)$/);
+    if (validationTailMatch && validationTailMatch[1]) {
+      issues = validationTailMatch[1].split(/\s*;\s*/).filter(Boolean);
+    } else {
+      const colonIdx = text.indexOf(':');
+      if (colonIdx !== -1) {
+        const tail = text.slice(colonIdx + 1).trim();
+        if (tail) issues = [tail];
+      }
+    }
+
+    return { stageLabel, attempts, issues };
+  }
+
+  function _showGenerationError(detail) {
+    const parsed = _parseGenerationErrorDetail(detail);
+    const attemptText = parsed.attempts
+      ? ` after ${parsed.attempts} attempt${parsed.attempts > 1 ? 's' : ''}`
+      : '';
+    const issueListHtml = parsed.issues.length
+      ? `<ul class="md-agenda-error-list">${parsed.issues.map(issue => `<li>${esc(issue)}</li>`).join('')}</ul>`
+      : '';
+
+    agendaError.innerHTML = `
+      <div class="md-agenda-error-head">
+        <span class="md-agenda-error-icon">&#9888;</span>
+        <strong>Agenda generation failed</strong>
+      </div>
+      <p class="md-agenda-error-text">The AI could not produce a valid ${esc(parsed.stageLabel)}${attemptText}.</p>
+      ${issueListHtml}
+      <button id="mdAgendaRetryBtn" type="button" class="md-agenda-retry-btn">Try Again</button>
+    `;
+    agendaError.style.display = '';
+
+    const retryBtn = document.getElementById('mdAgendaRetryBtn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', () => {
+        agendaError.style.display = 'none';
+        agendaError.innerHTML = '';
+        handleGenerateAgenda();
+      });
+    }
+  }
+
   // ── Agenda generation ──────────────────────────────────────
-  generateBtn.addEventListener('click', async () => {
+  async function handleGenerateAgenda() {
     if (state.streaming || state.messages.length < 2) return;
 
     // Show agenda panel in loading state
@@ -391,9 +448,34 @@
     agendaList.innerHTML = '';
     agendaSummary.innerHTML = '';
     agendaRationale.innerHTML = '';
+    agendaError.style.display = 'none';
+    agendaError.innerHTML = '';
     agendaLoading.style.display = 'flex';
     generateBtn.disabled = true;
     disableInput();
+    const stages = [
+      'Analyzing conversation…',
+      'Generating activity outline…',
+      'Validating outline…',
+      'Building full agenda…',
+      'Validating activities…',
+    ];
+    // Progress text cycles on a timer since the endpoint is a single POST, not SSE.
+    let stageIdx = 0;
+    if (agendaStatus) {
+      agendaStatus.textContent = stages[0];
+    }
+    let progressInterval = window.setInterval(() => {
+      if (!agendaStatus) return;
+      stageIdx = Math.min(stageIdx + 1, stages.length - 1);
+      agendaStatus.textContent = stages[stageIdx];
+    }, 6000); // ~6s per stage ≈ 30s total cycle, aligns with typical generation time.
+    const clearProgressInterval = () => {
+      if (progressInterval) {
+        window.clearInterval(progressInterval);
+        progressInterval = null;
+      }
+    };
 
     try {
       const resp = await fetch('/api/meeting-designer/generate-agenda', {
@@ -402,11 +484,17 @@
         body: JSON.stringify({ messages: state.messages }),
       });
 
+      clearProgressInterval();
       agendaLoading.style.display = 'none';
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        appendSystemMessage(`Failed to generate agenda: ${err.detail || resp.statusText}`);
+        const detail = err.detail || resp.statusText;
+        if (resp.status === 502 && detail.includes('attempt(s)')) {
+          _showGenerationError(detail);
+        } else {
+          appendSystemMessage(`Failed to generate agenda: ${detail}`);
+        }
         generateBtn.disabled = false;
         enableInput();
         return;
@@ -434,19 +522,41 @@
       state.messages.push({ role: 'assistant', content: confirmText });
 
     } catch (err) {
+      clearProgressInterval();
       agendaLoading.style.display = 'none';
       appendSystemMessage(`Error generating agenda: ${err.message}`);
       generateBtn.disabled = false;
       enableInput();
     }
-  });
+  }
+
+  generateBtn.addEventListener('click', handleGenerateAgenda);
 
   // ── Agenda rendering ───────────────────────────────────────
   const complexityBadge = $('mdComplexityBadge');
 
   function renderAgenda(data) {
-    agendaSummary.innerHTML = data.meeting_summary
-      ? `<p class="md-agenda-desc">${esc(data.meeting_summary)}</p>` : '';
+    let pipelineMetaText = '';
+    if (data._pipeline_meta) {
+      const meta = data._pipeline_meta;
+      const totalSeconds = Number(meta.total_seconds);
+      const outlineAttempts = Number(meta.outline_attempts || 1);
+      const agendaAttempts = Number(meta.agenda_attempts || 1);
+      if (Number.isFinite(totalSeconds)) {
+        const retries = Math.max(0, (outlineAttempts - 1) + (agendaAttempts - 1));
+        pipelineMetaText = retries > 0
+          ? `Generated in ${totalSeconds}s (${retries} correction${retries > 1 ? 's' : ''} needed)`
+          : `Generated in ${totalSeconds}s`;
+      }
+    }
+
+    agendaSummary.innerHTML = '';
+    if (data.meeting_summary) {
+      agendaSummary.innerHTML += `<p class="md-agenda-desc">${esc(data.meeting_summary)}</p>`;
+    }
+    if (pipelineMetaText) {
+      agendaSummary.innerHTML += `<p class="md-agenda-meta">${esc(pipelineMetaText)}</p>`;
+    }
     agendaRationale.innerHTML = data.design_rationale
       ? `<p class="md-agenda-desc md-agenda-rationale-text">${esc(data.design_rationale)}</p>` : '';
 
@@ -679,7 +789,13 @@
     } else {
       // Simple or multi-phase → single meeting (existing flow)
       try {
-        sessionStorage.setItem('md_agenda', JSON.stringify(state.agendaData));
+        const payload = JSON.stringify(state.agendaData);
+        // Guard against sessionStorage quota (~5MB per origin)
+        if (payload.length > 4 * 1024 * 1024) {
+          appendSystemMessage('Agenda is too large to transfer. Try reducing the number of activities.');
+          return;
+        }
+        sessionStorage.setItem('md_agenda', payload);
         window.location.href = '/meeting/create?from=designer';
       } catch (err) {
         appendSystemMessage('Failed to store agenda. Please try again.');

@@ -304,11 +304,69 @@
   margin: 0;
 }
 
+.md-agenda-meta {
+  font-size: 0.75rem;
+  color: #6f7c96;
+  margin-top: 0.35rem;
+}
+
 .md-agenda-rationale-text {
   color: #444;
   font-style: italic;
   border-left: 3px solid rgba(11, 61, 145, 0.2);
   padding-left: 0.75rem;
+}
+
+.md-agenda-error {
+  border: 1px solid #f5c48a;
+  background: #fff7ed;
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+}
+
+.md-agenda-error-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #9a4b00;
+  font-size: 0.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.md-agenda-error-icon {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.md-agenda-error-text {
+  margin: 0;
+  color: #74420f;
+  font-size: 0.8rem;
+}
+
+.md-agenda-error-list {
+  margin: 0.45rem 0 0.7rem 1rem;
+  color: #74420f;
+  font-size: 0.78rem;
+}
+
+.md-agenda-error-list li {
+  margin-bottom: 0.2rem;
+}
+
+.md-agenda-retry-btn {
+  border: 1px solid #d58f44;
+  background: #fff;
+  color: #9a4b00;
+  border-radius: 8px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.md-agenda-retry-btn:hover {
+  background: #fff2df;
 }
 
 /* Agenda items */

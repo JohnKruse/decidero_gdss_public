@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -172,14 +172,14 @@ async def _run_stage_with_retry(
     max_attempts: int,
     settings: Dict[str, Any],
     system_prompt: str,
-) -> Dict[str, Any]:
+) -> Tuple[Dict[str, Any], int]:
     """Executes a pipeline stage (parse -> validate) with automatic retry.
 
     When parsing or validation fails, the AI's bad output and a correction
     prompt are appended to the message list, and the stage is re-attempted.
-    Non-recoverable errors (AIProviderError) propagate immediately. Returns the
-    parsed and validated data dict, or raises GenerationPipelineError after all
-    attempts are exhausted.
+    Non-recoverable errors (AIProviderError) propagate immediately. Returns a
+    tuple: (parsed and validated data dict, attempts_used), or raises
+    GenerationPipelineError after all attempts are exhausted.
     """
 
     accumulated_errors: List[List[str]] = []
@@ -240,7 +240,7 @@ async def _run_stage_with_retry(
                     stage,
                     [warning.message for warning in validation_result.warnings],
                 )
-            return parsed_data
+            return parsed_data, attempt_idx + 1
 
         formatted_errors = [
             f"Activity {issue.activity_index}: {issue.field} - {issue.message}"
@@ -281,6 +281,18 @@ async def _run_stage_with_retry(
     )
 
 
+def _estimate_stage2_max_tokens(activity_count: int, base_max_tokens: int) -> int:
+    """Estimate Stage 2 max_tokens from validated outline size.
+
+    Estimates the minimum max_tokens needed for Stage 2 full JSON generation
+    based on the validated outline's activity count. Returns the larger of the
+    base max_tokens and the estimate, capped at 16384.
+    Formula: (activity_count x 300 + 400) x 1.5.
+    """
+    estimated = int((activity_count * 300 + 400) * 1.5)
+    return min(16384, max(base_max_tokens, estimated))
+
+
 async def _run_generation_pipeline(
     settings: Dict[str, Any],
     history: List[Dict[str, str]],
@@ -293,11 +305,15 @@ async def _run_generation_pipeline(
     injected into the generation prompt (with retry). Raises
     GenerationPipelineError on parse/validation failures after retries are
     exhausted. AIProviderError propagates uncaught.
+
+    Returns:
+        Dict[str, Any]: Agenda payload with original contract fields and an
+        additive `_pipeline_meta` object containing retry/timing diagnostics.
     """
 
     start_time = time.monotonic()
     outline_messages = build_outline_messages(history)
-    outline_data = await _run_stage_with_retry(
+    outline_data, outline_attempts = await _run_stage_with_retry(
         stage="outline",
         messages=outline_messages,
         parser_fn=parse_outline_json,
@@ -318,14 +334,28 @@ async def _run_generation_pipeline(
         len(validated_outline),
     )
 
+    base_max_tokens = int(settings.get("max_tokens", 2048) or 2048)
+    # Scaling addresses discovery risk C2 - token exhaustion on large agendas.
+    scaled_max_tokens = _estimate_stage2_max_tokens(
+        len(validated_outline),
+        base_max_tokens,
+    )
+    stage2_settings = {**settings, "max_tokens": scaled_max_tokens}
+    logger.info(
+        "Stage 2 max_tokens: %d (base: %d, activities: %d)",
+        scaled_max_tokens,
+        base_max_tokens,
+        len(validated_outline),
+    )
+
     generation_messages = build_generation_messages(history, outline=validated_outline)
-    agenda_data = await _run_stage_with_retry(
+    agenda_data, agenda_attempts = await _run_stage_with_retry(
         stage="full_json",
         messages=generation_messages,
         parser_fn=parse_agenda_json,
         validator_fn=validate_agenda,
         max_attempts=_AGENDA_MAX_ATTEMPTS,
-        settings=settings,
+        settings=stage2_settings,
         system_prompt=system_prompt,
     )
     final_agenda = agenda_data.get("agenda", [])
@@ -340,11 +370,24 @@ async def _run_generation_pipeline(
         len(final_agenda),
     )
 
+    # Informational metadata for frontend display; not part of the agenda contract.
+    pipeline_meta = {
+        "outline_attempts": outline_attempts,
+        "agenda_attempts": agenda_attempts,
+        "outline_activity_count": len(validated_outline),
+        "total_seconds": round(total_elapsed, 1),
+    }
+
     return {
         "success": True,
         "meeting_summary": agenda_data.get("meeting_summary", ""),
+        "session_name": agenda_data.get("session_name", ""),
+        "evaluation_criteria": agenda_data.get("evaluation_criteria", []),
         "design_rationale": agenda_data.get("design_rationale", ""),
+        "complexity": agenda_data.get("complexity", "simple"),
+        "phases": agenda_data.get("phases", []),
         "agenda": final_agenda,
+        "_pipeline_meta": pipeline_meta,
     }
 
 
@@ -689,7 +732,7 @@ async def generate_agenda(
         user_login=getattr(user, "login", current_user),
         settings=settings,
         request_messages=history,
-        parsed_output=result,
+        parsed_output={k: v for k, v in result.items() if k != "_pipeline_meta"},
         status_code=status.HTTP_200_OK,
     )
 

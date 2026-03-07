@@ -1725,8 +1725,27 @@ endblock %}
                         }
                     }
                 } catch (e) {
-                    // Non-critical; ignore storage/parse errors silently
+                    // H2 fix: explicit error replaces silent swallow (discovery risk H2)
                     sessionStorage.removeItem('md_agenda');
+                    const errBanner = document.createElement('div');
+                    errBanner.id = 'mdHandoffError';
+                    errBanner.style.cssText = [
+                        'background:#fff3e0', 'color:#e65100', 'padding:0.65rem 1.25rem',
+                        'border-radius:8px', 'font-size:0.85rem', 'font-weight:600',
+                        'margin-bottom:1rem', 'display:flex', 'align-items:center', 'gap:0.5rem',
+                    ].join(';');
+                    errBanner.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                          <path d="M8 1a7 7 0 100 14A7 7 0 008 1zm-.75 4a.75.75 0 011.5 0v3.5a.75.75 0 01-1.5 0V5zm.75 6.5a.75.75 0 110-1.5.75.75 0 010 1.5z"/>
+                        </svg>
+                        Could not load the AI-designed agenda. The data may have been cleared by your browser.
+                        <a href="/meeting-designer" style="color:#e65100;text-decoration:underline;margin-left:0.5rem;">
+                          Return to Meeting Designer
+                        </a>
+                        <button onclick="this.parentElement.remove()" style="margin-left:auto;background:none;border:none;color:#e65100;cursor:pointer;font-size:1rem;">&times;</button>
+                    `;
+                    const form = document.getElementById('createMeetingForm') || document.querySelector('form');
+                    if (form) form.prepend(errBanner);
                 }
             }
             // ── End AI Meeting Designer handoff ────────────────────────────────

@@ -1,4 +1,4 @@
-# Phase 5 — Integration and Hardening
+# Phase 5 [COMPLETE] — Integration and Hardening
 
 > Global Canary: `BRASS-PELICAN-7`
 > Phase Canary: `STEEL-KINGFISHER-5`
@@ -73,7 +73,7 @@ create_meeting.html:
 
 ## Atomic Steps
 
-### Step 1 — Pipeline response metadata
+### Step 1 [DONE] — Pipeline response metadata
 
 Add a `_pipeline_meta` dict to the `generate_agenda()` response. The frontend can optionally display this (timing, retry info). This is additive — the existing contract (`success`, `meeting_summary`, etc.) is unchanged; the underscore-prefixed key signals it's informational.
 
@@ -131,9 +131,13 @@ Add a `_pipeline_meta` dict to the `generate_agenda()` response. The frontend ca
 - Docstring update on `_run_generation_pipeline`: document `_pipeline_meta` in the return dict
 - Inline comment on `_pipeline_meta`: `"# Informational metadata for frontend display; not part of the agenda contract"`
 
+**Technical deviations (Step 1):**
+- Added the full enriched response keys (`session_name`, `evaluation_criteria`, `complexity`, `phases`) in `_run_generation_pipeline()` alongside `_pipeline_meta` because the live frontend already consumes these fields and Step 1 requires preserving the existing contract while adding metadata.
+- Verification command `venv/bin/python -m pytest -q` completed with `440 passed, 2 skipped`; the two skips are existing repository baseline skips (not introduced by Step 1 changes).
+
 ---
 
-### Step 2 — Dynamic max_tokens scaling for Stage 2
+### Step 2 [DONE] — Dynamic max_tokens scaling for Stage 2
 
 After Stage 1 produces a validated outline, estimate the token budget needed for Stage 2 and scale `max_tokens` upward if the default is too small. This addresses discovery risk C2 (truncated JSON from token exhaustion on large agendas).
 
@@ -175,9 +179,14 @@ After Stage 1 produces a validated outline, estimate the token budget needed for
 - Docstring on `_estimate_stage2_max_tokens`: "Estimates the minimum max_tokens needed for Stage 2 full JSON generation based on the validated outline's activity count. Returns the larger of the base max_tokens and the estimate, capped at 16384. Formula: (activity_count × 300 + 400) × 1.5."
 - Inline comment: `"# Scaling addresses discovery risk C2 — token exhaustion on large agendas"`
 
+**Technical deviations (Step 2):**
+- Implemented the docstring formula using ASCII `x` (`(activity_count x 300 + 400) x 1.5`) instead of the multiplication symbol to keep source ASCII-only.
+- `base_max_tokens` is normalized via `int(settings.get("max_tokens", 2048) or 2048)` before scaling to avoid `None`/falsey config values causing type errors in max/estimate comparison.
+- Verification command `venv/bin/python -m pytest -q` completed with `446 passed, 2 skipped`; the two skips remain baseline repository skips unrelated to Step 2.
+
 ---
 
-### Step 3 — Frontend multi-stage progress messaging
+### Step 3 [DONE] — Frontend multi-stage progress messaging
 
 Update `meeting_designer.html` to show stage-aware progress text during generation. Since the endpoint is a single POST → JSON response (not SSE), real-time stage tracking isn't possible without an architectural change. Instead, cycle the spinner text on a timer to give the facilitator a sense of progress. After completion, optionally display pipeline metadata.
 
@@ -237,9 +246,14 @@ Update `meeting_designer.html` to show stage-aware progress text during generati
 - Add an inline comment in the JS: `// Progress text cycles on a timer since the endpoint is a single POST, not SSE`
 - Comment explaining the 6-second interval choice: `// ~6s per stage ≈ 30s total cycle, aligns with typical generation time`
 
+**Technical deviations (Step 3):**
+- Added a dedicated `.md-agenda-meta` style in `app/static/css/meeting_designer.css` to ensure the pipeline metadata line is visually subtle under the summary, rather than relying on inline style attributes.
+- Manual browser validation checklist is documented but not executed in this terminal-only pass; automated verification was performed via backend tests and full pytest.
+- Verification command `venv/bin/python -m pytest -q` completed with `447 passed, 2 skipped`; the two skips remain baseline repository skips unrelated to Step 3.
+
 ---
 
-### Step 4 — Frontend structured error display for generation failures
+### Step 4 [DONE] — Frontend structured error display for generation failures
 
 Update `meeting_designer.html` to parse the 502 detail string from the pipeline and display a user-friendly error panel instead of a raw system message. The pipeline error detail from Phase 4 is machine-readable (stage name + error list), so the frontend can format it.
 
@@ -297,9 +311,15 @@ Update `meeting_designer.html` to parse the 502 detail string from the pipeline 
 **Docs:**
 - Inline JS comment: `// Parses Phase 4 pipeline error detail format: "Stage '{stage}' failed validation after {N} attempt(s) with {M} error(s): ..."`
 
+**Technical deviations (Step 4):**
+- Implemented the "Try Again" behavior by refactoring the generate click handler into a reusable `handleGenerateAgenda()` function and wiring both the main Generate button and panel retry button to it.
+- Added dedicated error-panel styles in `app/static/css/meeting_designer.css` to keep the warning appearance consistent and avoid large inline style blocks in JS-generated HTML.
+- Manual frontend checklist is documented but not executed in this terminal-only pass; automated verification covered backend detail format tests plus full pytest.
+- Verification command `venv/bin/python -m pytest -q` completed with `449 passed, 2 skipped`; the two skips remain baseline repository skips unrelated to Step 4.
+
 ---
 
-### Step 5 — sessionStorage handoff hardening
+### Step 5 [DONE] — sessionStorage handoff hardening
 
 Fix the silent catch in `create_meeting.html` that swallows sessionStorage parse failures (discovery risk H2). Replace it with an explicit error message so the facilitator knows something went wrong and can return to the designer.
 
@@ -369,9 +389,15 @@ Fix the silent catch in `create_meeting.html` that swallows sessionStorage parse
 - Inline JS comment on the catch block: `// H2 fix: explicit error replaces silent swallow (discovery risk H2)`
 - Inline JS comment on the size guard: `// Guard against sessionStorage quota (~5MB per origin)`
 
+**Technical deviations (Step 5):**
+- Error banner injection targets `#createMeetingForm` first and falls back to the first `<form>` element to remain compatible with current template structure and avoid silent failures if IDs change.
+- The oversized-payload guard is applied to the single-meeting handoff path (`sessionStorage.setItem('md_agenda', payload)`); multi-track creation flow is unchanged because it does not use this handoff key.
+- Manual frontend checklist is documented but not executed in this terminal-only pass; automated verification covered new JSON-serializable response test plus full pytest.
+- Verification command `venv/bin/python -m pytest -q` completed with `450 passed, 2 skipped`; the two skips remain baseline repository skips unrelated to Step 5.
+
 ---
 
-### Step 6 — End-to-end integration tests and regression guards
+### Step 6 [DONE] — End-to-end integration tests and regression guards
 
 Verify the complete pipeline with realistic multi-activity agendas, confirm pipeline metadata and max_tokens scaling work together, and ensure no regressions to chat, status, logs, or manual meeting creation paths.
 
@@ -397,6 +423,12 @@ Verify the complete pipeline with realistic multi-activity agendas, confirm pipe
 - Update `test_generation_pipeline.py` module docstring to reference `STEEL-KINGFISHER-5` alongside `IRON-OSPREY-4` and `BRONZE-MERLIN-2`
 - Ensure all new test functions have a one-line docstring
 - Add a comment block at the top of the Phase 5 test section: `"# Phase 5 (STEEL-KINGFISHER-5): Integration, hardening, and end-to-end verification"`
+
+**Technical deviations (Step 6):**
+- Added the requested 6-activity helpers/tests and backward-compatibility coverage while keeping existing earlier-phase regression tests in place (no removals), resulting in broader overlap than the minimum Step 6 list.
+- Implemented a small backend hardening change in `generate_agenda()` so `_pipeline_meta` remains response-only and is excluded from persisted `parsed_output` audit logs, matching Step 6 intent for metadata scoping.
+- Manual verification checklist is documented but not executed in this terminal-only pass; automated verification covered the expanded pipeline/regression suite plus full pytest.
+- Verification command `venv/bin/python -m pytest -q` completed with `456 passed, 2 skipped`; the two skips remain baseline repository skips unrelated to Step 6.
 
 ---
 
