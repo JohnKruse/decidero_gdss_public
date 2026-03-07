@@ -1,5 +1,6 @@
-"""Tests for BRASS-PELICAN-7 / IRON-OSPREY-4 generation pipeline behavior."""
+"""Tests for BRASS-PELICAN-7 / IRON-OSPREY-4 / BRONZE-MERLIN-2 generation pipeline behavior."""
 
+import inspect
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -7,8 +8,12 @@ import pytest
 
 from app.routers.meeting_designer import (
     GenerationPipelineError,
+    _AGENDA_MAX_ATTEMPTS,
+    _build_correction_prompt,
     _format_validation_errors,
+    _OUTLINE_MAX_ATTEMPTS,
     _run_generation_pipeline,
+    _run_stage_with_retry,
 )
 from app.services.ai_provider import AIProviderError, AIProviderNotConfiguredError
 from app.services.agenda_validator import AgendaFieldError, AgendaValidationResult
@@ -102,6 +107,62 @@ def _mock_chat_complete_two_stage(outline_json: str, agenda_json: str) -> AsyncM
     return AsyncMock(side_effect=[outline_json, agenda_json])
 
 
+def _mock_chat_complete_sequence(*responses: str) -> AsyncMock:
+    """Create a sequential chat_complete mock that returns raw responses in order."""
+    return AsyncMock(side_effect=list(responses))
+
+
+def _invalid_outline_json(error: str = "hallucinated_type") -> str:
+    """Build outline JSON with a deterministic validation failure."""
+    outline = {
+        "meeting_summary": "Create options",
+        "outline": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Generate ideas",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Diverge first",
+            }
+        ],
+    }
+    if error == "hallucinated_type":
+        outline["outline"][0]["tool_type"] = "workshop"
+    elif error == "missing_title":
+        outline["outline"][0]["title"] = ""
+    return json.dumps(outline)
+
+
+def _invalid_agenda_json(error: str = "empty_instructions") -> str:
+    """Build full-agenda JSON with a deterministic validation failure."""
+    agenda = {
+        "meeting_summary": "Create options",
+        "session_name": "Decision Workshop",
+        "evaluation_criteria": ["clarity", "alignment"],
+        "design_rationale": "Diverge then converge",
+        "complexity": "simple",
+        "phases": [],
+        "agenda": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Generate ideas",
+                "instructions": "List many possibilities quickly.",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Diverge first",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": None,
+            }
+        ],
+    }
+    if error == "empty_instructions":
+        agenda["agenda"][0]["instructions"] = ""
+    elif error == "hallucinated_type":
+        agenda["agenda"][0]["tool_type"] = "roundtable"
+    return json.dumps(agenda)
+
+
 def test_pipeline_error_has_stage_and_detail() -> None:
     error = GenerationPipelineError(
         stage="outline",
@@ -114,6 +175,24 @@ def test_pipeline_error_has_stage_and_detail() -> None:
     assert error.detail == "outline failed"
     assert error.validation_errors == ["x"]
     assert error.raw_output == "abc"
+
+
+def test_pipeline_error_carries_attempts_made() -> None:
+    error = GenerationPipelineError(stage="outline", detail="x", attempts_made=3)
+    assert error.attempts_made == 3
+
+
+def test_pipeline_error_carries_error_trail() -> None:
+    trail = [["first error"], ["second error", "third error"]]
+    error = GenerationPipelineError(stage="outline", detail="x", error_trail=trail)
+    assert error.error_trail is trail
+    assert len(error.error_trail) == 2
+
+
+def test_pipeline_error_defaults() -> None:
+    error = GenerationPipelineError(stage="outline", detail="x")
+    assert error.attempts_made == 1
+    assert error.error_trail is None
 
 
 def test_format_validation_errors_single_error() -> None:
@@ -152,11 +231,24 @@ def test_format_validation_errors_multiple_errors() -> None:
 
     pipeline_error = _format_validation_errors(result, "full_json")
 
-    assert "Stage 'full_json' failed validation with 3 error(s)" in pipeline_error.detail
+    assert "Stage 'full_json' failed validation after 1 attempt(s) with 3 error(s)" in pipeline_error.detail
     assert "Activity 0: tool_type" in pipeline_error.detail
     assert "Activity 1: title" in pipeline_error.detail
     assert "Activity 2: instructions" in pipeline_error.detail
     assert len(pipeline_error.validation_errors) == 3
+
+
+def test_format_validation_errors_includes_attempt_count() -> None:
+    result = AgendaValidationResult(
+        valid=False,
+        errors=[AgendaFieldError(0, "title", "missing", "error")],
+        warnings=[],
+    )
+
+    pipeline_error = _format_validation_errors(result, "outline", attempts_made=3)
+
+    assert "3 attempt(s)" in pipeline_error.detail
+    assert pipeline_error.attempts_made == 3
 
 
 def test_format_validation_errors_ignores_warnings() -> None:
@@ -178,6 +270,510 @@ def test_format_validation_errors_ignores_warnings() -> None:
     assert len(pipeline_error.validation_errors) == 2
     assert "duration_minutes" not in pipeline_error.detail
     assert "meeting_summary" not in pipeline_error.detail
+
+
+def test_retry_constants_values() -> None:
+    assert _OUTLINE_MAX_ATTEMPTS == 3
+    assert _AGENDA_MAX_ATTEMPTS == 2
+
+
+def test_correction_prompt_parse_failure_outline() -> None:
+    prompt = _build_correction_prompt(
+        stage="outline",
+        parse_failed=True,
+        parse_snippet="not-json-output",
+        validation_errors=None,
+    )
+
+    assert "not valid JSON" in prompt
+    assert "not-json-output" in prompt
+    assert "top-level \"outline\" array" in prompt
+
+
+def test_correction_prompt_parse_failure_full_json() -> None:
+    prompt = _build_correction_prompt(
+        stage="full_json",
+        parse_failed=True,
+        parse_snippet="bad-json",
+        validation_errors=None,
+    )
+
+    assert "not valid JSON" in prompt
+    assert "meeting_summary" in prompt
+    assert "agenda" in prompt
+    assert "top-level \"outline\" array" not in prompt
+
+
+def test_correction_prompt_validation_errors() -> None:
+    prompt = _build_correction_prompt(
+        stage="full_json",
+        parse_failed=False,
+        parse_snippet="",
+        validation_errors=[
+            AgendaFieldError(0, "tool_type", "invalid value", "error"),
+            AgendaFieldError(2, "title", "missing", "error"),
+        ],
+    )
+
+    assert "2 validation error(s)" in prompt
+    assert "Activity 0: tool_type - invalid value" in prompt
+    assert "Activity 2: title - missing" in prompt
+
+
+def test_correction_prompt_no_hardcoded_tool_types() -> None:
+    source = inspect.getsource(_build_correction_prompt)
+    for disallowed in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
+        assert disallowed not in source
+
+
+def test_correction_prompt_truncates_raw_snippet() -> None:
+    raw = "x" * 500
+    prompt = _build_correction_prompt(
+        stage="outline",
+        parse_failed=True,
+        parse_snippet=raw,
+        validation_errors=None,
+    )
+
+    assert "x" * 300 in prompt
+    assert "x" * 301 not in prompt
+
+
+def _json_parser(raw_text: str) -> dict:
+    """Simple JSON parser for stage-runner unit tests."""
+    return json.loads(raw_text)
+
+
+def _validator_requires_valid_true(data: dict) -> AgendaValidationResult:
+    """Validator for stage-runner tests: requires valid=true."""
+    if data.get("valid") is True:
+        return AgendaValidationResult(valid=True, errors=[], warnings=[])
+    return AgendaValidationResult(
+        valid=False,
+        errors=[AgendaFieldError(0, "tool_type", "invalid", "error")],
+        warnings=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_succeeds_first_attempt() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(return_value='{"valid": true}'),
+    ) as chat_complete_mock:
+        result = await _run_stage_with_retry(
+            stage="outline",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert result["valid"] is True
+    assert chat_complete_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_succeeds_after_retry() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json", '{"valid": true}']),
+    ) as chat_complete_mock:
+        result = await _run_stage_with_retry(
+            stage="outline",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert result["valid"] is True
+    assert chat_complete_mock.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_parse_error_then_recovery() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["Here is your outline: {...", '{"valid": true}']),
+    ):
+        result = await _run_stage_with_retry(
+            stage="outline",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert result["valid"] is True
+    assert messages[-2]["role"] == "assistant"
+    assert messages[-1]["role"] == "user"
+    assert "not valid JSON" in messages[-1]["content"]
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_validation_error_then_recovery() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=['{"valid": false}', '{"valid": true}']),
+    ):
+        result = await _run_stage_with_retry(
+            stage="full_json",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=2,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert result["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_exhausts_all_attempts() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json-1", "not-json-2", "not-json-3"]),
+    ):
+        with pytest.raises(GenerationPipelineError) as exc_info:
+            await _run_stage_with_retry(
+                stage="outline",
+                messages=messages,
+                parser_fn=_json_parser,
+                validator_fn=_validator_requires_valid_true,
+                max_attempts=3,
+                settings={},
+                system_prompt="system",
+            )
+
+    assert exc_info.value.attempts_made == 3
+    assert exc_info.value.error_trail
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_appends_correction_messages() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json", '{"valid": true}']),
+    ):
+        await _run_stage_with_retry(
+            stage="outline",
+            messages=messages,
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert messages[-2]["role"] == "assistant"
+    assert messages[-1]["role"] == "user"
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_does_not_catch_provider_error() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=AIProviderError("provider down")),
+    ):
+        with pytest.raises(AIProviderError):
+            await _run_stage_with_retry(
+                stage="outline",
+                messages=messages,
+                parser_fn=_json_parser,
+                validator_fn=_validator_requires_valid_true,
+                max_attempts=3,
+                settings={},
+                system_prompt="system",
+            )
+
+
+@pytest.mark.asyncio
+async def test_stage_runner_error_trail_accumulates() -> None:
+    messages = [{"role": "user", "content": "generate"}]
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=['{"valid": false}', '{"valid": false}', '{"valid": false}']),
+    ):
+        with pytest.raises(GenerationPipelineError) as exc_info:
+            await _run_stage_with_retry(
+                stage="full_json",
+                messages=messages,
+                parser_fn=_json_parser,
+                validator_fn=_validator_requires_valid_true,
+                max_attempts=3,
+                settings={},
+                system_prompt="system",
+            )
+
+    assert exc_info.value.attempts_made == 3
+    assert exc_info.value.error_trail is not None
+    assert len(exc_info.value.error_trail) == 3
+
+
+@pytest.mark.asyncio
+async def test_pipeline_outline_retry_then_success() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json", VALID_OUTLINE_JSON, VALID_AGENDA_JSON]),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    assert chat_complete_mock.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_pipeline_agenda_retry_then_success() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, "not-json", VALID_AGENDA_JSON]),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    assert chat_complete_mock.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_pipeline_both_stages_retry() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(
+            side_effect=["not-json-outline", VALID_OUTLINE_JSON, "not-json-agenda", VALID_AGENDA_JSON]
+        ),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    assert chat_complete_mock.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_pipeline_outline_exhausted() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["bad-1", "bad-2", "bad-3"]),
+    ):
+        with pytest.raises(GenerationPipelineError) as exc_info:
+            await _run_generation_pipeline(
+                settings={},
+                history=[{"role": "user", "content": "Need agenda"}],
+                system_prompt="system",
+            )
+
+    assert exc_info.value.stage == "outline"
+    assert exc_info.value.attempts_made == 3
+
+
+@pytest.mark.asyncio
+async def test_pipeline_agenda_exhausted() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, "bad-1", "bad-2"]),
+    ):
+        with pytest.raises(GenerationPipelineError) as exc_info:
+            await _run_generation_pipeline(
+                settings={},
+                history=[{"role": "user", "content": "Need agenda"}],
+                system_prompt="system",
+            )
+
+    assert exc_info.value.stage == "full_json"
+    assert exc_info.value.attempts_made == 2
+
+
+@pytest.mark.asyncio
+async def test_pipeline_response_shape_unchanged() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=["not-json", VALID_OUTLINE_JSON, VALID_AGENDA_JSON]),
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert set(result.keys()) == {"success", "meeting_summary", "design_rationale", "agenda"}
+
+
+@pytest.mark.asyncio
+async def test_pipeline_provider_error_no_retry() -> None:
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=AIProviderError("provider failure")),
+    ) as chat_complete_mock:
+        with pytest.raises(AIProviderError):
+            await _run_generation_pipeline(
+                settings={},
+                history=[{"role": "user", "content": "Need agenda"}],
+                system_prompt="system",
+            )
+
+    assert chat_complete_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_logging_first_attempt_success() -> None:
+    with (
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=AsyncMock(return_value='{"valid": true}'),
+        ),
+        patch("app.routers.meeting_designer.logger") as logger_mock,
+    ):
+        await _run_stage_with_retry(
+            stage="outline",
+            messages=[{"role": "user", "content": "generate"}],
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert any("passed on first attempt" in str(call.args[0]) for call in logger_mock.info.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_logging_retry_recovery() -> None:
+    with (
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=AsyncMock(side_effect=["not-json", '{"valid": true}']),
+        ),
+        patch("app.routers.meeting_designer.logger") as logger_mock,
+    ):
+        await _run_stage_with_retry(
+            stage="outline",
+            messages=[{"role": "user", "content": "generate"}],
+            parser_fn=_json_parser,
+            validator_fn=_validator_requires_valid_true,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    info_templates = [str(call.args[0]) for call in logger_mock.info.call_args_list]
+    assert any("retrying" in template for template in info_templates)
+    assert any("recovered on attempt" in template for template in info_templates)
+
+
+def test_logging_exhausted_attempts(authenticated_client) -> None:
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    with (
+        patch(
+            "app.routers.meeting_designer._run_generation_pipeline",
+            new=AsyncMock(
+                side_effect=GenerationPipelineError(
+                    stage="outline",
+                    detail="Stage 'outline' failed after 3 attempt(s): validation failed",
+                    raw_output="bad-json",
+                    attempts_made=3,
+                )
+            ),
+        ),
+        patch("app.routers.meeting_designer._persist_meeting_designer_log"),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    assert response.status_code == 502
+    assert "3 attempt(s)" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_logging_pipeline_timing() -> None:
+    with (
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, VALID_AGENDA_JSON]),
+        ),
+        patch("app.routers.meeting_designer.logger") as logger_mock,
+    ):
+        await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    info_templates = [str(call.args[0]) for call in logger_mock.info.call_args_list]
+    assert any("Outline stage completed in" in template for template in info_templates)
+    assert any("Full generation completed in" in template for template in info_templates)
+
+
+@pytest.mark.asyncio
+async def test_logging_warnings_at_debug() -> None:
+    def _validator_valid_with_warning(_data: dict) -> AgendaValidationResult:
+        return AgendaValidationResult(
+            valid=True,
+            errors=[],
+            warnings=[AgendaFieldError(0, "rationale", "recommended tweak", "warning")],
+        )
+
+    with (
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=AsyncMock(return_value='{"valid": true}'),
+        ),
+        patch("app.routers.meeting_designer.logger") as logger_mock,
+    ):
+        await _run_stage_with_retry(
+            stage="outline",
+            messages=[{"role": "user", "content": "generate"}],
+            parser_fn=_json_parser,
+            validator_fn=_validator_valid_with_warning,
+            max_attempts=3,
+            settings={},
+            system_prompt="system",
+        )
+
+    assert any("warnings" in str(call.args[0]) for call in logger_mock.debug.call_args_list)
+
+
+@pytest.mark.asyncio
+async def test_audit_log_not_called_per_retry() -> None:
+    with (
+        patch(
+            "app.routers.meeting_designer.chat_complete",
+            new=AsyncMock(side_effect=["not-json", VALID_OUTLINE_JSON, VALID_AGENDA_JSON]),
+        ),
+        patch("app.routers.meeting_designer._persist_meeting_designer_log") as audit_mock,
+    ):
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    audit_mock.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -322,7 +918,7 @@ async def test_stage2_valid_full_agenda() -> None:
 async def test_stage2_unparseable_json() -> None:
     with patch(
         "app.routers.meeting_designer.chat_complete",
-        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, "not-json"]),
+        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, "not-json", "still-not-json"]),
     ):
         with pytest.raises(GenerationPipelineError) as exc_info:
             await _run_generation_pipeline(
@@ -355,7 +951,7 @@ async def test_stage2_hallucinated_tool_type() -> None:
     """
     with patch(
         "app.routers.meeting_designer.chat_complete",
-        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, invalid_agenda]),
+        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, invalid_agenda, invalid_agenda]),
     ):
         with pytest.raises(GenerationPipelineError) as exc_info:
             await _run_generation_pipeline(
@@ -389,7 +985,7 @@ async def test_stage2_empty_instructions() -> None:
     """
     with patch(
         "app.routers.meeting_designer.chat_complete",
-        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, invalid_agenda]),
+        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, invalid_agenda, invalid_agenda]),
     ):
         with pytest.raises(GenerationPipelineError) as exc_info:
             await _run_generation_pipeline(
@@ -504,7 +1100,7 @@ def test_endpoint_returns_502_on_full_json_failure(authenticated_client) -> None
     payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
     with patch(
         "app.routers.meeting_designer.chat_complete",
-        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, bad_full_json]),
+        new=AsyncMock(side_effect=[VALID_OUTLINE_JSON, bad_full_json, bad_full_json]),
     ):
         response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
 
@@ -628,6 +1224,181 @@ def test_status_endpoint_unaffected(authenticated_client) -> None:
     assert response.status_code == 200
     assert "configured" in body
     assert isinstance(body["configured"], bool)
+
+
+@pytest.mark.asyncio
+async def test_e2e_outline_self_corrects_hallucinated_type() -> None:
+    """Verify outline stage retries and self-corrects an invalid tool_type."""
+    outline_invalid = _invalid_outline_json("hallucinated_type")
+    outline_valid = _valid_outline_json(3)
+    agenda_valid = _valid_agenda_json(3)
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(outline_invalid, outline_valid, agenda_valid),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Design a workshop"}],
+            system_prompt="system",
+        )
+
+    outline_tool_types = [item["tool_type"] for item in json.loads(outline_valid)["outline"]]
+    agenda_tool_types = [item["tool_type"] for item in result["agenda"]]
+    assert result["success"] is True
+    assert agenda_tool_types == outline_tool_types
+    assert chat_complete_mock.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_e2e_agenda_self_corrects_empty_instructions() -> None:
+    """Verify full-json stage retries and fixes empty instructions."""
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(
+            _valid_outline_json(3),
+            _invalid_agenda_json("empty_instructions"),
+            _valid_agenda_json(3),
+        ),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Need clear instructions"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    assert all(item["instructions"] for item in result["agenda"])
+    assert chat_complete_mock.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_e2e_parse_error_then_valid_json() -> None:
+    """Verify prose-wrapped output is corrected into valid JSON on retry."""
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(
+            "Sure! Here's your outline: {...",
+            _valid_outline_json(3),
+            _valid_agenda_json(3),
+        ),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Generate agenda"}],
+            system_prompt="system",
+        )
+
+    assert result["success"] is True
+    assert chat_complete_mock.call_count == 3
+
+
+def test_e2e_all_retries_exhausted_returns_502(authenticated_client) -> None:
+    """Verify outline retry exhaustion returns HTTP 502 with actionable detail."""
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    invalid_outline = _invalid_outline_json("hallucinated_type")
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(invalid_outline, invalid_outline, invalid_outline),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    detail = response.json()["detail"]
+    assert response.status_code == 502
+    assert "3 attempt(s)" in detail
+    assert "tool_type" in detail
+    assert "workshop" in detail
+
+
+def test_e2e_provider_error_returns_502_no_retry(authenticated_client) -> None:
+    """Verify provider failures return 502 and are not retried."""
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=AsyncMock(side_effect=AIProviderError("provider failure")),
+    ) as chat_complete_mock:
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    assert response.status_code == 502
+    assert chat_complete_mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_e2e_5_activity_pipeline_with_retry() -> None:
+    """Verify 5-activity pipeline recovers from one invalid full-json attempt."""
+    outline_json = _valid_outline_json(5)
+    invalid_agenda_data = json.loads(_valid_agenda_json(5))
+    invalid_agenda_data["agenda"][2]["tool_type"] = "roundtable"
+    invalid_agenda_json = json.dumps(invalid_agenda_data)
+    corrected_agenda_json = _valid_agenda_json(5)
+
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence(outline_json, invalid_agenda_json, corrected_agenda_json),
+    ) as chat_complete_mock:
+        result = await _run_generation_pipeline(
+            settings={},
+            history=[{"role": "user", "content": "Design a full session"}],
+            system_prompt="system",
+        )
+
+    expected_tool_types = [item["tool_type"] for item in json.loads(outline_json)["outline"]]
+    returned_tool_types = [item["tool_type"] for item in result["agenda"]]
+    assert result["success"] is True
+    assert len(result["agenda"]) == 5
+    assert returned_tool_types == expected_tool_types
+    assert "roundtable" not in returned_tool_types
+    assert chat_complete_mock.call_count == 3
+
+
+def test_response_contract_unchanged_after_retry(authenticated_client) -> None:
+    """Verify successful retries do not leak retry metadata into endpoint payload."""
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_sequence("not-json", _valid_outline_json(3), _valid_agenda_json(3)),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    body = response.json()
+    assert response.status_code == 200
+    assert set(body.keys()) == {"success", "meeting_summary", "design_rationale", "agenda"}
+    assert "attempts_made" not in body
+    assert "error_trail" not in body
+    assert "validation_errors" not in body
+
+
+def test_chat_endpoint_unaffected_by_retry(authenticated_client) -> None:
+    """Verify chat SSE endpoint behavior remains unchanged by retry logic."""
+    async def _fake_stream(*_args, **_kwargs):
+        yield "hello"
+
+    payload = {
+        "messages": [{"role": "assistant", "content": "Hi"}],
+        "new_message": "Plan a workshop",
+    }
+    with patch("app.routers.meeting_designer.chat_stream", new=_fake_stream):
+        response = authenticated_client.post("/api/meeting-designer/chat", json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+
+def test_status_endpoint_unaffected_by_retry(authenticated_client) -> None:
+    """Verify status endpoint response shape remains unchanged by retry logic."""
+    response = authenticated_client.get("/api/meeting-designer/status")
+    body = response.json()
+    assert response.status_code == 200
+    assert "configured" in body
+    assert isinstance(body["configured"], bool)
+
+
+def test_logs_endpoint_unaffected_by_retry(authenticated_client) -> None:
+    """Verify logs endpoint response shape remains unchanged by retry logic."""
+    response = authenticated_client.get("/api/meeting-designer/logs")
+    body = response.json()
+    assert response.status_code == 200
+    assert isinstance(body.get("items"), list)
+    assert isinstance(body.get("count"), int)
 
 
 def test_pipeline_error_detail_is_actionable(authenticated_client) -> None:

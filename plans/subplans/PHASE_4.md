@@ -1,4 +1,4 @@
-# Phase 4 — Retry with Error Feedback
+# Phase 4 [COMPLETE] — Retry with Error Feedback
 
 > Global Canary: `BRASS-PELICAN-7`
 > Phase Canary: `BRONZE-MERLIN-2`
@@ -68,7 +68,7 @@ AIProviderError, AIProviderNotConfiguredError
 
 ## Atomic Steps
 
-### Step 1 — Correction prompt builder
+### Step 1 [DONE] — Correction prompt builder
 
 Build the function that converts a failed attempt into a "try again" user message. The correction prompt must tell the AI exactly what went wrong (parse error or specific validation errors) and restate the output-format requirement so the AI doesn't drift. The schema reminders must match the actual schemas used by `build_outline_prompt()` and `build_generation_prompt()`.
 
@@ -99,9 +99,12 @@ Build the function that converts a failed attempt into a "try again" user messag
 **Docs:**
 - Docstring: "Builds a user-message correction prompt for a failed pipeline stage. Includes the specific error details and a schema reminder so the AI can self-correct. Used by the retry loop to append error feedback before re-attempting generation."
 
+**Technical deviations (Step 1):**
+- Used ASCII `-` separator in validation lines (`field - message`) instead of an em dash to keep the implementation ASCII-only.
+
 ---
 
-### Step 2 — Retry constants and `GenerationPipelineError` enhancement
+### Step 2 [DONE] — Retry constants and `GenerationPipelineError` enhancement
 
 Define the attempt limits as module-level constants and extend `GenerationPipelineError` to carry retry metadata, so the endpoint handler and logs can report how many attempts were made and the error trail from each attempt.
 
@@ -133,9 +136,12 @@ Define the attempt limits as module-level constants and extend `GenerationPipeli
 - Update `GenerationPipelineError` docstring to document `attempts_made` and `error_trail`
 - Update `_format_validation_errors` docstring to document the new optional parameters
 
+**Technical deviations (Step 2):**
+- None.
+
 ---
 
-### Step 3 — Generic stage runner with retry loop
+### Step 3 [DONE] — Generic stage runner with retry loop
 
 Build the async helper that encapsulates the parse → validate → correct → retry cycle. This is the core retry engine — both stages call it with their own parser, validator, and attempt limit.
 
@@ -181,9 +187,12 @@ Build the async helper that encapsulates the parse → validate → correct → 
 - Docstring: "Executes a pipeline stage (parse → validate) with automatic retry on failure. When parsing or validation fails, the AI's bad output and a correction prompt are appended to the message list, and the stage is re-attempted. Non-recoverable errors (AIProviderError) propagate immediately. Returns the parsed and validated data dict, or raises GenerationPipelineError after all attempts are exhausted."
 - Args documentation for each parameter
 
+**Technical deviations (Step 3):**
+- Omitted per-argument docstring sections; function-level docstring covers behavior and retry/error semantics.
+
 ---
 
-### Step 4 — Wire `_run_generation_pipeline()` to use the retry-aware stage runner
+### Step 4 [DONE] — Wire `_run_generation_pipeline()` to use the retry-aware stage runner
 
 Replace the direct parse-and-validate calls in `_run_generation_pipeline()` with calls to `_run_stage_with_retry()`. The pipeline function's public signature and return type are unchanged — the retry is invisible to the caller.
 
@@ -239,9 +248,12 @@ Replace the direct parse-and-validate calls in `_run_generation_pipeline()` with
 **Docs:**
 - Update `_run_generation_pipeline` docstring: "Orchestrates the two-stage agenda generation pipeline with automatic retry. Stage 1 generates and validates an activity outline (up to `_OUTLINE_MAX_ATTEMPTS` attempts). Stage 2 generates and validates the full agenda JSON using the validated outline (up to `_AGENDA_MAX_ATTEMPTS` attempts). On validation failure, specific errors are fed back to the AI as a correction prompt before re-attempting. Raises GenerationPipelineError after all retries are exhausted. AIProviderError propagates uncaught."
 
+**Technical deviations (Step 4):**
+- Existing API response contract in this codebase remains `{success, meeting_summary, design_rationale, agenda}`; response-shape regression tests assert that live contract unchanged.
+
 ---
 
-### Step 5 — Logging, timing, and audit-log integration
+### Step 5 [DONE] — Logging, timing, and audit-log integration
 
 Add structured logging so that retry behavior is visible in production logs. Each attempt should be logged at INFO level. Warnings from successful attempts are logged at DEBUG level. Total pipeline wall-clock time is logged. The existing `_persist_meeting_designer_log()` audit system must log the **final outcome only** — not each intermediate retry attempt.
 
@@ -279,9 +291,13 @@ Add structured logging so that retry behavior is visible in production logs. Eac
 **Docs:**
 - Add a comment block above the logging statements: `"# Logging: INFO for attempt lifecycle, DEBUG for warnings and correction prompts"`
 
+**Technical deviations (Step 5):**
+- Logger assertions use direct `logger` mock inspection instead of `caplog` due project logging configuration routing records outside `caplog` capture.
+- Exhausted-attempts endpoint test asserts `502` detail includes `"3 attempt(s)"` rather than asserting logger output in the threaded TestClient path.
+
 ---
 
-### Step 6 — End-to-end retry integration tests and regression guards
+### Step 6 [DONE] — End-to-end retry integration tests and regression guards
 
 Verify the complete retry pipeline with realistic multi-activity agendas, confirm retry behavior matches the design spec, and ensure no regressions to the endpoint contract, chat endpoint, status endpoint, or audit logging.
 
@@ -308,6 +324,11 @@ Verify the complete retry pipeline with realistic multi-activity agendas, confir
 **Docs:**
 - Update `test_generation_pipeline.py` module docstring to reference `BRONZE-MERLIN-2` alongside `IRON-OSPREY-4`
 - Ensure all new test functions have a one-line docstring explaining the retry scenario they verify
+
+**Technical deviations (Step 6):**
+- The live `generate_agenda()` endpoint contract remains `{success, meeting_summary, design_rationale, agenda}` in current code; the regression test asserts this existing contract and verifies no retry metadata leaks.
+- Added `_invalid_agenda_json()` with full-schema keys (`session_name`, `evaluation_criteria`, `complexity`, `phases`) for correction-path realism, while keeping endpoint assertions aligned to the current returned payload.
+- Phase exit command referenced `app/tests/test_meeting_designer_prompts.py`; repository uses `app/tests/test_meeting_designer_prompt.py`, so verification runs use the live filename.
 
 ---
 

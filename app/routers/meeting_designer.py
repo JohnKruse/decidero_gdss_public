@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+import time
+from typing import Any, Callable, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
@@ -30,6 +31,7 @@ from app.services.ai_provider import (
     chat_stream,
 )
 from app.services.agenda_validator import (
+    AgendaFieldError,
     AgendaValidationResult,
     validate_agenda,
     validate_outline,
@@ -46,13 +48,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/meeting-designer", tags=["meeting-designer"])
 _MEETING_DESIGNER_LOG_TABLE_READY = False
+# Configurable: increase if the model frequently needs more correction rounds
+_OUTLINE_MAX_ATTEMPTS = 3
+_AGENDA_MAX_ATTEMPTS = 2
 
 
 class GenerationPipelineError(Exception):
     """Raised when a pipeline stage produces output that fails validation.
 
     Carries stage name, formatted error detail, individual error messages, and
-    truncated raw output for logging.
+    truncated raw output for logging. Also carries attempts_made and error_trail
+    metadata for retry-aware diagnostics.
     """
 
     def __init__(
@@ -62,21 +68,30 @@ class GenerationPipelineError(Exception):
         detail: str,
         validation_errors: Optional[List[str]] = None,
         raw_output: str = "",
+        attempts_made: int = 1,
+        error_trail: Optional[List[List[str]]] = None,
     ) -> None:
         super().__init__(detail)
         self.stage = stage
         self.detail = detail
         self.validation_errors = validation_errors or []
         self.raw_output = (raw_output or "")[:500]
+        self.attempts_made = attempts_made
+        self.error_trail = error_trail
 
 
 def _format_validation_errors(
     result: AgendaValidationResult,
     stage: str,
+    attempts_made: int = 1,
+    error_trail: Optional[List[List[str]]] = None,
 ) -> GenerationPipelineError:
     """Converts an AgendaValidationResult into a GenerationPipelineError.
 
     Builds human-readable error messages from validator errors.
+
+    Optional retry metadata is attached for callers that attempt a stage
+    multiple times before giving up.
     """
 
     formatted_errors = [
@@ -85,12 +100,184 @@ def _format_validation_errors(
     ]
     count = len(formatted_errors)
     joined_errors = "; ".join(formatted_errors)
-    detail = f"Stage '{stage}' failed validation with {count} error(s): {joined_errors}"
+    detail = (
+        f"Stage '{stage}' failed validation after {attempts_made} attempt(s) "
+        f"with {count} error(s): {joined_errors}"
+    )
     return GenerationPipelineError(
         stage=stage,
         detail=detail,
         validation_errors=formatted_errors,
         raw_output="",
+        attempts_made=attempts_made,
+        error_trail=error_trail,
+    )
+
+
+def _build_correction_prompt(
+    stage: str,
+    parse_failed: bool,
+    parse_snippet: str,
+    validation_errors: Optional[List[AgendaFieldError]],
+) -> str:
+    """Builds a user-message correction prompt for a failed pipeline stage.
+
+    Includes the specific error details and a schema reminder so the AI can
+    self-correct. Used by the retry loop to append error feedback before
+    re-attempting generation.
+    """
+
+    schema_reminder = (
+        "The JSON must have a top-level \"outline\" array. Each item needs: "
+        "tool_type, title, duration_minutes, collaboration_pattern, rationale. "
+        "Do NOT include instructions or config_overrides."
+        if stage == "outline"
+        else "The JSON must have top-level keys: meeting_summary, session_name, "
+        "evaluation_criteria, design_rationale, complexity, phases, agenda. Each agenda item "
+        "needs: tool_type, title, instructions, duration_minutes, collaboration_pattern, "
+        "rationale, config_overrides, phase_id, track_id."
+    )
+
+    if parse_failed:
+        snippet = (parse_snippet or "")[:300]
+        lines = [
+            "Your previous response was not valid JSON.",
+            "Here is the beginning of what you returned:",
+            snippet,
+            "Please output ONLY a valid JSON object with no preamble, no markdown fences, and no explanation outside the JSON.",
+            schema_reminder,
+        ]
+        return "\n".join(lines)
+
+    errors = validation_errors or []
+    lines = [f"Your previous response had {len(errors)} validation error(s):"]
+    for idx, issue in enumerate(errors, start=1):
+        lines.append(
+            f"  {idx}. Activity {issue.activity_index}: {issue.field} - {issue.message}"
+        )
+    lines.extend(
+        [
+            "Please fix these issues and regenerate. Output ONLY the corrected JSON object.",
+            schema_reminder,
+        ]
+    )
+    return "\n".join(lines)
+
+
+async def _run_stage_with_retry(
+    stage: str,
+    messages: List[Dict[str, str]],
+    parser_fn: Callable[[str], Dict[str, Any]],
+    validator_fn: Callable[[Dict[str, Any]], AgendaValidationResult],
+    max_attempts: int,
+    settings: Dict[str, Any],
+    system_prompt: str,
+) -> Dict[str, Any]:
+    """Executes a pipeline stage (parse -> validate) with automatic retry.
+
+    When parsing or validation fails, the AI's bad output and a correction
+    prompt are appended to the message list, and the stage is re-attempted.
+    Non-recoverable errors (AIProviderError) propagate immediately. Returns the
+    parsed and validated data dict, or raises GenerationPipelineError after all
+    attempts are exhausted.
+    """
+
+    accumulated_errors: List[List[str]] = []
+
+    for attempt_idx in range(max_attempts):
+        # Logging: INFO for attempt lifecycle, DEBUG for warnings and correction prompts
+        logger.info("Stage '%s' attempt %d/%d", stage, attempt_idx + 1, max_attempts)
+        raw_output = await chat_complete(settings, messages, system_prompt)
+
+        try:
+            parsed_data = parser_fn(raw_output)
+        except ValueError as exc:
+            parse_errors = [f"Parse error: {exc}"]
+            accumulated_errors.append(parse_errors)
+            if attempt_idx < max_attempts - 1:
+                logger.info(
+                    "Stage '%s' attempt %d/%d: parse error - retrying",
+                    stage,
+                    attempt_idx + 1,
+                    max_attempts,
+                )
+                correction_prompt = _build_correction_prompt(
+                    stage=stage,
+                    parse_failed=True,
+                    parse_snippet=raw_output[:300],
+                    validation_errors=None,
+                )
+                messages.append({"role": "assistant", "content": raw_output})
+                messages.append({"role": "user", "content": correction_prompt})
+                continue
+
+            raise GenerationPipelineError(
+                stage=stage,
+                detail=(
+                    f"Stage '{stage}' produced invalid JSON after "
+                    f"{attempt_idx + 1} attempt(s): {exc}"
+                ),
+                validation_errors=parse_errors,
+                raw_output=raw_output[:500],
+                attempts_made=attempt_idx + 1,
+                error_trail=accumulated_errors,
+            ) from exc
+
+        validation_result = validator_fn(parsed_data)
+        if validation_result.valid:
+            if attempt_idx > 0:
+                logger.info(
+                    "Stage '%s' recovered on attempt %d/%d",
+                    stage,
+                    attempt_idx + 1,
+                    max_attempts,
+                )
+            else:
+                logger.info("Stage '%s' passed on first attempt", stage)
+            if validation_result.warnings:
+                logger.debug(
+                    "Stage '%s' warnings: %s",
+                    stage,
+                    [warning.message for warning in validation_result.warnings],
+                )
+            return parsed_data
+
+        formatted_errors = [
+            f"Activity {issue.activity_index}: {issue.field} - {issue.message}"
+            for issue in validation_result.errors
+        ]
+        accumulated_errors.append(formatted_errors)
+
+        if attempt_idx < max_attempts - 1:
+            logger.info(
+                "Stage '%s' attempt %d/%d: %d validation error(s) - retrying",
+                stage,
+                attempt_idx + 1,
+                max_attempts,
+                len(validation_result.errors),
+            )
+            correction_prompt = _build_correction_prompt(
+                stage=stage,
+                parse_failed=False,
+                parse_snippet="",
+                validation_errors=validation_result.errors,
+            )
+            messages.append({"role": "assistant", "content": raw_output})
+            messages.append({"role": "user", "content": correction_prompt})
+            continue
+
+        pipeline_error = _format_validation_errors(
+            validation_result,
+            stage,
+            attempts_made=attempt_idx + 1,
+            error_trail=accumulated_errors,
+        )
+        pipeline_error.raw_output = raw_output[:500]
+        raise pipeline_error
+
+    raise GenerationPipelineError(
+        stage=stage,
+        detail=f"Stage '{stage}' failed before executing attempts.",
     )
 
 
@@ -101,71 +288,53 @@ async def _run_generation_pipeline(
 ) -> Dict[str, Any]:
     """Orchestrates the two-stage agenda generation pipeline.
 
-    Stage 1 generates and validates an activity outline. Stage 2 generates and
-    validates full agenda JSON using the validated outline injected into the
-    generation prompt. Raises GenerationPipelineError on parse/validation
-    failures. AIProviderError propagates uncaught.
+    Stage 1 generates and validates an activity outline (with retry). Stage 2
+    generates and validates full agenda JSON using the validated outline
+    injected into the generation prompt (with retry). Raises
+    GenerationPipelineError on parse/validation failures after retries are
+    exhausted. AIProviderError propagates uncaught.
     """
 
+    start_time = time.monotonic()
     outline_messages = build_outline_messages(history)
-    raw_outline = await chat_complete(settings, outline_messages, system_prompt)
-
-    try:
-        outline_data = parse_outline_json(raw_outline)
-    except ValueError as exc:
-        raise GenerationPipelineError(
-            stage="outline",
-            detail=f"Stage 'outline' produced invalid JSON: {exc}",
-            validation_errors=[],
-            raw_output=raw_outline,
-        ) from exc
-
-    outline_result = validate_outline(outline_data)
-    if not outline_result.valid:
-        pipeline_error = _format_validation_errors(outline_result, "outline")
-        pipeline_error.raw_output = raw_outline[:500]
-        raise pipeline_error
-
-    if outline_result.warnings:
-        logger.debug(
-            "Outline stage emitted %d warning(s): %s",
-            len(outline_result.warnings),
-            [warning.message for warning in outline_result.warnings],
-        )
-
+    outline_data = await _run_stage_with_retry(
+        stage="outline",
+        messages=outline_messages,
+        parser_fn=parse_outline_json,
+        validator_fn=validate_outline,
+        max_attempts=_OUTLINE_MAX_ATTEMPTS,
+        settings=settings,
+        system_prompt=system_prompt,
+    )
     validated_outline = outline_data.get("outline", [])
+    outline_elapsed = time.monotonic() - start_time
+    logger.info(
+        "Outline stage completed in %.1fs (%d activities)",
+        outline_elapsed,
+        len(validated_outline),
+    )
     logger.info(
         "Outline stage passed (%d activities). Proceeding to full generation.",
         len(validated_outline),
     )
 
     generation_messages = build_generation_messages(history, outline=validated_outline)
-    raw_agenda = await chat_complete(settings, generation_messages, system_prompt)
-
-    try:
-        agenda_data = parse_agenda_json(raw_agenda)
-    except ValueError as exc:
-        raise GenerationPipelineError(
-            stage="full_json",
-            detail=f"Stage 'full_json' produced invalid JSON: {exc}",
-            validation_errors=[],
-            raw_output=raw_agenda,
-        ) from exc
-
-    agenda_result = validate_agenda(agenda_data)
-    if not agenda_result.valid:
-        pipeline_error = _format_validation_errors(agenda_result, "full_json")
-        pipeline_error.raw_output = raw_agenda[:500]
-        raise pipeline_error
-
-    if agenda_result.warnings:
-        logger.debug(
-            "Full generation stage emitted %d warning(s): %s",
-            len(agenda_result.warnings),
-            [warning.message for warning in agenda_result.warnings],
-        )
-
+    agenda_data = await _run_stage_with_retry(
+        stage="full_json",
+        messages=generation_messages,
+        parser_fn=parse_agenda_json,
+        validator_fn=validate_agenda,
+        max_attempts=_AGENDA_MAX_ATTEMPTS,
+        settings=settings,
+        system_prompt=system_prompt,
+    )
     final_agenda = agenda_data.get("agenda", [])
+    total_elapsed = time.monotonic() - start_time
+    logger.info(
+        "Full generation completed in %.1fs total (%d activities)",
+        total_elapsed,
+        len(final_agenda),
+    )
     logger.info(
         "Full generation stage passed. Returning %d validated activities.",
         len(final_agenda),
@@ -492,7 +661,13 @@ async def generate_agenda(
             detail=f"AI provider error: {exc}",
         ) from exc
     except GenerationPipelineError as exc:
-        logger.error("Pipeline stage '%s' failed: %s | Raw: %s", exc.stage, exc.detail, exc.raw_output)
+        logger.error(
+            "Pipeline stage '%s' failed after %d attempt(s): %s | Raw: %s",
+            exc.stage,
+            exc.attempts_made,
+            exc.detail,
+            exc.raw_output,
+        )
         _persist_meeting_designer_log(
             event_type="generate_agenda",
             user_id=getattr(user, "user_id", None),
