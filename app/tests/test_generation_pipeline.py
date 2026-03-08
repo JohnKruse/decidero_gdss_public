@@ -3038,3 +3038,58 @@ def test_system_prompt_includes_sequencing_fields() -> None:
     assert "Avoid when:" in prompt
     assert "None required" in prompt
     assert "prior activity" in prompt
+
+
+def test_system_prompt_contains_pattern_tradeoff_examples() -> None:
+    """Phase 5 Step 1: build_system_prompt() includes within-track pattern trade-off examples."""
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "Within-track workflow discussion" in prompt
+    assert "Quick Convergence" in prompt
+    assert "Organized Convergence" in prompt
+    assert "Rigorous Ranking" in prompt
+
+
+def test_system_prompt_contains_facilitator_confirmation_gate() -> None:
+    """Phase 5 Step 2: build_system_prompt() includes facilitator confirmation gate guidance."""
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "Facilitator confirmation" in prompt
+    assert "Which workflow" in prompt
+    assert "Never silently choose a pattern" in prompt
+
+
+def test_system_prompt_contains_time_budget_reasoning() -> None:
+    """Phase 5 Step 3: build_system_prompt() includes time-budget reasoning guidance."""
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "Time-budget reasoning" in prompt
+    assert "over-budget" in prompt
+    assert "estimated total duration" in prompt
+
+
+def test_system_prompt_contains_per_track_differentiation() -> None:
+    """Phase 5 Step 4: build_system_prompt() includes per-track differentiation guidance."""
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "Per-track differentiation" in prompt
+    assert "Different tracks may have different goals" in prompt
+    assert "Shortlist" in prompt
+    assert "Ranked priority list" in prompt
+
+
+def test_build_system_prompt_docstring_reflects_design_discussion() -> None:
+    """Phase 5 Step 5: build_system_prompt() docstring reflects design discussion guidance."""
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    doc = inspect.getdoc(build_system_prompt) or ""
+    normalized_doc = " ".join(doc.split())
+    assert "within-track workflow pattern trade-offs" in normalized_doc

@@ -164,7 +164,11 @@ def build_system_prompt() -> str:
     """Build the Meeting Designer system prompt with the live activity catalog.
 
     The STRUCTURE section is generated at call time from the plugin registry,
-    so it stays in sync with the Activity Library automatically.
+    so it stays in sync with the Activity Library automatically. The MOTION
+    section guides a six-phase conversation: goal framing, format shaping,
+    scope calibration, criteria discovery, design discussion (with within-track
+    workflow pattern trade-offs and facilitator confirmation), and generation
+    handoff.
     """
     from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
 
@@ -214,7 +218,7 @@ def build_generation_system_prompt() -> str:
 # Generation prompt — appended when the facilitator triggers agenda generation
 # ---------------------------------------------------------------------------
 
-def build_generation_prompt(outline: Optional[List[Dict[str, Any]]] = None) -> str:
+def build_generation_prompt(outline: Optional[Any] = None) -> str:
     """Build a catalog-driven generation prompt with optional outline lock-in.
 
     When ``outline`` is provided, the prompt constrains generation to that
@@ -223,14 +227,20 @@ def build_generation_prompt(outline: Optional[List[Dict[str, Any]]] = None) -> s
     generation-prompt constant and keeps tool type guidance synchronized with
     the live activity catalog.
 
+    When the outline includes track metadata (tracks array, per-activity
+    track_id), the outline is rendered grouped by track to preserve multi-track
+    structure for Stage 2 elaboration.
+
     Within-track workflow guidance references the Collaboration Pattern Library
     with per-pattern selection criteria (Quick Convergence, Organized Convergence,
     Rigorous Ranking, Two-Pass Funnel, Nested Decomposition), rather than
     prescribing a fixed diverge -> organize/reduce -> converge activity sequence.
 
     Args:
-        outline: Optional Stage-1 outline activity list. When provided, prompt
-            text locks sequence, tool types, and titles to this outline.
+        outline: Optional Stage-1 outline payload. Accepts either an outline
+            activity list or a dict containing ``outline`` plus optional
+            ``tracks`` metadata. Prompt text locks sequence, tool types, titles,
+            and track groupings to this outline.
 
     Returns:
         A complete generation prompt string for the model.
@@ -247,18 +257,90 @@ def build_generation_prompt(outline: Optional[List[Dict[str, Any]]] = None) -> s
 
     outline_prefix = ""
     if outline is not None:
-        outline_lines: List[str] = []
-        for index, item in enumerate(outline, start=1):
-            if not isinstance(item, dict):
-                continue
-            tool_type = item.get("tool_type", "")
-            title = item.get("title", "")
-            outline_lines.append(f"{index}. {title} [{tool_type}]")
-        rendered_outline = "\n".join(outline_lines) if outline_lines else "(no outline items)"
+        outline_items: List[Dict[str, Any]] = []
+        tracks: List[Dict[str, Any]] = []
+        if isinstance(outline, dict):
+            raw_outline = outline.get("outline")
+            raw_tracks = outline.get("tracks")
+            outline_items = [item for item in raw_outline if isinstance(item, dict)] if isinstance(raw_outline, list) else []
+            tracks = [track for track in raw_tracks if isinstance(track, dict)] if isinstance(raw_tracks, list) else []
+        elif isinstance(outline, list):
+            outline_items = [item for item in outline if isinstance(item, dict)]
+
+        rendered_outline = "(no outline items)"
+        if tracks:
+            declared_tracks: List[tuple[str, str]] = []
+            track_buckets: Dict[str, List[Dict[str, Any]]] = {}
+            for track in tracks:
+                raw_track_id = track.get("track_id")
+                if not isinstance(raw_track_id, str):
+                    continue
+                track_id = raw_track_id.strip()
+                if not track_id:
+                    continue
+                raw_label = track.get("label")
+                label = raw_label.strip() if isinstance(raw_label, str) and raw_label.strip() else track_id
+                declared_tracks.append((track_id, label))
+                track_buckets[track_id] = []
+
+            plenary_items: List[Dict[str, Any]] = []
+            undeclared_buckets: Dict[str, List[Dict[str, Any]]] = {}
+            for item in outline_items:
+                raw_track_id = item.get("track_id")
+                track_id = raw_track_id.strip() if isinstance(raw_track_id, str) else ""
+                if not track_id:
+                    plenary_items.append(item)
+                elif track_id in track_buckets:
+                    track_buckets[track_id].append(item)
+                else:
+                    undeclared_buckets.setdefault(track_id, []).append(item)
+
+            lines: List[str] = []
+            activity_number = 1
+
+            if plenary_items:
+                lines.append("Plenary activities:")
+                for item in plenary_items:
+                    tool_type = item.get("tool_type", "")
+                    title = item.get("title", "")
+                    lines.append(f"{activity_number}. {title} [{tool_type}]")
+                    activity_number += 1
+                lines.append("")
+
+            for track_id, label in declared_tracks:
+                items = track_buckets.get(track_id, [])
+                if not items:
+                    continue
+                lines.append(f'Track "{label}" ({track_id}):')
+                for item in items:
+                    tool_type = item.get("tool_type", "")
+                    title = item.get("title", "")
+                    lines.append(f"{activity_number}. {title} [{tool_type}]")
+                    activity_number += 1
+                lines.append("")
+
+            for track_id, items in undeclared_buckets.items():
+                lines.append(f'Track "{track_id}" ({track_id}):')
+                for item in items:
+                    tool_type = item.get("tool_type", "")
+                    title = item.get("title", "")
+                    lines.append(f"{activity_number}. {title} [{tool_type}]")
+                    activity_number += 1
+                lines.append("")
+
+            rendered_outline = "\n".join(lines).strip() if lines else "(no outline items)"
+        else:
+            outline_lines: List[str] = []
+            for index, item in enumerate(outline_items, start=1):
+                tool_type = item.get("tool_type", "")
+                title = item.get("title", "")
+                outline_lines.append(f"{index}. {title} [{tool_type}]")
+            rendered_outline = "\n".join(outline_lines) if outline_lines else "(no outline items)"
+
         outline_prefix = (
             "The following activity outline has been approved. Generate the full agenda "
-            "following this exact sequence, tool_types, and titles. Add instructions and "
-            "config_overrides for each.\n\n"
+            "following this exact sequence, tool_types, titles, and track groupings. Add "
+            "instructions and config_overrides for each.\n\n"
             f"{rendered_outline}\n\n"
         )
 
@@ -356,12 +438,9 @@ def build_outline_prompt() -> str:
     """Build the Stage 1 outline prompt for the two-stage generation pipeline.
 
     Produces a lightweight sequence plan (tool_type, title, duration,
-    collaboration pattern, rationale) that is validated before full agenda
-    generation.
-
-    For multi-track sessions, within-track activity guidance references the
-    Collaboration Pattern Library rather than prescribing a fixed
-    diverge -> organize/reduce -> converge arc.
+    collaboration pattern, rationale) with optional track grouping metadata
+    (tracks array, per-activity track_id) for multi-track meetings. Validated
+    before full agenda generation.
 
     Args:
         None.
@@ -383,22 +462,45 @@ def build_outline_prompt() -> str:
         "Output ONLY a valid JSON object with this structure:\n\n"
         "{\n"
         "  \"meeting_summary\": \"One paragraph summarizing the meeting goal\",\n"
+        "  \"tracks\": [\n"
+        "    {\n"
+        "      \"track_id\": \"track_a\",\n"
+        "      \"label\": \"Descriptive track name\",\n"
+        "      \"goal\": \"What this track must produce\"\n"
+        "    }\n"
+        "  ],\n"
         "  \"outline\": [\n"
         "    {\n"
         f"      \"tool_type\": \"{tool_type_enum}\",\n"
         "      \"title\": \"Concise action-oriented title\",\n"
         "      \"duration_minutes\": 15,\n"
         "      \"collaboration_pattern\": \"Generate|Reduce|Clarify|Organize|Evaluate|Build Consensus\",\n"
-        "      \"rationale\": \"Why this activity at this point in the sequence\"\n"
+        "      \"rationale\": \"Why this activity at this point in the sequence\",\n"
+        "      \"track_id\": \"track_a\"\n"
         "    }\n"
         "  ]\n"
         "}\n\n"
+        "Include the tracks array and track_id fields only when the conversation discussed breakout groups or parallel tracks. "
+        "For simple or multi_phase meetings, omit tracks and set track_id to null.\n\n"
         f"Duration guidance: {duration_guidance}\n\n"
         "Multi-track outline rules:\n"
         "- If the conversation discussed breakout groups or parallel tracks, each track MUST have 2+ activities in the outline — a single activity per track is never sufficient.\n"
         "- Choose a pattern from the Collaboration Pattern Library that fits the track's goal, time budget, and deliverable type discussed in the conversation.\n"
-        "- List all activities for all tracks sequentially in the outline (e.g., Track A activity 1, Track A activity 2, Track B activity 1, Track B activity 2, ...).\n"
-        "- A single brainstorming per track is never sufficient for a breakout that must produce a specific deliverable.\n\n"
+        "- Pattern selection guide:\n"
+        "  • Quick Convergence (ideation -> evaluate): short time, simple shortlist.\n"
+        "  • Organized Convergence (ideation -> organize -> evaluate): ideas need thematic structure.\n"
+        "  • Rigorous Ranking (ideation -> organize -> rank): fully ordered priority list.\n"
+        "  • Two-Pass Funnel (ideation -> evaluate -> ideation -> rank): time for deeper deliberation.\n"
+        "  • Nested Decomposition (ideation -> evaluate -> ideation -> evaluate): narrow scope before deeper ideation.\n"
+        "- Different tracks may use different patterns if their goals differ.\n"
+        "- Set the rationale field on each activity to explain why that pattern was chosen for that track.\n\n"
+        "Track-aware reasoning:\n"
+        "- Read the conversation for mentions of breakout groups, parallel tracks, sub-teams, or topic-specific working groups.\n"
+        "- If breakout tracks were discussed, populate the tracks array with one entry per track, using the labels and goals from the conversation.\n"
+        "- For each track, select a pattern from the Collaboration Pattern Library that fits the track's stated goal and time budget.\n"
+        "- Set each activity's track_id to match its parent track.\n"
+        "- If no breakout tracks were discussed, omit the tracks array and set all track_id values to null.\n"
+        "- The rationale field should explain the pattern choice for that track.\n\n"
         "Output ONLY the JSON object. Do not include instructions or config_overrides; "
         "those will be added in a subsequent step."
     )
@@ -428,7 +530,7 @@ def build_outline_messages(
 
 def build_generation_messages(
     conversation_history: List[Dict[str, str]],
-    outline: Optional[List[Dict[str, Any]]] = None,
+    outline: Optional[Any] = None,
 ) -> List[Dict[str, str]]:
     """Build the message list for agenda generation.
 
@@ -439,8 +541,9 @@ def build_generation_messages(
 
     Args:
         conversation_history: Prior chat messages to preserve.
-        outline: Optional Stage-1 outline activity list used to constrain
-            sequence, tool types, and titles in the generation prompt.
+        outline: Optional Stage-1 outline payload (list or dict with tracks)
+            used to constrain sequence, tool types, titles, and track groupings
+            in the generation prompt.
 
     Returns:
         A new message list with the generation prompt appended as the final
