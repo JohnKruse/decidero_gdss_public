@@ -97,7 +97,13 @@ def _build_duration_guidance(catalog: List[Dict[str, Any]]) -> str:
 
 
 def _format_activity_block(index: int, activity: Dict[str, Any]) -> str:
-    """Render a single activity's description block for the system prompt."""
+    """Render a single activity's description block for the system prompt.
+
+    Rendered fields: tool_type, label, collaboration_patterns, description,
+    thinklets, when_to_use (Best for:), when_not_to_use (Avoid when:),
+    input_requirements (Requires:), output_characteristics (Produces:),
+    bias_mitigation, typical_duration, config_options.
+    """
     tool_type = activity.get("tool_type", "")
     label = activity.get("label", tool_type)
     patterns = activity.get("collaboration_patterns") or []
@@ -126,6 +132,18 @@ def _format_activity_block(index: int, activity: Dict[str, Any]) -> str:
 
     if when_to_use:
         lines.append(f"   Best for: {when_to_use}")
+
+    when_not_to_use = activity.get("when_not_to_use", "")
+    if when_not_to_use:
+        lines.append(f"   Avoid when: {when_not_to_use}")
+
+    input_req = activity.get("input_requirements", "")
+    if input_req:
+        lines.append(f"   Requires: {input_req}")
+
+    output_char = activity.get("output_characteristics", "")
+    if output_char:
+        lines.append(f"   Produces: {output_char}")
 
     if bias_mitigation:
         # Join multiple bias items into a single readable line
@@ -204,6 +222,11 @@ def build_generation_prompt(outline: Optional[List[Dict[str, Any]]] = None) -> s
     instructions and config overrides. This replaces the former static
     generation-prompt constant and keeps tool type guidance synchronized with
     the live activity catalog.
+
+    Within-track workflow guidance references the Collaboration Pattern Library
+    with per-pattern selection criteria (Quick Convergence, Organized Convergence,
+    Rigorous Ranking, Two-Pass Funnel, Nested Decomposition), rather than
+    prescribing a fixed diverge -> organize/reduce -> converge activity sequence.
 
     Args:
         outline: Optional Stage-1 outline activity list. When provided, prompt
@@ -290,8 +313,17 @@ def build_generation_prompt(outline: Optional[List[Dict[str, Any]]] = None) -> s
         f"- Set duration_minutes using this guidance: {duration_guidance}\n"
         "- For ballot-based activities, calibrate max_votes to roughly 20-30% of option count.\n"
         "- For activities that support anonymity, enable it when power asymmetry is detected.\n"
-        "- For grouping activities, include meaningful bucket names.\n"
-        "- For multi-track designs, mirror the activity structure across breakout tracks when possible.\n\n"
+        "- For grouping activities, include meaningful bucket names.\n\n"
+        "Within-track pattern selection (mandatory for multi_track breakout phases):\n"
+        "- Each breakout track MUST have 2+ activities — a single activity per track is never acceptable.\n"
+        "- Select a pattern from the Collaboration Pattern Library based on the track's time budget, deliverable type, and problem complexity:\n"
+        "  • Quick Convergence     (brainstorming -> voting): short time, simple shortlist deliverable.\n"
+        "  • Organized Convergence (brainstorming -> categorization -> voting): ideas need thematic structure before evaluation.\n"
+        "  • Rigorous Ranking      (brainstorming -> categorization -> rank_order_voting): fully ordered priority list needed.\n"
+        "  • Two-Pass Funnel       (brainstorming -> voting -> brainstorming -> rank_order_voting): time allows deeper deliberation and refinement.\n"
+        "  • Nested Decomposition  (brainstorming -> voting -> brainstorming -> voting): problem space too broad for direct ideation, narrow scope first.\n"
+        "- Different tracks may use different patterns if their goals differ.\n"
+        "- The final activity in each track produces the specific deliverable presented during reconvergence.\n\n"
         "Reconvergence rules (mandatory for multi_track complexity):\n"
         "- Every parallel phase MUST be immediately followed by a plenary reconvergence phase.\n"
         "- Reconvergence activities must name each track and state what deliverable each track is presenting.\n"
@@ -327,6 +359,10 @@ def build_outline_prompt() -> str:
     collaboration pattern, rationale) that is validated before full agenda
     generation.
 
+    For multi-track sessions, within-track activity guidance references the
+    Collaboration Pattern Library rather than prescribing a fixed
+    diverge -> organize/reduce -> converge arc.
+
     Args:
         None.
 
@@ -358,6 +394,11 @@ def build_outline_prompt() -> str:
         "  ]\n"
         "}\n\n"
         f"Duration guidance: {duration_guidance}\n\n"
+        "Multi-track outline rules:\n"
+        "- If the conversation discussed breakout groups or parallel tracks, each track MUST have 2+ activities in the outline — a single activity per track is never sufficient.\n"
+        "- Choose a pattern from the Collaboration Pattern Library that fits the track's goal, time budget, and deliverable type discussed in the conversation.\n"
+        "- List all activities for all tracks sequentially in the outline (e.g., Track A activity 1, Track A activity 2, Track B activity 1, Track B activity 2, ...).\n"
+        "- A single brainstorming per track is never sufficient for a breakout that must produce a specific deliverable.\n\n"
         "Output ONLY the JSON object. Do not include instructions or config_overrides; "
         "those will be added in a subsequent step."
     )

@@ -1428,6 +1428,37 @@ def test_endpoint_returns_200_on_valid_pipeline(authenticated_client) -> None:
     }
 
 
+def test_endpoint_uses_generation_system_prompt(authenticated_client) -> None:
+    payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
+    mocked_result = {
+        "success": True,
+        "meeting_summary": "Summary",
+        "session_name": "Session",
+        "evaluation_criteria": [],
+        "design_rationale": "Rationale",
+        "complexity": "simple",
+        "phases": [],
+        "agenda": [],
+        "_pipeline_meta": {
+            "outline_attempts": 1,
+            "agenda_attempts": 1,
+            "outline_activity_count": 0,
+            "total_seconds": 0.1,
+        },
+    }
+    with patch(
+        "app.routers.meeting_designer.build_generation_system_prompt",
+        return_value="GENERATION_SYSTEM_PROMPT",
+    ), patch(
+        "app.routers.meeting_designer._run_generation_pipeline",
+        new=AsyncMock(return_value=mocked_result),
+    ) as pipeline_mock:
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    assert response.status_code == 200
+    assert pipeline_mock.call_args.kwargs["system_prompt"] == "GENERATION_SYSTEM_PROMPT"
+
+
 def test_pipeline_meta_in_endpoint_response(authenticated_client) -> None:
     payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
     with patch(
@@ -1985,3 +2016,279 @@ def test_system_prompt_built_once_per_request(authenticated_client) -> None:
 
     assert response.status_code == 200
     assert call_counter["count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 — Pattern Library Unification (Quartz Bramble)
+# ---------------------------------------------------------------------------
+
+def test_system_prompt_contains_pattern_library() -> None:
+    """Step 1: system_suffix uses a unified COLLABORATION PATTERN LIBRARY.
+
+    Verifies:
+    - Output contains the unified section header.
+    - Old separate section headers are absent.
+    - At least the three anchor patterns (Simple Consensus, Classic,
+      Deep Evaluation) are named in the output.
+    """
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    # Unified section must be present
+    assert "COLLABORATION PATTERN LIBRARY" in prompt
+
+    # Old separate section headers must NOT appear
+    assert "STANDARD SEQUENCES" not in prompt
+    assert "EXTENDED SEQUENCES" not in prompt
+
+    # At least the three anchor patterns must be present
+    assert "Simple Consensus" in prompt
+    assert "Classic" in prompt
+    assert "Deep Evaluation" in prompt
+
+
+def test_system_prompt_no_formulaic_track_rules() -> None:
+    """Step 2: system_suffix BREAKOUT TRACK DESIGN GUIDELINES are pattern-aware.
+
+    Verifies:
+    - Formulaic arc language is absent.
+    - Formulaic Activity 1/2 labels are absent.
+    - Hard single-activity constraint is present.
+    - Collaboration Pattern Library reference is present.
+    """
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    # Formulaic prescriptions must be gone
+    assert "diverge \u2192 organize \u2192 converge arc" not in prompt
+    assert "Activity 1 (Generate)" not in prompt
+    assert "Activity 2 (Organize" not in prompt
+
+    # Hard constraint and pattern-library reference must be present
+    assert "single-activity" in prompt
+    assert "Collaboration Pattern Library" in prompt
+
+
+def test_yaml_generate_agenda_pattern_library() -> None:
+    """Step 3: generate_agenda YAML template uses pattern-selection guide.
+
+    Verifies:
+    - Quick Convergence and Nested Decomposition patterns are named.
+    - Old Activity 1 (Generate) label is absent.
+    - New section heading is present.
+    """
+    from app.config.loader import get_meeting_designer_prompt_templates
+
+    templates = get_meeting_designer_prompt_templates()
+    generate_agenda = templates["generate_agenda"]
+
+    # Named patterns must be present
+    assert "Quick Convergence" in generate_agenda
+    assert "Nested Decomposition" in generate_agenda
+
+    # Old fixed-recipe label must be gone
+    assert "Activity 1 (Generate)" not in generate_agenda
+
+    # Updated section heading must be present
+    assert "Within-track pattern selection" in generate_agenda
+
+
+def test_build_generation_prompt_pattern_library() -> None:
+    """Step 4: build_generation_prompt() uses pattern-selection guide.
+
+    Verifies:
+    - Quick Convergence and Nested Decomposition patterns are named.
+    - Old Activity 1 (Generate) label is absent.
+    - Old diverge arc prescription is absent.
+    - Collaboration Pattern Library reference is present.
+    """
+    from app.services.meeting_designer_prompt import build_generation_prompt
+
+    prompt = build_generation_prompt()
+
+    # Named patterns must be present
+    assert "Quick Convergence" in prompt
+    assert "Nested Decomposition" in prompt
+
+    # Old fixed-recipe labels must be gone
+    assert "Activity 1 (Generate)" not in prompt
+    assert "diverge \u2192 organize/reduce \u2192 converge arc" not in prompt
+
+    # Pattern Library reference must be present
+    assert "Collaboration Pattern Library" in prompt
+
+
+def test_build_outline_prompt_pattern_library() -> None:
+    """Step 5: build_outline_prompt() uses pattern-aware multi-track rules.
+
+    Verifies:
+    - Collaboration Pattern Library reference is present.
+    - Old diverge arc prescription is absent.
+    """
+    from app.services.meeting_designer_prompt import build_outline_prompt
+
+    prompt = build_outline_prompt()
+
+    # Pattern Library reference must be present
+    assert "Collaboration Pattern Library" in prompt
+
+    # Old arc prescription must be gone
+    assert "diverge \u2192 organize/reduce \u2192 converge arc" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Sequencing Intelligence (Velvet Anchor)
+# ---------------------------------------------------------------------------
+
+
+def test_activity_block_includes_when_not_to_use() -> None:
+    """Phase 2 Step 1: _format_activity_block() renders 'Avoid when:' from when_not_to_use.
+
+    Verifies:
+    - 'Avoid when:' label appears when when_not_to_use is a non-empty string.
+    - The contraindication text is included verbatim.
+    - 'Avoid when:' is absent when when_not_to_use is an empty string.
+    """
+    from app.services.meeting_designer_prompt import _format_activity_block
+
+    activity_with_contraindication = {
+        "tool_type": "categorization",
+        "label": "Categorization",
+        "collaboration_patterns": ["Organize"],
+        "description": "Group items into buckets.",
+        "thinklets": [],
+        "when_to_use": "When ideas need thematic structure.",
+        "when_not_to_use": "When no prior items exist; requires input from a prior activity.",
+        "bias_mitigation": [],
+        "typical_duration_minutes": {"min": 10, "max": 20},
+        "default_config": {},
+    }
+
+    block = _format_activity_block(1, activity_with_contraindication)
+
+    assert "Avoid when:" in block
+    assert "requires input from a prior activity" in block
+
+    # Now verify the field is suppressed when empty
+    activity_no_contraindication = {**activity_with_contraindication, "when_not_to_use": ""}
+    block_no_avoid = _format_activity_block(1, activity_no_contraindication)
+
+    assert "Avoid when:" not in block_no_avoid
+
+
+def test_activity_block_includes_input_requirements() -> None:
+    """Phase 2 Step 2: _format_activity_block() renders 'Requires:' from input_requirements.
+
+    Verifies:
+    - 'Requires:' label appears when input_requirements is a non-empty string.
+    - Input requirements text is included verbatim.
+    - 'Requires:' is absent when input_requirements is an empty string.
+    """
+    from app.services.meeting_designer_prompt import _format_activity_block
+
+    activity_with_requirements = {
+        "tool_type": "categorization",
+        "label": "Categorization",
+        "collaboration_patterns": ["Organize"],
+        "description": "Group items into buckets.",
+        "thinklets": [],
+        "when_to_use": "When ideas need thematic structure.",
+        "when_not_to_use": "When no prior items exist.",
+        "input_requirements": "Requires a set of items from a prior activity.",
+        "bias_mitigation": [],
+        "typical_duration_minutes": {"min": 10, "max": 20},
+        "default_config": {},
+    }
+
+    block = _format_activity_block(1, activity_with_requirements)
+
+    assert "Requires: Requires a set of items" in block
+
+    # Now verify the field is suppressed when empty
+    activity_no_requirements = {**activity_with_requirements, "input_requirements": ""}
+    block_no_requires = _format_activity_block(1, activity_no_requirements)
+
+    assert "Requires:" not in block_no_requires
+
+
+def test_activity_block_includes_output_characteristics() -> None:
+    """Phase 2 Step 3: _format_activity_block() renders 'Produces:' from output_characteristics.
+
+    Verifies:
+    - 'Produces:' label appears when output_characteristics is a non-empty string.
+    - Output characteristics text is included verbatim.
+    - 'Produces:' is absent when output_characteristics is an empty string.
+    """
+    from app.services.meeting_designer_prompt import _format_activity_block
+
+    activity_with_output = {
+        "tool_type": "brainstorming",
+        "label": "Brainstorming",
+        "collaboration_patterns": ["Generate"],
+        "description": "Generate many ideas quickly.",
+        "thinklets": [],
+        "when_to_use": "When you need broad option generation.",
+        "when_not_to_use": "When immediate prioritization is required.",
+        "input_requirements": "None required.",
+        "output_characteristics": "Produces an unstructured list of candidate ideas.",
+        "bias_mitigation": [],
+        "typical_duration_minutes": {"min": 5, "max": 20},
+        "default_config": {},
+    }
+
+    block = _format_activity_block(1, activity_with_output)
+
+    assert "Produces:" in block
+    assert "unstructured list of candidate ideas" in block
+
+    # Now verify the field is suppressed when empty
+    activity_no_output = {**activity_with_output, "output_characteristics": ""}
+    block_no_output = _format_activity_block(1, activity_no_output)
+
+    assert "Produces:" not in block_no_output
+
+
+def test_all_plugins_have_sequencing_metadata() -> None:
+    """Phase 2 Step 4: all catalog activities expose sequencing metadata.
+
+    Verifies every activity has non-empty input_requirements and
+    output_characteristics so prompt-level sequencing reasoning remains available.
+    """
+    from app.services.activity_catalog import get_enriched_activity_catalog
+
+    catalog = get_enriched_activity_catalog()
+    assert catalog, "Activity catalog should not be empty."
+
+    for activity in catalog:
+        tool_type = str(activity.get("tool_type") or "<unknown>")
+        input_requirements = activity.get("input_requirements")
+        output_characteristics = activity.get("output_characteristics")
+
+        assert isinstance(input_requirements, str), (
+            f"{tool_type} is missing string input_requirements metadata."
+        )
+        assert input_requirements.strip(), (
+            f"{tool_type} has empty input_requirements metadata."
+        )
+
+        assert isinstance(output_characteristics, str), (
+            f"{tool_type} is missing string output_characteristics metadata."
+        )
+        assert output_characteristics.strip(), (
+            f"{tool_type} has empty output_characteristics metadata."
+        )
+
+
+def test_system_prompt_includes_sequencing_fields() -> None:
+    """Phase 2 Step 5: build_system_prompt() exposes sequencing metadata lines."""
+    from app.services.meeting_designer_prompt import build_system_prompt
+
+    prompt = build_system_prompt()
+
+    assert "Requires:" in prompt
+    assert "Produces:" in prompt
+    assert "Avoid when:" in prompt
+    assert "None required" in prompt
+    assert "prior activity" in prompt
