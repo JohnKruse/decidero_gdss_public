@@ -128,6 +128,8 @@ certs/*.pem
 
 # Local planning notes
 docs/LOAD_TESTING_PLAN_LOCAL.md
+/reports/
+/plans/archive/
 
 # Ensure core runtime package is always tracked (overrides broad global ignores like "data")
 !app/data/
