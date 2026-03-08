@@ -165,6 +165,17 @@
                     </div>
                     <div class="transfer-actions">
                         <select id="transferTargetToolType" class="form-select transfer-target-select"></select>
+                        <!-- Galactic Hamster: target mode selector for transfer-into-existing -->
+                        <select id="transferTargetMode" class="form-select transfer-target-select">
+                            <option value="new" selected>Create new activity</option>
+                            <option value="existing">Use existing activity</option>
+                        </select>
+                        <select id="transferTargetExistingActivity" class="form-select transfer-target-select" hidden>
+                            <option value="" disabled selected>Select target activity</option>
+                        </select>
+                        <span id="transferEligibilityHint" class="transfer-eligibility-hint" hidden>
+                            Only unused activities are eligible to receive transferred ideas.
+                        </span>
                         <select id="transferTransformProfile" class="form-select transfer-target-select" hidden></select>
                         <label class="transfer-toggle">
                             <input type="checkbox" id="transferIncludeComments" checked>
