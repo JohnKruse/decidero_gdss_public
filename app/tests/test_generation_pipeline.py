@@ -200,6 +200,169 @@ def _valid_6_activity_agenda_json() -> str:
     )
 
 
+def _valid_multitrack_agenda_json() -> str:
+    """Build a valid multi-track agenda JSON string modeling a Colorado River–style scenario with plenary → parallel (2 tracks, 2–3 activities each) → plenary reconvergence."""
+    from app.services.activity_catalog import get_enriched_activity_catalog
+
+    available_tool_types = {
+        str(entry.get("tool_type")).strip().lower()
+        for entry in get_enriched_activity_catalog()
+        if isinstance(entry, dict) and isinstance(entry.get("tool_type"), str)
+    }
+    required_tool_types = {"brainstorming", "categorization", "voting", "rank_order_voting"}
+    missing_tool_types = required_tool_types - available_tool_types
+    if missing_tool_types:
+        missing = ", ".join(sorted(missing_tool_types))
+        raise AssertionError(f"Missing required tool types in activity catalog: {missing}")
+
+    payload = {
+        "meeting_summary": (
+            "Participants need a defensible shortlist of Colorado River adaptation priorities "
+            "under funding and time constraints."
+        ),
+        "session_name": "Colorado River Basin Adaptation Design Session",
+        "complexity": "multi-track",
+        "evaluation_criteria": ["regional impact", "implementability", "equity", "time-to-benefit"],
+        "design_rationale": (
+            "Use plenary framing, then two parallel tracks with different convergence depth, "
+            "then plenary reconvergence for integrated decisions."
+        ),
+        "phases": [
+            {
+                "phase_id": "phase_1",
+                "title": "Plenary Framing",
+                "phase_type": "plenary",
+            },
+            {
+                "phase_id": "phase_2",
+                "title": "Parallel Breakouts",
+                "phase_type": "parallel",
+                "tracks": [
+                    {
+                        "track_id": "track_2a",
+                        "label": "Infrastructure Resilience",
+                        "participant_subset": "Water utility and engineering leads",
+                    },
+                    {
+                        "track_id": "track_2b",
+                        "label": "Policy and Governance",
+                        "participant_subset": "Policy and interagency coordination leads",
+                    },
+                ],
+            },
+            {
+                "phase_id": "phase_3",
+                "title": "Plenary Reconvergence",
+                "phase_type": "plenary",
+            },
+        ],
+        "agenda": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Shared Context and Constraints",
+                "instructions": "Align on basin constraints, objectives, and non-negotiables.",
+                "duration_minutes": 12,
+                "collaboration_pattern": "Generate",
+                "rationale": "Create a common frame before parallel work starts.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": None,
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Track A Option Generation",
+                "instructions": "Generate infrastructure adaptation options and implementation ideas.",
+                "duration_minutes": 14,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open the Track A option space quickly.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "categorization",
+                "title": "Track A Thematic Clustering",
+                "instructions": "Group options by resilience mechanism and deployment complexity.",
+                "duration_minutes": 12,
+                "collaboration_pattern": "Organize",
+                "rationale": "Structure ideas so voting compares like with like.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Track A Priority Voting",
+                "instructions": "Vote top infrastructure interventions for near-term implementation.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Converge on a shortlist with broad support.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Track B Policy Option Generation",
+                "instructions": "Generate governance and policy options for basin coordination.",
+                "duration_minutes": 14,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open Track B alternatives before ranking.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2b",
+            },
+            {
+                "tool_type": "rank_order_voting",
+                "title": "Track B Ranked Prioritization",
+                "instructions": "Rank policy options to produce an explicit ordered agenda.",
+                "duration_minutes": 12,
+                "collaboration_pattern": "Build Consensus",
+                "rationale": "Track B needs a strict ordered output for governance sequencing.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2b",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Cross-Track Reconvergence Decision",
+                "instructions": "Review both track outputs and confirm a combined action slate.",
+                "duration_minutes": 12,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Merge parallel results into a coherent plenary decision.",
+                "config_overrides": {},
+                "phase_id": "phase_3",
+                "track_id": None,
+            },
+        ],
+    }
+    return json.dumps(payload)
+
+
+def _valid_multitrack_outline_json() -> str:
+    """Build a valid multi-track outline JSON string derived from the multitrack agenda fixture."""
+    agenda_payload = json.loads(_valid_multitrack_agenda_json())
+    agenda_items = agenda_payload.get("agenda", [])
+    outline_items = []
+    for item in agenda_items:
+        if not isinstance(item, dict):
+            continue
+        outline_items.append(
+            {
+                "tool_type": item["tool_type"],
+                "title": item["title"],
+                "collaboration_pattern": item["collaboration_pattern"],
+                "rationale": item["rationale"],
+            }
+        )
+    return json.dumps(
+        {
+            "meeting_summary": agenda_payload.get("meeting_summary", ""),
+            "outline": outline_items,
+        }
+    )
+
+
 def _mock_chat_complete_two_stage(outline_json: str, agenda_json: str) -> AsyncMock:
     """Create a two-stage chat_complete mock for outline then full agenda."""
     return AsyncMock(side_effect=[outline_json, agenda_json])
@@ -2882,6 +3045,132 @@ def test_validate_agenda_structural_checks_wired() -> None:
     result = validate_agenda(valid_agenda)
     assert result.valid is True
     assert result.errors == []
+
+
+def test_e2e_multitrack_pipeline_accepted() -> None:
+    """Phase 6 Step 1: validate_agenda() accepts a well-formed multi-track agenda fixture."""
+    from app.services.agenda_validator import validate_agenda
+
+    payload = json.loads(_valid_multitrack_agenda_json())
+    result = validate_agenda(payload)
+
+    assert result.valid is True
+    assert result.errors == []
+
+
+def test_e2e_multitrack_structural_defects_caught() -> None:
+    """Phase 6 Step 2: validate_agenda() catches key structural defects in multi-track agendas."""
+    from app.services.agenda_validator import validate_agenda
+
+    base_payload = json.loads(_valid_multitrack_agenda_json())
+
+    # Mutation 1: leave track_2b with a single activity.
+    single_activity_track_payload = json.loads(json.dumps(base_payload))
+    single_activity_track_payload["agenda"] = [
+        item
+        for item in single_activity_track_payload["agenda"]
+        if not (item.get("track_id") == "track_2b" and item.get("tool_type") == "rank_order_voting")
+    ]
+    single_activity_result = validate_agenda(single_activity_track_payload)
+    assert single_activity_result.valid is False
+    assert any("requires at least 2" in err.message for err in single_activity_result.errors)
+
+    # Mutation 2: introduce a dangling phase reference.
+    dangling_phase_payload = json.loads(json.dumps(base_payload))
+    dangling_phase_payload["agenda"][2]["phase_id"] = "phase_GHOST"
+    dangling_phase_result = validate_agenda(dangling_phase_payload)
+    assert dangling_phase_result.valid is False
+    assert any(
+        "not declared" in err.message and "phase_GHOST" in err.message
+        for err in dangling_phase_result.errors
+    )
+
+    # Mutation 3: remove plenary reconvergence phase so parallel phase is last.
+    missing_reconvergence_payload = json.loads(json.dumps(base_payload))
+    missing_reconvergence_payload["phases"] = missing_reconvergence_payload["phases"][:-1]
+    missing_reconvergence_result = validate_agenda(missing_reconvergence_payload)
+    assert missing_reconvergence_result.valid is False
+    assert any("reconvergence" in err.message for err in missing_reconvergence_result.errors)
+
+
+def test_report_outline_lines_multitrack() -> None:
+    """Phase 6 Step 3: report outline rendering uses hierarchical phase/track/activity tree."""
+    from scripts.meeting_designer_report import _outline_lines
+
+    payload = json.loads(_valid_multitrack_agenda_json())
+    lines = _outline_lines(payload)
+
+    assert any("Agenda tree (phase -> track -> activity):" in line for line in lines)
+    assert any("Phase 1:" in line for line in lines)
+    assert any("Phase 2:" in line for line in lines)
+    assert any("Phase 3:" in line for line in lines)
+    assert any("Track:" in line for line in lines)
+    assert not any("(no activities listed for this track)" in line for line in lines)
+    assert not any("Unassigned/unknown track activities:" in line for line in lines)
+
+    activity_line_count = sum(
+        1 for line in lines if line.lstrip().startswith("-") and ". [" in line and "] " in line
+    )
+    assert activity_line_count >= 7
+
+
+def test_e2e_multitrack_two_stage_pipeline(authenticated_client) -> None:
+    """Phase 6 Step 4: generate_agenda endpoint succeeds for two-stage multi-track output."""
+    outline_json = _valid_multitrack_outline_json()
+    agenda_json = _valid_multitrack_agenda_json()
+    payload = {"messages": [{"role": "user", "content": "Design a multi-track Colorado River session"}]}
+
+    with patch(
+        "app.routers.meeting_designer.chat_complete",
+        new=_mock_chat_complete_two_stage(outline_json, agenda_json),
+    ):
+        response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["agenda"]) >= 7
+    assert len(body["phases"]) == 3
+    assert body["_pipeline_meta"]["outline_attempts"] == 1
+    assert body["_pipeline_meta"]["agenda_attempts"] == 1
+
+
+def test_e2e_multitrack_per_track_activity_counts() -> None:
+    """Phase 6 Step 5: fixture enforces per-track 2+ activities and expected workflow patterns."""
+    payload = json.loads(_valid_multitrack_agenda_json())
+    phases = payload.get("phases", [])
+    agenda = payload.get("agenda", [])
+
+    declared_track_ids = []
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        tracks = phase.get("tracks")
+        if not isinstance(tracks, list):
+            continue
+        for track in tracks:
+            if not isinstance(track, dict):
+                continue
+            track_id = track.get("track_id")
+            if isinstance(track_id, str) and track_id:
+                declared_track_ids.append(track_id)
+
+    track_activity_types: dict[str, list[str]] = {track_id: [] for track_id in declared_track_ids}
+    for item in agenda:
+        if not isinstance(item, dict):
+            continue
+        track_id = item.get("track_id")
+        tool_type = item.get("tool_type")
+        if isinstance(track_id, str) and isinstance(tool_type, str) and track_id in track_activity_types:
+            track_activity_types[track_id].append(tool_type)
+
+    # Phase 6: verify context-appropriate workflow patterns per track.
+    for track_id in declared_track_ids:
+        count = len(track_activity_types[track_id])
+        assert count >= 2
+        assert count != 1
+
+    assert track_activity_types["track_2a"] == ["brainstorming", "categorization", "voting"]
+    assert track_activity_types["track_2b"] == ["brainstorming", "rank_order_voting"]
 
 
 # ---------------------------------------------------------------------------

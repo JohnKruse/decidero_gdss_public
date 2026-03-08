@@ -235,6 +235,7 @@ def build_generation_prompt(outline: Optional[Any] = None) -> str:
     with per-pattern selection criteria (Quick Convergence, Organized Convergence,
     Rigorous Ranking, Two-Pass Funnel, Nested Decomposition), rather than
     prescribing a fixed diverge -> organize/reduce -> converge activity sequence.
+    Integration-verified in Phase 6 with multi-track generation scenarios.
 
     Args:
         outline: Optional Stage-1 outline payload. Accepts either an outline

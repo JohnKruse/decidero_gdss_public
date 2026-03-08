@@ -589,6 +589,9 @@ def validate_agenda(agenda_data: Dict[str, Any]) -> AgendaValidationResult:
     phase_id/track_id references, minimum 2 activities per parallel-phase
     track, parallel-phase reconvergence requirement). Errors block validation
     success; warnings are informational.
+    Phase 6 integration tests confirm this function correctly accepts
+    well-formed multi-track agendas and rejects structurally defective ones
+    (single-activity tracks, dangling references, missing reconvergence).
     """
     result = _validate_activity_payload(
         agenda_data,
