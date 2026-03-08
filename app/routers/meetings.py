@@ -560,9 +560,16 @@ def _apply_activity_lock_metadata(
                 locked_config_keys.extend(parallel_locked_keys)
 
         deduped = list(dict.fromkeys(locked_config_keys))
+        transfer_target_eligible = (
+            item.started_at is None
+            and item.stopped_at is None
+            and (item.elapsed_duration or 0) == 0
+            and not has_live_data
+        )
         setattr(item, "has_data", has_live_data)
         setattr(item, "has_votes", has_votes)
         setattr(item, "has_submitted_ballots", has_submitted_ballots)
+        setattr(item, "transfer_target_eligible", transfer_target_eligible)
         setattr(item, "locked_config_keys", deduped)
 
 

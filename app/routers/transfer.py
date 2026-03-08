@@ -15,7 +15,12 @@ from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting, MeetingFacilitator
 from app.models.user import User, UserRole
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
-from app.schemas.transfer import TransferCommit, TransferDraftUpdate, TransferBundleItem
+from app.schemas.transfer import (
+    TransferCommit,
+    TransferCommitResponse,
+    TransferDraftUpdate,
+    TransferBundleItem,
+)
 from app.services import meeting_state_manager
 from app.services.activity_catalog import get_activity_definition
 from app.services.transfer_source import build_transfer_items
@@ -248,6 +253,52 @@ async def _ensure_not_running(meeting_id: str, activity_id: str) -> None:
             )
 
 
+async def _assert_transfer_eligible(
+    target: AgendaActivity,
+    donor_activity_id: str,
+    meeting_id: str,
+    meeting_manager: MeetingManager,
+) -> None:
+    """
+    Validate whether a target activity can receive a transfer.
+
+    Checks are evaluated in order and raise:
+    - 422 if target is the donor activity
+    - 422 if target has started_at set
+    - 422 if target has stopped_at set
+    - 422 if target has positive elapsed_duration
+    - 422 if target already has participant data
+    - 409 if target is currently running (delegated to `_ensure_not_running`)
+    """
+    if target.activity_id == donor_activity_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot transfer into the donor activity itself.",
+        )
+    if target.started_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity has already been started.",
+        )
+    if target.stopped_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity has already been stopped.",
+        )
+    if (target.elapsed_duration or 0) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity has accumulated run time.",
+        )
+    data_flags = meeting_manager.get_activity_data_flags(meeting_id)
+    if data_flags.get(target.activity_id):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity already has participant data.",
+        )
+    await _ensure_not_running(meeting_id, target.activity_id)
+
+
 async def _broadcast_agenda_update(
     meeting_id: str,
     initiator_id: str,
@@ -419,7 +470,7 @@ async def update_transfer_draft(
     return _serialize_bundle(draft)
 
 
-@transfer_router.post("/commit")
+@transfer_router.post("/commit", response_model=TransferCommitResponse)
 async def commit_transfer(
     meeting_id: str,
     payload: TransferCommit,
@@ -450,6 +501,16 @@ async def commit_transfer(
         comments_by_parent = {}
 
     target = payload.target_activity
+    if target.activity_id:
+        existing_target = _resolve_activity(meeting, target.activity_id)
+        await _assert_transfer_eligible(
+            existing_target, payload.donor_activity_id, meeting_id, meeting_manager
+        )
+        # Velvet Penguin: Phase 1 placeholder — replaced in Phase 2.
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Transfer into existing activity is not yet implemented.",
+        )
     target_tool = (target.tool_type or "").strip().lower()
     definition = get_activity_definition(target.tool_type)
     if not definition:
@@ -739,8 +800,11 @@ async def commit_transfer(
     )
 
     agenda_items = meeting_manager.list_agenda(meeting_id)
+    target_activity_payload = AgendaActivityResponse.model_validate(created).model_dump()
+    # target_activity is the canonical key; new_activity retained for backward compatibility.
     return {
-        "new_activity": AgendaActivityResponse.model_validate(created).model_dump(),
+        "target_activity": target_activity_payload,
+        "new_activity": target_activity_payload,
         "agenda": [
             AgendaActivityResponse.model_validate(item).model_dump()
             for item in agenda_items
