@@ -23,7 +23,7 @@ Example:
 """
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Set
 
 from app.services.activity_catalog import get_enriched_activity_catalog
 
@@ -86,6 +86,247 @@ def _build_catalog_lookup() -> tuple[Dict[str, Dict[str, Any]], List[str]]:
         catalog_lookup[normalized] = entry
         valid_tool_types.append(tool_type)
     return catalog_lookup, valid_tool_types
+
+
+def _extract_phase_track_maps(
+    agenda_data: Dict[str, Any],
+) -> tuple[Dict[str, Dict[str, Any]], Dict[str, str], Set[str]]:
+    """Extract declared phases, tracks, and parallel phase IDs from an agenda payload.
+
+    Returns (declared_phases, declared_tracks, parallel_phase_ids). Handles missing
+    or malformed phases gracefully by returning empty structures.
+    """
+
+    phases = agenda_data.get("phases")
+    if not isinstance(phases, list) or not phases:
+        return {}, {}, set()
+
+    declared_phases: Dict[str, Dict[str, Any]] = {}
+    declared_tracks: Dict[str, str] = {}
+    parallel_phase_ids: Set[str] = set()
+
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        raw_phase_id = phase.get("phase_id")
+        if not isinstance(raw_phase_id, str):
+            continue
+        phase_id = raw_phase_id.strip()
+        if not phase_id:
+            continue
+
+        declared_phases[phase_id] = phase
+
+        raw_phase_type = phase.get("phase_type")
+        if isinstance(raw_phase_type, str) and raw_phase_type.strip().lower() == "parallel":
+            parallel_phase_ids.add(phase_id)
+
+        tracks = phase.get("tracks")
+        if not isinstance(tracks, list):
+            continue
+        for track in tracks:
+            if not isinstance(track, dict):
+                continue
+            raw_track_id = track.get("track_id")
+            if not isinstance(raw_track_id, str):
+                continue
+            track_id = raw_track_id.strip()
+            if not track_id:
+                continue
+            declared_tracks[track_id] = phase_id
+
+    return declared_phases, declared_tracks, parallel_phase_ids
+
+
+def _check_dangling_phase_refs(
+    activities: List[Dict[str, Any]],
+    declared_phases: Dict[str, Dict[str, Any]],
+    errors: List[AgendaFieldError],
+) -> None:
+    """Append errors for any agenda activity whose phase_id is not declared in the phases array.
+
+    Skips activities with null or absent phase_id.
+    """
+
+    for idx, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        raw_phase_id = activity.get("phase_id")
+        if not isinstance(raw_phase_id, str):
+            continue
+        phase_id = raw_phase_id.strip()
+        if not phase_id or phase_id in declared_phases:
+            continue
+        raw_title = activity.get("title")
+        title = raw_title.strip() if isinstance(raw_title, str) and raw_title.strip() else f"Activity {idx}"
+        errors.append(
+            AgendaFieldError(
+                activity_index=idx,
+                field="phase_id",
+                message=f"Activity {idx} ('{title}'): phase_id '{phase_id}' is not declared in the phases array.",
+                level="error",
+            )
+        )
+
+
+def _check_dangling_track_refs(
+    activities: List[Dict[str, Any]],
+    declared_tracks: Dict[str, str],
+    errors: List[AgendaFieldError],
+) -> None:
+    """Append errors for any agenda activity whose track_id is not declared in any phase's tracks array.
+
+    Skips activities with null or absent track_id.
+    """
+
+    for idx, activity in enumerate(activities):
+        if not isinstance(activity, dict):
+            continue
+        raw_track_id = activity.get("track_id")
+        if not isinstance(raw_track_id, str):
+            continue
+        track_id = raw_track_id.strip()
+        if not track_id or track_id in declared_tracks:
+            continue
+        raw_title = activity.get("title")
+        title = raw_title.strip() if isinstance(raw_title, str) and raw_title.strip() else f"Activity {idx}"
+        errors.append(
+            AgendaFieldError(
+                activity_index=idx,
+                field="track_id",
+                message=(
+                    f"Activity {idx} ('{title}'): track_id '{track_id}' is not declared "
+                    "in any phase's tracks array."
+                ),
+                level="error",
+            )
+        )
+
+
+def _check_min_activities_per_track(
+    activities: List[Dict[str, Any]],
+    declared_tracks: Dict[str, str],
+    parallel_phase_ids: Set[str],
+    errors: List[AgendaFieldError],
+) -> None:
+    """Append errors for any declared track in a parallel phase that has fewer than 2 agenda activities.
+
+    Enforces the multi-activity-per-track invariant.
+    """
+
+    track_counts: Dict[str, int] = {track_id: 0 for track_id in declared_tracks}
+
+    for activity in activities:
+        if not isinstance(activity, dict):
+            continue
+        raw_track_id = activity.get("track_id")
+        if not isinstance(raw_track_id, str):
+            continue
+        track_id = raw_track_id.strip()
+        if not track_id or track_id not in track_counts:
+            continue
+        track_counts[track_id] += 1
+
+    for track_id, phase_id in declared_tracks.items():
+        if phase_id not in parallel_phase_ids:
+            continue
+        count = track_counts.get(track_id, 0)
+        if count >= 2:
+            continue
+        errors.append(
+            AgendaFieldError(
+                activity_index=-1,
+                field="track_id",
+                message=(
+                    f"Track '{track_id}' in parallel phase '{phase_id}' has {count} activity "
+                    "but requires at least 2."
+                ),
+                level="error",
+            )
+        )
+
+
+def _check_reconvergence(phases: List[Dict[str, Any]], errors: List[AgendaFieldError]) -> None:
+    """Append errors for any parallel phase not immediately followed by a plenary phase.
+
+    Enforces the reconvergence invariant.
+    """
+
+    for idx, phase in enumerate(phases):
+        if not isinstance(phase, dict):
+            continue
+        raw_phase_type = phase.get("phase_type")
+        phase_type = raw_phase_type.strip().lower() if isinstance(raw_phase_type, str) else ""
+        if phase_type != "parallel":
+            continue
+
+        raw_phase_id = phase.get("phase_id")
+        phase_id = raw_phase_id.strip() if isinstance(raw_phase_id, str) and raw_phase_id.strip() else f"phase_{idx}"
+        raw_title = phase.get("title")
+        title = raw_title.strip() if isinstance(raw_title, str) and raw_title.strip() else phase_id
+
+        if idx + 1 >= len(phases):
+            errors.append(
+                AgendaFieldError(
+                    activity_index=-1,
+                    field="phases",
+                    message=(
+                        f"Parallel phase '{phase_id}' ('{title}') is the last phase but must be followed "
+                        "by a plenary reconvergence phase."
+                    ),
+                    level="error",
+                )
+            )
+            continue
+
+        next_phase = phases[idx + 1]
+        if not isinstance(next_phase, dict):
+            continue
+        raw_next_phase_type = next_phase.get("phase_type")
+        next_phase_type = (
+            raw_next_phase_type.strip().lower() if isinstance(raw_next_phase_type, str) else ""
+        )
+        if next_phase_type == "plenary":
+            continue
+        raw_next_phase_id = next_phase.get("phase_id")
+        next_phase_id = (
+            raw_next_phase_id.strip()
+            if isinstance(raw_next_phase_id, str) and raw_next_phase_id.strip()
+            else f"phase_{idx + 1}"
+        )
+        errors.append(
+            AgendaFieldError(
+                activity_index=-1,
+                field="phases",
+                message=(
+                    f"Parallel phase '{phase_id}' ('{title}') is followed by another parallel phase "
+                    f"('{next_phase_id}') but must be followed by a plenary reconvergence phase."
+                ),
+                level="error",
+            )
+        )
+
+
+def _validate_structural_invariants(agenda_data: Dict[str, Any]) -> List[AgendaFieldError]:
+    """Run structural agenda checks that rely on phase/track declarations."""
+
+    declared_phases, declared_tracks, parallel_phase_ids = _extract_phase_track_maps(agenda_data)
+    if not declared_phases:
+        return []
+
+    activities = agenda_data.get("agenda")
+    if not isinstance(activities, list):
+        return []
+    phases = agenda_data.get("phases")
+    if not isinstance(phases, list):
+        phases = []
+
+    errors: List[AgendaFieldError] = []
+    _check_dangling_phase_refs(activities, declared_phases, errors)
+    _check_dangling_track_refs(activities, declared_tracks, errors)
+    _check_min_activities_per_track(activities, declared_tracks, parallel_phase_ids, errors)
+    _check_reconvergence(phases, errors)
+    return errors
 
 
 def _validate_activity_payload(
@@ -343,36 +584,36 @@ def _validate_activity_payload(
 def validate_agenda(agenda_data: Dict[str, Any]) -> AgendaValidationResult:
     """Validate the raw dict returned by parse_agenda_json().
 
-    Step 2 envelope checks validate top-level structure before any activity
-    checks run: agenda shape, meeting_summary presence, and design_rationale
-    presence. Step 4 adds required per-activity field checks.
-
-    Args:
-        agenda_data: Raw parsed agenda payload.
-
-    Returns:
-        AgendaValidationResult containing pass/fail plus error/warning lists.
-        Invalid top-level agenda structure returns an error and exits early.
-        Errors block validation success; warnings are informational.
-
-    Raises:
-        None.
+    Performs per-activity field validation (tool_type, title, instructions,
+    duration, config_overrides) and structural invariant checks (dangling
+    phase_id/track_id references, minimum 2 activities per parallel-phase
+    track, parallel-phase reconvergence requirement). Errors block validation
+    success; warnings are informational.
     """
-    return _validate_activity_payload(
+    result = _validate_activity_payload(
         agenda_data,
         activities_key="agenda",
         require_design_rationale=True,
         check_instructions=True,
         check_config_overrides=True,
     )
+    if not result.valid:
+        return result
+
+    structural_errors = _validate_structural_invariants(agenda_data)
+    if structural_errors:
+        result.errors.extend(structural_errors)
+        result.valid = False
+
+    return result
 
 
 def validate_outline(outline_data: Dict[str, Any]) -> AgendaValidationResult:
     """Validate Stage 1 outline output against the live activity catalog.
 
-    Validates an AI-generated outline (Stage 1 output) against the live activity
-    catalog. Same validation logic as validate_agenda() but does not require
-    instructions or config_overrides fields. Returns AgendaValidationResult.
+    Validates tool_types, titles, and durations. When a tracks array is
+    present, enforces that each declared track has at least 2 activities and
+    flags undeclared track_id references.
 
     Args:
         outline_data: Raw parsed outline payload.
@@ -383,10 +624,77 @@ def validate_outline(outline_data: Dict[str, Any]) -> AgendaValidationResult:
     Raises:
         None.
     """
-    return _validate_activity_payload(
+    result = _validate_activity_payload(
         outline_data,
         activities_key="outline",
         require_design_rationale=False,
         check_instructions=False,
         check_config_overrides=False,
     )
+
+    tracks = outline_data.get("tracks")
+    if not result.valid or not isinstance(tracks, list) or not tracks:
+        return result
+
+    outline_items = outline_data.get("outline")
+    if not isinstance(outline_items, list):
+        return result
+
+    declared_tracks: Dict[str, str] = {}
+    for track in tracks:
+        if not isinstance(track, dict):
+            continue
+        raw_track_id = track.get("track_id")
+        if not isinstance(raw_track_id, str):
+            continue
+        track_id = raw_track_id.strip()
+        if not track_id:
+            continue
+        raw_label = track.get("label")
+        label = raw_label.strip() if isinstance(raw_label, str) and raw_label.strip() else track_id
+        declared_tracks[track_id] = label
+
+    if not declared_tracks:
+        return result
+
+    track_counts = {track_id: 0 for track_id in declared_tracks}
+    for idx, activity in enumerate(outline_items):
+        if not isinstance(activity, dict):
+            continue
+        raw_track_id = activity.get("track_id")
+        if not isinstance(raw_track_id, str):
+            continue
+        track_id = raw_track_id.strip()
+        if not track_id:
+            continue
+
+        if track_id in track_counts:
+            track_counts[track_id] += 1
+            continue
+
+        title = activity.get("title")
+        activity_title = title.strip() if isinstance(title, str) and title.strip() else f"Activity {idx}"
+        result.warnings.append(
+            AgendaFieldError(
+                activity_index=idx,
+                field="track_id",
+                message=f"Activity '{activity_title}' references undeclared track_id '{track_id}'.",
+                level="warning",
+            )
+        )
+
+    for track_id, label in declared_tracks.items():
+        count = track_counts[track_id]
+        if count >= 2:
+            continue
+        result.errors.append(
+            AgendaFieldError(
+                activity_index=-1,
+                field="tracks",
+                message=f"Track '{track_id}' ({label}) has {count} activity but must have at least 2.",
+                level="error",
+            )
+        )
+
+    result.valid = not result.errors
+    return result

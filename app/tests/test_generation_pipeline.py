@@ -1990,7 +1990,7 @@ def test_pipeline_error_detail_is_actionable(authenticated_client) -> None:
 
 
 def test_system_prompt_built_once_per_request(authenticated_client) -> None:
-    """Ensure generate-agenda builds one system prompt per request."""
+    """Ensure generate-agenda delegates prompt construction to the pipeline."""
     payload = {"messages": [{"role": "user", "content": "Need an agenda"}]}
     call_counter = {"count": 0}
 
@@ -2015,7 +2015,8 @@ def test_system_prompt_built_once_per_request(authenticated_client) -> None:
         response = authenticated_client.post("/api/meeting-designer/generate-agenda", json=payload)
 
     assert response.status_code == 200
-    assert call_counter["count"] == 1
+    # Route delegates to _run_generation_pipeline(), which owns prompt assembly.
+    assert call_counter["count"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -2136,6 +2137,751 @@ def test_build_outline_prompt_pattern_library() -> None:
 
     # Old arc prescription must be gone
     assert "diverge \u2192 organize/reduce \u2192 converge arc" not in prompt
+
+
+def test_outline_prompt_includes_track_schema() -> None:
+    """Phase 3 Step 1: build_outline_prompt() includes optional track metadata schema."""
+    from app.services.meeting_designer_prompt import build_outline_prompt
+
+    prompt = build_outline_prompt()
+
+    assert '"track_id"' in prompt
+    assert '"tracks"' in prompt
+    assert '"goal"' in prompt
+    assert "only when the conversation discussed breakout" in prompt
+
+
+def test_outline_prompt_pattern_library_guidance() -> None:
+    """Phase 3 Step 2: build_outline_prompt() includes pattern-library guidance."""
+    from app.services.meeting_designer_prompt import build_outline_prompt
+
+    prompt = build_outline_prompt()
+
+    assert "Quick Convergence" in prompt
+    assert "Collaboration Pattern Library" in prompt
+    assert "diverge \u2192 organize/reduce \u2192 converge arc" not in prompt
+
+
+def test_validate_outline_multi_track_enforcement() -> None:
+    """Phase 3 Step 3: validate_outline() enforces multi-track structural rules."""
+    from app.services.agenda_validator import validate_outline
+
+    # (a) Valid: 2 tracks, each with 2+ activities
+    valid_outline = {
+        "meeting_summary": "Multi-track planning",
+        "tracks": [
+            {"track_id": "track_a", "label": "Budget"},
+            {"track_id": "track_b", "label": "Technology"},
+        ],
+        "outline": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Budget options",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open budget possibilities.",
+                "track_id": "track_a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Budget shortlist",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Down-select budget options.",
+                "track_id": "track_a",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Tech options",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open technology possibilities.",
+                "track_id": "track_b",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Tech shortlist",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Down-select technology options.",
+                "track_id": "track_b",
+            },
+        ],
+    }
+    valid_result = validate_outline(valid_outline)
+    assert valid_result.valid is True
+    assert valid_result.errors == []
+
+    # (b) Invalid: one declared track has only one activity
+    invalid_outline = {
+        "meeting_summary": "Multi-track planning",
+        "tracks": [
+            {"track_id": "track_a", "label": "Budget"},
+            {"track_id": "track_b", "label": "Technology"},
+        ],
+        "outline": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Budget options",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open budget possibilities.",
+                "track_id": "track_a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Budget shortlist",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Down-select budget options.",
+                "track_id": "track_a",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Tech options",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open technology possibilities.",
+                "track_id": "track_b",
+            },
+        ],
+    }
+    invalid_result = validate_outline(invalid_outline)
+    assert invalid_result.valid is False
+    assert any(
+        err.message == "Track 'track_b' (Technology) has 1 activity but must have at least 2."
+        for err in invalid_result.errors
+    )
+
+    # (c) Warning: activity references undeclared track_id
+    warning_outline = {
+        "meeting_summary": "Multi-track planning",
+        "tracks": [
+            {"track_id": "track_a", "label": "Budget"},
+            {"track_id": "track_b", "label": "Technology"},
+        ],
+        "outline": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Budget options",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open budget possibilities.",
+                "track_id": "track_a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Budget shortlist",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Down-select budget options.",
+                "track_id": "track_a",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Tech options",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open technology possibilities.",
+                "track_id": "track_b",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Tech shortlist",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Down-select technology options.",
+                "track_id": "track_b",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Unmapped deep dive",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Extra track experiment.",
+                "track_id": "track_z",
+            },
+        ],
+    }
+    warning_result = validate_outline(warning_outline)
+    assert warning_result.valid is True
+    assert any(
+        w.message == "Activity 'Unmapped deep dive' references undeclared track_id 'track_z'."
+        for w in warning_result.warnings
+    )
+
+    # (d) No tracks array: backward-compatible pass
+    no_tracks_outline = {
+        "meeting_summary": "Simple planning",
+        "outline": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Generate ideas",
+                "duration_minutes": 15,
+                "collaboration_pattern": "Generate",
+                "rationale": "Collect options.",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Choose next step",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Pick a direction.",
+            },
+        ],
+    }
+    no_tracks_result = validate_outline(no_tracks_outline)
+    assert no_tracks_result.valid is True
+    assert no_tracks_result.errors == []
+
+
+def test_generation_prompt_renders_track_grouped_outline() -> None:
+    """Phase 3 Step 4: build_generation_prompt() groups outline by tracks when provided."""
+    from app.services.meeting_designer_prompt import build_generation_prompt
+
+    outline_payload = {
+        "tracks": [
+            {"track_id": "track_a", "label": "Budget Review", "goal": "Prioritize budget options"},
+            {"track_id": "track_b", "label": "Technology Assessment", "goal": "Prioritize tech options"},
+        ],
+        "outline": [
+            {"tool_type": "brainstorming", "title": "Opening Discussion", "track_id": None},
+            {"tool_type": "brainstorming", "title": "Generate Budget Ideas", "track_id": "track_a"},
+            {"tool_type": "categorization", "title": "Group Budget Ideas", "track_id": "track_a"},
+            {"tool_type": "voting", "title": "Vote Budget Priorities", "track_id": "track_a"},
+            {"tool_type": "brainstorming", "title": "Generate Tech Options", "track_id": "track_b"},
+            {"tool_type": "voting", "title": "Evaluate Tech Options", "track_id": "track_b"},
+        ],
+    }
+
+    grouped_prompt = build_generation_prompt(outline=outline_payload)
+    assert "track groupings" in grouped_prompt
+    assert "Plenary activities:" in grouped_prompt
+    assert 'Track "Budget Review" (track_a):' in grouped_prompt
+    assert 'Track "Technology Assessment" (track_b):' in grouped_prompt
+    assert grouped_prompt.find("Plenary activities:") < grouped_prompt.find('Track "Budget Review" (track_a):')
+
+    # Fallback: outline list without tracks remains flat.
+    flat_prompt = build_generation_prompt(outline=outline_payload["outline"])
+    assert "Plenary activities:" not in flat_prompt
+    assert 'Track "Budget Review" (track_a):' not in flat_prompt
+    assert "1. Opening Discussion [brainstorming]" in flat_prompt
+
+
+def test_outline_prompt_track_reasoning_guidance() -> None:
+    """Phase 3 Step 5: outline prompt includes conversation-aware track reasoning guidance."""
+    from app.services.meeting_designer_prompt import build_outline_prompt
+
+    prompt = build_outline_prompt()
+
+    assert "Track-aware reasoning" in prompt
+    assert "breakout" in prompt
+    assert "rationale" in prompt
+
+
+def test_extract_phase_track_maps_basic() -> None:
+    """Phase 4 Step 1: _extract_phase_track_maps() returns expected maps/sets."""
+    from app.services.agenda_validator import _extract_phase_track_maps
+
+    agenda_payload = {
+        "phases": [
+            {
+                "phase_id": "phase_1",
+                "title": "Open",
+                "phase_type": "plenary",
+            },
+            {
+                "phase_id": "phase_2",
+                "title": "Breakout",
+                "phase_type": "parallel",
+                "tracks": [
+                    {"track_id": "track_2a", "label": "Budget"},
+                    {"track_id": "track_2b", "label": "Technology"},
+                ],
+            },
+            {
+                "phase_id": "phase_3",
+                "title": "Reconverge",
+                "phase_type": "plenary",
+            },
+        ],
+        "agenda": [],
+    }
+
+    declared_phases, declared_tracks, parallel_phase_ids = _extract_phase_track_maps(agenda_payload)
+
+    assert len(declared_phases) == 3
+    assert set(declared_phases.keys()) == {"phase_1", "phase_2", "phase_3"}
+    assert declared_tracks == {"track_2a": "phase_2", "track_2b": "phase_2"}
+    assert parallel_phase_ids == {"phase_2"}
+
+    empty_declared_phases, empty_declared_tracks, empty_parallel_phase_ids = _extract_phase_track_maps(
+        {"phases": []}
+    )
+    assert empty_declared_phases == {}
+    assert empty_declared_tracks == {}
+    assert empty_parallel_phase_ids == set()
+
+
+def test_validate_agenda_dangling_phase_id() -> None:
+    """Phase 4 Step 2: validate_agenda() flags agenda items with undeclared phase_id."""
+    from app.services.agenda_validator import validate_agenda
+
+    invalid_agenda = {
+        "meeting_summary": "Phase reference checks",
+        "design_rationale": "Test dangling phase IDs.",
+        "phases": [
+            {
+                "phase_id": "phase_1",
+                "title": "Opening",
+                "phase_type": "plenary",
+            }
+        ],
+        "agenda": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Generate options",
+                "instructions": "Generate ideas.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Create options.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Select options",
+                "instructions": "Vote on ideas.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Pick winners.",
+                "config_overrides": {},
+                "phase_id": "phase_99",
+            },
+        ],
+    }
+
+    invalid_result = validate_agenda(invalid_agenda)
+    assert invalid_result.valid is False
+    phase_errors = [e for e in invalid_result.errors if e.field == "phase_id"]
+    assert len(phase_errors) == 1
+    assert "phase_99" in phase_errors[0].message
+    assert "not declared" in phase_errors[0].message
+
+    valid_agenda = {
+        **invalid_agenda,
+        "agenda": [
+            {**invalid_agenda["agenda"][0]},
+            {**invalid_agenda["agenda"][1], "phase_id": "phase_1"},
+        ],
+    }
+    valid_result = validate_agenda(valid_agenda)
+    assert valid_result.valid is True
+    assert not any(e.field == "phase_id" for e in valid_result.errors)
+
+
+def test_validate_agenda_dangling_track_id() -> None:
+    """Phase 4 Step 3: validate_agenda() flags agenda items with undeclared track_id."""
+    from app.services.agenda_validator import validate_agenda
+
+    invalid_agenda = {
+        "meeting_summary": "Track reference checks",
+        "design_rationale": "Test dangling track IDs.",
+        "phases": [
+            {
+                "phase_id": "phase_1",
+                "title": "Breakout",
+                "phase_type": "parallel",
+                "tracks": [{"track_id": "track_2a", "label": "Budget"}],
+            },
+            {
+                "phase_id": "phase_2",
+                "title": "Reconverge",
+                "phase_type": "plenary",
+            },
+        ],
+        "agenda": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Plenary kickoff",
+                "instructions": "Set context.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Create shared frame.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": None,
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Budget options",
+                "instructions": "Generate budget ideas.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Create options.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Budget shortlist",
+                "instructions": "Vote on budget ideas.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Select budget candidates.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Ghost track vote",
+                "instructions": "Vote in ghost track.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Simulate dangling reference.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_GHOST",
+            },
+        ],
+    }
+
+    invalid_result = validate_agenda(invalid_agenda)
+    assert invalid_result.valid is False
+    track_errors = [e for e in invalid_result.errors if e.field == "track_id"]
+    assert len(track_errors) == 1
+    assert "track_GHOST" in track_errors[0].message
+    assert "not declared" in track_errors[0].message
+
+    valid_agenda = {
+        **invalid_agenda,
+        "agenda": [
+            {**invalid_agenda["agenda"][0]},
+            {**invalid_agenda["agenda"][1]},
+            {**invalid_agenda["agenda"][2]},
+            {**invalid_agenda["agenda"][3], "track_id": "track_2a"},
+        ],
+    }
+    valid_result = validate_agenda(valid_agenda)
+    assert valid_result.valid is True
+    assert not any(e.field == "track_id" for e in valid_result.errors)
+
+
+def test_validate_agenda_single_activity_track() -> None:
+    """Phase 4 Step 4: validate_agenda() enforces minimum 2 activities per parallel track."""
+    from app.services.agenda_validator import validate_agenda
+
+    invalid_agenda = {
+        "meeting_summary": "Parallel track checks",
+        "design_rationale": "Enforce multi-activity track invariant.",
+        "phases": [
+            {
+                "phase_id": "phase_1",
+                "title": "Breakout Work",
+                "phase_type": "parallel",
+                "tracks": [
+                    {"track_id": "track_2a", "label": "Budget"},
+                    {"track_id": "track_2b", "label": "Technology"},
+                ],
+            },
+            {
+                "phase_id": "phase_2",
+                "title": "Reconverge",
+                "phase_type": "plenary",
+            }
+        ],
+        "agenda": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Budget options",
+                "instructions": "Generate budget options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open budget idea space.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "categorization",
+                "title": "Budget clustering",
+                "instructions": "Group budget options by theme.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Organize",
+                "rationale": "Prepare for selection.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Budget shortlist vote",
+                "instructions": "Vote top budget options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Create shortlist.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Tech options",
+                "instructions": "Generate technology options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open technology idea space.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2b",
+            },
+        ],
+    }
+
+    invalid_result = validate_agenda(invalid_agenda)
+    assert invalid_result.valid is False
+    assert any("track_2b" in err.message and "requires at least 2" in err.message for err in invalid_result.errors)
+
+    valid_agenda = {
+        **invalid_agenda,
+        "agenda": [
+            *invalid_agenda["agenda"],
+            {
+                "tool_type": "voting",
+                "title": "Tech shortlist vote",
+                "instructions": "Vote top technology options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Create shortlist.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": "track_2b",
+            },
+        ],
+    }
+    valid_result = validate_agenda(valid_agenda)
+    assert valid_result.valid is True
+    assert not any("track_2b" in err.message and "requires at least 2" in err.message for err in valid_result.errors)
+
+
+def test_validate_agenda_missing_reconvergence() -> None:
+    """Phase 4 Step 5: validate_agenda() enforces parallel-phase reconvergence ordering."""
+    from app.services.agenda_validator import validate_agenda
+
+    def _agenda_with_phases(phases: list[dict]) -> dict:
+        return {
+            "meeting_summary": "Reconvergence checks",
+            "design_rationale": "Ensure parallel phases reconverge to plenary.",
+            "phases": phases,
+            "agenda": [
+                {
+                    "tool_type": "brainstorming",
+                    "title": "Track A ideation",
+                    "instructions": "Generate ideas for track A.",
+                    "duration_minutes": 10,
+                    "collaboration_pattern": "Generate",
+                    "rationale": "Open options.",
+                    "config_overrides": {},
+                    "phase_id": "phase_2",
+                    "track_id": "track_2a",
+                },
+                {
+                    "tool_type": "voting",
+                    "title": "Track A selection",
+                    "instructions": "Vote top options for track A.",
+                    "duration_minutes": 10,
+                    "collaboration_pattern": "Evaluate",
+                    "rationale": "Converge track A.",
+                    "config_overrides": {},
+                    "phase_id": "phase_2",
+                    "track_id": "track_2a",
+                },
+                {
+                    "tool_type": "brainstorming",
+                    "title": "Track B ideation",
+                    "instructions": "Generate ideas for track B.",
+                    "duration_minutes": 10,
+                    "collaboration_pattern": "Generate",
+                    "rationale": "Open options.",
+                    "config_overrides": {},
+                    "phase_id": "phase_2",
+                    "track_id": "track_2b",
+                },
+                {
+                    "tool_type": "voting",
+                    "title": "Track B selection",
+                    "instructions": "Vote top options for track B.",
+                    "duration_minutes": 10,
+                    "collaboration_pattern": "Evaluate",
+                    "rationale": "Converge track B.",
+                    "config_overrides": {},
+                    "phase_id": "phase_2",
+                    "track_id": "track_2b",
+                },
+            ],
+        }
+
+    # (a) Valid: plenary -> parallel -> plenary
+    valid_phases = [
+        {"phase_id": "phase_1", "title": "Open", "phase_type": "plenary"},
+        {
+            "phase_id": "phase_2",
+            "title": "Breakout",
+            "phase_type": "parallel",
+            "tracks": [{"track_id": "track_2a"}, {"track_id": "track_2b"}],
+        },
+        {"phase_id": "phase_3", "title": "Reconverge", "phase_type": "plenary"},
+    ]
+    valid_result = validate_agenda(_agenda_with_phases(valid_phases))
+    assert valid_result.valid is True
+
+    # (b) Invalid: plenary -> parallel (last phase)
+    missing_reconvergence_phases = [
+        {"phase_id": "phase_1", "title": "Open", "phase_type": "plenary"},
+        {
+            "phase_id": "phase_2",
+            "title": "Breakout",
+            "phase_type": "parallel",
+            "tracks": [{"track_id": "track_2a"}, {"track_id": "track_2b"}],
+        },
+    ]
+    missing_reconvergence_result = validate_agenda(_agenda_with_phases(missing_reconvergence_phases))
+    assert missing_reconvergence_result.valid is False
+    assert any(
+        "phase_2" in err.message and "last phase" in err.message
+        for err in missing_reconvergence_result.errors
+    )
+
+    # (c) Invalid: parallel -> parallel -> plenary
+    parallel_then_parallel_phases = [
+        {
+            "phase_id": "phase_1",
+            "title": "Parallel A",
+            "phase_type": "parallel",
+            "tracks": [{"track_id": "track_2a"}, {"track_id": "track_2b"}],
+        },
+        {
+            "phase_id": "phase_2",
+            "title": "Parallel B",
+            "phase_type": "parallel",
+            "tracks": [{"track_id": "track_2a"}, {"track_id": "track_2b"}],
+        },
+        {"phase_id": "phase_3", "title": "Reconverge", "phase_type": "plenary"},
+    ]
+    parallel_then_parallel_result = validate_agenda(_agenda_with_phases(parallel_then_parallel_phases))
+    assert parallel_then_parallel_result.valid is False
+    assert any(
+        "phase_1" in err.message and "followed by another parallel phase ('phase_2')" in err.message
+        for err in parallel_then_parallel_result.errors
+    )
+
+
+def test_validate_agenda_structural_checks_wired() -> None:
+    """Phase 4 Step 6: validate_agenda() runs structural checks without false positives on valid input."""
+    from app.services.agenda_validator import validate_agenda
+
+    valid_agenda = {
+        "meeting_summary": "Well-formed multi-track session",
+        "design_rationale": "Plenary framing, parallel work, plenary reconvergence.",
+        "phases": [
+            {"phase_id": "phase_1", "title": "Open", "phase_type": "plenary"},
+            {
+                "phase_id": "phase_2",
+                "title": "Breakout",
+                "phase_type": "parallel",
+                "tracks": [
+                    {"track_id": "track_2a", "label": "Budget"},
+                    {"track_id": "track_2b", "label": "Technology"},
+                ],
+            },
+            {"phase_id": "phase_3", "title": "Reconverge", "phase_type": "plenary"},
+        ],
+        "agenda": [
+            {
+                "tool_type": "brainstorming",
+                "title": "Kickoff framing",
+                "instructions": "Frame goals and constraints.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Align participants before breakouts.",
+                "config_overrides": {},
+                "phase_id": "phase_1",
+                "track_id": None,
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Budget ideas",
+                "instructions": "Generate budget options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open budget option space.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "categorization",
+                "title": "Budget clustering",
+                "instructions": "Cluster budget options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Organize",
+                "rationale": "Prepare budget options for evaluation.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Budget shortlist",
+                "instructions": "Vote budget shortlist.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Converge budget choices.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2a",
+            },
+            {
+                "tool_type": "brainstorming",
+                "title": "Technology ideas",
+                "instructions": "Generate technology options.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Generate",
+                "rationale": "Open technology option space.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2b",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Technology shortlist",
+                "instructions": "Vote technology shortlist.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Converge technology choices.",
+                "config_overrides": {},
+                "phase_id": "phase_2",
+                "track_id": "track_2b",
+            },
+            {
+                "tool_type": "voting",
+                "title": "Reconvergence synthesis",
+                "instructions": "Share outcomes and align final priorities.",
+                "duration_minutes": 10,
+                "collaboration_pattern": "Evaluate",
+                "rationale": "Merge track outcomes into a single direction.",
+                "config_overrides": {},
+                "phase_id": "phase_3",
+                "track_id": None,
+            },
+        ],
+    }
+
+    result = validate_agenda(valid_agenda)
+    assert result.valid is True
+    assert result.errors == []
 
 
 # ---------------------------------------------------------------------------
