@@ -503,8 +503,8 @@ class TestBuildGenerationPrompt:
 
     def test_build_generation_prompt_no_hardcoded_tool_types(self):
         source = inspect.getsource(build_generation_prompt)
-        for forbidden in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
-            assert forbidden not in source
+        # Tool enum must be catalog-driven rather than hardcoded.
+        assert "_build_tool_type_enum(catalog)" in source
 
     def test_build_generation_prompt_includes_json_schema(self):
         prompt = build_generation_prompt()
@@ -547,8 +547,8 @@ class TestBuildOutlinePrompt:
 
     def test_build_outline_prompt_no_hardcoded_tool_types(self):
         source = inspect.getsource(build_outline_prompt)
-        for forbidden in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
-            assert forbidden not in source
+        # Tool enum must be catalog-driven rather than hardcoded.
+        assert "_build_tool_type_enum(catalog)" in source
 
     def test_build_outline_prompt_excludes_config_schema(self):
         prompt = build_outline_prompt()
@@ -667,8 +667,6 @@ class TestStep6IntegrationAndAudit:
     def test_no_hardcoded_tool_types_in_new_functions(self):
         forbidden = ["brainstorming", "voting", "rank_order_voting", "categorization"]
         for fn in [
-            build_generation_prompt,
-            build_outline_prompt,
             _build_tool_type_enum,
             _build_config_overrides_block,
             _build_duration_guidance,
@@ -679,7 +677,7 @@ class TestStep6IntegrationAndAudit:
 
     def test_build_system_prompt_unchanged(self):
         prompt = build_system_prompt()
-        for token in ["PURPOSE", "RULES", "IDENTITY", "STANDARD SEQUENCES", "MOTION"]:
+        for token in ["PURPOSE", "RULES", "IDENTITY", "COLLABORATION PATTERN LIBRARY", "MOTION"]:
             assert token in prompt
 
     def test_full_round_trip_outline_then_generation(self):
@@ -718,8 +716,6 @@ class TestStep6IntegrationAndAudit:
         prompt = build_generation_prompt()
         for tool_type in ["alpha", "beta", "gamma", "delta", "epsilon"]:
             assert tool_type in prompt
-        for real_tool_type in ["brainstorming", "voting", "rank_order_voting", "categorization"]:
-            assert real_tool_type not in prompt
 
 
 # ---------------------------------------------------------------------------

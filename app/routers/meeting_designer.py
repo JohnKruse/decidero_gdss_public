@@ -38,6 +38,7 @@ from app.services.agenda_validator import (
 )
 from app.services.meeting_designer_prompt import (
     build_system_prompt,
+    build_generation_system_prompt,
     build_generation_messages,
     build_outline_messages,
     parse_agenda_json,
@@ -348,7 +349,7 @@ async def _run_generation_pipeline(
         len(validated_outline),
     )
 
-    generation_messages = build_generation_messages(history, outline=validated_outline)
+    generation_messages = build_generation_messages(history, outline=outline_data)
     agenda_data, agenda_attempts = await _run_stage_with_retry(
         stage="full_json",
         messages=generation_messages,
@@ -666,7 +667,7 @@ async def generate_agenda(
     settings = get_meeting_designer_settings()
 
     history = [{"role": m.role, "content": m.content} for m in request.messages]
-    system_prompt = build_system_prompt()
+    system_prompt = build_generation_system_prompt()
 
     try:
         result = await _run_generation_pipeline(
