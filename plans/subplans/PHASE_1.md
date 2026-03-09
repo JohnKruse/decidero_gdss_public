@@ -1,221 +1,212 @@
-# Phase 1 — Schema & Eligibility Foundation [COMPLETE]
+# Phase 1 [COMPLETE] — Purge Dummy Data Origins
 
-**Parent:** `plans/01_MASTER_PLAN.md`
-**Global Canary:** `Turquoise Wombat`
-**Phase Canary:** `Velvet Penguin`
+**Phase canary:** `Turbulent Ketchup`
 
----
+**Parent:** `plans/01_MASTER_PLAN.md` (Project canary: `Velvet Prosciutto`)
 
-## Step 1: [DONE] Extend `TransferTargetActivity` Schema
-
-**File:** `app/schemas/transfer.py` (lines 28-32)
-
-**Implement:**
-- Add `activity_id: Optional[str] = None` to `TransferTargetActivity`.
-- Change `tool_type` from `str` (required) to `Optional[str] = None`.
-- Add a Pydantic `model_validator(mode="after")` that enforces: at least one of `activity_id` or `tool_type` must be provided. If neither is set, raise `ValueError("Either tool_type or activity_id must be provided")`.
-
-**Test:** Add tests to `app/tests/test_transfer_api.py`:
-- `test_transfer_target_schema_accepts_tool_type_only` — instantiate `TransferTargetActivity(tool_type="voting")`, assert valid.
-- `test_transfer_target_schema_accepts_activity_id_only` — instantiate `TransferTargetActivity(activity_id="VO-0003")`, assert valid.
-- `test_transfer_target_schema_accepts_both` — instantiate with both fields, assert valid.
-- `test_transfer_target_schema_rejects_neither` — instantiate with neither, assert `ValidationError`.
-
-**Docs:** Update the docstring on `TransferTargetActivity` to describe the two modes: new-activity (tool_type required) vs. existing-activity (activity_id required, tool_type derived from target).
+**Objective:** Eliminate every source of placeholder/dummy content that gets baked into fresh activities at creation time, so that `_assert_transfer_eligible()` no longer false-rejects pristine transfer targets.
 
 ---
 
-## Step 2: [DONE] Extend `TransferCommit` Response Contract
+## Step 1 [DONE]: Strip the voting plugin manifest placeholder
 
-**File:** `app/schemas/transfer.py` (lines 35-40)
+The voting plugin's `default_config` ships `"options": ["Edit vote option here"]`. This string has no functional purpose — `VotingManager._extract_options()` and the frontend's `renderVotingSummary()` both handle `[]` gracefully (see Discovery sections 3.1 and 4.2). Replace it with an empty list.
 
-**Implement:**
-- No change to `TransferCommit` request schema itself (the `target_activity: TransferTargetActivity` field already carries the new `activity_id`).
-- Create a new Pydantic response model `TransferCommitResponse` in the same file:
-  ```
-  class TransferCommitResponse(BaseModel):
-      target_activity: Dict[str, Any]
-      new_activity: Optional[Dict[str, Any]] = None  # backward compat alias
-      agenda: List[Dict[str, Any]]
-      input_bundle_id: str
-  ```
-- The `target_activity` field replaces the current `new_activity` as the canonical key. `new_activity` is retained as a backward-compatible alias (set to the same value when a new activity is created; set to `None` when transferring into an existing activity).
+**Files:**
 
-**Test:** Add to `app/tests/test_transfer_api.py`:
-- `test_transfer_commit_response_contains_target_activity` — perform an existing "create new" transfer commit (any existing test pattern), assert the response dict contains both `target_activity` and `new_activity` keys, and that they are equal.
+| File | Location | Current | Target |
+|------|----------|---------|--------|
+| `app/plugins/builtin/voting_plugin.py` | Line 20, `default_config` | `"options": ["Edit vote option here"]` | `"options": []` |
 
-**Docs:** Add docstring to `TransferCommitResponse` explaining the dual-key contract and backward compatibility.
+**Implementation:**
+- Change the single line in the manifest's `default_config` dict.
+- Update the module docstring or inline comment to note that empty options are valid and render the facilitator "Edit options" CTA in the UI.
 
-**Technical Deviations Logged:**
-- To keep the Step 2 response contract test executable, `commit_transfer` now returns both `target_activity` and `new_activity` in this phase. This behavior was originally called out again in Step 5, so Step 5 will be reduced to compatibility assertion updates/refinement rather than first introduction of the key.
+**Test:**
+- In `app/tests/test_meeting_manager.py`, add a test `test_voting_default_config_has_empty_options` that creates a voting activity with **no** caller-provided config, retrieves it, and asserts `config["options"] == []`.
+- Existing test `test_add_voting_config_rejects_object_placeholder_lines` (line 676) must still pass unchanged — it tests `[object Object]` rejection, not placeholder content.
+
+**Docs:**
+- Add a one-line comment above the `default_config` dict: `# options intentionally empty; UI shows "Edit options" CTA for facilitators`.
 
 ---
 
-## Step 3: [DONE] Build the `_assert_transfer_eligible` Helper
+## Step 2 [DONE]: Strip the rank-order voting frontend placeholder
 
-**File:** `app/routers/transfer.py` (new function, place after `_ensure_not_running` at ~line 249)
+The backend plugin manifest already has `"ideas": []`, but the **frontend** carries a stale placeholder:
 
-**Implement:**
-Create `async def _assert_transfer_eligible(target: AgendaActivity, donor_activity_id: str, meeting_id: str, meeting_manager: MeetingManager) -> None` that raises `HTTPException` when the target activity is ineligible. Checks, in order:
+| File | Location | Current | Target |
+|------|----------|---------|--------|
+| `app/static/js/meeting.js` | Line 153 | `ideas: ["Edit ranked idea here"]` | `ideas: []` |
+| `app/templates/create_meeting.html` | Line 216 | `ideas: ['Edit ranked idea here']` | `ideas: []` |
 
-1. **Not the donor:** `target.activity_id == donor_activity_id` → 422, `"Cannot transfer into the donor activity itself."`
-2. **Never started:** `target.started_at is not None` → 422, `"Target activity has already been started."`
-3. **Never stopped:** `target.stopped_at is not None` → 422, `"Target activity has already been stopped."`
-4. **No elapsed time:** `(target.elapsed_duration or 0) > 0` → 422, `"Target activity has accumulated run time."`
-5. **No user data:** `meeting_manager.get_activity_data_flags(meeting_id).get(target.activity_id)` → 422, `"Target activity already has participant data."`
-6. **Not running:** call `await _ensure_not_running(meeting_id, target.activity_id)` (reuse existing helper; it raises 409 on its own).
+These are the client-side tool catalogs used by the transfer panel and the meeting creation form. They must match the backend manifest.
 
-Each check produces a clear, distinct error detail string so tests can assert on the message.
+**Implementation:**
+- Replace both instances with empty arrays.
+- Note: `create_meeting.html` also has `options: ['Edit vote option here']` at line 208 — change it to `options: []` in lockstep with Step 1.
 
-**Test:** Add to `app/tests/test_transfer_api.py`:
-- `test_transfer_eligible_rejects_self_transfer` — create a meeting with one brainstorming activity, submit an idea, stop it. Attempt commit with `donor_activity_id` == `target_activity.activity_id`. Assert 422 with "donor activity itself".
-- `test_transfer_eligible_rejects_started_activity` — create a meeting with a brainstorming donor (with ideas) and a voting target. Set `started_at` on the target via ORM. Attempt commit with `activity_id` pointing to the target. Assert 422 with "already been started".
-- `test_transfer_eligible_rejects_activity_with_data` — create a meeting with a brainstorming donor and a voting target. Add a `VotingVote` row to the target. Attempt commit. Assert 422 with "participant data".
+**Test:**
+- No new pytest needed. The existing `test_frontend_smoke.py` validates HTML/JS integrity. Run it to confirm no syntax errors were introduced.
+- Optionally verify in `test_meeting_manager.py` that a rank-order activity created with no caller config gets `config["ideas"] == []` (analog to the Step 1 test).
 
-These tests call the commit endpoint; the eligibility helper is exercised through the endpoint, not tested in isolation. This keeps the test pattern consistent with the rest of `test_transfer_api.py`.
-
-**Docs:** Add a docstring to `_assert_transfer_eligible` listing all six checks and their HTTP status codes.
-
-**Technical Deviations Logged:**
-- To exercise Step 3 tests through the `/transfer/commit` endpoint (as specified), the endpoint now invokes `_assert_transfer_eligible` when `target_activity.activity_id` is provided.
-- The explicit `501` placeholder for eligible existing-target commits is still deferred to Step 4 as planned.
+**Docs:**
+- Add a JS comment in both files above the default_config block: `// options/ideas intentionally empty — backend is the source of truth for defaults`.
 
 ---
 
-## Step 4: [DONE] Wire Eligibility Into `commit_transfer` (Guard Only)
+## Step 3 [DONE]: Add placeholder detection for voting in `_map_transfer_config()`
 
-**File:** `app/routers/transfer.py` (within `commit_transfer`, ~lines 452-467)
+Categorization already detects placeholder strings (`"edit item here"`, `"one idea per line."`) at `transfer.py:438-442` and treats them as "items missing." Voting has **no** equivalent guard — if a voting activity is created with `["Edit vote option here"]` and later becomes a transfer target, the stale placeholder would survive as a real option.
 
-**Implement:**
-After the existing donor validation block (line 445) and before the target resolution block (line 452), add a conditional guard:
+With Step 1 deployed, new activities won't carry the placeholder. But existing activities in the wild may still have it. Add a parallel guard for voting.
 
-```python
-if target.activity_id:
-    existing_target = _resolve_activity(meeting, target.activity_id)
-    await _assert_transfer_eligible(
-        existing_target, payload.donor_activity_id, meeting_id, meeting_manager
-    )
-    # Phase 2 will add the existing-activity commit path here.
-    # For now, fall through to raise NotImplementedError so tests can
-    # verify eligibility without accidentally creating duplicate activities.
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Transfer into existing activity is not yet implemented.",
-    )
-```
+**Files:**
 
-This placement means eligibility is checked BEFORE any config mapping or activity creation. The 501 is a temporary sentinel — Phase 2 replaces it with the real logic.
+| File | Location | Change |
+|------|----------|--------|
+| `app/routers/transfer.py` | Inside `_map_transfer_config()`, voting branch (around line 401) | After `use_transferred_options = inherited_config_from_donor or not config.get("options")`, add a fallthrough that also sets `use_transferred_options = True` if the existing options normalize to `["edit vote option here"]` |
 
-**Test:** Add to `app/tests/test_transfer_api.py`:
-- `test_transfer_commit_into_existing_returns_501_placeholder` — create a meeting with a brainstorming donor (with ideas, stopped) and a virgin voting target. Commit with `target_activity: {"activity_id": "<voting_id>"}`. Assert 501 with "not yet implemented". This confirms the wiring is correct and eligibility passed.
+**Implementation:**
+- Mirror the categorization pattern: normalize the existing options to lowercase-stripped strings and compare against `["edit vote option here"]`.
+- Also add `["edit ranked idea here"]` to the rank-order voting branch at line 465 for the same reason.
 
-**Docs:** Add an inline comment at the 501 line: `# Velvet Penguin: Phase 1 placeholder — replaced in Phase 2`.
+**Test:**
+- In `app/tests/test_transfer_api.py`, add a test `test_transfer_commit_replaces_voting_placeholder_options` that:
+  1. Creates a meeting with a donor brainstorming activity and a target voting activity whose config is `{"options": ["Edit vote option here"], "max_votes": 3}`.
+  2. Seeds a real idea into the donor.
+  3. Commits transfer into the target.
+  4. Asserts the target's config now has `options == ["<the real idea>"]`, not `["Edit vote option here", "<the real idea>"]`.
 
-**Technical Deviations Logged:**
-- Step 3 had already introduced the eligibility helper invocation in `commit_transfer`; Step 4 completed the planned guard behavior by adding the explicit `501` placeholder branch and regression test.
+**Docs:**
+- Update the `_map_transfer_config()` docstring to note that placeholder strings are treated as empty for all tool types.
 
 ---
 
-## Step 5: [DONE] Adopt `TransferCommitResponse` in the Existing Create Path
+## Step 4 [DONE]: Audit `_validate_activity_config_placeholders()` for empty-array safety
 
-**File:** `app/routers/transfer.py` (lines 741-749)
+`meeting_manager.py:177-206` validates that config arrays don't contain `[object Object]` strings. It iterates the array values with `any(...)`. If the array is `[]`, the `any(...)` call returns `False` immediately — this is safe. But we need to confirm it doesn't implicitly reject empty arrays or raise on `None`.
 
-**Implement:**
-Replace the raw dict return at the end of `commit_transfer` with:
+**Files:**
 
-```python
-response = {
-    "target_activity": AgendaActivityResponse.model_validate(created).model_dump(),
-    "new_activity": AgendaActivityResponse.model_validate(created).model_dump(),
-    "agenda": [
-        AgendaActivityResponse.model_validate(item).model_dump()
-        for item in agenda_items
-    ],
-    "input_bundle_id": input_bundle.bundle_id,
-}
-return response
-```
+| File | Location | Change |
+|------|----------|--------|
+| `app/data/meeting_manager.py` | `_contains_object_placeholder()` (line 166) and `_validate_activity_config_placeholders()` (line 177) | Read and confirm behavior. Add explicit guard if `value` is `None`. |
 
-This adds the `target_activity` key alongside the existing `new_activity` key so the frontend can begin consuming `target_activity` without breaking on the current `new_activity` key.
+**Implementation:**
+- Read `_contains_object_placeholder()`. If `value` is `None` or not a list, confirm it returns `False` without raising.
+- If it does raise, add `if not value: return False` at the top.
+- This is an audit step — if no code change is needed, document why in a comment.
 
-Add the import for `TransferCommitResponse` if using it for response_model typing (optional — the dict return is sufficient and avoids serialization surprises with the dynamic agenda items).
+**Test:**
+- In `app/tests/test_meeting_manager.py`, add a test `test_activity_config_accepts_empty_options_list` that creates a voting activity with `config={"options": []}` and asserts it succeeds (no 422 error).
+- Add a companion `test_activity_config_accepts_none_options` that creates a voting activity with `config={"options": None}` and asserts it succeeds or produces a clean validation error (not an unhandled exception).
 
-**Test:** Update existing test assertions in `app/tests/test_transfer_api.py` that check `commit_resp.json()["new_activity"]` to **also** assert `commit_resp.json()["target_activity"]` is present and equal to `new_activity`. Specifically, add a parallel assertion in `test_transfer_commit_copies_config_and_ideas` and `test_transfer_draft_and_commit_preserve_item_metadata`. Do NOT remove the existing `new_activity` assertions — backward compat.
-
-**Docs:** Add inline comment above the response dict: `# target_activity is the canonical key; new_activity retained for backward compatibility`.
-
-**Technical Deviations Logged:**
-- Core Step 5 behavior (returning both `target_activity` and `new_activity`) was introduced earlier in Step 2 to satisfy the response-contract test at that stage.
-- This step finalized the intended compatibility contract by adding the explicit inline comment and the required equality assertions in:
-  - `test_transfer_commit_copies_config_and_ideas`
-  - `test_transfer_draft_and_commit_preserve_item_metadata`
+**Docs:**
+- Add a comment in `_contains_object_placeholder()` noting that empty/None values are intentionally accepted.
 
 ---
 
-## Step 6: [DONE] Add `AgendaActivityResponse` Eligibility Signal
+## Step 5 [DONE]: Locate and remove any branch-local dummy Idea seeding
 
-**File:** `app/schemas/meeting.py` (line 185, `AgendaActivityResponse`)
+The discovery's exhaustive search found **no** mainline code that auto-creates `Idea` rows in fresh activities. But the user reported that activities were "seeded with a dummy idea." This means the seeding is either:
+- A branch-specific change on the current branch (`codex/meeting-designer-green`)
+- A manual workaround applied during development
+- Injected via the meeting designer AI's agenda generation
 
-**Implement:**
-- Add `transfer_target_eligible: bool = False` to `AgendaActivityResponse`.
-- In `app/routers/meetings.py`, within `_apply_transfer_counts()` (~line 464), after computing `has_data` / `has_votes` / `has_submitted_ballots`, compute and set `transfer_target_eligible` for each activity:
-  ```python
-  item.transfer_target_eligible = (
-      item.started_at is None
-      and item.stopped_at is None
-      and (item.elapsed_duration or 0) == 0
-      and not data_flags.get(item.activity_id, False)
-  )
-  ```
-  (The "not running" and "not donor" checks are context-dependent and handled at commit time, not in the agenda listing.)
+**Files:**
+- Run `git diff main -- '*.py'` to identify all changes on the current branch that touch `Idea(` or `add_idea`.
+- Search the meeting designer router (`app/routers/meeting_designer.py`) and its AI prompt templates for any instructions that tell the LLM to include "ideas" or "seed" content in brainstorming activities.
+- Search `app/templates/create_meeting.html` for any JS that auto-populates idea content during activity creation.
 
-This gives the frontend everything it needs to gray out ineligible activities in Phase 3 without an extra API call.
+**Implementation:**
+- If branch-specific Idea seeding is found: remove it.
+- If the meeting designer AI generates activities with pre-populated ideas in config: modify the prompt or post-processing to strip idea content from brainstorming activities (brainstorming `open_activity()` ignores config entirely, so config-level ideas would be vestigial).
+- If no seeding code is found: document the conclusion in a code comment in `transfer.py` near `_assert_transfer_eligible()` noting that fresh activities have zero Idea rows by design.
 
-**Test:** Add to `app/tests/test_transfer_api.py`:
-- `test_agenda_includes_transfer_target_eligible_flag` — create a meeting with two activities: one brainstorming (submit ideas, stop it) and one virgin voting. Fetch `GET /api/meetings/{id}/agenda`. Assert the brainstorming activity has `transfer_target_eligible: false` (it has data) and the voting activity has `transfer_target_eligible: true`.
+**Test:**
+- In `app/tests/test_transfer_api.py`, add a test `test_fresh_activity_has_no_idea_rows` that:
+  1. Creates a meeting with one brainstorming activity (no ideas submitted).
+  2. Queries `db.query(Idea).filter(activity_id=...).count()` and asserts it equals 0.
+  3. Creates a voting, categorization, and rank-order activity similarly and asserts zero Idea rows for each.
 
-**Docs:** Add field description to `AgendaActivityResponse`: `transfer_target_eligible: Whether this activity can receive transferred ideas (never started, no user data).`
-
-**Technical Deviations Logged:**
-- The eligibility flag is computed in `_apply_activity_lock_metadata()` (where `has_data`/`has_votes` are already derived) rather than `_apply_transfer_counts()`. This keeps related per-activity lock/eligibility metadata in one pass.
+**Docs:**
+- Add a comment in `_assert_transfer_eligible()` above the `Idea` query: `# Fresh activities must have zero Idea rows. See plans/00_DISCOVERY.md Section 10.`
 
 ---
 
-## Step 7: [DONE] Phase Canary Verification & Regression Sweep
+## Step 6 [DONE]: Verify the categorization placeholder list is complete
 
-**No new files.** This step is a verification gate.
+`_map_transfer_config()` at `transfer.py:438-442` detects two placeholder strings for categorization: `["edit item here"]` and `["one idea per line."]`. The `create_meeting.html` template at line 449 uses `'One idea per line.'` as a textarea placeholder and at line 445 as hint text. Verify no other UI-generated placeholders can leak into config.
 
-**Implement:**
-- Grep the codebase for `Velvet Penguin` to confirm it appears only in the expected locations (the 501 placeholder comment in `transfer.py`).
-- Grep for `Turquoise Wombat` to confirm it does not appear in source code (it belongs only in plan docs).
+**Files:**
 
-**Test:** Run the full existing test suite to confirm no regressions:
-```
-pytest app/tests/test_transfer_api.py app/tests/test_transfer_metadata.py app/tests/test_transfer_transforms.py app/tests/test_transfer_comment_format_parity.py -v
-```
-All pre-existing tests must pass alongside the new Phase 1 tests.
+| File | Location | Check |
+|------|----------|-------|
+| `app/templates/create_meeting.html` | Lines 440-490 | Confirm categorization textarea placeholders and hint text |
+| `app/static/js/meeting.js` | Transfer panel / activity config rendering | Confirm no other default strings |
+| `app/routers/transfer.py` | Lines 438-442 | Confirm the detection list is exhaustive |
 
-**Docs:** No additional documentation. Confirm that all docstrings added in Steps 1-6 are present.
+**Implementation:**
+- Cross-reference every placeholder/hint string in `create_meeting.html` against the detection list in `_map_transfer_config()`.
+- If any additional strings are found (e.g., `"One bucket/category per line."` for buckets), add them to the detection list.
+- Ensure detection is case-insensitive and whitespace-trimmed (it already normalizes via `.strip().lower()`).
 
-**Technical Deviations Logged:**
-- Canary verification was executed against source/test paths (`app`, `app/tests`, `docs`, `scripts`) to avoid plan-doc matches; `Velvet Penguin` appears only in `app/routers/transfer.py`, and `Turquoise Wombat` appears in no source files.
+**Test:**
+- In `app/tests/test_transfer_api.py`, add `test_transfer_categorization_replaces_placeholder_items` that:
+  1. Creates a target categorization activity with `config={"items": ["One idea per line."], "buckets": []}`.
+  2. Transfers real ideas into it.
+  3. Asserts the target's config items contain only the transferred ideas, not the placeholder string.
+- Existing test `test_transfer_commit_to_categorization_populates_items` should still pass.
+
+**Docs:**
+- Add a comment above the placeholder list in `_map_transfer_config()`: `# Placeholder strings from create_meeting.html UI hints. Keep in sync with template.`
+
+---
+
+## Step 7 [DONE]: Run Phase 1 validation suite
+
+Execute all tests touched or created in Steps 1-6 to confirm nothing regressed and all new assertions hold.
+
+**Implementation:**
+- No new code. This is the gate-check step.
+
+**Test:**
+- Run the full validation command (see Phase Exit Criteria below).
+- If any test fails, triage and fix before exiting this phase.
+
+**Docs:**
+- Once green, add a brief log entry at the bottom of this file recording the pass timestamp and any notes.
 
 ---
 
 ## Phase Exit Criteria
 
-The following command must pass at 100%:
+The following command must pass 100% to clear Phase 1:
 
 ```bash
-pytest app/tests/test_transfer_api.py app/tests/test_transfer_metadata.py app/tests/test_transfer_transforms.py app/tests/test_transfer_comment_format_parity.py -v
+pytest app/tests/test_transfer_api.py app/tests/test_meeting_manager.py app/tests/test_activity_plugins.py app/tests/test_voting_api.py app/tests/test_frontend_smoke.py -v --tb=short 2>&1 | tail -40
 ```
 
-**Specific assertions:**
-- All new `test_transfer_target_schema_*` tests pass (Step 1)
-- `test_transfer_commit_response_contains_target_activity` passes (Step 2)
-- All `test_transfer_eligible_rejects_*` tests pass (Step 3)
-- `test_transfer_commit_into_existing_returns_501_placeholder` passes (Step 4)
-- Existing commit tests now also assert `target_activity` key (Step 5)
-- `test_agenda_includes_transfer_target_eligible_flag` passes (Step 6)
-- All pre-existing transfer tests pass without modification to their core assertions (Step 7)
-- `Velvet Penguin` canary appears only in the Phase 1 placeholder comment
+**Specific assertions that must hold:**
+1. `test_voting_default_config_has_empty_options` — PASS
+2. `test_activity_config_accepts_empty_options_list` — PASS
+3. `test_transfer_commit_replaces_voting_placeholder_options` — PASS
+4. `test_fresh_activity_has_no_idea_rows` — PASS
+5. `test_transfer_categorization_replaces_placeholder_items` — PASS
+6. `test_transfer_eligible_rejects_activity_with_data` — PASS (existing, must not regress)
+7. `test_add_voting_config_rejects_object_placeholder_lines` — PASS (existing, must not regress)
+8. All other existing tests in the listed files — PASS
+
+---
+
+## Technical Deviations Log
+
+- 2026-03-08: Step 1 executed as specified with no technical deviations.
+- 2026-03-08: Step 2 executed as specified with no technical deviations.
+- 2026-03-08: Step 3 executed as specified with no technical deviations.
+- 2026-03-09: Step 4 executed as specified with no technical deviations.
+- 2026-03-09: Step 5 executed as specified with no technical deviations.
+- 2026-03-09: Step 6 executed as specified with no technical deviations.
+- 2026-03-09: Step 7 executed as specified with no technical deviations.
+- 2026-03-09 16:54 Europe/Rome: Phase 1 validation suite passed (`106 passed`).
