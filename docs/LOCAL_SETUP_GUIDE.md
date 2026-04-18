@@ -141,6 +141,12 @@ Run PowerShell as your normal user and execute:
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
 
+## Admin Panel: Shutdown Button
+
+When running locally with `uvicorn` (no process supervisor), the Admin Panel on the dashboard shows a **Shutdown Server** button instead of "Restart Server". Clicking it stops the dev server — equivalent to pressing `Ctrl-C` in the terminal. The server stays stopped until you restart it manually.
+
+This is intentional: the button label honestly reflects what will happen. The "Restart Server" label only appears when `DECIDERO_RESTART_ENABLED=true` is set in the environment, which the VPS setup script configures automatically for supervised deployments.
+
 ## Scope Note
 
 This local guide is for non-production use.

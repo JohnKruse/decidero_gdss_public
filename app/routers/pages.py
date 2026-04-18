@@ -6,6 +6,7 @@ from app.config.loader import (
     get_frontend_reliability_settings,
     get_meeting_activity_log_settings,
     get_meeting_refresh_settings,
+    get_restart_enabled,
     get_ui_refresh_settings,
     load_config,
 )
@@ -119,6 +120,7 @@ async def dashboard(
 
     # Fetch data specific to roles
     if current_user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}:
+        context["restart_supervised"] = get_restart_enabled()
         try:
             context["total_user_count"] = (
                 user_manager.get_user_count()

@@ -435,6 +435,17 @@ def get_guest_join_enabled() -> bool:
     return base
 
 
+def get_restart_enabled() -> bool:
+    """Return whether the admin restart/shutdown endpoint is supervised.
+
+    Set DECIDERO_RESTART_ENABLED=true when running under a process supervisor
+    (systemd, Docker restart:always, etc.) that will auto-restart the process
+    after it exits.  When false the dashboard shows "Shutdown" instead of
+    "Restart" so the label honestly reflects what will happen.
+    """
+    return os.getenv("DECIDERO_RESTART_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_secure_cookies_enabled() -> bool:
     """
     Return whether auth cookies should be marked Secure.

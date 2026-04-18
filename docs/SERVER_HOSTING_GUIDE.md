@@ -626,4 +626,35 @@ Use this checklist after each change:
 2. `/health` is healthy through HTTPS.
 3. Login works and cookie is set.
 4. Realtime meeting updates still work.
+
+---
+
+## Admin Restart Button
+
+The admin dashboard includes a **Restart Server** button (System Control card in the Admin Panel section). It sends `SIGTERM` to the process; systemd catches the exit and restarts the service within ~3 seconds (`RestartSec=3`).
+
+### New installs
+
+The `configure_systemd.sh` setup script automatically writes `DECIDERO_RESTART_ENABLED=true` into `/etc/decidero/decidero.env`, so the button works out of the box on fresh deployments.
+
+### Existing installs (upgrade)
+
+If you deployed before this feature was added, add the env var and reload:
+
+```bash
+echo 'DECIDERO_RESTART_ENABLED=true' | sudo tee -a /etc/decidero/decidero.env
+sudo systemctl restart decidero
+```
+
+After the service restarts, the **Restart Server** button will appear on the admin dashboard.
+
+> **Important:** Only set `DECIDERO_RESTART_ENABLED=true` when the service is running under a process supervisor configured to auto-restart (systemd `Restart=always`, Docker `restart: always`, etc.).
+> If this var is unset or false, the button will instead read **Shutdown Server** — clicking it will stop the server and it will stay stopped until restarted manually.
+
+### What happens when the button is clicked
+
+1. Admin is shown a confirmation dialog noting that active meeting connections will briefly drop.
+2. On confirmation the server sends an OK response and schedules a 1-second delayed `SIGTERM`.
+3. The browser shows a "Restarting…" overlay and polls `/login` until the server responds.
+4. Once back online the browser redirects to `/login` (~5–10 seconds total).
 5. Backup job still runs.

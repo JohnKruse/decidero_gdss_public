@@ -17,18 +17,21 @@ Permission model
 from __future__ import annotations
 
 import logging
+import os
+import signal
 import time
 from typing import Any, Dict, List, Optional
 
 import re
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.auth.auth import get_current_user
 from app.config.loader import (
     get_ai_http_settings,
+    get_restart_enabled,
     get_ai_provider_defaults,
     get_auth_login_rate_limit_settings,
     get_brainstorming_defaults,
@@ -785,3 +788,24 @@ async def _fetch_openrouter_models(api_key: str) -> List[str]:
     chat = [m for m in raw if _is_chat(m)]
     chat.sort(key=_sort_key, reverse=True)
     return [m["id"] for m in chat[:10]]
+
+
+# ── System restart/shutdown ───────────────────────────────────────────────────
+
+def _delayed_self_terminate() -> None:
+    """Send SIGTERM to this process after a short delay so the HTTP response flushes."""
+    time.sleep(1.0)
+    os.killpg(os.getpgid(0), signal.SIGINT)
+
+
+@router.post("/restart")
+async def restart_server(
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+) -> Dict[str, Any]:
+    """Terminate this process.  When supervised (DECIDERO_RESTART_ENABLED=true) the
+    process supervisor restarts it automatically; otherwise it shuts down."""
+    _require_admin(user_manager, user_id)
+    background_tasks.add_task(_delayed_self_terminate)
+    return {"status": "ok", "supervised": get_restart_enabled()}

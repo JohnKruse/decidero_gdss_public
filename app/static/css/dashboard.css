@@ -862,12 +862,14 @@ button {
     background: #A8A8A8;
 }
 
-.logout-btn {
+.logout-btn,
+.system-restart-btn {
     background: var(--nasa-red);
     color: var(--white);
 }
 
-.logout-btn:hover {
+.logout-btn:hover,
+.system-restart-btn:hover {
     background: #CC0000;
 }
 

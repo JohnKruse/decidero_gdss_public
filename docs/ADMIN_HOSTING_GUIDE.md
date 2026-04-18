@@ -84,6 +84,15 @@ Click **⚙ SETTINGS** on the right side of the Quick Actions bar on the Dashboa
 
 The AI Meeting Designer will become available immediately — no restart required.
 
+### Admin Panel: Restart Server button
+
+The **Admin Panel** section of the dashboard includes a **System Control** card with a **Restart Server** button. Use this to bounce the server without needing SSH access.
+
+- Clicking the button shows a confirmation dialog that notes active meeting connections will drop briefly.
+- The server restarts in ~5–10 seconds; the browser polls and redirects to login automatically.
+- The button only appears to Admin and Super-Admin users.
+- It reads **Shutdown Server** (instead of Restart) if the server is not running under a process supervisor — see [SERVER_HOSTING_GUIDE.md](SERVER_HOSTING_GUIDE.md#admin-restart-button) for upgrade instructions.
+
 ### What stays in config.yaml (infrastructure settings)
 
 The following require editing `app/config/config.yaml` and restarting the server:
