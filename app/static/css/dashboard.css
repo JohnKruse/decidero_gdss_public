@@ -60,7 +60,6 @@ body {
     background: var(--white);
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
-    margin-bottom: 2rem;
 }
 
 .logo-section {
@@ -83,27 +82,16 @@ body {
 /* Quick Actions */
 .quick-actions {
     background: var(--white);
-    padding: 1.5rem;
+    padding: 0.75rem 1rem;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
-    margin-bottom: 2rem;
 }
 
-/* Header row: "QUICK ACTIONS" title on the left, Settings button on the right */
-.quick-actions-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-}
-
-.quick-actions-header h2 {
-    margin: 0;
-}
-
-/* Settings button — compact, secondary style to distinguish from action buttons */
+/* Settings button — compact, secondary style */
 .settings-btn {
-    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     padding: 0.4rem 0.9rem;
     opacity: 0.85;
     letter-spacing: 0.06em;
@@ -111,13 +99,16 @@ body {
 .settings-btn:hover {
     opacity: 1;
 }
+.settings-btn__icon {
+    flex-shrink: 0;
+}
 
 .action-buttons {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: 1rem;
-    margin-top: 1rem;
+    margin-top: 0;
 }
 
 /* CREATE A MEETING group inside Quick Actions */
@@ -152,8 +143,20 @@ body {
     background: transparent;
 }
 
+.meeting-create-group--end {
+    margin-left: auto;
+}
+
 .meeting-create-group__btn--ai {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
     background: linear-gradient(135deg, #0B3D91 0%, #1565c0 100%);
+}
+
+.ai-sparkle {
+    font-size: 1.1em;
+    line-height: 1;
 }
 
 .meeting-create-group__btn--ai:hover {
@@ -166,7 +169,6 @@ body {
     padding: 1.5rem;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
-    margin-bottom: 2rem;
 }
 
 .batch-section {
@@ -342,7 +344,6 @@ body {
     padding: 1.5rem;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
-    margin-bottom: 2rem;
 }
 
 .table-container {
@@ -732,7 +733,6 @@ body {
     padding: 1.5rem;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(11, 61, 145, 0.15);
-    margin-bottom: 2rem;
 }
 
 .section-header {
@@ -862,12 +862,14 @@ button {
     background: #A8A8A8;
 }
 
-.logout-btn {
+.logout-btn,
+.system-restart-btn {
     background: var(--nasa-red);
     color: var(--white);
 }
 
-.logout-btn:hover {
+.logout-btn:hover,
+.system-restart-btn:hover {
     background: #CC0000;
 }
 
@@ -998,6 +1000,10 @@ button {
 
     .meeting-create-group {
         width: 100%;
+    }
+
+    .meeting-create-group--end {
+        margin-left: 0;
     }
 
     .meeting-create-group__buttons {

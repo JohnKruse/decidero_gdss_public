@@ -93,7 +93,8 @@ After logging in as Admin, you can configure the AI Meeting Designer **without e
 
 The API key is stored **encrypted in the database** — more secure than putting it in `config.yaml`.
 
-If you prefer to configure via `config.yaml` instead, see the `meeting_designer_model` section in `app/config/config.yaml` (Section B).  Note that keys stored in `config.yaml` are plain text; using the Settings UI is recommended.
+Do **not** store API keys in `config.yaml`. Keep keys in the Settings UI only.
+`config.yaml` should only contain non-secret AI defaults (provider endpoints, HTTP timeouts, prompt template source).
 
 For the full settings reference, see `docs/SETTINGS_GUIDE.md`.
 
@@ -139,6 +140,12 @@ Run PowerShell as your normal user and execute:
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
+
+## Admin Panel: Shutdown Button
+
+When running locally with `uvicorn` (no process supervisor), the Admin Panel on the dashboard shows a **Shutdown Server** button instead of "Restart Server". Clicking it stops the dev server — equivalent to pressing `Ctrl-C` in the terminal. The server stays stopped until you restart it manually.
+
+This is intentional: the button label honestly reflects what will happen. The "Restart Server" label only appears when `DECIDERO_RESTART_ENABLED=true` is set in the environment, which the VPS setup script configures automatically for supervised deployments.
 
 ## Scope Note
 

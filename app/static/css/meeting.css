@@ -2008,6 +2008,19 @@
   box-shadow: 0 0 0 2px rgba(126, 192, 238, 0.4);
 }
 
+/* Galactic Hamster: eligibility hint for transfer-into-existing mode */
+.transfer-eligibility-hint {
+  font-size: 0.85rem;
+  color: #8896a7;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.transfer-target-select option:disabled {
+  color: #b0b8c4;
+  font-style: italic;
+}
+
 .transfer-toggle {
   display: inline-flex;
   align-items: center;

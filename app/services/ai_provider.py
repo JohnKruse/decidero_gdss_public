@@ -16,13 +16,23 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 
 import httpx
 
+from app.config.loader import get_ai_http_settings, get_ai_provider_defaults
+
 logger = logging.getLogger(__name__)
 
-_ANTHROPIC_API_VERSION = "2023-06-01"
-_DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com"
-_DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 
-_HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=30.0, pool=5.0)
+def _provider_defaults() -> Dict[str, Dict[str, str]]:
+    return get_ai_provider_defaults()
+
+
+def _http_timeout(profile: str = "provider_client") -> httpx.Timeout:
+    settings = get_ai_http_settings().get(profile, {})
+    return httpx.Timeout(
+        connect=float(settings.get("connect", 10.0)),
+        read=float(settings.get("read", 90.0)),
+        write=float(settings.get("write", 30.0)),
+        pool=float(settings.get("pool", 5.0)),
+    )
 
 
 class AIProviderError(Exception):
@@ -38,9 +48,10 @@ class AIProviderNotConfiguredError(AIProviderError):
 # ---------------------------------------------------------------------------
 
 def _build_anthropic_headers(api_key: str) -> Dict[str, str]:
+    api_version = _provider_defaults()["anthropic"]["api_version"]
     return {
         "x-api-key": api_key,
-        "anthropic-version": _ANTHROPIC_API_VERSION,
+        "anthropic-version": api_version,
         "content-type": "application/json",
         "accept": "text/event-stream",
     }
@@ -73,11 +84,12 @@ async def _anthropic_stream(
     max_tokens: int,
     temperature: float,
 ) -> AsyncGenerator[str, None]:
-    base = (endpoint_url or _DEFAULT_ANTHROPIC_BASE).rstrip("/")
+    fallback = _provider_defaults()["anthropic"]["endpoint_url"]
+    base = (endpoint_url or fallback).rstrip("/")
     url = f"{base}/v1/messages"
     body = _build_anthropic_body(model, system_prompt, messages, max_tokens, temperature, stream=True)
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_http_timeout()) as client:
         try:
             async with client.stream(
                 "POST", url,
@@ -120,13 +132,14 @@ async def _anthropic_complete(
     max_tokens: int,
     temperature: float,
 ) -> str:
-    base = (endpoint_url or _DEFAULT_ANTHROPIC_BASE).rstrip("/")
+    fallback = _provider_defaults()["anthropic"]["endpoint_url"]
+    base = (endpoint_url or fallback).rstrip("/")
     url = f"{base}/v1/messages"
     body = _build_anthropic_body(model, system_prompt, messages, max_tokens, temperature, stream=False)
     headers = _build_anthropic_headers(api_key)
     headers["accept"] = "application/json"
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_http_timeout()) as client:
         try:
             resp = await client.post(url, headers=headers, json=body)
             if resp.status_code != 200:
@@ -194,7 +207,8 @@ def _resolve_openai_url(endpoint_url: Optional[str]) -> str:
         if "chat/completions" in base:
             return base
         return f"{base}/chat/completions"
-    return f"{_DEFAULT_OPENAI_BASE}/chat/completions"
+    fallback = _provider_defaults()["openai"]["endpoint_url"].rstrip("/")
+    return f"{fallback}/chat/completions"
 
 
 async def _openai_stream(
@@ -213,7 +227,7 @@ async def _openai_stream(
         stream=True, use_completion_tokens=use_completion_tokens,
     )
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_http_timeout()) as client:
         try:
             async with client.stream(
                 "POST", url,
@@ -265,7 +279,7 @@ async def _openai_complete(
     headers = _build_openai_headers(api_key)
     headers["Accept"] = "application/json"
 
-    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=_http_timeout()) as client:
         try:
             resp = await client.post(url, headers=headers, json=body)
             if resp.status_code != 200:

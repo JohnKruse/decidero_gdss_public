@@ -35,6 +35,59 @@ def test_meeting_page_includes_categorization_panel_hooks():
     assert "loadCategorizationState" in js
 
 
+def test_transfer_panel_has_target_mode_elements():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "transferTargetMode" in js
+    assert "transferTargetExistingActivity" in js
+    assert 'targetMode: "new"' in js
+    assert "targetActivityId: null" in js
+
+
+def test_transfer_panel_html_has_mode_selector():
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'id="transferTargetMode"' in html
+    assert 'id="transferTargetExistingActivity"' in html
+    assert 'id="transferEligibilityHint"' in html
+    assert 'value="new"' in html
+    assert 'value="existing"' in html
+
+
+def test_transfer_css_has_eligibility_hint_style():
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+    assert "transfer-eligibility-hint" in css
+
+
+def test_transfer_js_has_mode_change_handler():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "onTransferModeChange" in js
+    assert "buildTransferExistingActivityOptions" in js
+    assert "updateTransferCommitButtonText" in js
+
+
+def test_transfer_js_has_existing_activity_builder():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "buildTransferExistingActivityOptions" in js
+    assert "transfer_target_eligible" in js
+    assert "Already started" in js
+    assert "Has participant data" in js
+    assert "updateTransferCommitButtonText" in js
+
+
+def test_transfer_js_commit_handles_both_modes():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "isExistingMode" in js
+    assert "Select an existing activity to transfer into." in js
+    assert "activity_id: transferState.targetActivityId" in js
+    assert "Ideas transferred successfully." in js
+    assert "data.target_activity" in js
+
+
 def test_meeting_js_redirects_on_unauth():
     with open("app/static/js/page_utils.js", "r", encoding="utf-8") as handle:
         contents = handle.read()

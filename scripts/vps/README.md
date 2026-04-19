@@ -59,6 +59,7 @@ Selected references:
 - `DECIDERO_SERVE_STATIC_FROM_CADDY=true` (serve `/static/*` directly from Caddy)
 - `DECIDERO_STATIC_ROOT` (default `/opt/decidero/app/app/static`)
 - `DECIDERO_BACKUP_CRON` (default `30 2 * * *`)
+- `DECIDERO_RESTART_ENABLED` — set to `true` by `configure_systemd.sh` automatically; enables the **Restart Server** button on the admin dashboard (see [SERVER_HOSTING_GUIDE.md](../docs/SERVER_HOSTING_GUIDE.md#admin-restart-button))
 
 ## Notes
 

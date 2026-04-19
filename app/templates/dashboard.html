@@ -8,18 +8,6 @@
     {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
     {% grab id="dashboard-quick-actions" %}
     <section class="layout-card quick-actions">
-        <div class="quick-actions-header">
-            <h2>QUICK ACTIONS</h2>
-            <button
-                class="action-btn settings-btn"
-                type="button"
-                onclick="navigateTo('/settings')"
-                title="Application Settings"
-                aria-label="Open Settings"
-            >
-                ⚙ SETTINGS
-            </button>
-        </div>
         <div class="action-buttons">
             {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
                 <div class="meeting-create-group">
@@ -31,7 +19,7 @@
                             data-requires-role="facilitator"
                             onclick="navigateTo('/meeting/design')"
                         >
-                            DESIGN WITH AI
+                            <span class="ai-sparkle" aria-hidden="true">&#10022;</span> DESIGN WITH AI
                         </button>
                         <button
                             class="action-btn"
@@ -80,6 +68,31 @@
                         {% endif %}
                     </div>
                 </div>
+                <div class="meeting-create-group meeting-create-group--ghost meeting-create-group--end">
+                    <span class="meeting-create-group__label" aria-hidden="true">&nbsp;</span>
+                    <div class="meeting-create-group__buttons">
+                        {% if current_user.role in ['admin', 'super_admin'] %}
+                            <button
+                                class="action-btn system-restart-btn"
+                                type="button"
+                                data-supervised="{{ 'true' if restart_supervised else 'false' }}"
+                                id="systemRestartBtn"
+                            >
+                                {% if restart_supervised %}RESTART SERVER{% else %}SHUTDOWN SERVER{% endif %}
+                            </button>
+                        {% endif %}
+                        <button
+                            class="action-btn settings-btn"
+                            type="button"
+                            onclick="navigateTo('/settings')"
+                            title="Application Settings"
+                            aria-label="Open Settings"
+                        >
+                            <svg class="settings-btn__icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                            SETTINGS
+                        </button>
+                    </div>
+                </div>
             {% endif %}
         </div>
     </section>
@@ -94,4 +107,7 @@
 
 {% block extra_js %}
     <script src="/static/js/dashboard.js?v=7"></script>
+    {% if current_user.role in ['admin', 'super_admin'] %}
+        <script src="/static/js/admin_system.js?v=1"></script>
+    {% endif %}
 {% endblock %}

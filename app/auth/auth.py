@@ -125,6 +125,22 @@ if ACCESS_TOKEN_EXPIRE_MINUTES > 60:
         + "Consider reducing this value for better security."
     )
 
+# Tokens issued before this process started are rejected so that a server
+# restart forces every browser session to re-authenticate.
+SERVER_START_TS = int(datetime.now(UTC).timestamp())
+logger.info("Auth server start timestamp: %s", SERVER_START_TS)
+
+
+def _token_predates_server_start(payload: dict) -> bool:
+    iat = payload.get("iat")
+    if iat is None:
+        return True
+    try:
+        return int(iat) < SERVER_START_TS
+    except (TypeError, ValueError):
+        return True
+
+
 # --- Token Utilities ---
 
 
@@ -223,6 +239,10 @@ async def get_current_user(
             issuer=JWT_ISSUER,
             options={"verify_aud": False},
         )
+        if _token_predates_server_start(payload):
+            logger.info("Rejecting token issued before server start.")
+            raise credentials_exception
+
         login: Optional[str] = payload.get("sub")
 
         if login is None:
@@ -264,6 +284,12 @@ async def _get_current_user_model_optional(
             issuer=JWT_ISSUER,
             options={"verify_aud": False},
         )
+        if _token_predates_server_start(payload):
+            logger.info(
+                "_get_current_user_model_optional: Rejecting token issued before server start."
+            )
+            return None
+
         login: Optional[str] = payload.get("sub")
         if login is None:
             logger.warning(

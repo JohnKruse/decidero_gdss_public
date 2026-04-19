@@ -72,6 +72,43 @@ _DEFAULT_FRONTEND_RELIABILITY = {
         "jitter_ratio": 0.2,
     },
 }
+_DEFAULT_AI_PROVIDER_DEFAULTS = {
+    "anthropic": {
+        "endpoint_url": "https://api.anthropic.com",
+        "api_version": "2023-06-01",
+    },
+    "openai": {
+        "endpoint_url": "https://api.openai.com/v1",
+    },
+    "openrouter": {
+        "endpoint_url": "https://openrouter.ai/api/v1",
+    },
+    "google": {
+        "openai_compat_endpoint_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "api_base_url": "https://generativelanguage.googleapis.com/v1beta",
+    },
+}
+_DEFAULT_AI_HTTP_TIMEOUTS = {
+    "provider_client": {
+        "connect": 10.0,
+        "read": 90.0,
+        "write": 30.0,
+        "pool": 5.0,
+    },
+    "settings_test_client": {
+        "connect": 8.0,
+        "read": 30.0,
+        "write": 10.0,
+        "pool": 5.0,
+    },
+}
+_DEFAULT_AI_PROMPTS_MEETING_DESIGNER = {
+    "source": "file",
+    "file_path": "prompts/meeting_designer.yaml",
+    "system_prefix": "",
+    "system_suffix": "",
+    "generate_agenda": "",
+}
 
 
 # ── DB settings overlay ──────────────────────────────────────────────────────
@@ -144,6 +181,21 @@ def _coerce_bool(value: Any, fallback: bool) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _coerce_positive_float(value: Any, fallback: float) -> float:
+    try:
+        candidate = float(value)
+        return candidate if candidate > 0 else fallback
+    except Exception:  # noqa: BLE001
+        return fallback
+
+
+def _as_nonempty_str(value: Any, fallback: str) -> str:
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    return text if text else fallback
 
 
 # ── Public getters ────────────────────────────────────────────────────────────
@@ -383,6 +435,21 @@ def get_guest_join_enabled() -> bool:
     return base
 
 
+def get_restart_enabled() -> bool:
+    """Return whether the process will be auto-restarted after exit.
+
+    Detected automatically when running under systemd (INVOCATION_ID is set).
+    Override with DECIDERO_RESTART_ENABLED=true/false for other supervisors or
+    to force a specific label regardless of environment.
+    """
+    explicit = os.getenv("DECIDERO_RESTART_ENABLED", "").strip().lower()
+    if explicit in {"1", "true", "yes", "on"}:
+        return True
+    if explicit in {"0", "false", "no", "off"}:
+        return False
+    return bool(os.getenv("INVOCATION_ID"))
+
+
 def get_secure_cookies_enabled() -> bool:
     """
     Return whether auth cookies should be marked Secure.
@@ -469,8 +536,142 @@ def get_auth_login_rate_limit_settings() -> Dict[str, Any]:
 
 
 _PROVIDER_SLUGS = ("anthropic", "openai", "google", "openrouter", "openai_compatible")
-_OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1"
-_GOOGLE_OPENAI_COMPAT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+
+def get_ai_provider_defaults() -> Dict[str, Dict[str, str]]:
+    """Return AI provider defaults from config.yaml with safe fallbacks."""
+    config = load_config()
+    ai_section = config.get("ai") if isinstance(config.get("ai"), dict) else {}
+    raw = ai_section.get("provider_defaults") if isinstance(ai_section, dict) else {}
+    provider_defaults = raw if isinstance(raw, dict) else {}
+
+    result = {
+        "anthropic": dict(_DEFAULT_AI_PROVIDER_DEFAULTS["anthropic"]),
+        "openai": dict(_DEFAULT_AI_PROVIDER_DEFAULTS["openai"]),
+        "openrouter": dict(_DEFAULT_AI_PROVIDER_DEFAULTS["openrouter"]),
+        "google": dict(_DEFAULT_AI_PROVIDER_DEFAULTS["google"]),
+    }
+
+    anth = provider_defaults.get("anthropic")
+    if isinstance(anth, dict):
+        result["anthropic"]["endpoint_url"] = _as_nonempty_str(
+            anth.get("endpoint_url"),
+            result["anthropic"]["endpoint_url"],
+        )
+        result["anthropic"]["api_version"] = _as_nonempty_str(
+            anth.get("api_version"),
+            result["anthropic"]["api_version"],
+        )
+
+    openai = provider_defaults.get("openai")
+    if isinstance(openai, dict):
+        result["openai"]["endpoint_url"] = _as_nonempty_str(
+            openai.get("endpoint_url"),
+            result["openai"]["endpoint_url"],
+        )
+
+    openrouter = provider_defaults.get("openrouter")
+    if isinstance(openrouter, dict):
+        result["openrouter"]["endpoint_url"] = _as_nonempty_str(
+            openrouter.get("endpoint_url"),
+            result["openrouter"]["endpoint_url"],
+        )
+
+    google = provider_defaults.get("google")
+    if isinstance(google, dict):
+        result["google"]["openai_compat_endpoint_url"] = _as_nonempty_str(
+            google.get("openai_compat_endpoint_url"),
+            result["google"]["openai_compat_endpoint_url"],
+        )
+        result["google"]["api_base_url"] = _as_nonempty_str(
+            google.get("api_base_url"),
+            result["google"]["api_base_url"],
+        )
+
+    return result
+
+
+def get_ai_http_settings() -> Dict[str, Dict[str, float]]:
+    """Return HTTP timeout profiles for AI provider and settings test clients."""
+    config = load_config()
+    ai_section = config.get("ai") if isinstance(config.get("ai"), dict) else {}
+    http_section = ai_section.get("http") if isinstance(ai_section, dict) else {}
+    timeouts_section = (
+        http_section.get("timeouts")
+        if isinstance(http_section, dict)
+        else {}
+    )
+    if not isinstance(timeouts_section, dict):
+        timeouts_section = {}
+
+    result = {
+        "provider_client": dict(_DEFAULT_AI_HTTP_TIMEOUTS["provider_client"]),
+        "settings_test_client": dict(_DEFAULT_AI_HTTP_TIMEOUTS["settings_test_client"]),
+    }
+
+    for profile_name in ("provider_client", "settings_test_client"):
+        profile_raw = timeouts_section.get(profile_name)
+        if not isinstance(profile_raw, dict):
+            continue
+        defaults = result[profile_name]
+        result[profile_name] = {
+            "connect": _coerce_positive_float(profile_raw.get("connect"), defaults["connect"]),
+            "read": _coerce_positive_float(profile_raw.get("read"), defaults["read"]),
+            "write": _coerce_positive_float(profile_raw.get("write"), defaults["write"]),
+            "pool": _coerce_positive_float(profile_raw.get("pool"), defaults["pool"]),
+        }
+
+    return result
+
+
+def get_meeting_designer_prompt_templates() -> Dict[str, str]:
+    """Return Meeting Designer prompt templates from configured source."""
+    config = load_config()
+    ai_section = config.get("ai") if isinstance(config.get("ai"), dict) else {}
+    prompts_section = ai_section.get("prompts") if isinstance(ai_section, dict) else {}
+    md_section = (
+        prompts_section.get("meeting_designer")
+        if isinstance(prompts_section, dict)
+        else {}
+    )
+    if not isinstance(md_section, dict):
+        md_section = {}
+
+    merged = dict(_DEFAULT_AI_PROMPTS_MEETING_DESIGNER)
+    merged.update(md_section)
+    source = _as_nonempty_str(merged.get("source"), "file").lower()
+
+    raw_templates: Dict[str, Any]
+    if source == "inline":
+        raw_templates = merged
+    else:
+        relative_path = _as_nonempty_str(
+            merged.get("file_path"),
+            _DEFAULT_AI_PROMPTS_MEETING_DESIGNER["file_path"],
+        )
+        path = Path(relative_path)
+        if not path.is_absolute():
+            path = _CONFIG_PATH.parent / path
+
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                loaded = yaml.safe_load(handle) or {}
+                if not isinstance(loaded, dict):
+                    logging.warning(
+                        "Meeting Designer prompt file %s is not a mapping; using empty prompts.",
+                        path,
+                    )
+                    loaded = {}
+                raw_templates = loaded
+        except Exception as exc:  # noqa: BLE001
+            logging.error("Failed to load Meeting Designer prompt templates from %s: %s", path, exc)
+            raw_templates = {}
+
+    return {
+        "system_prefix": str(raw_templates.get("system_prefix") or ""),
+        "system_suffix": str(raw_templates.get("system_suffix") or ""),
+        "generate_agenda": str(raw_templates.get("generate_agenda") or ""),
+    }
 
 
 def get_meeting_designer_settings() -> Dict[str, Any]:
@@ -483,6 +684,7 @@ def get_meeting_designer_settings() -> Dict[str, Any]:
     """
     config = load_config()
     section = config.get("meeting_designer_model") or {}
+    provider_defaults = get_ai_provider_defaults()
 
     # ── Shared numeric fields (same regardless of provider path) ──
     db_max_tokens = _db_get("ai.max_tokens")
@@ -505,9 +707,9 @@ def get_meeting_designer_settings() -> Dict[str, Any]:
         if active == "openai_compatible":
             endpoint_url = str(_db_get("ai.openai_compatible.endpoint_url") or "")
         elif active == "openrouter":
-            endpoint_url = _OPENROUTER_ENDPOINT
+            endpoint_url = provider_defaults["openrouter"]["endpoint_url"]
         elif active == "google":
-            endpoint_url = _GOOGLE_OPENAI_COMPAT_ENDPOINT
+            endpoint_url = provider_defaults["google"]["openai_compat_endpoint_url"]
         else:
             endpoint_url = ""
 
@@ -533,6 +735,11 @@ def get_meeting_designer_settings() -> Dict[str, Any]:
     api_key = _str_field("api_key", "ai.api_key")
     model = _str_field("model", "ai.model")
     endpoint_url = _str_field("endpoint_url", "ai.endpoint_url")
+    if not endpoint_url:
+        if provider == "openrouter":
+            endpoint_url = provider_defaults["openrouter"]["endpoint_url"]
+        elif provider == "google":
+            endpoint_url = provider_defaults["google"]["openai_compat_endpoint_url"]
 
     return {
         "enabled": bool(provider and api_key and model),

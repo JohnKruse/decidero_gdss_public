@@ -43,6 +43,30 @@
                 </button>
             </div>
         </div>
+
+        <div class="meeting-card admin-card">
+            <h3>System Control</h3>
+            <div class="stats-container" style="flex-direction: column; gap: 10px; margin-bottom: 15px;">
+                <div class="stat-card" style="border: none; padding: 5px 0;">
+                    {% if restart_supervised %}
+                        <strong>Mode:</strong> Supervised (auto-restart)
+                    {% else %}
+                        <strong>Mode:</strong> Unsupervised
+                    {% endif %}
+                </div>
+            </div>
+            <div class="meeting-actions" style="justify-content: center;">
+                <button
+                    class="action-btn system-restart-btn"
+                    type="button"
+                    data-requires-role="{{ requires_role }}"
+                    data-supervised="{{ 'true' if restart_supervised else 'false' }}"
+                    id="systemRestartBtn"
+                >
+                    {% if restart_supervised %}RESTART SERVER{% else %}SHUTDOWN SERVER{% endif %}
+                </button>
+            </div>
+        </div>
     </div>
 </section>
 {% endgrab %}

@@ -1,91 +1,35 @@
 """
-PRISM-structured system prompt for the AI Meeting Designer.
+PRISM-structured prompt assembly for the AI Meeting Designer.
 
-PRISM = Purpose · Rules · Identity · Structure · Motion
-(From the academic Collaboration Engineering framework in the Decidero design doc)
+Prompt templates are loaded from config (`ai.prompts.meeting_designer`) so
+prompt content can be changed without editing Python source.
 
 The STRUCTURE section (available activities) is generated dynamically from the
 plugin registry via get_enriched_activity_catalog(), so it stays in sync with
 the Activity Library automatically whenever a new activity is added or changed.
+
+Public API:
+  - build_system_prompt()
+  - build_generation_system_prompt()
+  - build_generation_prompt()
+  - build_generation_messages()
+  - build_outline_prompt()
+  - build_outline_messages()
+  - parse_agenda_json()
+  - parse_outline_json()
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from app.config.loader import get_meeting_designer_prompt_templates
 
 
-# ---------------------------------------------------------------------------
-# Prompt sections that never change — pure static text
-# ---------------------------------------------------------------------------
+def _get_prompt_templates() -> Dict[str, str]:
+    return get_meeting_designer_prompt_templates()
 
-_PROMPT_PREFIX = """You are the Decidero AI Meeting Designer — an expert Collaboration Engineer embedded in a Group Decision Support System (GDSS). Your job is to help facilitators design research-grounded, bias-aware collaborative meeting agendas.
 
-═══════════════════════════════════════════
-PURPOSE
-═══════════════════════════════════════════
-Design personalized meeting agendas using Collaboration Engineering theory, ThinkLet patterns, and the 6-pattern model (Generate, Reduce, Clarify, Organize, Evaluate, Build Consensus). Every design decision must be explainable and evidence-based.
-
-═══════════════════════════════════════════
-RULES
-═══════════════════════════════════════════
-1. Ask focused questions — no more than 2 per message. Be conversational, not clinical.
-2. Ground all recommendations in established Collaboration Engineering theory. Name patterns when relevant.
-3. Actively design against cognitive biases. Consider: groupthink, Abilene Paradox, HiPPO effect (deference to highest-paid person), production blocking, hidden profiles, evaluation apprehension, and status/social desirability bias.
-4. Only recommend activities available in Decidero: {activity_list}.
-5. Be warm and pragmatic — you speak like an experienced facilitator, not an academic.
-6. Never generate the final agenda until the facilitator explicitly signals readiness (says "generate", "create agenda", "I'm ready", or similar), OR until you have collected all four information areas (goal, group, dynamics, constraints).
-7. When generating the final agenda, output ONLY valid JSON — no prose before or after the JSON block.
-
-═══════════════════════════════════════════
-IDENTITY
-═══════════════════════════════════════════
-You are knowledgeable but approachable. You acknowledge trade-offs honestly (e.g., "Dot voting is fast but won't give you a full ordering — if ranking matters, use rank-order voting instead"). You ask before assuming. You treat the facilitator as a professional peer.
-
-═══════════════════════════════════════════
-STRUCTURE — Available Tools and Patterns
-═══════════════════════════════════════════
-
-COLLABORATION PATTERNS:
-• Generate       — Divergent idea production; maximize quantity and variety
-• Reduce         — Narrow a large set to a manageable shortlist
-• Clarify        — Build shared understanding of ideas or positions
-• Organize       — Group related ideas into themes or categories
-• Evaluate       — Assess relative value or priority of options
-• Build Consensus — Reach visible, binding group commitment
-
-DECIDERO ACTIVITIES:
-"""
-
-_PROMPT_SUFFIX = """
-STANDARD SEQUENCES (ThinkLet Patterns):
-• Simple Consensus:    brainstorming → voting
-• Classic:             brainstorming → categorization → voting
-• Deep Evaluation:     brainstorming → categorization → rank_order_voting
-• Prioritization Only: voting (when options are already defined)
-• Rigorous Ranking:    rank_order_voting (when full ordering needed, options pre-defined)
-• Clarify-first:       brainstorming (with sub-comments) → categorization → voting
-
-═══════════════════════════════════════════
-MOTION — Conversation Flow
-═══════════════════════════════════════════
-
-Phase 1 — GOAL (start here):
-  Understand: What is the meeting's purpose? What decision or outcome is expected?
-  Ask: One open-ended question about their goal.
-
-Phase 2 — GROUP:
-  Understand: Who will be in the room? How many? What are their roles and expertise levels?
-  Ask: Group size + participant background.
-  Then ask: Power dynamics — is there a senior leader, sponsor, or decision-maker present? Might participants self-censor?
-
-Phase 3 — CONSTRAINTS:
-  Understand: Available time, tech comfort, any special constraints.
-  Ask: Session duration. Then ask: Tech comfort level and any known constraints (distributed team, language barriers, etc.).
-
-Phase 4 — AGENDA GENERATION (only when facilitator is ready):
-  When the facilitator says they're ready (or you have gathered all four areas), confirm briefly that you have enough context, then ask them to click "Generate Agenda" or say "generate" to proceed.
-  On the generate call, output ONLY the JSON object below — nothing else.
-
-BEGIN: Start by warmly introducing yourself in 2–3 sentences, then ask your first question about the meeting goal. Keep it friendly and brief."""
+_INTERNAL_CONFIG_KEYS = {"options", "ideas", "items", "buckets", "mode", "vote_type"}
 
 
 # ---------------------------------------------------------------------------
@@ -95,18 +39,71 @@ BEGIN: Start by warmly introducing yourself in 2–3 sentences, then ask your fi
 def _format_config_options(default_config: Dict[str, Any]) -> str:
     """Render the config_overrides the AI may set, derived from default_config keys."""
     # Skip internal/structural keys that aren't meaningful design choices for the AI
-    skip = {"options", "ideas", "items", "buckets", "mode", "vote_type"}
     parts = []
     for key, val in default_config.items():
-        if key in skip:
+        if key in _INTERNAL_CONFIG_KEYS:
             continue
         type_name = type(val).__name__
         parts.append(f"{key} ({type_name})")
     return ", ".join(parts) if parts else "none"
 
 
+def _build_tool_type_enum(catalog: List[Dict[str, Any]]) -> str:
+    """Build a pipe-separated tool_type enum from a caller-provided catalog list for testability and single-fetch efficiency."""
+    tool_types = [
+        tool_type.strip()
+        for entry in catalog
+        for tool_type in [entry.get("tool_type")]
+        if isinstance(tool_type, str) and tool_type.strip()
+    ]
+    return "|".join(tool_types)
+
+
+def _build_config_overrides_block(catalog: List[Dict[str, Any]]) -> str:
+    """Build per-tool config_overrides guidance from a caller-provided catalog list for testability and single-fetch efficiency."""
+    lines: List[str] = []
+    for entry in catalog:
+        tool_type = entry.get("tool_type")
+        if not isinstance(tool_type, str) or not tool_type.strip():
+            continue
+        default_config = entry.get("default_config")
+        config_items: List[str] = []
+        if isinstance(default_config, dict):
+            for key, value in default_config.items():
+                if key in _INTERNAL_CONFIG_KEYS:
+                    continue
+                config_items.append(f'"{key}" ({type(value).__name__})')
+        rendered = ", ".join(config_items) if config_items else "none"
+        lines.append(f"// {tool_type}: {rendered}")
+    return "\n".join(lines)
+
+
+def _build_duration_guidance(catalog: List[Dict[str, Any]]) -> str:
+    """Build duration guidance from a caller-provided catalog list for testability and single-fetch efficiency."""
+    parts: List[str] = []
+    for entry in catalog:
+        tool_type = entry.get("tool_type")
+        if not isinstance(tool_type, str) or not tool_type.strip():
+            continue
+        typical = entry.get("typical_duration_minutes")
+        if isinstance(typical, dict):
+            min_value = typical.get("min")
+            max_value = typical.get("max")
+            if isinstance(min_value, (int, float)) and isinstance(max_value, (int, float)):
+                parts.append(f"{tool_type}: {int(min_value)}-{int(max_value)} min")
+                continue
+        parts.append(f"{tool_type}: varies")
+    return ", ".join(parts)
+
+
 def _format_activity_block(index: int, activity: Dict[str, Any]) -> str:
-    """Render a single activity's description block for the system prompt."""
+    """Render a single activity's description block for the system prompt.
+
+    Rendered fields: tool_type, label, collaboration_patterns, description,
+    thinklets, when_to_use (Best for:), when_not_to_use (Avoid when:),
+    input_requirements (Requires:), output_characteristics (Produces:),
+    bias_mitigation, typical_duration, config_options.
+    """
     tool_type = activity.get("tool_type", "")
     label = activity.get("label", tool_type)
     patterns = activity.get("collaboration_patterns") or []
@@ -136,6 +133,18 @@ def _format_activity_block(index: int, activity: Dict[str, Any]) -> str:
     if when_to_use:
         lines.append(f"   Best for: {when_to_use}")
 
+    when_not_to_use = activity.get("when_not_to_use", "")
+    if when_not_to_use:
+        lines.append(f"   Avoid when: {when_not_to_use}")
+
+    input_req = activity.get("input_requirements", "")
+    if input_req:
+        lines.append(f"   Requires: {input_req}")
+
+    output_char = activity.get("output_characteristics", "")
+    if output_char:
+        lines.append(f"   Produces: {output_char}")
+
     if bias_mitigation:
         # Join multiple bias items into a single readable line
         bias_text = "; ".join(b.split("\n")[0] for b in bias_mitigation)
@@ -155,7 +164,11 @@ def build_system_prompt() -> str:
     """Build the Meeting Designer system prompt with the live activity catalog.
 
     The STRUCTURE section is generated at call time from the plugin registry,
-    so it stays in sync with the Activity Library automatically.
+    so it stays in sync with the Activity Library automatically. The MOTION
+    section guides a six-phase conversation: goal framing, format shaping,
+    scope calibration, criteria discovery, design discussion (with within-track
+    workflow pattern trade-offs and facilitator confirmation), and generation
+    handoff.
     """
     from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
 
@@ -168,93 +181,583 @@ def build_system_prompt() -> str:
     activity_blocks = "\n\n".join(
         _format_activity_block(i + 1, activity) for i, activity in enumerate(catalog)
     )
+    templates = _get_prompt_templates()
 
     prompt = (
-        _PROMPT_PREFIX.format(activity_list=activity_list)
+        templates["system_prefix"].format(activity_list=activity_list)
         + activity_blocks
-        + _PROMPT_SUFFIX
+        + templates["system_suffix"]
     )
     return prompt
+
+
+def build_generation_system_prompt() -> str:
+    """Build the dedicated system prompt for agenda generation mode.
+
+    This avoids conflicts with chat-only rules (for example, "never output JSON")
+    while remaining provider/model agnostic.
+    """
+    from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
+
+    catalog = get_enriched_activity_catalog()
+    activity_list = ", ".join(a["tool_type"] for a in catalog)
+
+    return (
+        "You are the Decidero AI Meeting Designer in AGENDA GENERATION MODE.\n"
+        "Your task is to convert the prior conversation into one valid JSON object "
+        "that matches the user schema/instructions.\n"
+        f"Allowed tool_type values: {activity_list}.\n"
+        "Output requirements:\n"
+        "- Output ONLY JSON (no prose, no markdown fences, no commentary).\n"
+        "- Return exactly one top-level JSON object.\n"
+        "- If uncertain, make best-effort assumptions but still return valid JSON."
+    )
 
 
 # ---------------------------------------------------------------------------
 # Generation prompt — appended when the facilitator triggers agenda generation
 # ---------------------------------------------------------------------------
 
-GENERATE_AGENDA_PROMPT = """Based on our conversation, generate the meeting agenda now.
+def build_generation_prompt(outline: Optional[Any] = None) -> str:
+    """Build a catalog-driven generation prompt with optional outline lock-in.
 
-Output ONLY a valid JSON object with this exact structure — no preamble, no explanation outside the JSON:
+    When ``outline`` is provided, the prompt constrains generation to that
+    activity sequence and asks the model to elaborate each activity with
+    instructions and config overrides. This replaces the former static
+    generation-prompt constant and keeps tool type guidance synchronized with
+    the live activity catalog.
 
-{
-  "meeting_summary": "One paragraph summarizing the meeting goal, group, and key design considerations",
-  "design_rationale": "One paragraph explaining the overall activity sequence, bias considerations, and why this structure fits this group",
-  "agenda": [
-    {
-      "tool_type": "brainstorming|voting|rank_order_voting|categorization",
-      "title": "Facilitator-facing activity title (concise, action-oriented)",
-      "instructions": "Instructions shown to participants during the activity. Be specific and welcoming.",
-      "duration_minutes": 15,
-      "collaboration_pattern": "Generate|Reduce|Clarify|Organize|Evaluate|Build Consensus",
-      "rationale": "Why this specific activity was chosen at this point in the sequence, and which bias it mitigates",
-      "config_overrides": {
-        // OPTIONAL: Only include keys you want to override from defaults.
-        // brainstorming: "allow_anonymous" (bool), "allow_subcomments" (bool)
-        // voting: "max_votes" (int), "show_results_immediately" (bool)
-        // rank_order_voting: "randomize_order" (bool)
-        // categorization: "buckets" (array of strings, e.g. ["Theme A", "Theme B", "Unrelated"])
-      }
-    }
-  ]
-}
+    When the outline includes track metadata (tracks array, per-activity
+    track_id), the outline is rendered grouped by track to preserve multi-track
+    structure for Stage 2 elaboration.
 
-Important:
-- Set duration_minutes based on group size and task complexity (brainstorming: 10–25 min, categorization: 10–20 min, voting: 3–10 min, rank_order: 5–20 min)
-- Calibrate max_votes for voting to roughly 20–30% of the number of options
-- Always enable allow_anonymous in brainstorming when you detected power asymmetry or evaluation apprehension risk
-- If you recommend categorization, include meaningful bucket names in config_overrides
-- Output only the JSON object. Nothing else."""
+    Within-track workflow guidance references the Collaboration Pattern Library
+    with per-pattern selection criteria (Quick Convergence, Organized Convergence,
+    Rigorous Ranking, Two-Pass Funnel, Nested Decomposition), rather than
+    prescribing a fixed diverge -> organize/reduce -> converge activity sequence.
+    Integration-verified in Phase 6 with multi-track generation scenarios.
+
+    Args:
+        outline: Optional Stage-1 outline payload. Accepts either an outline
+            activity list or a dict containing ``outline`` plus optional
+            ``tracks`` metadata. Prompt text locks sequence, tool types, titles,
+            and track groupings to this outline.
+
+    Returns:
+        A complete generation prompt string for the model.
+
+    Raises:
+        None.
+    """
+    from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
+
+    catalog = get_enriched_activity_catalog()
+    tool_type_enum = _build_tool_type_enum(catalog)
+    config_overrides_block = _build_config_overrides_block(catalog)
+    duration_guidance = _build_duration_guidance(catalog)
+
+    outline_prefix = ""
+    if outline is not None:
+        outline_items: List[Dict[str, Any]] = []
+        tracks: List[Dict[str, Any]] = []
+        if isinstance(outline, dict):
+            raw_outline = outline.get("outline")
+            raw_tracks = outline.get("tracks")
+            outline_items = [item for item in raw_outline if isinstance(item, dict)] if isinstance(raw_outline, list) else []
+            tracks = [track for track in raw_tracks if isinstance(track, dict)] if isinstance(raw_tracks, list) else []
+        elif isinstance(outline, list):
+            outline_items = [item for item in outline if isinstance(item, dict)]
+
+        rendered_outline = "(no outline items)"
+        if tracks:
+            declared_tracks: List[tuple[str, str]] = []
+            track_buckets: Dict[str, List[Dict[str, Any]]] = {}
+            for track in tracks:
+                raw_track_id = track.get("track_id")
+                if not isinstance(raw_track_id, str):
+                    continue
+                track_id = raw_track_id.strip()
+                if not track_id:
+                    continue
+                raw_label = track.get("label")
+                label = raw_label.strip() if isinstance(raw_label, str) and raw_label.strip() else track_id
+                declared_tracks.append((track_id, label))
+                track_buckets[track_id] = []
+
+            plenary_items: List[Dict[str, Any]] = []
+            undeclared_buckets: Dict[str, List[Dict[str, Any]]] = {}
+            for item in outline_items:
+                raw_track_id = item.get("track_id")
+                track_id = raw_track_id.strip() if isinstance(raw_track_id, str) else ""
+                if not track_id:
+                    plenary_items.append(item)
+                elif track_id in track_buckets:
+                    track_buckets[track_id].append(item)
+                else:
+                    undeclared_buckets.setdefault(track_id, []).append(item)
+
+            lines: List[str] = []
+            activity_number = 1
+
+            if plenary_items:
+                lines.append("Plenary activities:")
+                for item in plenary_items:
+                    tool_type = item.get("tool_type", "")
+                    title = item.get("title", "")
+                    lines.append(f"{activity_number}. {title} [{tool_type}]")
+                    activity_number += 1
+                lines.append("")
+
+            for track_id, label in declared_tracks:
+                items = track_buckets.get(track_id, [])
+                if not items:
+                    continue
+                lines.append(f'Track "{label}" ({track_id}):')
+                for item in items:
+                    tool_type = item.get("tool_type", "")
+                    title = item.get("title", "")
+                    lines.append(f"{activity_number}. {title} [{tool_type}]")
+                    activity_number += 1
+                lines.append("")
+
+            for track_id, items in undeclared_buckets.items():
+                lines.append(f'Track "{track_id}" ({track_id}):')
+                for item in items:
+                    tool_type = item.get("tool_type", "")
+                    title = item.get("title", "")
+                    lines.append(f"{activity_number}. {title} [{tool_type}]")
+                    activity_number += 1
+                lines.append("")
+
+            rendered_outline = "\n".join(lines).strip() if lines else "(no outline items)"
+        else:
+            outline_lines: List[str] = []
+            for index, item in enumerate(outline_items, start=1):
+                tool_type = item.get("tool_type", "")
+                title = item.get("title", "")
+                outline_lines.append(f"{index}. {title} [{tool_type}]")
+            rendered_outline = "\n".join(outline_lines) if outline_lines else "(no outline items)"
+
+        outline_prefix = (
+            "The following activity outline has been approved. Generate the full agenda "
+            "following this exact sequence, tool_types, titles, and track groupings. Add "
+            "instructions and config_overrides for each.\n\n"
+            f"{rendered_outline}\n\n"
+        )
+
+    return (
+        f"{outline_prefix}"
+        "Based on our conversation, generate the meeting agenda now.\n\n"
+        "First, assess the complexity level based on our discussion:\n"
+        "- \"simple\" — single topic, small group, short session -> flat agenda, no phases needed\n"
+        "- \"multi_phase\" — multiple sequential topics or extended session -> group activities into named phases\n"
+        "- \"multi_track\" — parallel breakout groups needed -> include phases with parallel tracks\n\n"
+        "Output ONLY a valid JSON object with this structure — no preamble, no explanation outside the JSON:\n\n"
+        "{\n"
+        "  \"meeting_summary\": \"One paragraph summarizing the meeting goal, group, and key design considerations\",\n"
+        "  \"session_name\": \"The short session name the facilitator provided. Use exactly what they said.\",\n"
+        "  \"evaluation_criteria\": [\"criterion1\", \"criterion2\"],\n"
+        "  \"design_rationale\": \"One paragraph explaining the overall structure and why it fits the group\",\n"
+        "  \"complexity\": \"simple|multi_phase|multi_track\",\n"
+        "  \"phases\": [\n"
+        "    {\n"
+        "      \"phase_id\": \"phase_1\",\n"
+        "      \"title\": \"Short descriptive phase title\",\n"
+        "      \"description\": \"What happens in this phase and why\",\n"
+        "      \"phase_type\": \"plenary|parallel\",\n"
+        "      \"tracks\": [\n"
+        "        {\"track_id\": \"track_2a\", \"label\": \"Descriptive track name\", \"participant_subset\": \"Who goes in this track and roughly how many\"}\n"
+        "      ],\n"
+        "      \"suggested_duration_minutes\": 30\n"
+        "    }\n"
+        "  ],\n"
+        "  \"agenda\": [\n"
+        "    {\n"
+        f"      \"tool_type\": \"{tool_type_enum}\",\n"
+        "      \"title\": \"Facilitator-facing activity title (concise, action-oriented)\",\n"
+        "      \"instructions\": \"Instructions shown to participants during the activity. Be specific and welcoming.\",\n"
+        "      \"duration_minutes\": 15,\n"
+        "      \"collaboration_pattern\": \"Generate|Reduce|Clarify|Organize|Evaluate|Build Consensus\",\n"
+        "      \"rationale\": \"Why this activity was chosen at this point in the sequence\",\n"
+        "      \"config_overrides\": {},\n"
+        "      \"phase_id\": \"phase_1\",\n"
+        "      \"track_id\": null\n"
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Complexity rules:\n"
+        "- For \"simple\": the phases array may be empty or have one entry.\n"
+        "- For \"multi_phase\": phases has 2+ entries with plenary sequencing.\n"
+        "- For \"multi_track\": at least one phase has parallel tracks and each parallel phase reconverges into a plenary phase.\n"
+        "- Order activities in the agenda array by phase order first, then track order within parallel phases.\n\n"
+        "Config-overrides reference (include only keys you want to change from defaults):\n"
+        f"{config_overrides_block}\n\n"
+        "Activity calibration:\n"
+        f"- Set duration_minutes using this guidance: {duration_guidance}\n"
+        "- For ballot-based activities, calibrate max_votes to roughly 20-30% of option count.\n"
+        "- For activities that support anonymity, enable it when power asymmetry is detected.\n"
+        "- For grouping activities, include meaningful bucket names.\n\n"
+        "Within-track pattern selection (mandatory for multi_track breakout phases):\n"
+        "- Each breakout track MUST have 2+ activities — a single activity per track is never acceptable.\n"
+        "- Select a pattern from the Collaboration Pattern Library based on the track's time budget, deliverable type, and problem complexity:\n"
+        "  • Quick Convergence     (brainstorming -> voting): short time, simple shortlist deliverable.\n"
+        "  • Organized Convergence (brainstorming -> categorization -> voting): ideas need thematic structure before evaluation.\n"
+        "  • Rigorous Ranking      (brainstorming -> categorization -> rank_order_voting): fully ordered priority list needed.\n"
+        "  • Two-Pass Funnel       (brainstorming -> voting -> brainstorming -> rank_order_voting): time allows deeper deliberation and refinement.\n"
+        "  • Nested Decomposition  (brainstorming -> voting -> brainstorming -> voting): problem space too broad for direct ideation, narrow scope first.\n"
+        "- Different tracks may use different patterns if their goals differ.\n"
+        "- The final activity in each track produces the specific deliverable presented during reconvergence.\n\n"
+        "Reconvergence rules (mandatory for multi_track complexity):\n"
+        "- Every parallel phase MUST be immediately followed by a plenary reconvergence phase.\n"
+        "- Reconvergence activities must name each track and state what deliverable each track is presenting.\n"
+        "- The last activity in each breakout track should instruct the group to prepare a concise summary for reconvergence.\n"
+        "- If there are multiple parallel phases, each must have its own subsequent reconvergence phase.\n\n"
+        "Session naming rules:\n"
+        "- Always include session_name with the name the facilitator provided during the conversation.\n"
+        "- If the facilitator did not provide a session name, derive one from the meeting goal.\n\n"
+        "Output ONLY the JSON object. Nothing else."
+    )
+
+
+def get_generation_prompt() -> str:
+    """Return the default generation prompt (without an outline constraint).
+
+    Args:
+        None.
+
+    Returns:
+        A complete generation prompt string equivalent to
+        ``build_generation_prompt(outline=None)``.
+
+    Raises:
+        None.
+    """
+    return build_generation_prompt()
+
+
+def build_outline_prompt() -> str:
+    """Build the Stage 1 outline prompt for the two-stage generation pipeline.
+
+    Produces a lightweight sequence plan (tool_type, title, duration,
+    collaboration pattern, rationale) with optional track grouping metadata
+    (tracks array, per-activity track_id) for multi-track meetings. Validated
+    before full agenda generation.
+
+    Args:
+        None.
+
+    Returns:
+        A complete outline-stage prompt string for the model.
+
+    Raises:
+        None.
+    """
+    from app.services.activity_catalog import get_enriched_activity_catalog  # noqa: PLC0415
+
+    catalog = get_enriched_activity_catalog()
+    tool_type_enum = _build_tool_type_enum(catalog)
+    duration_guidance = _build_duration_guidance(catalog)
+
+    return (
+        "Based on our conversation, generate a meeting activity outline now.\n\n"
+        "Output ONLY a valid JSON object with this structure:\n\n"
+        "{\n"
+        "  \"meeting_summary\": \"One paragraph summarizing the meeting goal\",\n"
+        "  \"tracks\": [\n"
+        "    {\n"
+        "      \"track_id\": \"track_a\",\n"
+        "      \"label\": \"Descriptive track name\",\n"
+        "      \"goal\": \"What this track must produce\"\n"
+        "    }\n"
+        "  ],\n"
+        "  \"outline\": [\n"
+        "    {\n"
+        f"      \"tool_type\": \"{tool_type_enum}\",\n"
+        "      \"title\": \"Concise action-oriented title\",\n"
+        "      \"duration_minutes\": 15,\n"
+        "      \"collaboration_pattern\": \"Generate|Reduce|Clarify|Organize|Evaluate|Build Consensus\",\n"
+        "      \"rationale\": \"Why this activity at this point in the sequence\",\n"
+        "      \"track_id\": \"track_a\"\n"
+        "    }\n"
+        "  ]\n"
+        "}\n\n"
+        "Include the tracks array and track_id fields only when the conversation discussed breakout groups or parallel tracks. "
+        "For simple or multi_phase meetings, omit tracks and set track_id to null.\n\n"
+        f"Duration guidance: {duration_guidance}\n\n"
+        "Multi-track outline rules:\n"
+        "- If the conversation discussed breakout groups or parallel tracks, each track MUST have 2+ activities in the outline — a single activity per track is never sufficient.\n"
+        "- Choose a pattern from the Collaboration Pattern Library that fits the track's goal, time budget, and deliverable type discussed in the conversation.\n"
+        "- Pattern selection guide:\n"
+        "  • Quick Convergence (ideation -> evaluate): short time, simple shortlist.\n"
+        "  • Organized Convergence (ideation -> organize -> evaluate): ideas need thematic structure.\n"
+        "  • Rigorous Ranking (ideation -> organize -> rank): fully ordered priority list.\n"
+        "  • Two-Pass Funnel (ideation -> evaluate -> ideation -> rank): time for deeper deliberation.\n"
+        "  • Nested Decomposition (ideation -> evaluate -> ideation -> evaluate): narrow scope before deeper ideation.\n"
+        "- Different tracks may use different patterns if their goals differ.\n"
+        "- Set the rationale field on each activity to explain why that pattern was chosen for that track.\n\n"
+        "Track-aware reasoning:\n"
+        "- Read the conversation for mentions of breakout groups, parallel tracks, sub-teams, or topic-specific working groups.\n"
+        "- If breakout tracks were discussed, populate the tracks array with one entry per track, using the labels and goals from the conversation.\n"
+        "- For each track, select a pattern from the Collaboration Pattern Library that fits the track's stated goal and time budget.\n"
+        "- Set each activity's track_id to match its parent track.\n"
+        "- If no breakout tracks were discussed, omit the tracks array and set all track_id values to null.\n"
+        "- The rationale field should explain the pattern choice for that track.\n\n"
+        "Output ONLY the JSON object. Do not include instructions or config_overrides; "
+        "those will be added in a subsequent step."
+    )
+
+
+def build_outline_messages(
+    conversation_history: List[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    """Build outline-stage messages by appending the outline prompt.
+
+    Mirrors build_generation_messages() but for Stage 1 outline generation.
+
+    Args:
+        conversation_history: Prior chat messages to preserve.
+
+    Returns:
+        A new message list with the outline prompt appended as the final user
+        message.
+
+    Raises:
+        None.
+    """
+    return list(conversation_history) + [
+        {"role": "user", "content": build_outline_prompt()}
+    ]
 
 
 def build_generation_messages(
     conversation_history: List[Dict[str, str]],
+    outline: Optional[Any] = None,
 ) -> List[Dict[str, str]]:
     """Build the message list for agenda generation.
 
     Appends the generation prompt as a user message after the conversation,
-    so the model treats it as the final instruction.
+    so the model treats it as the final instruction. When ``outline`` is
+    provided, the generation prompt locks in the outline's activity sequence
+    and asks the AI to elaborate with instructions and config_overrides.
+
+    Args:
+        conversation_history: Prior chat messages to preserve.
+        outline: Optional Stage-1 outline payload (list or dict with tracks)
+            used to constrain sequence, tool types, titles, and track groupings
+            in the generation prompt.
+
+    Returns:
+        A new message list with the generation prompt appended as the final
+        user message.
+
+    Raises:
+        None.
     """
     return list(conversation_history) + [
-        {"role": "user", "content": GENERATE_AGENDA_PROMPT}
+        {"role": "user", "content": build_generation_prompt(outline=outline)}
     ]
 
 
-def parse_agenda_json(raw_text: str) -> Dict[str, Any]:
+def _extract_json_object(raw_text: str) -> str:
+    """Extract a JSON object string from raw model output wrappers.
+
+    Uses markdown-fence extraction first, then a brace-span fallback to strip
+    surrounding prose while preserving the first top-level JSON object.
+    """
+    import re
+
+    text = raw_text.strip()
+    fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
+    if fence_match:
+        return fence_match.group(1).strip()
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and start <= end:
+        return text[start : end + 1]
+    return text
+
+
+def parse_outline_json(raw_text: str) -> Dict[str, Any]:
+    """Parse Stage 1 outline JSON and validate the required outline schema.
+
+    Extracts JSON from fenced/prose-wrapped model output using the same shared
+    strategy as parse_agenda_json(), then validates that ``outline`` exists
+    and is a list.
+
+    Args:
+        raw_text: Raw model response that should contain an outline JSON object.
+
+    Returns:
+        Parsed JSON dictionary containing at least the ``outline`` list.
+
+    Raises:
+        ValueError: If parsing fails or ``outline`` is missing/invalid.
+    """
+    import json
+
+    text = _extract_json_object(raw_text)
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"AI returned invalid outline JSON: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise ValueError("Outline payload must be a JSON object.")
+
+    outline = data.get("outline")
+    if not isinstance(outline, list):
+        raise ValueError("Outline payload must include an 'outline' list.")
+
+    return data
+
+
+def parse_agenda_json(raw_text: str, *, save_dir: str = "/tmp") -> Dict[str, Any]:
     """Extract and parse the JSON agenda from the model's raw output.
 
     The model should output only JSON, but may occasionally wrap it in
-    markdown code fences. This handles both cases gracefully.
+    markdown code fences or produce slightly malformed JSON. This function
+    handles those cases gracefully with a two-pass strategy:
+
+    Pass 1 — strict json.loads()
+    Pass 2 — json_repair (handles missing commas, trailing commas, etc.)
+
+    The raw AI output is always saved to ``{save_dir}/decidero_last_agenda_raw.txt``
+    so failures can be inspected easily. On success the parsed dict is also
+    saved to ``{save_dir}/decidero_last_agenda_parsed.json``.
+
+    Normalises the new complexity/phases/track fields for backward
+    compatibility — if they are absent the result degrades gracefully to
+    a simple flat agenda.
 
     Returns the parsed dict, or raises ValueError on failure.
     """
     import json
+    import logging
+    from pathlib import Path
+
+    logger = logging.getLogger(__name__)
+
+    # ── Always save the raw output so failures can be inspected ──────────
+    try:
+        Path(save_dir, "decidero_last_agenda_raw.txt").write_text(
+            raw_text, encoding="utf-8"
+        )
+    except OSError:
+        pass  # don't let a disk error mask the real problem
+
+    text = _extract_json_object(raw_text)
+
     import re
 
-    text = raw_text.strip()
+    # ── Strip JS-style // line comments ───────────────────────────────────
+    # The AI sometimes mirrors them from the schema template.
+    # Careful not to strip URLs ("https://...") — only strip after
+    # whitespace, comma, or opening brace/bracket.
+    text = re.sub(r'(?<=[,\{\[\s])(\s*)//[^\n]*', r'\1', text)
 
-    # Strip markdown code fences if present
-    fence_match = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.DOTALL)
-    if fence_match:
-        text = fence_match.group(1).strip()
-    else:
-        # Find the first { and last } to extract the JSON object
-        start = text.find("{")
-        end = text.rfind("}")
-        if start != -1 and end != -1:
-            text = text[start : end + 1]
-
+    # ── Pass 1: strict parse ──────────────────────────────────────────────
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"AI returned invalid JSON. Raw output (first 500 chars): {raw_text[:500]}"
-        ) from exc
+        data = json.loads(text)
+        logger.debug("Agenda JSON parsed successfully (strict pass).")
+    except json.JSONDecodeError as strict_exc:
+        # ── Pass 2: lenient repair ────────────────────────────────────────
+        logger.warning(
+            "Strict JSON parse failed (%s). Attempting repair with json_repair.", strict_exc
+        )
+        try:
+            from json_repair import repair_json  # type: ignore[import]
+            repaired = repair_json(text, return_objects=True)
+            if not isinstance(repaired, dict):
+                raise ValueError("Repaired JSON is not a dict object.")
+            data = repaired
+            logger.warning("json_repair recovered a valid dict — generation may need review.")
+        except Exception as repair_exc:
+            logger.error(
+                "Both strict parse and json_repair failed.\n"
+                "Strict error: %s\nRepair error: %s\n"
+                "Full raw output saved to %s/decidero_last_agenda_raw.txt",
+                strict_exc, repair_exc, save_dir,
+            )
+            raise ValueError(
+                f"AI returned invalid JSON (strict: {strict_exc}; repair: {repair_exc}). "
+                f"Raw output saved to {save_dir}/decidero_last_agenda_raw.txt"
+            ) from strict_exc
+
+    # ── Save parsed result on success ─────────────────────────────────────
+    try:
+        Path(save_dir, "decidero_last_agenda_parsed.json").write_text(
+            json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+    return _normalise_agenda(data)
+
+
+def _normalise_agenda(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Fill in missing complexity/phases/track fields for backward compat."""
+
+    # Ensure session_name exists
+    data.setdefault("session_name", "")
+
+    # Ensure evaluation_criteria is a list of strings
+    criteria = data.get("evaluation_criteria")
+    if not isinstance(criteria, list):
+        criteria = []
+    data["evaluation_criteria"] = [c for c in criteria if isinstance(c, str)]
+
+    # Ensure complexity field exists
+    complexity = data.get("complexity", "simple")
+    if complexity not in ("simple", "multi_phase", "multi_track"):
+        complexity = "simple"
+    data["complexity"] = complexity
+
+    # Ensure phases is a list
+    phases = data.get("phases")
+    if not isinstance(phases, list):
+        phases = []
+    data["phases"] = phases
+
+    # Normalise each phase entry
+    for phase in phases:
+        if not isinstance(phase, dict):
+            continue
+        phase.setdefault("phase_id", None)
+        phase.setdefault("title", "")
+        phase.setdefault("description", "")
+        phase.setdefault("phase_type", "plenary")
+        if phase["phase_type"] not in ("plenary", "parallel"):
+            phase["phase_type"] = "plenary"
+        phase.setdefault("suggested_duration_minutes", 0)
+        # tracks only on parallel phases
+        if phase["phase_type"] == "parallel":
+            tracks = phase.get("tracks")
+            if not isinstance(tracks, list):
+                tracks = []
+            phase["tracks"] = tracks
+        else:
+            phase.pop("tracks", None)
+
+    # Normalise each agenda item — ensure phase_id / track_id present
+    agenda = data.get("agenda")
+    if isinstance(agenda, list):
+        for item in agenda:
+            if not isinstance(item, dict):
+                continue
+            item.setdefault("phase_id", None)
+            item.setdefault("track_id", None)
+    data.setdefault("agenda", [])
+
+    # Auto-detect complexity if AI forgot to set it but produced phases/tracks
+    if complexity == "simple" and phases:
+        has_parallel = any(
+            isinstance(p, dict) and p.get("phase_type") == "parallel"
+            for p in phases
+        )
+        if has_parallel:
+            data["complexity"] = "multi_track"
+        elif len(phases) >= 2:
+            data["complexity"] = "multi_phase"
+
+    return data

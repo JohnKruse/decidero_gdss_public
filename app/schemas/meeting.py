@@ -191,6 +191,10 @@ class AgendaActivityResponse(AgendaActivityBase):
     has_data: bool = False
     has_votes: bool = False
     has_submitted_ballots: bool = False
+    transfer_target_eligible: bool = Field(
+        default=False,
+        description="Whether this activity can receive transferred ideas (never started, no user data).",
+    )
     locked_config_keys: List[str] = Field(default_factory=list)
     transfer_count: int = 0
     transfer_source: Optional[str] = None

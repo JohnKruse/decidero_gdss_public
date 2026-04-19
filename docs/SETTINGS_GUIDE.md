@@ -74,7 +74,7 @@ Configures the AI model powering the **AI Meeting Designer** (`/meeting/design`)
 - Model: your deployment name
 
 **OpenRouter**
-- Provider: `openai_compatible`
+- Provider: `openrouter` (or `openai_compatible` with custom endpoint)
 - API Key: from [openrouter.ai](https://openrouter.ai)
 - Endpoint URL: `https://openrouter.ai/api/v1`
 - Model: e.g. `meta-llama/llama-3.3-70b-instruct`
@@ -106,6 +106,8 @@ API keys entered via the Settings UI are:
 - Never visible in the URL
 
 The encryption key is stored in `data/.settings_key` (auto-generated on first use, unique per deployment).
+
+API keys should not be committed to `config.yaml` or prompt template files.
 
 ---
 
@@ -187,6 +189,9 @@ The following settings are **not** exposed in the Settings UI.  They require edi
 | `meeting_refresh.*` | A | Background polling cadence |
 | `ui_refresh.*` | A | Dashboard polling cadence |
 | `frontend_reliability.*` | A | JS retry/backoff behaviour |
+| `ai.provider_defaults.*` | B | Non-secret provider base URLs / API versions |
+| `ai.http.timeouts.*` | B | AI HTTP timeout profiles (provider + test connection) |
+| `ai.prompts.meeting_designer.*` | B | Prompt template source (file/inline) and path |
 
 Environment variables with higher priority than `config.yaml`:
 - `DECIDERO_SECURE_COOKIES` — overrides `auth.secure_cookies`
@@ -252,6 +257,15 @@ from app.config.loader import get_meeting_designer_settings, get_brainstorming_l
 
 settings = get_meeting_designer_settings()   # DB > config.yaml > default
 limits   = get_brainstorming_limits()        # same layered lookup
+```
+
+For prompt templates:
+
+```python
+from app.config.loader import get_meeting_designer_prompt_templates
+
+templates = get_meeting_designer_prompt_templates()
+system_prompt = templates["system_prefix"]
 ```
 
 Plugins should always use the loader getters rather than reading `config.yaml` directly, so that Settings UI overrides take effect.

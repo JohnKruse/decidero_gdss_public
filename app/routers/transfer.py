@@ -11,11 +11,23 @@ from app.auth import get_current_active_user
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager, get_meeting_manager
 from app.database import get_db
+from app.models.categorization import (
+    CategorizationAssignment,
+    CategorizationAuditEvent,
+    CategorizationBallot,
+    CategorizationFinalAssignment,
+)
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting, MeetingFacilitator
 from app.models.user import User, UserRole
+from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
-from app.schemas.transfer import TransferCommit, TransferDraftUpdate, TransferBundleItem
+from app.schemas.transfer import (
+    TransferCommit,
+    TransferCommitResponse,
+    TransferDraftUpdate,
+    TransferBundleItem,
+)
 from app.services import meeting_state_manager
 from app.services.activity_catalog import get_activity_definition
 from app.services.transfer_source import build_transfer_items
@@ -248,6 +260,109 @@ async def _ensure_not_running(meeting_id: str, activity_id: str) -> None:
             )
 
 
+async def _assert_transfer_eligible(
+    target: AgendaActivity,
+    donor_activity_id: str,
+    meeting_id: str,
+    meeting_manager: MeetingManager,
+) -> None:
+    """
+    Validate whether a target activity can receive a transfer.
+
+    Checks are evaluated in order and raise:
+    - 422 if target is the donor activity
+    - 422 if target has started_at set
+    - 422 if target has stopped_at set
+    - 422 if target has positive elapsed_duration
+    - 422 if target already has participant data
+    - 409 if target is currently running (delegated to `_ensure_not_running`)
+    """
+    if target.activity_id == donor_activity_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot transfer into the donor activity itself.",
+        )
+    if target.started_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity has already been started.",
+        )
+    if target.stopped_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity has already been stopped.",
+        )
+    if (target.elapsed_duration or 0) > 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity has accumulated run time.",
+        )
+    has_participant_data = (
+        meeting_manager.db.query(Idea.id)
+        .filter(
+            Idea.meeting_id == meeting_id,
+            Idea.activity_id == target.activity_id,
+        )
+        .first()
+        is not None
+        or meeting_manager.db.query(VotingVote.vote_id)
+        .filter(
+            VotingVote.meeting_id == meeting_id,
+            VotingVote.activity_id == target.activity_id,
+        )
+        .first()
+        is not None
+        or meeting_manager.db.query(CategorizationBallot.ballot_id)
+        .filter(
+            CategorizationBallot.meeting_id == meeting_id,
+            CategorizationBallot.activity_id == target.activity_id,
+        )
+        .first()
+        is not None
+        or meeting_manager.db.query(CategorizationFinalAssignment.final_assignment_id)
+        .filter(
+            CategorizationFinalAssignment.meeting_id == meeting_id,
+            CategorizationFinalAssignment.activity_id == target.activity_id,
+        )
+        .first()
+        is not None
+        or meeting_manager.db.query(CategorizationAssignment.assignment_id)
+        .filter(
+            CategorizationAssignment.meeting_id == meeting_id,
+            CategorizationAssignment.activity_id == target.activity_id,
+            CategorizationAssignment.is_unsorted.is_(False),
+        )
+        .first()
+        is not None
+        or meeting_manager.db.query(CategorizationAuditEvent.event_id)
+        .filter(
+            CategorizationAuditEvent.meeting_id == meeting_id,
+            CategorizationAuditEvent.activity_id == target.activity_id,
+            CategorizationAuditEvent.actor_user_id.isnot(None),
+            CategorizationAuditEvent.event_type.in_(
+                [
+                    "bucket_created",
+                    "bucket_updated",
+                    "bucket_deleted",
+                    "bucket_reordered",
+                    "item_moved",
+                    "ballot_submitted",
+                    "ballot_unsubmitted",
+                    "final_assignment_set",
+                ]
+            ),
+        )
+        .first()
+        is not None
+    )
+    if has_participant_data:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity already has participant data.",
+        )
+    await _ensure_not_running(meeting_id, target.activity_id)
+
+
 async def _broadcast_agenda_update(
     meeting_id: str,
     initiator_id: str,
@@ -265,6 +380,199 @@ async def _broadcast_agenda_update(
             "payload": payload,
             "meta": {"initiatorId": initiator_id},
         },
+    )
+
+
+def _map_transfer_config(
+    target_tool: str,
+    config: dict,
+    ideas: list,
+    comments_by_parent: dict,
+    include_comments: bool,
+    inherited_config_from_donor: bool,
+) -> dict:
+    """Apply tool-type-specific mapping of transferred ideas into the target config dict. Mutates and returns config."""
+    if target_tool == "voting":
+        config.setdefault("allow_retract", True)
+        use_transferred_options = inherited_config_from_donor or not config.get("options")
+        if use_transferred_options:
+            options = []
+            for entry in ideas:
+                if not isinstance(entry, dict):
+                    continue
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                if include_comments and comments_by_parent:
+                    modified_content = _append_comments_to_content(entry, comments_by_parent)
+                    if modified_content != content:
+                        logger.info(
+                            "transfer commit appending comments: original='%s' modified='%s' idea_id=%s",
+                            content[:50],
+                            modified_content[:100],
+                            entry.get("id"),
+                        )
+                    content = modified_content
+                options.append(content)
+            if options:
+                config["options"] = options
+                logger.info(
+                    "transfer commit created voting options: count=%d include_comments=%s has_comments=%s",
+                    len(options),
+                    include_comments,
+                    bool(comments_by_parent),
+                )
+    if target_tool == "categorization":
+        incoming_items = config.get("items")
+        items_missing = not isinstance(incoming_items, list) or not incoming_items
+        if not items_missing:
+            normalized_existing = [
+                str(value).strip().lower()
+                for value in incoming_items
+                if str(value).strip()
+            ]
+            if normalized_existing in (
+                ["edit item here"],
+                ["one idea per line."],
+            ):
+                items_missing = True
+        if items_missing:
+            mapped_items = []
+            for entry in ideas:
+                if not isinstance(entry, dict):
+                    continue
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                if include_comments and comments_by_parent:
+                    content = _append_comments_to_content(entry, comments_by_parent)
+                mapped_items.append(content)
+            if mapped_items:
+                config["items"] = mapped_items
+                logger.info(
+                    "transfer commit created categorization items: count=%d include_comments=%s has_comments=%s",
+                    len(mapped_items),
+                    include_comments,
+                    bool(comments_by_parent),
+                )
+        config.setdefault("mode", "FACILITATOR_LIVE")
+    if target_tool == "rank_order_voting":
+        incoming_ideas = config.get("ideas")
+        ideas_missing = (
+            inherited_config_from_donor
+            or not isinstance(incoming_ideas, list)
+            or not incoming_ideas
+        )
+        if ideas_missing:
+            mapped_ideas: List[Dict[str, Any]] = []
+            for entry in ideas:
+                if not isinstance(entry, dict):
+                    continue
+                content = str(entry.get("content", "")).strip()
+                if not content:
+                    continue
+                if include_comments and comments_by_parent:
+                    content = _append_comments_to_content(entry, comments_by_parent)
+                mapped_entry = {
+                    "id": entry.get("id"),
+                    "content": content,
+                    "submitted_name": entry.get("submitted_name"),
+                    "parent_id": None,
+                    "created_at": entry.get("timestamp") or entry.get("created_at"),
+                    "metadata": dict(entry.get("metadata") or {}),
+                    "source": dict(entry.get("source") or {}),
+                }
+                mapped_ideas.append(mapped_entry)
+            if mapped_ideas:
+                config["ideas"] = mapped_ideas
+                logger.info(
+                    "transfer commit created rank-order ideas: count=%d include_comments=%s has_comments=%s",
+                    len(mapped_ideas),
+                    include_comments,
+                    bool(comments_by_parent),
+                )
+        config.setdefault("show_results_immediately", False)
+        config.setdefault("allow_reset", True)
+        config.setdefault("randomize_order", True)
+    return config
+
+
+def _seed_brainstorming_ideas(
+    db: Session,
+    meeting_id: str,
+    activity_id: str,
+    ideas: list,
+    comments_by_parent: dict,
+) -> None:
+    """Delete any existing ideas for the activity and insert transferred ideas and comments as Idea rows."""
+    db.query(Idea).filter(
+        Idea.meeting_id == meeting_id,
+        Idea.activity_id == activity_id,
+    ).delete(synchronize_session=False)
+    db.flush()
+    if not ideas:
+        logger.warning(
+            "transfer commit has no ideas to seed meeting=%s activity=%s",
+            meeting_id,
+            activity_id,
+        )
+        return
+
+    idea_map: Dict[str, int] = {}
+    for idea_entry in ideas:
+        idea = Idea(
+            meeting_id=meeting_id,
+            activity_id=activity_id,
+            content=idea_entry.get("content"),
+            submitted_name=idea_entry.get("submitted_name"),
+            parent_id=None,
+            idea_metadata=idea_entry.get("metadata") or {},
+        )
+        timestamp = _parse_iso_timestamp(
+            idea_entry.get("timestamp") or idea_entry.get("created_at")
+        )
+        if timestamp:
+            idea.timestamp = timestamp
+        db.add(idea)
+        db.flush()
+        if idea_entry.get("id") is not None:
+            idea_map[str(idea_entry.get("id"))] = idea.id
+
+    for parent_key, comment_entries in comments_by_parent.items():
+        parent_id = idea_map.get(str(parent_key))
+        if not parent_id:
+            continue
+        for comment_entry in comment_entries:
+            comment = Idea(
+                meeting_id=meeting_id,
+                activity_id=activity_id,
+                content=comment_entry.get("content"),
+                submitted_name=comment_entry.get("submitted_name"),
+                parent_id=parent_id,
+                idea_metadata=comment_entry.get("metadata") or {},
+            )
+            timestamp = _parse_iso_timestamp(
+                comment_entry.get("timestamp") or comment_entry.get("created_at")
+            )
+            if timestamp:
+                comment.timestamp = timestamp
+            db.add(comment)
+    db.commit()
+    seeded_count = (
+        db.query(Idea)
+        .filter(
+            Idea.meeting_id == meeting_id,
+            Idea.activity_id == activity_id,
+        )
+        .count()
+    )
+    logger.info(
+        "transfer commit seeded brainstorming ideas meeting=%s activity=%s ideas=%d comments=%d total=%d",
+        meeting_id,
+        activity_id,
+        len(ideas),
+        sum(len(entries) for entries in comments_by_parent.values()),
+        seeded_count,
     )
 
 
@@ -419,7 +727,7 @@ async def update_transfer_draft(
     return _serialize_bundle(draft)
 
 
-@transfer_router.post("/commit")
+@transfer_router.post("/commit", response_model=TransferCommitResponse)
 async def commit_transfer(
     meeting_id: str,
     payload: TransferCommit,
@@ -450,143 +758,67 @@ async def commit_transfer(
         comments_by_parent = {}
 
     target = payload.target_activity
-    target_tool = (target.tool_type or "").strip().lower()
-    definition = get_activity_definition(target.tool_type)
-    if not definition:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown tool type '{target.tool_type}'",
+    existing_target_mode = bool(target.activity_id)
+    if target.activity_id:
+        existing_target = _resolve_activity(meeting, target.activity_id)
+        await _assert_transfer_eligible(
+            existing_target, payload.donor_activity_id, meeting_id, meeting_manager
         )
-    title = (target.title or "").strip()
-    if not title:
-        donor_title = (donor.title or "").strip()
-        if donor_title:
-            title = f"{donor_title} - Transfer"
-        else:
-            title = definition.get("label") or target.tool_type.replace("_", " ").title()
-    config = dict(target.config or {})
-    inherited_config_from_donor = False
-    if not config and (donor.tool_type or "").lower() == target.tool_type.lower():
-        config = dict(getattr(donor, "config", {}) or {})
-        inherited_config_from_donor = True
-
-    if target_tool == "voting":
-        config.setdefault("allow_retract", True)
-        use_transferred_options = inherited_config_from_donor or not config.get("options")
-        if use_transferred_options:
-            options = []
-            for entry in ideas:
-                if not isinstance(entry, dict):
-                    continue
-                content = str(entry.get("content", "")).strip()
-                if not content:
-                    continue
-                
-                # Append comments to content if include_comments is True
-                if payload.include_comments and comments_by_parent:
-                    modified_content = _append_comments_to_content(entry, comments_by_parent)
-                    if modified_content != content:
-                        logger.info(
-                            "transfer commit appending comments: original='%s' modified='%s' idea_id=%s",
-                            content[:50],
-                            modified_content[:100],
-                            entry.get("id")
-                        )
-                    content = modified_content
-                
-                options.append(content)
-            
-            if options:
-                config["options"] = options
-                logger.info(
-                    "transfer commit created voting options: count=%d include_comments=%s has_comments=%s",
-                    len(options),
-                    payload.include_comments,
-                    bool(comments_by_parent)
-                )
-    if target_tool == "categorization":
-        incoming_items = config.get("items")
-        items_missing = not isinstance(incoming_items, list) or not incoming_items
-        if not items_missing:
-            normalized_existing = [
-                str(value).strip().lower()
-                for value in incoming_items
-                if str(value).strip()
-            ]
-            if normalized_existing in (
-                ["edit item here"],
-                ["one idea per line."],
-            ):
-                items_missing = True
-        if items_missing:
-            mapped_items = []
-            for entry in ideas:
-                if not isinstance(entry, dict):
-                    continue
-                content = str(entry.get("content", "")).strip()
-                if not content:
-                    continue
-                if payload.include_comments and comments_by_parent:
-                    content = _append_comments_to_content(entry, comments_by_parent)
-                mapped_items.append(content)
-            if mapped_items:
-                config["items"] = mapped_items
-                logger.info(
-                    "transfer commit created categorization items: count=%d include_comments=%s has_comments=%s",
-                    len(mapped_items),
-                    payload.include_comments,
-                    bool(comments_by_parent),
-                )
-        config.setdefault("mode", "FACILITATOR_LIVE")
-    if target_tool == "rank_order_voting":
-        incoming_ideas = config.get("ideas")
-        ideas_missing = (
-            inherited_config_from_donor
-            or not isinstance(incoming_ideas, list)
-            or not incoming_ideas
+        target_tool = (existing_target.tool_type or "").strip().lower()
+        # Crimson Narwhal: existing-activity commit path — replaces content config, preserves settings.
+        config = dict(existing_target.config or {})
+        for content_key in ("options", "items", "ideas"):
+            config.pop(content_key, None)
+        config = _map_transfer_config(
+            target_tool=target_tool,
+            config=config,
+            ideas=ideas,
+            comments_by_parent=comments_by_parent,
+            include_comments=payload.include_comments,
+            inherited_config_from_donor=False,
         )
-        if ideas_missing:
-            mapped_ideas: List[Dict[str, Any]] = []
-            for entry in ideas:
-                if not isinstance(entry, dict):
-                    continue
-                content = str(entry.get("content", "")).strip()
-                if not content:
-                    continue
-                if payload.include_comments and comments_by_parent:
-                    content = _append_comments_to_content(entry, comments_by_parent)
+        existing_target.config = config
+        db.add(existing_target)
+        db.flush()
+        created = existing_target
+    else:
+        target_tool = (target.tool_type or "").strip().lower()
+        definition = get_activity_definition(target.tool_type)
+        if not definition:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown tool type '{target.tool_type}'",
+            )
+        title = (target.title or "").strip()
+        if not title:
+            donor_title = (donor.title or "").strip()
+            if donor_title:
+                title = f"{donor_title} - Transfer"
+            else:
+                title = definition.get("label") or target.tool_type.replace("_", " ").title()
+        config = dict(target.config or {})
+        inherited_config_from_donor = False
+        if not config and (donor.tool_type or "").lower() == target.tool_type.lower():
+            config = dict(getattr(donor, "config", {}) or {})
+            inherited_config_from_donor = True
+        config = _map_transfer_config(
+            target_tool=target_tool,
+            config=config,
+            ideas=ideas,
+            comments_by_parent=comments_by_parent,
+            include_comments=payload.include_comments,
+            inherited_config_from_donor=inherited_config_from_donor,
+        )
+        agenda_payload = AgendaActivityCreate(
+            tool_type=target_tool or target.tool_type,
+            title=title,
+            instructions=target.instructions,
+            config=config,
+            order_index=(donor.order_index or 0) + 1,
+        )
+        created = meeting_manager.add_agenda_activity(meeting_id, agenda_payload)
 
-                mapped_entry = {
-                    "id": entry.get("id"),
-                    "content": content,
-                    "submitted_name": entry.get("submitted_name"),
-                    "parent_id": None,
-                    "created_at": entry.get("timestamp") or entry.get("created_at"),
-                    "metadata": dict(entry.get("metadata") or {}),
-                    "source": dict(entry.get("source") or {}),
-                }
-                mapped_ideas.append(mapped_entry)
-            if mapped_ideas:
-                config["ideas"] = mapped_ideas
-                logger.info(
-                    "transfer commit created rank-order ideas: count=%d include_comments=%s has_comments=%s",
-                    len(mapped_ideas),
-                    payload.include_comments,
-                    bool(comments_by_parent),
-                )
-        config.setdefault("show_results_immediately", False)
-        config.setdefault("allow_reset", True)
-        config.setdefault("randomize_order", True)
-    agenda_payload = AgendaActivityCreate(
-        tool_type=target_tool or target.tool_type,
-        title=title,
-        instructions=target.instructions,
-        config=config,
-        order_index=(donor.order_index or 0) + 1,
-    )
-
-    created = meeting_manager.add_agenda_activity(meeting_id, agenda_payload)
-
+    # State init for existing target mirrors create path and is safe due to eligibility checks.
     if target_tool == "voting":
         VotingManager(meeting_manager.db).reset_activity_state(
             meeting_id, created.activity_id, clear_bundles=True
@@ -627,6 +859,8 @@ async def commit_transfer(
         activity_id=payload.donor_activity_id,
         details={
             "target_tool_type": target_tool,
+            "target_activity_id": created.activity_id,
+            "target_mode": "existing" if existing_target_mode else "new",
             "include_comments": payload.include_comments,
             "idea_count": len(ideas),
             "comment_count": sum(len(entries) for entries in comments_by_parent.values()),
@@ -657,75 +891,13 @@ async def commit_transfer(
         meeting_id, created.activity_id, "input", ideas, bundle_metadata
     )
     if target_tool == "brainstorming":
-        db.query(Idea).filter(
-            Idea.meeting_id == meeting_id,
-            Idea.activity_id == created.activity_id,
-        ).delete(synchronize_session=False)
-        db.flush()
-        if not ideas:
-            logger.warning(
-                "transfer commit has no ideas to seed meeting=%s activity=%s payload_items=%d",
-                meeting_id,
-                created.activity_id,
-                len(normalized),
-            )
-        else:
-            idea_map: Dict[str, int] = {}
-            for idea_entry in ideas:
-                idea = Idea(
-                    meeting_id=meeting_id,
-                    activity_id=created.activity_id,
-                    content=idea_entry.get("content"),
-                    submitted_name=idea_entry.get("submitted_name"),
-                    parent_id=None,
-                    idea_metadata=idea_entry.get("metadata") or {},
-                )
-                timestamp = _parse_iso_timestamp(
-                    idea_entry.get("timestamp") or idea_entry.get("created_at")
-                )
-                if timestamp:
-                    idea.timestamp = timestamp
-                db.add(idea)
-                db.flush()
-                if idea_entry.get("id") is not None:
-                    idea_map[str(idea_entry.get("id"))] = idea.id
-
-            for parent_key, comment_entries in comments_by_parent.items():
-                parent_id = idea_map.get(str(parent_key))
-                if not parent_id:
-                    continue
-                for comment_entry in comment_entries:
-                    comment = Idea(
-                        meeting_id=meeting_id,
-                        activity_id=created.activity_id,
-                        content=comment_entry.get("content"),
-                        submitted_name=comment_entry.get("submitted_name"),
-                        parent_id=parent_id,
-                        idea_metadata=comment_entry.get("metadata") or {},
-                    )
-                    timestamp = _parse_iso_timestamp(
-                        comment_entry.get("timestamp") or comment_entry.get("created_at")
-                    )
-                    if timestamp:
-                        comment.timestamp = timestamp
-                    db.add(comment)
-            db.commit()
-            seeded_count = (
-                db.query(Idea)
-                .filter(
-                    Idea.meeting_id == meeting_id,
-                    Idea.activity_id == created.activity_id,
-                )
-                .count()
-            )
-            logger.info(
-                "transfer commit seeded brainstorming ideas meeting=%s activity=%s ideas=%d comments=%d total=%d",
-                meeting_id,
-                created.activity_id,
-                len(ideas),
-                sum(len(entries) for entries in comments_by_parent.values()),
-                seeded_count,
-            )
+        _seed_brainstorming_ideas(
+            db=db,
+            meeting_id=meeting_id,
+            activity_id=created.activity_id,
+            ideas=ideas,
+            comments_by_parent=comments_by_parent,
+        )
 
     await _broadcast_agenda_update(meeting_id, current_user.user_id, meeting_manager)
     await meeting_state_manager.apply_patch(
@@ -739,8 +911,11 @@ async def commit_transfer(
     )
 
     agenda_items = meeting_manager.list_agenda(meeting_id)
+    target_activity_payload = AgendaActivityResponse.model_validate(created).model_dump()
+    # target_activity is the canonical key; new_activity is None for existing-target transfers.
     return {
-        "new_activity": AgendaActivityResponse.model_validate(created).model_dump(),
+        "target_activity": target_activity_payload,
+        "new_activity": None if existing_target_mode else target_activity_payload,
         "agenda": [
             AgendaActivityResponse.model_validate(item).model_dump()
             for item in agenda_items
