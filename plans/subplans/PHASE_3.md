@@ -174,6 +174,7 @@ Phase 3 is NOT complete until the exit command and all five invariants succeed o
 - [DONE] Step 2 — MeetingManager invariants verified for empty-list and prune-to-empty transitions; router GET confirms inherit-all fallback (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 - [DONE] Step 3 — 409 collision response enriched with `current_assignment`; rejected roster updates leave persisted state unchanged (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 - [DONE] Step 4 — Broadcast cadence contract locked with rapid-PUT final-state coverage and broadcast payload assertions (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
+- [DONE] Step 5 — Regression sweeps passed server-side (`71 passed, 2 skipped` on the phase exit suite; `78 passed` on the broader router sweep); carry-forward notes: Phase 3 remains not ship-ready because `git diff main -- ':!app/routers/meetings.py' ':!app/data/meeting_manager.py' ':!app/tests/' ':!plans/'` surfaced substantial pre-existing drift outside the allowed Phase-3 buckets, so the exit invariant did not hold on this working tree (technical deviations: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`; `git grep -nP \"must include at least one member\" -- app` returned no matches) — commit: working tree
 
 *(append entries here as each step closes)*
 
@@ -181,5 +182,5 @@ Phase 3 is NOT complete until the exit command and all five invariants succeed o
 - [ ] Step 2 — MeetingManager invariants verified — commit: __________
 - [ ] Step 3 — 409 response enriched with `current_assignment` — commit: __________
 - [DONE] Step 4 — Broadcast cadence contract locked — commit: working tree
-- [ ] Step 5 — Regression sweep clean; carry-forward notes: __________ — commit: __________
-- [ ] Exit command green — `pytest app/tests/test_activity_rosters.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py -v` output: __________ passed, 0 failed
+- [DONE] Step 5 — Regression sweep clean; carry-forward notes: unrelated non-Phase-3 drift outside allowed buckets remains in `git diff main` — commit: working tree
+- [DONE] Exit command green — `pytest app/tests/test_activity_rosters.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py -v` output: 71 passed, 0 failed, 2 skipped
