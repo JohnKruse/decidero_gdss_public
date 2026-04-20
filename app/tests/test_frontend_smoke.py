@@ -54,16 +54,16 @@ def test_transfer_panel_html_has_mode_selector():
     assert 'value="existing"' in html
 
 
-def test_agenda_panel_heading_text():
-    """Phase 1 / Placard Parade — guard the renamed Agenda panel heading."""
+def test_agenda_panel_heading_renamed():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 1 check."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert "Meeting Agenda and Participant Roster" in html
     assert ">Agenda<" not in html
 
 
-def test_agenda_settings_button_label():
-    """Phase 1 / Placard Parade — guard the renamed Meeting Settings button."""
+def test_meeting_settings_button_label():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 2 check."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert 'id="agendaAddActivityButton"' in html
@@ -71,8 +71,8 @@ def test_agenda_settings_button_label():
     assert 'id="agendaAddActivityButton">Settings<' not in html
 
 
-def test_agenda_meeting_roster_button_present():
-    """Phase 2 / Doorbell Disco — guard the new Meeting Roster entry point in the Agenda panel."""
+def test_meeting_roster_button_present():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 3 check."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert 'id="openParticipantAdminButton"' in html
@@ -80,10 +80,6 @@ def test_agenda_meeting_roster_button_present():
     assert html.index("current_user.role in ['admin', 'super_admin', 'facilitator']") < html.index(
         'id="openParticipantAdminButton"'
     )
-
-
-def test_meeting_roster_button_listener_wired():
-    """Phase 2 / Doorbell Disco — guard the pre-existing JS wiring the new button relies on."""
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
     assert "openParticipantAdminButton" in js
@@ -91,54 +87,28 @@ def test_meeting_roster_button_listener_wired():
     assert 'setParticipantModalMode("meeting")' in js
 
 
-def test_activity_modal_tabs_removed():
-    """Phase 4 / Modal Mutiny — the tab row is gone; there is no secondary switcher inside the participant modal."""
+def test_activity_modal_simplified():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 4 check."""
+    import re
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+
+    # Removed affordances: no tab row, no Apply / IncludeAll / Reuse buttons, no dirty/lastCustomSelection state.
     assert "participant-modal-tabs" not in html
     assert "data-participant-modal-tab" not in html
-
-
-def test_activity_modal_action_buttons_removed():
-    """Phase 4 / Modal Mutiny — Include Everyone / Apply Selection / Reuse Last are gone from both template and JS."""
-    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
-        html = handle.read()
-    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
-        js = handle.read()
-    for token in ("activityParticipantIncludeAll", "activityParticipantApply", "activityParticipantReuse"):
-        assert token not in html, f"{token} still present in meeting.html"
-        assert token not in js, f"{token} still present in meeting.js"
-
-
-def test_no_dead_apply_button_references():
-    """Phase 4 / Modal Mutiny — structural proof of Step 4 cleanup: removed affordances leave no source trace."""
-    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
-        html = handle.read()
-    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
-        js = handle.read()
     for token in ("activityParticipantApply", "activityParticipantIncludeAll", "activityParticipantReuse"):
         assert token not in html, f"{token} still present in meeting.html"
         assert token not in js, f"{token} still present in meeting.js"
     assert "activityParticipantState.dirty" not in js
     assert "activityParticipantState.lastCustomSelection" not in js
 
+    # Kept affordances: the two Select-All buttons remain.
+    assert "activityAvailableSelectAllButton" in html
+    assert "activitySelectedSelectAllButton" in html
 
-def test_collision_rollback_reads_current_assignment():
-    """Phase 4 / Modal Mutiny — structural pin: 409 handler parses current_assignment from the server body.
-
-    Behavioral coverage would require a JS test runner this project does not have; deferred to Phase 5.
-    """
-    import re
-    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
-        js = handle.read()
-    assert "current_assignment" in js, "meeting.js must reference the Phase-3 current_assignment field"
-    assert re.search(r"status\s*===\s*409", js), "meeting.js must branch on HTTP 409 status"
-
-
-def test_activity_move_handlers_auto_commit():
-    """Phase 4 / Modal Mutiny — → and ← handlers must call applyActivityParticipantSelection inline (auto-commit)."""
-    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
-        js = handle.read()
+    # Auto-commit: both → / ← handlers must invoke applyActivityParticipantSelection inline.
     for fn_name in ("addActivityParticipantsFromAvailable", "removeActivityParticipantsFromSelected"):
         start = js.find(f"function {fn_name}")
         assert start != -1, f"{fn_name} not found in meeting.js"
@@ -147,6 +117,10 @@ def test_activity_move_handlers_auto_commit():
         assert "applyActivityParticipantSelection" in body, (
             f"{fn_name} does not auto-commit via applyActivityParticipantSelection"
         )
+
+    # 409 collision rollback reads current_assignment from the Phase-3-enriched body.
+    assert "current_assignment" in js, "meeting.js must reference the Phase-3 current_assignment field"
+    assert re.search(r"status\s*===\s*409", js), "meeting.js must branch on HTTP 409 status"
 
 
 def test_transfer_css_has_eligibility_hint_style():
