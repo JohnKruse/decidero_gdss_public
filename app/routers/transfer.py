@@ -21,7 +21,6 @@ from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting, MeetingFacilitator
 from app.models.user import User, UserRole
 from app.models.voting import VotingVote
-from app.routers.meetings import _apply_activity_lock_metadata, _apply_transfer_counts
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
 from app.schemas.transfer import (
     TransferCommit,
@@ -299,7 +298,6 @@ async def _assert_transfer_eligible(
             detail="Target activity has accumulated run time.",
         )
     has_participant_data = (
-        # Fresh activities must have zero Idea rows. See plans/00_DISCOVERY.md Section 10.
         meeting_manager.db.query(Idea.id)
         .filter(
             Idea.meeting_id == meeting_id,
@@ -370,10 +368,7 @@ async def _broadcast_agenda_update(
     initiator_id: str,
     meeting_manager: MeetingManager,
 ) -> None:
-    """Broadcast enriched agenda update including transfer counts and lock metadata."""
     updated_agenda_items = meeting_manager.list_agenda(meeting_id)
-    _apply_activity_lock_metadata(meeting_id, meeting_manager, updated_agenda_items)
-    _apply_transfer_counts(meeting_id, meeting_manager, updated_agenda_items)
     payload = [
         AgendaActivityResponse.model_validate(item).model_dump()
         for item in updated_agenda_items
@@ -396,23 +391,10 @@ def _map_transfer_config(
     include_comments: bool,
     inherited_config_from_donor: bool,
 ) -> dict:
-    """Apply tool-specific transfer mapping into target config.
-
-    Placeholder UI strings are treated as empty for voting, categorization, and
-    rank-order voting, so transfer commit replaces them with real transferred data.
-    Mutates and returns config.
-    """
+    """Apply tool-type-specific mapping of transferred ideas into the target config dict. Mutates and returns config."""
     if target_tool == "voting":
         config.setdefault("allow_retract", True)
         use_transferred_options = inherited_config_from_donor or not config.get("options")
-        if not use_transferred_options and isinstance(config.get("options"), list):
-            normalized_existing = [
-                str(value).strip().lower()
-                for value in (config.get("options") or [])
-                if str(value).strip()
-            ]
-            if normalized_existing == ["edit vote option here"]:
-                use_transferred_options = True
         if use_transferred_options:
             options = []
             for entry in ideas:
@@ -449,11 +431,9 @@ def _map_transfer_config(
                 for value in incoming_items
                 if str(value).strip()
             ]
-            # Placeholder strings from create_meeting.html UI hints. Keep in sync with template.
             if normalized_existing in (
                 ["edit item here"],
                 ["one idea per line."],
-                ["one bucket/category per line."],
             ):
                 items_missing = True
         if items_missing:
@@ -483,17 +463,6 @@ def _map_transfer_config(
             or not isinstance(incoming_ideas, list)
             or not incoming_ideas
         )
-        if not ideas_missing and isinstance(incoming_ideas, list):
-            normalized_existing = []
-            for value in incoming_ideas:
-                if isinstance(value, dict):
-                    text = str(value.get("content", "")).strip().lower()
-                else:
-                    text = str(value).strip().lower()
-                if text:
-                    normalized_existing.append(text)
-            if normalized_existing == ["edit ranked idea here"]:
-                ideas_missing = True
         if ideas_missing:
             mapped_ideas: List[Dict[str, Any]] = []
             for entry in ideas:

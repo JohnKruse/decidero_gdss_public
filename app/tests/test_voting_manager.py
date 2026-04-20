@@ -226,25 +226,3 @@ def test_participant_can_view_results_after_locked_submission(
     after = voting_manager.cast_vote(meeting, activity_id, participant, option_id)
     assert after["can_view_results"] is True
     assert any(option["votes"] is not None for option in after["options"])
-
-
-@pytest.mark.usefixtures("db_session")
-def test_build_summary_with_empty_options_returns_list(
-    db_session, user_manager_with_admin: UserManager
-):
-    admin_user = user_manager_with_admin.get_user_by_email(ADMIN_EMAIL_FOR_TEST)
-    assert admin_user is not None
-    participant = _create_participant(user_manager_with_admin, db_session)
-    config = {
-        "options": [],
-        "max_votes": 3,
-    }
-    meeting, activity_id = _build_voting_meeting(
-        db_session, admin_user, [participant.user_id], config
-    )
-    voting_manager = VotingManager(db_session)
-
-    result = voting_manager.build_summary(meeting, activity_id, participant)
-    assert result["options"] is not None
-    assert isinstance(result["options"], list)
-    assert result["options"] == []

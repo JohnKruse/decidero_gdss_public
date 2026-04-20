@@ -286,12 +286,6 @@ class VotingManager:
         force_results: bool = False,
         is_active_state: bool = False,
     ) -> Dict[str, object]:
-        """
-        Builds the current state summary for a voting activity.
-
-        Returns:
-            A dict containing the summary. Returns a dict with guaranteed list values for array fields (never None).
-        """
         activity = self._resolve_voting_activity(meeting, activity_id)
         options = self._extract_options(activity)
         config = activity.config or {}
