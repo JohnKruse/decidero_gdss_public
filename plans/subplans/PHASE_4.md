@@ -1,4 +1,4 @@
-# Phase 4 — Activity Participants Modal Simplification + Auto-Commit
+# Phase 4 — Activity Participants Modal Simplification + Auto-Commit [COMPLETE]
 
 **Master plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
 **Global canary:** `Roster Rodeo`
