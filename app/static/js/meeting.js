@@ -117,6 +117,7 @@
                 tool_type: "voting",
                 label: "Dot Voting",
                 description: "Distribute votes across ideas to prioritise the strongest options.",
+                // options/ideas intentionally empty - backend is the source of truth for defaults
                 default_config: {
                     vote_type: "dot",
                     max_votes: 5,
@@ -124,7 +125,7 @@
                     allow_retract: true,
                     show_results_immediately: false,
                     randomize_participant_order: false,
-                    options: ["Edit vote option here"],
+                    options: [],
                 },
                 reliability_policy: {
                     write_default: {
@@ -150,7 +151,7 @@
                 label: "Rank Order Voting",
                 description: "Rank ideas from most to least preferred and compare group agreement.",
                 default_config: {
-                    ideas: ["Edit ranked idea here"],
+                    ideas: [],
                     randomize_order: true,
                     show_results_immediately: false,
                     allow_reset: true,
@@ -2413,6 +2414,7 @@
             brainstormingIdeaNumbers.clear();
             brainstormingSubcommentCounts.clear();
             brainstormingIdeaCount = 0;
+            // GET /brainstorming/ideas returns [] for empty activities; null guard kept for safety
             if (!ideas || ideas.length === 0) {
                 renderBrainstormingEmptyRow();
                 return;
@@ -3391,8 +3393,10 @@
             if (transfer.donorTitle) {
                 transfer.donorTitle.title = getTransferBundleTooltip(transferState.metadata) || "";
             }
-            const ideas = transferState.items.filter((item) => item.parent_id == null);
-            const comments = transferState.items.filter((item) => item.parent_id != null);
+            // Defensive: transferState.items may be null if load failed or was never attempted.
+            const items = transferState.items || [];
+            const ideas = items.filter((item) => item.parent_id == null);
+            const comments = items.filter((item) => item.parent_id != null);
 
             if (ideas.length === 0) {
                 const row = document.createElement("tr");
@@ -4378,6 +4382,7 @@
                 return;
             }
 
+            // Backend guarantees options is always an array (never null); guard kept for defensive safety.
             if (!summary.options || summary.options.length === 0) {
                 updateVotingFooter(summary);
                 const empty = document.createElement("li");
@@ -4918,6 +4923,7 @@
                 return;
             }
 
+            // Array.isArray guard handles null/undefined/non-array; backend guarantees [] default.
             if (!summary || !Array.isArray(summary.options) || summary.options.length === 0) {
                 setRankOrderDropTargetVisual(null);
                 const empty = document.createElement("li");
@@ -5344,6 +5350,7 @@
             }
             categorization.itemsList.innerHTML = "";
             categorization.bucketsList.innerHTML = "";
+            // build_state() guarantees items/buckets are lists; UNSORTED bucket always exists.
             if (!summary || !Array.isArray(summary.items)) {
                 const empty = document.createElement("li");
                 empty.className = "categorization-item-empty";
@@ -5751,15 +5758,15 @@
                     queueName: "brainstorming-submit",
                     fallbackPolicy: brainstormSubmitFallbackPolicy,
                     requestFactory: ({ attempt, requestId, policy }) => fetch(submitUrl, {
-                            method: "POST",
-                            credentials: "include",
-                            headers: {
-                                "Content-Type": "application/json",
-                                [policy.idempotencyHeader]: requestId || "",
-                                "X-Retry-Attempt": String(attempt),
-                            },
-                            body: JSON.stringify(payload),
-                        }),
+                        method: "POST",
+                        credentials: "include",
+                        headers: {
+                            "Content-Type": "application/json",
+                            [policy.idempotencyHeader]: requestId || "",
+                            "X-Retry-Attempt": String(attempt),
+                        },
+                        body: JSON.stringify(payload),
+                    }),
                     onRetry: ({ attempt }) => {
                         setBrainstormingError(`Connection busy. Retrying submit (${attempt + 1})…`);
                     },
@@ -6932,8 +6939,8 @@
                 }
                 const requestedTool = String(
                     tool ||
-                        state.agendaMap.get(activityId || "")?.tool_type ||
-                        "",
+                    state.agendaMap.get(activityId || "")?.tool_type ||
+                    "",
                 ).toLowerCase();
                 if (
                     activityId &&
@@ -7280,11 +7287,11 @@
                         `/api/meetings/${encodeURIComponent(context.meetingId)}/state`,
                         { credentials: "include", cache: "no-store" },
                     );
-                if (stateResponse.ok) {
-                    const snapshot = await stateResponse.json().catch(() => null);
-                    if (snapshot && snapshot.meetingId) {
-                        handleStateSnapshot(snapshot, false);
-                        if (state.latestState) {
+                    if (stateResponse.ok) {
+                        const snapshot = await stateResponse.json().catch(() => null);
+                        if (snapshot && snapshot.meetingId) {
+                            handleStateSnapshot(snapshot, false);
+                            if (state.latestState) {
                                 state.latestState.agenda = Array.isArray(meeting.agenda)
                                     ? meeting.agenda
                                     : state.latestState.agenda;

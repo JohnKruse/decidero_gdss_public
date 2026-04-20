@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
-from app.models.categorization import CategorizationItem
+from app.models.categorization import CategorizationBallot, CategorizationItem
 from app.models.idea import Idea
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
@@ -350,6 +350,588 @@ def test_transfer_eligible_rejects_activity_with_data(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
+def test_fresh_activity_has_no_idea_rows(
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Fresh Activities Have No Ideas",
+            description="Fresh activities should start with zero Idea rows.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Brainstorming"),
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Voting",
+                config={"options": [], "max_votes": 3},
+            ),
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorization",
+                config={"items": [], "buckets": [], "mode": "FACILITATOR_LIVE"},
+            ),
+            AgendaActivityCreate(
+                tool_type="rank_order_voting",
+                title="Rank Order Voting",
+                config={"ideas": []},
+            ),
+        ],
+    )
+
+    for activity in meeting.agenda_activities:
+        count = (
+            db_session.query(Idea)
+            .filter(
+                Idea.meeting_id == meeting.meeting_id,
+                Idea.activity_id == activity.activity_id,
+            )
+            .count()
+        )
+        assert (
+            count == 0
+        ), f"Fresh {activity.tool_type} activity should have 0 Idea rows, found {count}"
+
+
+def test_transfer_eligible_rejects_stopped_activity(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    # Exercises the `stopped_at` eligibility guard in `_assert_transfer_eligible`.
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Stopped Eligibility Test",
+            description="Stopped target must be rejected.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(tool_type="voting", title="Target"),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Donor idea"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        target_row = meeting.agenda_activities[1]
+        target_row.stopped_at = datetime.now(UTC)
+        db_session.commit()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 422, commit_resp.json()
+        assert "already been stopped" in commit_resp.json().get("detail", "")
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_eligible_rejects_elapsed_time_activity(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    # Exercises the `elapsed_duration` eligibility guard in `_assert_transfer_eligible`.
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Elapsed-Time Eligibility Test",
+            description="Target with elapsed run time must be rejected.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(tool_type="voting", title="Target"),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Donor idea"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        target_row = meeting.agenda_activities[1]
+        target_row.elapsed_duration = 60
+        db_session.commit()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 422, commit_resp.json()
+        assert "accumulated run time" in commit_resp.json().get("detail", "")
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_eligible_rejects_running_activity(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    # Completes the six-check eligibility matrix: running target check.
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Running Eligibility Test",
+            description="Running target must be rejected.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(tool_type="voting", title="Target"),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Donor idea"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": target_id,
+                    "agendaItemId": target_id,
+                    "currentTool": meeting.agenda_activities[1].tool_type,
+                    "status": "in_progress",
+                    "activeActivities": [
+                        {
+                            "activityId": target_id,
+                            "tool": meeting.agenda_activities[1].tool_type,
+                            "status": "in_progress",
+                            "metadata": {"participantScope": "all"},
+                        }
+                    ],
+                },
+            )
+        )
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 409, commit_resp.json()
+        assert "currently running" in commit_resp.json().get("detail", "")
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_eligible_rejects_activity_with_ballots(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    # Completes the six-check eligibility matrix: submitted ballots imply data.
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Ballots Eligibility Test",
+            description="Target with categorization ballots must be rejected.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(tool_type="categorization", title="Target"),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Donor idea"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        db_session.add(
+            CategorizationBallot(
+                meeting_id=meeting.meeting_id,
+                activity_id=target_id,
+                user_id=facilitator.user_id,
+                item_key=f"{target_id}:seed-item",
+                category_id="UNSORTED",
+                submitted=True,
+            )
+        )
+        db_session.commit()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 422, commit_resp.json()
+        assert "participant data" in commit_resp.json().get("detail", "")
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_eligible_accepts_fresh_empty_activity_per_tool_type(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Prove that freshly-created activities with empty config pass _assert_transfer_eligible for all four tool types. Counterpart to the seven rejection tests (lines 118-603)."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Empty Target Eligibility Test",
+            description="Empty targets of all tool types must be accepted.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Voting Target",
+                config={"options": [], "max_votes": 3},
+            ),
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorization Target",
+                config={"items": [], "buckets": [], "mode": "FACILITATOR_LIVE"},
+            ),
+            AgendaActivityCreate(
+                tool_type="rank_order_voting",
+                title="Rank Order Target",
+                config={"ideas": []},
+            ),
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Brainstorming Target",
+                config={},
+            ),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Donor idea"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        for activity in meeting.agenda_activities[1:]:
+            target_id = activity.activity_id
+
+            if activity.tool_type in ("voting", "rank_order_voting"):
+                assert db_session.query(VotingVote).filter(VotingVote.activity_id == target_id).count() == 0
+            if activity.tool_type == "categorization":
+                assert db_session.query(CategorizationBallot).filter(CategorizationBallot.activity_id == target_id).count() == 0
+            assert db_session.query(Idea).filter(Idea.activity_id == target_id).count() == 0
+
+            commit_resp = authenticated_client.post(
+                f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+                json={
+                    "donor_activity_id": donor_id,
+                    "include_comments": False,
+                    "items": items,
+                    "metadata": {},
+                    "target_activity": {"activity_id": target_id},
+                },
+            )
+            assert commit_resp.status_code == 200, f"Failed for {activity.tool_type}: {commit_resp.json()}"
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_into_empty_voting_populates_options(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Transfer into a voting activity with options: [] should populate options from donor ideas and preserve other config settings."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Empty Voting Populate Test",
+            description="Empty-target commit populates voting options and preserves settings.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Empty Target",
+                config={"options": [], "max_votes": 5},
+            ),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Alpha"},
+        )
+        assert idea_resp.status_code == 201
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Beta"},
+        )
+        assert idea_resp.status_code == 201
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200
+
+        from app.models.meeting import AgendaActivity
+        target_activity_db = db_session.query(AgendaActivity).filter(AgendaActivity.activity_id == target_id).first()
+        
+        assert target_activity_db.config["options"] == ["Alpha", "Beta"]
+        assert target_activity_db.config["max_votes"] == 5
+
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_transfer_commit_into_existing_voting_replaces_options(
     authenticated_client: TestClient,
     user_manager_with_admin,
@@ -432,6 +1014,181 @@ def test_transfer_commit_into_existing_voting_replaces_options(
         config = dict(refreshed.config or {})
         assert config.get("options") == ["Donor idea"]
         assert config.get("max_votes") == 5
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_commit_replaces_voting_placeholder_options(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Existing Voting Placeholder Replace Test",
+            description="Transfer should replace stale voting placeholder options.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Voting Target",
+                config={"options": ["Edit vote option here"], "max_votes": 3},
+            ),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Transferred option"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        refreshed = (
+            db_session.query(type(meeting.agenda_activities[1]))
+            .filter(type(meeting.agenda_activities[1]).activity_id == target_id)
+            .first()
+        )
+        assert refreshed is not None
+        config = dict(refreshed.config or {})
+        assert config.get("options") == ["Transferred option"]
+        assert "Edit vote option here" not in (config.get("options") or [])
+        assert config.get("max_votes") == 3
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_into_empty_categorization_populates_state(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Transfer into a categorization activity with items: [] should populate items from donor ideas and seed CategorizationItem rows."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Empty Categorization Populate Test",
+            description="Empty-target commit populates categorization items.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Empty Target",
+                config={"items": [], "buckets": [], "mode": "FACILITATOR_LIVE"},
+            ),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Fresh card"},
+        )
+        assert idea_resp.status_code == 201
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200
+
+        from app.models.meeting import AgendaActivity
+        target_activity_db = db_session.query(AgendaActivity).filter(AgendaActivity.activity_id == target_id).first()
+        assert target_activity_db.config["items"] == ["Fresh card"]
+
+        cat_items_count = db_session.query(CategorizationItem).filter(
+            CategorizationItem.activity_id == target_id,
+            CategorizationItem.content == "Fresh card"
+        ).count()
+        assert cat_items_count >= 1
+
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -531,6 +1288,90 @@ def test_transfer_commit_into_existing_categorization_seeds_state(
         )
         assert seeded_rows
         assert any((row.content or "") == "Donor card 1" for row in seeded_rows)
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_categorization_replaces_placeholder_items(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Categorization Placeholder Replace Test",
+            description="Transfer should replace placeholder categorization items.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorization Target",
+                config={"items": ["One idea per line."], "buckets": []},
+            ),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Real transfer card"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        refreshed = meeting_manager.get_meeting(meeting.meeting_id)
+        target = next(
+            item for item in refreshed.agenda_activities if item.activity_id == target_id
+        )
+        config = dict(target.config or {})
+        assert config.get("items") == ["Real transfer card"]
+        assert "One idea per line." not in (config.get("items") or [])
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -715,6 +1556,205 @@ def test_transfer_commit_into_existing_response_shape(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
+def test_transfer_commit_response_target_activity_both_paths(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Verify response schema for both create-new and transfer-into-existing in a single test."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Response Both Paths Test",
+            description="Validate target_activity/new_activity contract for both transfer modes.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor One"),
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor Two"),
+            AgendaActivityCreate(tool_type="categorization", title="Existing Target"),
+        ],
+    )
+    donor_one_id = meeting.agenda_activities[0].activity_id
+    donor_two_id = meeting.agenda_activities[1].activity_id
+    existing_target_id = meeting.agenda_activities[2].activity_id
+
+    try:
+        # New-activity path (tool_type provided)
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_one_id,
+                    "agendaItemId": donor_one_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+        idea_one_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Seed one"},
+        )
+        assert idea_one_resp.status_code == 201, idea_one_resp.json()
+        bundles_one_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_one_id, "include_comments": "false"},
+        )
+        assert bundles_one_resp.status_code == 200, bundles_one_resp.json()
+        items_one = bundles_one_resp.json()["input"]["items"]
+
+        new_path_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_one_id,
+                "include_comments": False,
+                "items": items_one,
+                "metadata": {},
+                "target_activity": {"tool_type": "voting"},
+            },
+        )
+        assert new_path_resp.status_code == 200, new_path_resp.json()
+        new_payload = new_path_resp.json()
+        assert isinstance(new_payload.get("target_activity"), dict)
+        assert isinstance(new_payload.get("target_activity", {}).get("activity_id"), str)
+        assert new_payload.get("new_activity") == new_payload.get("target_activity")
+        assert isinstance(new_payload.get("agenda"), list)
+        assert isinstance(new_payload.get("input_bundle_id"), str)
+
+        # Existing-activity path (activity_id provided)
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_two_id,
+                    "agendaItemId": donor_two_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+        idea_two_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Seed two"},
+        )
+        assert idea_two_resp.status_code == 201, idea_two_resp.json()
+        bundles_two_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_two_id, "include_comments": "false"},
+        )
+        assert bundles_two_resp.status_code == 200, bundles_two_resp.json()
+        items_two = bundles_two_resp.json()["input"]["items"]
+
+        existing_path_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_two_id,
+                "include_comments": False,
+                "items": items_two,
+                "metadata": {},
+                "target_activity": {"activity_id": existing_target_id},
+            },
+        )
+        assert existing_path_resp.status_code == 200, existing_path_resp.json()
+        existing_payload = existing_path_resp.json()
+        assert isinstance(existing_payload.get("target_activity"), dict)
+        assert (
+            existing_payload.get("target_activity", {}).get("activity_id")
+            == existing_target_id
+        )
+        assert existing_payload.get("new_activity") is None
+        assert isinstance(existing_payload.get("agenda"), list)
+        assert isinstance(existing_payload.get("input_bundle_id"), str)
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_commit_response_agenda_has_enrichment_fields(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Agenda Enrichment Response Test",
+            description="Commit response agenda should include transfer and lock enrichment fields.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Donor")],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Seed idea for enrichment"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"tool_type": "voting"},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+        agenda = commit_resp.json().get("agenda") or []
+        assert agenda
+        assert any((item.get("transfer_count") or 0) > 0 for item in agenda)
+        assert all("transfer_target_eligible" in item for item in agenda)
+        assert all(isinstance(item.get("transfer_target_eligible"), bool) for item in agenda)
+        assert all("has_data" in item for item in agenda)
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_transfer_commit_into_existing_creates_input_bundle(
     authenticated_client: TestClient,
     user_manager_with_admin,
@@ -801,6 +1841,100 @@ def test_transfer_commit_into_existing_creates_input_bundle(
         details = dict(last.get("details") or {})
         assert details.get("target_mode") == "existing"
         assert details.get("target_activity_id") == target_id
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_into_empty_rank_order_voting_populates_ideas(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Transfer into a rank-order voting activity with ideas: [] should populate ideas from donor and preserve settings."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Empty Rank Order Populate Test",
+            description="Empty-target commit populates rank order ideas.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(
+                tool_type="rank_order_voting",
+                title="Empty Target",
+                config={"ideas": [], "randomize_order": True, "allow_reset": True},
+            ),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Epsilon"},
+        )
+        assert idea_resp.status_code == 201
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Zeta"},
+        )
+        assert idea_resp.status_code == 201
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200
+
+        from app.models.meeting import AgendaActivity
+        target_activity_db = db_session.query(AgendaActivity).filter(AgendaActivity.activity_id == target_id).first()
+        
+        # map ideas to content strings and assert
+        idea_contents = [idea.get("content") for idea in target_activity_db.config["ideas"]]
+        assert idea_contents == ["Epsilon", "Zeta"]
+        
+        assert target_activity_db.config["randomize_order"] is True
+        assert target_activity_db.config["allow_reset"] is True
+
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -898,6 +2032,111 @@ def test_transfer_commit_into_existing_rank_order_voting_populates_ideas(
         assert contents == ["Gamma", "Delta"]
         assert config.get("randomize_order") is True
         assert config.get("allow_reset") is False
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_metadata_history_records_existing_target(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Validate transfer metadata contract for existing-activity commits per TRANSFER_METADATA.md."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Existing Metadata Contract Test",
+            description="Validate full transfer metadata contract for existing targets.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(tool_type="voting", title="Target", config={"max_votes": 3}),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Metadata seed"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        bundle = (
+            db_session.query(ActivityBundle)
+            .filter(
+                ActivityBundle.meeting_id == meeting.meeting_id,
+                ActivityBundle.activity_id == target_id,
+                ActivityBundle.kind == "input",
+            )
+            .first()
+        )
+        assert bundle is not None
+
+        metadata = dict(bundle.bundle_metadata or {})
+        assert metadata.get("schema_version") == 1
+        assert metadata.get("meeting_id") == meeting.meeting_id
+
+        source = dict(metadata.get("source") or {})
+        assert source.get("activity_id") == donor_id
+        assert source.get("tool_type") == "brainstorming"
+
+        history = metadata.get("history")
+        assert isinstance(history, list) and history
+        last = dict(history[-1] or {})
+        assert last.get("tool_type") == "transfer_commit"
+        details = dict(last.get("details") or {})
+        assert details.get("target_mode") == "existing"
+        assert details.get("target_activity_id") == target_id
+        assert details.get("target_tool_type") == "voting"
+
+        tools = dict(metadata.get("tools") or {})
+        assert dict(tools.get("voting") or {}).get("activity_id") == target_id
+        assert isinstance(dict(tools.get("transfer") or {}).get("include_comments"), bool)
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -1550,6 +2789,95 @@ def test_agenda_includes_transfer_target_eligible_flag(
 
         assert donor_entry["transfer_target_eligible"] is False
         assert target_entry["transfer_target_eligible"] is True
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_target_eligible_flips_after_transfer_into_existing(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Ensure transfer_target_eligible flips to false after an activity receives transferred data."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Eligibility Flip Test",
+            description="Existing target should become ineligible after transfer injects data.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Donor"),
+            AgendaActivityCreate(tool_type="voting", title="Target", config={"max_votes": 3}),
+        ],
+    )
+    donor_id = meeting.agenda_activities[0].activity_id
+    target_id = meeting.agenda_activities[1].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": donor_id,
+                    "agendaItemId": donor_id,
+                    "currentTool": "brainstorming",
+                    "status": "paused",
+                },
+            )
+        )
+
+        idea_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Eligibility flip seed"},
+        )
+        assert idea_resp.status_code == 201, idea_resp.json()
+
+        before_agenda_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/agenda"
+        )
+        assert before_agenda_resp.status_code == 200, before_agenda_resp.json()
+        before_agenda = before_agenda_resp.json()
+        before_target = next(item for item in before_agenda if item["activity_id"] == target_id)
+        assert before_target["transfer_target_eligible"] is True
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": donor_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        items = bundles_resp.json()["input"]["items"]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_id,
+                "include_comments": False,
+                "items": items,
+                "metadata": {},
+                "target_activity": {"activity_id": target_id},
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        after_agenda_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/agenda"
+        )
+        assert after_agenda_resp.status_code == 200, after_agenda_resp.json()
+        after_agenda = after_agenda_resp.json()
+        after_target = next(item for item in after_agenda if item["activity_id"] == target_id)
+        assert after_target["transfer_target_eligible"] is False
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 

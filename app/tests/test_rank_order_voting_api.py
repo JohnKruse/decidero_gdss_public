@@ -248,3 +248,44 @@ def test_rank_order_empty_config_does_not_break_meeting_payload(
     agenda = meeting_resp.json().get("agenda", [])
     rank_activity = next(item for item in agenda if item["activity_id"] == activity_id)
     assert rank_activity.get("transfer_count") == 0
+
+
+def test_rank_order_summary_returns_empty_options_for_empty_config(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    meeting, activity_id = _create_rank_order_meeting(
+        db_session,
+        admin_user,
+        config_override={"ideas": [], "randomize_order": True},
+    )
+
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "rank_order_voting",
+                "status": "in_progress",
+            },
+        )
+    )
+
+    try:
+        response = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+            params={"activity_id": activity_id},
+        )
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        assert payload["options"] == []
+        assert payload["results"] == []
+        assert payload["submitted"] is False
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))

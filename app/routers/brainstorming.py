@@ -482,6 +482,12 @@ async def get_ideas(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db),
 ):
+    """
+    Returns the ideas for a brainstorming activity.
+
+    Returns:
+        A list containing the ideas. Returns guaranteed list values for array fields (never None).
+    """
     meeting = (
         db.query(Meeting)
         .options(

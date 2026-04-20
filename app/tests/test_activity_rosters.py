@@ -162,6 +162,60 @@ def test_api_update_activity_participants(client, db_session: Session):
     assert data["participant_ids"] == []
 
 
+def test_put_empty_custom_normalizes_to_all(client, db_session: Session):
+    """Phase 3 / Payload Polka — empty custom PUT payloads normalize to all-participants."""
+    owner = create_test_user(db_session, "owner_step1", "facilitator")
+    p1 = create_test_user(db_session, "p1_step1")
+    p2 = create_test_user(db_session, "p2_step1")
+    meeting = create_test_meeting(db_session, owner, [p1, p2])
+    manager = MeetingManager(db_session)
+    activity = meeting.agenda_activities[0]
+
+    manager.set_activity_participants(
+        meeting.meeting_id, activity.activity_id, [p1.user_id]
+    )
+
+    client.post(
+        "/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD}
+    )
+
+    response = client.put(
+        f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants",
+        json={"mode": "custom", "participant_ids": []},
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["mode"] == "all"
+    assert data["participant_ids"] in ([], None)
+
+    follow_up = client.get(
+        f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants"
+    )
+    assert follow_up.status_code == 200
+    follow_up_data = follow_up.json()
+    assert follow_up_data["mode"] == "all"
+    assert follow_up_data["participant_ids"] == []
+
+
+def test_put_empty_custom_still_rejects_invalid_ids(client, db_session: Session):
+    """Phase 3 / Payload Polka — normalization does not bypass meeting-membership validation."""
+    owner = create_test_user(db_session, "owner_step1_invalid", "facilitator")
+    p1 = create_test_user(db_session, "p1_step1_invalid")
+    meeting = create_test_meeting(db_session, owner, [p1])
+    activity = meeting.agenda_activities[0]
+
+    client.post(
+        "/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD}
+    )
+
+    response = client.put(
+        f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants",
+        json={"mode": "custom", "participant_ids": ["not-a-real-user"]},
+    )
+    assert response.status_code == 400
+    assert "not part of this meeting" in response.json()["detail"]
+
+
 def test_api_update_activity_participants_permissions(client, db_session: Session):
     # Setup
     owner = create_test_user(db_session, "owner", "facilitator")

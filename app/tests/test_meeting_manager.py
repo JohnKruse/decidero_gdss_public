@@ -708,6 +708,107 @@ def test_add_voting_config_rejects_object_placeholder_lines(
     assert "object" in str(exc.value.detail).lower()
 
 
+def test_voting_default_config_has_empty_options(
+    meeting_manager_instance: MeetingManager,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Voting Defaults",
+        description="Voting defaults should keep options empty.",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideas")],
+    )
+
+    activity = meeting_manager_instance.add_agenda_activity(
+        meeting.meeting_id,
+        AgendaActivityCreate(tool_type="voting", title="Vote"),
+    )
+    assert activity.config is not None
+    assert activity.config.get("options") == []
+
+
+def test_activity_config_accepts_empty_options_list(
+    meeting_manager_instance: MeetingManager,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Voting Empty Options",
+        description="Voting config should accept empty options list.",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideas")],
+    )
+
+    activity = meeting_manager_instance.add_agenda_activity(
+        meeting.meeting_id,
+        AgendaActivityCreate(
+            tool_type="voting",
+            title="Vote",
+            config={"options": []},
+        ),
+    )
+
+    assert activity is not None
+    assert dict(activity.config or {}).get("options") == []
+
+
+def test_activity_config_accepts_none_options(
+    meeting_manager_instance: MeetingManager,
+    test_facilitator: User,
+):
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Voting None Options",
+        description="Voting config should handle None options safely.",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideas")],
+    )
+
+    activity = meeting_manager_instance.add_agenda_activity(
+        meeting.meeting_id,
+        AgendaActivityCreate(
+            tool_type="voting",
+            title="Vote",
+            config={"options": None},
+        ),
+    )
+
+    assert activity is not None
+    assert "options" in dict(activity.config or {})
+    assert dict(activity.config or {}).get("options") is None
+
+
 def test_update_meeting_configuration_seeds_categorization_with_items_only(
     meeting_manager_instance: MeetingManager,
     db_session: Session,
@@ -926,6 +1027,108 @@ def test_activity_participant_scope_rejects_unknown_users(
             [rogue_user_id],
         )
     assert exc_info.value.status_code == 400
+
+
+def test_set_activity_participants_empty_list_pops_key(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    client,
+    test_facilitator: User,
+    other_user: User,
+):
+    """Roster Rodeo / Payload Polka — empty participant lists collapse to inherit-all and the router reports mode='all'."""
+    second_participant = _create_temp_user(
+        db_session, "Participant", "Three", "participant_three"
+    )
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Empty List Pops Key",
+        description="Ensure empty iterable falls back to inherit-all",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=30),
+        duration_minutes=30,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[other_user.user_id, second_participant.user_id],
+        additional_facilitator_ids=[],
+    )
+
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="voting", title="Prioritise")],
+    )
+    activity = meeting.agenda_activities[0]
+
+    meeting_manager_instance.set_activity_participants(
+        meeting.meeting_id,
+        activity.activity_id,
+        [other_user.user_id],
+    )
+
+    updated = meeting_manager_instance.set_activity_participants(
+        meeting.meeting_id,
+        activity.activity_id,
+        [],
+    )
+    assert "participant_ids" not in updated.config
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": test_facilitator.login, "password": "FacilitatorPass1!"},
+    )
+    assert login_response.status_code == 200
+
+    response = client.get(
+        f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants"
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "all"
+    assert payload["participant_ids"] == []
+
+
+def test_remove_meeting_participant_pops_empty_custom(
+    meeting_manager_instance: MeetingManager,
+    test_facilitator: User,
+    other_user: User,
+):
+    """Roster Rodeo / Payload Polka — pruning the last scoped participant pops the config key instead of persisting an empty list."""
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Prune Empty Custom",
+        description="Ensure removal fallback pops scoped config key",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=30),
+        duration_minutes=30,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[other_user.user_id],
+        additional_facilitator_ids=[],
+    )
+
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Ideate")],
+    )
+    activity = meeting.agenda_activities[0]
+
+    meeting_manager_instance.set_activity_participants(
+        meeting.meeting_id,
+        activity.activity_id,
+        [other_user.user_id],
+    )
+    meeting_manager_instance.remove_participant(meeting.meeting_id, other_user.user_id)
+
+    refreshed = meeting_manager_instance.get_meeting(meeting.meeting_id)
+    assert refreshed is not None
+    updated_activity = next(
+        act
+        for act in refreshed.agenda_activities
+        if act.activity_id == activity.activity_id
+    )
+    assert "participant_ids" not in updated_activity.config
 
 
 def test_bulk_update_participants_adds_and_removes_users(

@@ -54,6 +54,55 @@ def test_transfer_panel_html_has_mode_selector():
     assert 'value="existing"' in html
 
 
+def test_agenda_panel_heading_text():
+    """Phase 1 / Placard Parade — guard the renamed Agenda panel heading."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert "Meeting Agenda and Participant Roster" in html
+    assert ">Agenda<" not in html
+
+
+def test_agenda_settings_button_label():
+    """Phase 1 / Placard Parade — guard the renamed Meeting Settings button."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'id="agendaAddActivityButton"' in html
+    assert "Meeting Settings" in html
+    assert 'id="agendaAddActivityButton">Settings<' not in html
+
+
+def test_agenda_meeting_roster_button_present():
+    """Phase 2 / Doorbell Disco — guard the new Meeting Roster entry point in the Agenda panel."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'id="openParticipantAdminButton"' in html
+    assert "Meeting Roster" in html
+    assert html.index("current_user.role in ['admin', 'super_admin', 'facilitator']") < html.index(
+        'id="openParticipantAdminButton"'
+    )
+
+
+def test_meeting_roster_button_listener_wired():
+    """Phase 2 / Doorbell Disco — guard the pre-existing JS wiring the new button relies on."""
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "openParticipantAdminButton" in js
+    assert "openParticipantAdminModal" in js
+    assert 'setParticipantModalMode("meeting")' in js
+
+
+def test_participant_modal_tab_path_still_works():
+    """Phase 2 / Doorbell Disco — keep the legacy tab path alive as a fallback until Phase 4. Expected to be retired by Phase 4's subplan."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'data-participant-modal-tab="meeting"' in html
+    assert 'data-participant-modal-tab="activity"' in html
+
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "tab.dataset.participantModalTab" in js
+
+
 def test_transfer_css_has_eligibility_hint_style():
     with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
         css = handle.read()
@@ -66,6 +115,12 @@ def test_transfer_js_has_mode_change_handler():
     assert "onTransferModeChange" in js
     assert "buildTransferExistingActivityOptions" in js
     assert "updateTransferCommitButtonText" in js
+
+
+def test_render_transfer_ideas_has_null_guard():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "transferState.items || []" in js
 
 
 def test_transfer_js_has_existing_activity_builder():

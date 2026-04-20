@@ -17,7 +17,8 @@ class VotingPlugin(ActivityPlugin):
         description="Let participants distribute multiple picks across ideas to prioritise options.",
         default_config={
             "vote_type": "dot",
-            "options": ["Edit vote option here"],
+            # options intentionally empty; UI shows "Edit options" CTA for facilitators
+            "options": [],
             "max_votes": 5,
             "max_votes_per_option": 5,
             "allow_retract": True,

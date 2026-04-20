@@ -268,6 +268,12 @@ class RankOrderVotingManager:
         is_active_state: bool = False,
         active_participant_count: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """
+        Builds the current state summary for a rank-order voting activity.
+
+        Returns:
+            A dict containing the summary. Returns a dict with guaranteed list values for array fields (never None).
+        """
         activity = self._resolve_activity(meeting, activity_id)
         options = self._extract_options(activity)
 

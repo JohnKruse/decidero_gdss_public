@@ -198,6 +198,7 @@ endblock %}
                 tool_type: 'voting',
                 label: 'Dot Voting',
                 description: 'Let participants distribute multiple picks across ideas to prioritise options.',
+                // options/ideas intentionally empty - backend is the source of truth for defaults
                 default_config: {
                     vote_type: 'dot',
                     max_votes: 5,
@@ -205,7 +206,7 @@ endblock %}
                     allow_retract: true,
                     show_results_immediately: false,
                     randomize_participant_order: false,
-                    options: ['Edit vote option here'],
+                    options: [],
                 },
             },
             {
@@ -213,7 +214,7 @@ endblock %}
                 label: 'Rank Order Voting',
                 description: 'Participants rank ideas from most to least preferred; results aggregate using Borda scoring.',
                 default_config: {
-                    ideas: ['Edit ranked idea here'],
+                    ideas: [],
                     randomize_order: true,
                     show_results_immediately: false,
                     allow_reset: true,

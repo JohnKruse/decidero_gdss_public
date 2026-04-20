@@ -129,6 +129,64 @@ def test_voting_allows_facilitator_view_when_inactive(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
+def test_voting_summary_returns_empty_options_for_empty_config(
+    authenticated_client: TestClient, user_manager_with_admin: UserManager, db_session
+):
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Voting Empty Options Summary",
+        description="Voting summary should return [] options for empty config.",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=60),
+        duration_minutes=60,
+        publicity=PublicityType.PRIVATE,
+        owner_id=admin_user.user_id,
+        participant_ids=[],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager.create_meeting(
+        meeting_payload,
+        facilitator_id=admin_user.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Empty Vote",
+                config={"options": [], "max_votes": 3},
+            )
+        ],
+    )
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_id,
+                    "agendaItemId": activity_id,
+                    "currentTool": "voting",
+                    "status": "in_progress",
+                },
+            )
+        )
+
+        response = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/voting/options",
+            params={"activity_id": activity_id},
+        )
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        assert payload["options"] == []
+        assert payload["votes_cast"] == 0
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_participant_voting_enforces_limits(
     client: TestClient, user_manager_with_admin: UserManager, db_session
 ):

@@ -144,6 +144,74 @@ def test_categorization_state_and_bucket_mutations(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
+def test_categorization_state_returns_valid_empty_structure(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Categorization Empty State",
+            description="Categorization state should return valid empty structures.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="categorization",
+                title="Categorize Empty",
+                config={"mode": "FACILITATOR_LIVE", "items": [], "buckets": []},
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+    activity_id = activity.activity_id
+
+    manager = CategorizationManager(db_session)
+    manager.seed_activity(
+        meeting_id=meeting.meeting_id,
+        activity=activity,
+        actor_user_id=facilitator.user_id,
+    )
+
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "categorization",
+                "status": "in_progress",
+            },
+        )
+    )
+
+    try:
+        response = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/categorization/state",
+            params={"activity_id": activity_id},
+        )
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        assert payload["items"] == []
+        assert isinstance(payload["buckets"], list)
+        assert len(payload["buckets"]) >= 1
+        assert payload["assignments"] == {}
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_categorization_bucket_create_forbidden_for_participant(
     client: TestClient,
     user_manager_with_admin,

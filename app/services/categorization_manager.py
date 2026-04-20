@@ -703,6 +703,12 @@ class CategorizationManager:
         return self.list_buckets(meeting_id, activity_id)
 
     def build_state(self, meeting_id: str, activity_id: str) -> Dict[str, Any]:
+        """
+        Builds the current state for a categorization activity.
+
+        Returns:
+            A dict containing the state. Returns a dict with guaranteed list values for array fields (never None).
+        """
         self.ensure_unsorted_bucket(meeting_id, activity_id, actor_user_id=None)
         buckets = self.list_buckets(meeting_id, activity_id)
         items = self.list_items(meeting_id, activity_id)
