@@ -653,6 +653,8 @@ async def _apply_live_roster_patch(
 ):
     """
     Update the in-memory meeting state for an active activity roster and broadcast the change.
+    Each call broadcasts the full roster state. Receivers must treat consecutive broadcasts
+    as idempotent replacements, not deltas. See Decision 3 in PHASE_3.md.
     """
     desired_ids_sorted = sorted({str(pid).strip() for pid in desired_participant_ids if str(pid).strip()})
     updated_metadata = dict((active_entry or {}).get("metadata") or {})

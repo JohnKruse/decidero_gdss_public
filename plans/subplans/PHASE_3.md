@@ -173,12 +173,13 @@ Phase 3 is NOT complete until the exit command and all five invariants succeed o
 - [DONE] Step 1 — Empty-custom PUT payloads normalized server-side to `mode="all"`; invalid participant IDs still rejected (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 - [DONE] Step 2 — MeetingManager invariants verified for empty-list and prune-to-empty transitions; router GET confirms inherit-all fallback (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 - [DONE] Step 3 — 409 collision response enriched with `current_assignment`; rejected roster updates leave persisted state unchanged (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
+- [DONE] Step 4 — Broadcast cadence contract locked with rapid-PUT final-state coverage and broadcast payload assertions (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 
 *(append entries here as each step closes)*
 
 - [ ] Step 1 — Empty-custom normalization in router — commit: __________
 - [ ] Step 2 — MeetingManager invariants verified — commit: __________
 - [ ] Step 3 — 409 response enriched with `current_assignment` — commit: __________
-- [ ] Step 4 — Broadcast cadence contract locked — commit: __________
+- [DONE] Step 4 — Broadcast cadence contract locked — commit: working tree
 - [ ] Step 5 — Regression sweep clean; carry-forward notes: __________ — commit: __________
 - [ ] Exit command green — `pytest app/tests/test_activity_rosters.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py -v` output: __________ passed, 0 failed

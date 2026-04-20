@@ -163,7 +163,7 @@ def test_api_update_activity_participants(client, db_session: Session):
 
 
 def test_put_empty_custom_normalizes_to_all(client, db_session: Session):
-    """Phase 3 / Payload Polka — empty custom PUT payloads normalize to all-participants."""
+    """Roster Rodeo / Payload Polka — empty custom PUT payloads normalize to all-participants."""
     owner = create_test_user(db_session, "owner_step1", "facilitator")
     p1 = create_test_user(db_session, "p1_step1")
     p2 = create_test_user(db_session, "p2_step1")
@@ -198,7 +198,7 @@ def test_put_empty_custom_normalizes_to_all(client, db_session: Session):
 
 
 def test_put_empty_custom_still_rejects_invalid_ids(client, db_session: Session):
-    """Phase 3 / Payload Polka — normalization does not bypass meeting-membership validation."""
+    """Roster Rodeo / Payload Polka — normalization does not bypass meeting-membership validation."""
     owner = create_test_user(db_session, "owner_step1_invalid", "facilitator")
     p1 = create_test_user(db_session, "p1_step1_invalid")
     meeting = create_test_meeting(db_session, owner, [p1])
@@ -391,7 +391,7 @@ def test_live_roster_update_allows_overlap(client, db_session: Session):
 
 
 def test_put_409_includes_current_assignment(client, db_session: Session, monkeypatch):
-    """Phase 3 / Payload Polka — 409 roster collisions include the authoritative current assignment for client-side rollback."""
+    """Roster Rodeo / Payload Polka — 409 roster collisions include the authoritative current assignment for client-side rollback."""
     monkeypatch.setattr(
         "app.data.meeting_manager.get_activity_participant_exclusivity",
         lambda: True,
@@ -480,7 +480,7 @@ def test_put_409_includes_current_assignment(client, db_session: Session, monkey
 
 
 def test_put_409_does_not_mutate_state(client, db_session: Session, monkeypatch):
-    """Phase 3 / Payload Polka — a rejected collision PUT leaves the persisted roster assignment unchanged."""
+    """Roster Rodeo / Payload Polka — a rejected collision PUT leaves the persisted roster assignment unchanged."""
     monkeypatch.setattr(
         "app.data.meeting_manager.get_activity_participant_exclusivity",
         lambda: True,
@@ -559,5 +559,161 @@ def test_put_409_does_not_mutate_state(client, db_session: Session, monkeypatch)
         follow_up_payload = follow_up.json()
         assert follow_up_payload["mode"] == "custom"
         assert follow_up_payload["participant_ids"] == [p1.user_id]
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_rapid_put_sequence_final_state_wins(client, db_session: Session):
+    """Roster Rodeo / Payload Polka — sequential roster PUTs remain idempotent full-state replacements whose latest state wins."""
+    owner = create_test_user(db_session, "owner_rapid_puts", "facilitator")
+    p1 = create_test_user(db_session, "p1_rapid_puts")
+    p2 = create_test_user(db_session, "p2_rapid_puts")
+    p3 = create_test_user(db_session, "p3_rapid_puts")
+    meeting = create_test_meeting(db_session, owner, [p1, p2, p3])
+    activity = meeting.agenda_activities[0]
+
+    asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity.activity_id,
+                    "currentTool": activity.tool_type,
+                    "status": "in_progress",
+                    "metadata": {"participantScope": "all", "participantIds": []},
+                    "activeActivities": {
+                        activity.activity_id: {
+                            "activityId": activity.activity_id,
+                            "tool": activity.tool_type,
+                            "status": "in_progress",
+                            "metadata": {
+                                "participantScope": "all",
+                                "participantIds": [],
+                            },
+                            "participantIds": [],
+                            "startedAt": datetime.now(timezone.utc).isoformat(),
+                            "stoppedAt": None,
+                            "elapsedTime": 0,
+                        }
+                    },
+                },
+            )
+        )
+
+        client.post(
+            "/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD}
+        )
+
+        for participant_ids in (
+            [p1.user_id],
+            [p1.user_id, p2.user_id],
+            [p1.user_id, p2.user_id, p3.user_id],
+        ):
+            response = client.put(
+                f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants",
+                json={"mode": "custom", "participant_ids": participant_ids},
+            )
+            assert response.status_code == 200
+
+        follow_up = client.get(
+            f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants"
+        )
+        assert follow_up.status_code == 200
+        follow_up_payload = follow_up.json()
+        assert follow_up_payload["mode"] == "custom"
+        assert set(follow_up_payload["participant_ids"]) == {
+            p1.user_id,
+            p2.user_id,
+            p3.user_id,
+        }
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_broadcast_payload_is_full_state(client, db_session: Session, monkeypatch):
+    """Roster Rodeo / Payload Polka — active-roster broadcasts carry full replacement state with participantScope and participantIds."""
+    owner = create_test_user(db_session, "owner_broadcast_state", "facilitator")
+    p1 = create_test_user(db_session, "p1_broadcast_state")
+    p2 = create_test_user(db_session, "p2_broadcast_state")
+    meeting = create_test_meeting(db_session, owner, [p1, p2])
+    activity = meeting.agenda_activities[0]
+    broadcasts: list[tuple[str, dict]] = []
+
+    async def capture_broadcast(meeting_id: str, payload: dict):
+        broadcasts.append((meeting_id, payload))
+
+    monkeypatch.setattr(
+        "app.routers.meetings.websocket_manager.broadcast",
+        capture_broadcast,
+    )
+
+    asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity.activity_id,
+                    "currentTool": activity.tool_type,
+                    "status": "in_progress",
+                    "metadata": {
+                        "participantScope": "custom",
+                        "participantIds": [p1.user_id],
+                    },
+                    "activeActivities": {
+                        activity.activity_id: {
+                            "activityId": activity.activity_id,
+                            "tool": activity.tool_type,
+                            "status": "in_progress",
+                            "metadata": {
+                                "participantScope": "custom",
+                                "participantIds": [p1.user_id],
+                            },
+                            "participantIds": [p1.user_id],
+                            "startedAt": datetime.now(timezone.utc).isoformat(),
+                            "stoppedAt": None,
+                            "elapsedTime": 0,
+                        }
+                    },
+                },
+            )
+        )
+
+        client.post(
+            "/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD}
+        )
+        response = client.put(
+            f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants",
+            json={"mode": "custom", "participant_ids": [p1.user_id, p2.user_id]},
+        )
+        assert response.status_code == 200
+
+        assert len(broadcasts) == 1
+        broadcast_meeting_id, broadcast_payload = broadcasts[0]
+        assert broadcast_meeting_id == meeting.meeting_id
+        assert broadcast_payload["type"] == "meeting_state"
+        snapshot = broadcast_payload["payload"]
+        assert snapshot["metadata"]["participantScope"] == "custom"
+        assert set(snapshot["metadata"]["participantIds"]) == {p1.user_id, p2.user_id}
+
+        active_entries = snapshot.get("activeActivities") or []
+        target_entry = next(
+            (
+                entry
+                for entry in active_entries
+                if isinstance(entry, dict)
+                and (entry.get("activityId") or entry.get("activity_id"))
+                == activity.activity_id
+            ),
+            None,
+        )
+        assert target_entry is not None
+        assert target_entry["metadata"]["participantScope"] == "custom"
+        assert set(target_entry["metadata"]["participantIds"]) == {
+            p1.user_id,
+            p2.user_id,
+        }
+        assert set(target_entry["participantIds"]) == {p1.user_id, p2.user_id}
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
