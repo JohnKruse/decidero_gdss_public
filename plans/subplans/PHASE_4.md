@@ -73,7 +73,7 @@ This is the load-bearing step. Markup removal and handler rewiring MUST happen i
 
 ---
 
-### Step 2 — Wire the 409 rollback using Phase-3 `current_assignment`
+### Step 2 — Wire the 409 rollback using Phase-3 `current_assignment` [DONE]
 
 **Implement the core logic**
 - In [meeting.js](../../app/static/js/meeting.js) `applyActivityParticipantSelection()` error path, extend the existing collision handler that opens `#collisionModal` ([meeting.js:8001+](../../app/static/js/meeting.js:8001)). When the PUT returns 409:
@@ -189,14 +189,21 @@ Phase 4 is NOT complete until the exit command and all six invariants succeed on
 
 *(append entries here as each step closes)*
 
-- [x] Step 1 — Bundled markup + auto-commit wiring — commit: _pending_
+- [x] Step 1 — Bundled markup + auto-commit wiring — commit: 091179e
   - Removed `participant-modal-tabs` block and `activity-participant-actions` (Include Everyone / Apply Selection / Reuse Last) from [meeting.html](../../app/templates/meeting.html); revised hint copy per plan.
   - Removed tab-click wiring block in [meeting.js](../../app/static/js/meeting.js) and the three `getElementById` lookups for the deleted buttons (lines 290-292). `ui.facilitatorControls.activity{Apply,IncludeAll,Reuse}` object keys remain (deferred to Step 4) — all callers already use `if (x)` falsy guards.
   - Rewired `addActivityParticipantsFromAvailable` and `removeActivityParticipantsFromSelected` as `async` with inline `await applyActivityParticipantSelection()`; added the mandated `// Auto-commit:` comment.
   - **Deviation:** removed the empty-custom pre-send guard in `applyActivityParticipantSelection` instead of a literal `!dirty` guard (no such literal guard existed). Under auto-commit + Phase-3 Decision 1, empty-custom is a valid PUT (server normalizes to `mode="all"`), so the guard would have blocked the move-last-out flow required by Step 5 scenario 2. Logged here so Step 4's dead-code sweep doesn't re-introduce it.
   - Tests: retired `test_participant_modal_tab_path_still_works`; added `test_activity_modal_tabs_removed`, `test_activity_modal_action_buttons_removed`, `test_activity_move_handlers_auto_commit`.
   - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 20 passed. `pytest app/tests/ -q` → 550 passed, 2 skipped.
-- [ ] Step 2 — 409 rollback via `current_assignment` — commit: __________
+- [x] Step 2 — 409 rollback via `current_assignment` — commit: _pending_
+  - In `applyActivityParticipantSelection`, the 409 branch now captures `error.currentAssignment` from either `conflict_details.current_assignment` (the Phase-3 server shape) or a top-level `current_assignment` fallback.
+  - The catch block applies the rollback locally: overwrites `state.activityAssignments[activityId]`, resets `activityParticipantState.mode` and `.selection` from the server's pre-PUT state, clears the highlight sets, and lets the existing `finally { renderActivityParticipantSection }` re-render. No follow-up GET.
+  - Non-409 errors still fall through to the generic feedback-text path (no change).
+  - **Deviation:** plan prose says "Show the existing collision modal with the `conflicting_users` list (unchanged behavior, just preserved)." The prior behavior of this code path was feedback-text-only (no modal) — `showCollisionModal` is lexically scoped inside `initialize()` and is not reachable from `applyActivityParticipantSelection` at the outer scope. Preserved the existing feedback-text behavior; upgrading to an actual modal pop would require hoisting `showCollisionModal` to the outer scope, which is out of scope for Step 2's minimal diff rule. Flagging for Phase 5 if deeper collision UX is desired.
+  - Added `// Phase 4 / Modal Mutiny — use current_assignment from the 409 body; no follow-up GET.` comment above the 409 branch per plan.
+  - Test: added `test_collision_rollback_reads_current_assignment` (structural pin — asserts `current_assignment` substring and a `status === 409` regex match in meeting.js). Behavioral coverage deferred to Phase 5 per plan.
+  - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 21 passed. `pytest app/tests/ -q` → 551 passed, 2 skipped.
 - [ ] Step 3 — Inherit-all default visible on open — commit: __________
 - [ ] Step 4 — Dead-code cleanup (`dirty`, `lastCustomSelection`, apply-button refs) — commit: __________
 - [ ] Step 5 — Browser-verified five scenarios (screenshot: `__________.png`, network log: `__________`, console clean: yes / no) — commit: __________

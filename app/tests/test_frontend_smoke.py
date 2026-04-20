@@ -110,6 +110,18 @@ def test_activity_modal_action_buttons_removed():
         assert token not in js, f"{token} still present in meeting.js"
 
 
+def test_collision_rollback_reads_current_assignment():
+    """Phase 4 / Modal Mutiny — structural pin: 409 handler parses current_assignment from the server body.
+
+    Behavioral coverage would require a JS test runner this project does not have; deferred to Phase 5.
+    """
+    import re
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "current_assignment" in js, "meeting.js must reference the Phase-3 current_assignment field"
+    assert re.search(r"status\s*===\s*409", js), "meeting.js must branch on HTTP 409 status"
+
+
 def test_activity_move_handlers_auto_commit():
     """Phase 4 / Modal Mutiny — → and ← handlers must call applyActivityParticipantSelection inline (auto-commit)."""
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:

@@ -1956,9 +1956,14 @@
                             ? data.detail
                             : "Unable to update activity participant assignment.",
                     );
+                    // Phase 4 / Modal Mutiny — use current_assignment from the 409 body; no follow-up GET. See PHASE_3.md Decision 2 and PHASE_4.md Step 2.
                     if (resp.status === 409) {
                         error.isConflict = true;
                         error.conflictDetails = data.conflict_details || data.conflictDetails || null;
+                        error.currentAssignment =
+                            (error.conflictDetails && error.conflictDetails.current_assignment) ||
+                            data.current_assignment ||
+                            null;
                     }
                     throw error;
                 }
@@ -1979,6 +1984,18 @@
                 console.error("Failed to update activity participant assignment:", error);
                 if (error.isConflict && error.conflictDetails) {
                     const conflicting = error.conflictDetails.conflicting_users || [];
+                    if (error.currentAssignment) {
+                        const rollback = error.currentAssignment;
+                        state.activityAssignments.set(activityId, rollback);
+                        activityParticipantState.mode = rollback.mode;
+                        activityParticipantState.selection = new Set(
+                            rollback.mode === "all"
+                                ? (rollback.available_participants || []).map((row) => row.user_id)
+                                : rollback.participant_ids || [],
+                        );
+                        activityParticipantState.availableHighlighted.clear();
+                        activityParticipantState.selectedHighlighted.clear();
+                    }
                     const names = conflicting
                         .map((user) => user.display_name || user.login || user.user_id)
                         .filter(Boolean)
