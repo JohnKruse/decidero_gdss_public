@@ -717,3 +717,49 @@ def test_broadcast_payload_is_full_state(client, db_session: Session, monkeypatc
         assert set(target_entry["participantIds"]) == {p1.user_id, p2.user_id}
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_fresh_activity_get_reports_all_mode(client, db_session: Session):
+    """Phase 4 / Modal Mutiny — a fresh activity returns mode='all' with every meeting participant in available_participants.
+
+    Pins the server contract that the UI depends on for the new inherit-all-by-default render.
+    """
+    owner = create_test_user(db_session, "owner_inherit", "facilitator")
+    p1 = create_test_user(db_session, "p1_inherit")
+    p2 = create_test_user(db_session, "p2_inherit")
+    p3 = create_test_user(db_session, "p3_inherit")
+    meeting = create_test_meeting(db_session, owner, [p1, p2, p3])
+    activity = meeting.agenda_activities[0]
+
+    client.post("/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD})
+    response = client.get(
+        f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants"
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "all"
+    available_ids = {row["user_id"] for row in payload["available_participants"]}
+    assert available_ids == {p1.user_id, p2.user_id, p3.user_id}
+
+
+def test_transition_from_all_to_custom_via_single_removal(client, db_session: Session):
+    """Phase 4 / Modal Mutiny — PUTting the full roster minus one flips mode to 'custom' and pins the remaining list.
+
+    Complements Phase-3's empty-custom normalization by pinning the opposite transition.
+    """
+    owner = create_test_user(db_session, "owner_transition", "facilitator")
+    p1 = create_test_user(db_session, "p1_transition")
+    p2 = create_test_user(db_session, "p2_transition")
+    p3 = create_test_user(db_session, "p3_transition")
+    meeting = create_test_meeting(db_session, owner, [p1, p2, p3])
+    activity = meeting.agenda_activities[0]
+
+    client.post("/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD})
+    response = client.put(
+        f"/api/meetings/{meeting.meeting_id}/agenda/{activity.activity_id}/participants",
+        json={"mode": "custom", "participant_ids": [p1.user_id, p2.user_id]},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["mode"] == "custom"
+    assert set(payload["participant_ids"]) == {p1.user_id, p2.user_id}

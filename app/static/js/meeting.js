@@ -1900,6 +1900,7 @@
                 const assignment = await resp.json();
                 state.activityAssignments.set(activityId, assignment);
                 activityParticipantState.mode = assignment.mode;
+                // Phase 4 / Modal Mutiny — mode="all" pre-populates Selected with every meeting participant. See PHASE_4.md Step 3.
                 activityParticipantState.selection = new Set(
                     assignment.mode === "all"
                         ? (assignment.available_participants || []).map((row) => row.user_id)

@@ -95,7 +95,7 @@ This is the load-bearing step. Markup removal and handler rewiring MUST happen i
 
 ---
 
-### Step 3 — Inherit-all default visible on open
+### Step 3 — Inherit-all default visible on open [DONE]
 
 New activities have no `config["participant_ids"]` so GET returns `{mode:"all", participant_ids:[]}`. Historically the UI respected this by hiding the Selected column until "Include Everyone" was clicked. After Step 1 there is no such button. The modal must render the Selected column pre-populated with the full meeting roster the moment a fresh activity opens.
 
@@ -196,7 +196,7 @@ Phase 4 is NOT complete until the exit command and all six invariants succeed on
   - **Deviation:** removed the empty-custom pre-send guard in `applyActivityParticipantSelection` instead of a literal `!dirty` guard (no such literal guard existed). Under auto-commit + Phase-3 Decision 1, empty-custom is a valid PUT (server normalizes to `mode="all"`), so the guard would have blocked the move-last-out flow required by Step 5 scenario 2. Logged here so Step 4's dead-code sweep doesn't re-introduce it.
   - Tests: retired `test_participant_modal_tab_path_still_works`; added `test_activity_modal_tabs_removed`, `test_activity_modal_action_buttons_removed`, `test_activity_move_handlers_auto_commit`.
   - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 20 passed. `pytest app/tests/ -q` → 550 passed, 2 skipped.
-- [x] Step 2 — 409 rollback via `current_assignment` — commit: _pending_
+- [x] Step 2 — 409 rollback via `current_assignment` — commit: ae87697
   - In `applyActivityParticipantSelection`, the 409 branch now captures `error.currentAssignment` from either `conflict_details.current_assignment` (the Phase-3 server shape) or a top-level `current_assignment` fallback.
   - The catch block applies the rollback locally: overwrites `state.activityAssignments[activityId]`, resets `activityParticipantState.mode` and `.selection` from the server's pre-PUT state, clears the highlight sets, and lets the existing `finally { renderActivityParticipantSection }` re-render. No follow-up GET.
   - Non-409 errors still fall through to the generic feedback-text path (no change).
@@ -204,7 +204,13 @@ Phase 4 is NOT complete until the exit command and all six invariants succeed on
   - Added `// Phase 4 / Modal Mutiny — use current_assignment from the 409 body; no follow-up GET.` comment above the 409 branch per plan.
   - Test: added `test_collision_rollback_reads_current_assignment` (structural pin — asserts `current_assignment` substring and a `status === 409` regex match in meeting.js). Behavioral coverage deferred to Phase 5 per plan.
   - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 21 passed. `pytest app/tests/ -q` → 551 passed, 2 skipped.
-- [ ] Step 3 — Inherit-all default visible on open — commit: __________
+- [x] Step 3 — Inherit-all default visible on open — commit: _pending_
+  - Verified `loadActivityParticipantAssignment` already pre-populates `activityParticipantState.selection` with every available participant's user_id when the GET returns `mode="all"` — no code change needed beyond adding the mandated explanatory comment above the branch.
+  - Verified `renderActivityParticipantSection` computes `effectiveSelection` the same way, so the Available column renders empty (everyone sits in Selected) on a fresh activity open. No render-branch change needed.
+  - Hint paragraph at [meeting.html:447](../../app/templates/meeting.html:447) already updated in Step 1.
+  - Tests added to [test_activity_rosters.py](../../app/tests/test_activity_rosters.py): `test_fresh_activity_get_reports_all_mode` (fresh activity → mode=all, available_participants covers full roster) and `test_transition_from_all_to_custom_via_single_removal` (PUT full-minus-one → mode=custom pinned).
+  - **No technical deviations.**
+  - Verification: `pytest app/tests/test_activity_rosters.py::test_fresh_activity_get_reports_all_mode app/tests/test_activity_rosters.py::test_transition_from_all_to_custom_via_single_removal -v` → 2 passed. `pytest app/tests/ -q` → 553 passed, 2 skipped.
 - [ ] Step 4 — Dead-code cleanup (`dirty`, `lastCustomSelection`, apply-button refs) — commit: __________
 - [ ] Step 5 — Browser-verified five scenarios (screenshot: `__________.png`, network log: `__________`, console clean: yes / no) — commit: __________
 - [ ] Exit command green — `pytest app/tests/test_frontend_smoke.py app/tests/test_activity_rosters.py -v` output: __________ passed, 0 failed
