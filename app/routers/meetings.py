@@ -1292,7 +1292,7 @@ async def update_activity_participant_assignment(
     user_manager: UserManager = Depends(get_user_manager),
     meeting_manager: MeetingManager = Depends(get_meeting_manager),
 ) -> ActivityParticipantAssignment:
-    """Update an activity roster. Empty custom selections normalize server-side to mode='all'. Roster Rodeo / Payload Polka."""
+    """Update an activity roster. Empty custom selections normalize server-side to mode='all'. On collision, the 409 response body contains `conflicting_users` (unchanged) and `current_assignment` (the authoritative pre-PUT state). See Decision 2 in PHASE_3.md. Clients may render from `current_assignment` directly without a follow-up GET. Roster Rodeo / Payload Polka."""
 
     user = user_manager.get_user_by_login(current_user)
     if not user:
@@ -1375,10 +1375,12 @@ async def update_activity_participant_assignment(
             desired_set,
         )
         if conflicting_user_ids:
+            current_assignment = _build_activity_participant_assignment(meeting, activity)
             conflict_payload = {
                 "conflicting_users": _format_conflicting_users(
                     user_manager, conflicting_user_ids
                 ),
+                "current_assignment": current_assignment.model_dump(),
                 "active_activity_id": snapshot.get("currentActivity")
                 if snapshot
                 else None,

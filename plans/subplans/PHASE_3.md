@@ -172,6 +172,7 @@ Phase 3 is NOT complete until the exit command and all five invariants succeed o
 
 - [DONE] Step 1 — Empty-custom PUT payloads normalized server-side to `mode="all"`; invalid participant IDs still rejected (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 - [DONE] Step 2 — MeetingManager invariants verified for empty-list and prune-to-empty transitions; router GET confirms inherit-all fallback (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
+- [DONE] Step 3 — 409 collision response enriched with `current_assignment`; rejected roster updates leave persisted state unchanged (technical deviation: shell lacked `pytest` on PATH, so verification ran via `venv/bin/python -m pytest`) — commit: working tree
 
 *(append entries here as each step closes)*
 

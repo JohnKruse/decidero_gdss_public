@@ -388,3 +388,176 @@ def test_live_roster_update_allows_overlap(client, db_session: Session):
         assert set(target_entry.get("participantIds") or []) == {p1.user_id, p2.user_id}
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_put_409_includes_current_assignment(client, db_session: Session, monkeypatch):
+    """Phase 3 / Payload Polka — 409 roster collisions include the authoritative current assignment for client-side rollback."""
+    monkeypatch.setattr(
+        "app.data.meeting_manager.get_activity_participant_exclusivity",
+        lambda: True,
+    )
+    owner = create_test_user(db_session, "owner_collision", "facilitator")
+    p1 = create_test_user(db_session, "p1_collision")
+    p2 = create_test_user(db_session, "p2_collision")
+    meeting = create_test_meeting(db_session, owner, [p1, p2])
+    manager = MeetingManager(db_session)
+    activity_a = meeting.agenda_activities[0]
+    activity_b = manager.add_agenda_activity(
+        meeting.meeting_id,
+        AgendaActivityCreate(tool_type="brainstorming", title="Brainstorm", order_index=2),
+    )
+
+    manager.set_activity_participants(
+        meeting.meeting_id,
+        activity_a.activity_id,
+        [p1.user_id],
+    )
+
+    asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_a.activity_id,
+                    "currentTool": activity_a.tool_type,
+                    "status": "in_progress",
+                    "activeActivities": [
+                        {
+                            "activityId": activity_a.activity_id,
+                            "tool": activity_a.tool_type,
+                            "status": "in_progress",
+                            "metadata": {
+                                "participantScope": "custom",
+                                "participantIds": [p1.user_id],
+                            },
+                            "participantIds": [p1.user_id],
+                            "startedAt": datetime.now(timezone.utc).isoformat(),
+                            "stoppedAt": None,
+                            "elapsedTime": 0,
+                        },
+                        {
+                            "activityId": activity_b.activity_id,
+                            "tool": activity_b.tool_type,
+                            "status": "in_progress",
+                            "metadata": {
+                                "participantScope": "custom",
+                                "participantIds": [p1.user_id],
+                            },
+                            "participantIds": [p1.user_id],
+                            "startedAt": datetime.now(timezone.utc).isoformat(),
+                            "stoppedAt": None,
+                            "elapsedTime": 0,
+                        },
+                    ],
+                },
+            )
+        )
+
+        client.post(
+            "/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD}
+        )
+        response = client.put(
+            f"/api/meetings/{meeting.meeting_id}/agenda/{activity_a.activity_id}/participants",
+            json={"mode": "custom", "participant_ids": [p1.user_id, p2.user_id]},
+        )
+        assert response.status_code == 409
+        payload = response.json()
+        conflict_details = payload["conflict_details"]
+        assert "conflicting_users" in conflict_details
+        assert "current_assignment" in conflict_details
+        assert payload["detail"]
+        assert any(user["user_id"] == p1.user_id for user in conflict_details["conflicting_users"])
+        current_assignment = conflict_details["current_assignment"]
+        assert current_assignment["mode"] == "custom"
+        assert current_assignment["participant_ids"] == [p1.user_id]
+        assert {row["user_id"] for row in current_assignment["available_participants"]} == {
+            p1.user_id,
+            p2.user_id,
+        }
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_put_409_does_not_mutate_state(client, db_session: Session, monkeypatch):
+    """Phase 3 / Payload Polka — a rejected collision PUT leaves the persisted roster assignment unchanged."""
+    monkeypatch.setattr(
+        "app.data.meeting_manager.get_activity_participant_exclusivity",
+        lambda: True,
+    )
+    owner = create_test_user(db_session, "owner_collision_state", "facilitator")
+    p1 = create_test_user(db_session, "p1_collision_state")
+    p2 = create_test_user(db_session, "p2_collision_state")
+    meeting = create_test_meeting(db_session, owner, [p1, p2])
+    manager = MeetingManager(db_session)
+    activity_a = meeting.agenda_activities[0]
+    activity_b = manager.add_agenda_activity(
+        meeting.meeting_id,
+        AgendaActivityCreate(tool_type="brainstorming", title="Brainstorm", order_index=2),
+    )
+
+    manager.set_activity_participants(
+        meeting.meeting_id,
+        activity_a.activity_id,
+        [p1.user_id],
+    )
+
+    asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_a.activity_id,
+                    "currentTool": activity_a.tool_type,
+                    "status": "in_progress",
+                    "activeActivities": [
+                        {
+                            "activityId": activity_a.activity_id,
+                            "tool": activity_a.tool_type,
+                            "status": "in_progress",
+                            "metadata": {
+                                "participantScope": "custom",
+                                "participantIds": [p1.user_id],
+                            },
+                            "participantIds": [p1.user_id],
+                            "startedAt": datetime.now(timezone.utc).isoformat(),
+                            "stoppedAt": None,
+                            "elapsedTime": 0,
+                        },
+                        {
+                            "activityId": activity_b.activity_id,
+                            "tool": activity_b.tool_type,
+                            "status": "in_progress",
+                            "metadata": {
+                                "participantScope": "custom",
+                                "participantIds": [p1.user_id],
+                            },
+                            "participantIds": [p1.user_id],
+                            "startedAt": datetime.now(timezone.utc).isoformat(),
+                            "stoppedAt": None,
+                            "elapsedTime": 0,
+                        },
+                    ],
+                },
+            )
+        )
+
+        client.post(
+            "/api/auth/token", json={"username": owner.login, "password": TEST_PASSWORD}
+        )
+        response = client.put(
+            f"/api/meetings/{meeting.meeting_id}/agenda/{activity_a.activity_id}/participants",
+            json={"mode": "custom", "participant_ids": [p1.user_id, p2.user_id]},
+        )
+        assert response.status_code == 409
+
+        follow_up = client.get(
+            f"/api/meetings/{meeting.meeting_id}/agenda/{activity_a.activity_id}/participants"
+        )
+        assert follow_up.status_code == 200
+        follow_up_payload = follow_up.json()
+        assert follow_up_payload["mode"] == "custom"
+        assert follow_up_payload["participant_ids"] == [p1.user_id]
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
