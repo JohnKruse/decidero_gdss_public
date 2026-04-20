@@ -164,7 +164,7 @@ Phase 5 is NOT complete — and the Roster Rodeo effort is NOT ready to ship —
 
 *(append entries here as each step closes)*
 
-- [x] Step 1 — Full-suite audit; tests touched: **none** — commit: _pending_
+- [x] Step 1 — Full-suite audit; tests touched: **none** — commit: e87129c
   - `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q` → **554 passed, 2 skipped, 0 failed** on parent 9034bf7. No outdated-assertion failures surfaced, so no in-place edits were required.
   - Stale-token grep `git grep -nE "participant-modal-tabs|data-participant-modal-tab|activityParticipantApply|activityParticipantIncludeAll|activityParticipantReuse|activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/tests/'` returned six hits, all inside **absence-assertions** introduced by Phase 4 Step 1 / Step 5 (`test_frontend_smoke.py` lines 98, 99, 108, 119, 122, 123). These pin removal and are intentionally kept; Step 2 will fold them into the consolidated `test_activity_modal_simplified`.
   - Agenda/Settings grep `git grep -nE "\"Agenda\"|'Agenda'|>Agenda<|\"Settings\"" -- 'app/tests/'` returned one hit at `test_frontend_smoke.py:62` (`">Agenda<" not in html`) — again an absence-assertion from Phase 1, kept intentionally and earmarked for absorption into `test_agenda_panel_heading_renamed` in Step 2.
