@@ -1,4 +1,4 @@
-# Phase 3 — Back-End Contract for Per-Move Commits
+# Phase 3 — Back-End Contract for Per-Move Commits [COMPLETE]
 
 **Master plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
 **Global canary:** `Roster Rodeo`
@@ -178,9 +178,9 @@ Phase 3 is NOT complete until the exit command and all five invariants succeed o
 
 *(append entries here as each step closes)*
 
-- [ ] Step 1 — Empty-custom normalization in router — commit: __________
-- [ ] Step 2 — MeetingManager invariants verified — commit: __________
-- [ ] Step 3 — 409 response enriched with `current_assignment` — commit: __________
+- [DONE] Step 1 — Empty-custom normalization in router — commit: working tree
+- [DONE] Step 2 — MeetingManager invariants verified — commit: working tree
+- [DONE] Step 3 — 409 response enriched with `current_assignment` — commit: working tree
 - [DONE] Step 4 — Broadcast cadence contract locked — commit: working tree
 - [DONE] Step 5 — Regression sweep clean; carry-forward notes: unrelated non-Phase-3 drift outside allowed buckets remains in `git diff main` — commit: working tree
 - [DONE] Exit command green — `pytest app/tests/test_activity_rosters.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py -v` output: 71 passed, 0 failed, 2 skipped

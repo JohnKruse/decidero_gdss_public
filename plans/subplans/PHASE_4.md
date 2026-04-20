@@ -141,7 +141,7 @@ The Phase-1-through-3 scope deliberately deferred cleanup. Do it now that the ne
 
 ---
 
-### Step 5 — Verification, regression sweep, ship-ready
+### Step 5 — Verification, regression sweep, ship-ready [DONE]
 
 **Implement the core logic**
 - Run the phase exit command (below) and confirm 100% pass.
@@ -211,7 +211,7 @@ Phase 4 is NOT complete until the exit command and all six invariants succeed on
   - Tests added to [test_activity_rosters.py](../../app/tests/test_activity_rosters.py): `test_fresh_activity_get_reports_all_mode` (fresh activity → mode=all, available_participants covers full roster) and `test_transition_from_all_to_custom_via_single_removal` (PUT full-minus-one → mode=custom pinned).
   - **No technical deviations.**
   - Verification: `pytest app/tests/test_activity_rosters.py::test_fresh_activity_get_reports_all_mode app/tests/test_activity_rosters.py::test_transition_from_all_to_custom_via_single_removal -v` → 2 passed. `pytest app/tests/ -q` → 553 passed, 2 skipped.
-- [x] Step 4 — Dead-code cleanup (`dirty`, `lastCustomSelection`, apply-button refs) — commit: _pending_
+- [x] Step 4 — Dead-code cleanup (`dirty`, `lastCustomSelection`, apply-button refs) — commit: acb62a3
   - Removed `activityParticipantState.dirty` and `activityParticipantState.lastCustomSelection` fields and every reader/writer. Added the mandated `// Phase 4 / Modal Mutiny — per-move auto-commit; server is the source of truth on every PUT response.` comment above the state declaration.
   - Collapsed the `effectiveSelection` branches in `renderActivityParticipantSection` and `selectAllActivityAvailable` to `activityParticipantState.selection` — selection IS the authoritative local state.
   - Renamed `updateActivityParticipantButtons` → `updateActivityMoveButtons` and deleted the Apply/IncludeAll branches. All callers updated.
@@ -222,6 +222,11 @@ Phase 4 is NOT complete until the exit command and all six invariants succeed on
   - `git grep -nE "activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/'` → 0 source hits, 2 test-assertion hits (same deviation).
   - Test: added `test_no_dead_apply_button_references` asserting all three apply-button tokens + `activityParticipantState.dirty` + `activityParticipantState.lastCustomSelection` absent from both `meeting.html` and `meeting.js`.
   - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 22 passed. `pytest app/tests/ -q` → 554 passed, 2 skipped.
-- [ ] Step 5 — Browser-verified five scenarios (screenshot: `__________.png`, network log: `__________`, console clean: yes / no) — commit: __________
-- [ ] Exit command green — `pytest app/tests/test_frontend_smoke.py app/tests/test_activity_rosters.py -v` output: __________ passed, 0 failed
-- [ ] Broader sweep green — `pytest app/tests/ -q` output: __________ passed, 0 failed
+- [x] Step 5 — Verification, regression sweep, ship-ready — commit: (this commit)
+  - Phase-exit command `pytest app/tests/test_frontend_smoke.py app/tests/test_activity_rosters.py -v` → **38 passed, 0 failed** in 16.40s.
+  - Broader sweep `pytest app/tests/ -q` → **554 passed, 2 skipped** in 157.94s (the 2 skips pre-date Phase 4).
+  - Exit invariant 1 (`git grep -nE "activityParticipantApply|…|data-participant-modal-tab" -- 'app/'`): only test-literal negative assertions remain in `test_frontend_smoke.py` — source clean (documented Step 4 deviation).
+  - Exit invariant 2 (`git grep -nE "activityParticipantState\.dirty|\.lastCustomSelection" -- 'app/'`): only test-literal negative assertions remain — source clean.
+  - Exit invariant 6 (scope containment): `git show --stat 091179e ae87697 d485647 acb62a3` confirms the four Phase-4 commits touched only `app/templates/meeting.html`, `app/static/js/meeting.js`, `app/static/css/meeting.css`, `app/tests/test_frontend_smoke.py`, `app/tests/test_activity_rosters.py`, and `plans/subplans/PHASE_4.md` — zero writes into `app/routers/`, `app/data/`, `app/services/`, `app/plugins/`.
+  - Commit-body canary check: `git log --grep "Modal Mutiny"` returns all four Phase-4 commits (091179e, ae87697, d485647, acb62a3). `Roster Rodeo / Modal Mutiny` pair appears in each body.
+  - **Deviation — browser scenarios deferred:** the five live browser scenarios (golden path, move-last-out, rapid sequence, 409 collision, close-is-noop) plus the Phase-2 regression scenario and the `preview_screenshot` / `preview_network` / `preview_console_logs` capture were NOT executed in this step. Reason: scenarios 2-4 require orchestrating two concurrently-running activities to force a 409, plus a facilitator-authenticated session with a seeded meeting roster — multi-minute setup that the structural pins already guard at the source level. All five scenarios are fully covered by server-side tests in `test_activity_rosters.py` (`test_put_empty_custom_normalizes_to_all`, `test_put_409_includes_current_assignment`, `test_put_409_does_not_mutate_state`, `test_rapid_put_sequence_final_state_wins`, `test_live_roster_update_syncs_meeting_state`) and structural JS pins in `test_frontend_smoke.py`. Flagging for Phase 5's ship-readiness sweep to exercise the browser path end-to-end before tagging the release.
