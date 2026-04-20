@@ -1,0 +1,15 @@
+Phase 5 / Finish Fiesta — Beat 4: Fresh activity inherits all meeting participants
+Captured: 2026-04-20
+
+Activity under test: MTG20260225-0001-RANKOR-0001 (Rank Order Voting)
+Server-side GET /api/meetings/MTG20260225-0001/agenda/MTG20260225-0001-RANKOR-0001/participants:
+  mode: "all"
+  participant_ids: []
+  available_participants: 7 (Abe Lincoln, John Kruse, user_01..user_05)
+
+After preview_click on "Edit Roster":
+  #participantAdminModal display = "flex"
+  #participantModalActivityName = "NEXT ... Rank Order Voting"
+  #participantParticipantSelectedList = 7 <li> children (full roster)
+
+Verified live: task-4 fresh-activity default Selected column renders every meeting participant, as Phase 3/4 contracts require.
