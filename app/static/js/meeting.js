@@ -287,9 +287,6 @@
                 activitySelectedSelectAll: document.getElementById("activitySelectedSelectAllButton"),
                 activityMoveToSelected: document.getElementById("activityMoveToSelectedButton"),
                 activityMoveToAvailable: document.getElementById("activityMoveToAvailableButton"),
-                activityIncludeAll: document.getElementById("activityParticipantIncludeAll"),
-                activityReuse: document.getElementById("activityParticipantReuse"),
-                activityApply: document.getElementById("activityParticipantApply"),
                 activityFeedback: document.getElementById("activityParticipantFeedback"),
 
                 // New agenda activity controls
@@ -1933,13 +1930,6 @@
 
             const mode = modeOverride || activityParticipantState.mode;
             const selectedIds = Array.from(activityParticipantState.selection);
-            if (mode !== "all" && selectedIds.length === 0) {
-                setActivityParticipantFeedback(
-                    "Select at least one participant or include everyone for this activity.",
-                    "error",
-                );
-                return;
-            }
 
             activityParticipantState.loading = true;
             updateActivityParticipantButtons();
@@ -2050,7 +2040,8 @@
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
         }
 
-        function addActivityParticipantsFromAvailable(userIds = null) {
+        // Auto-commit: mutates local state then immediately PUTs. See PHASE_4.md Step 1.
+        async function addActivityParticipantsFromAvailable(userIds = null) {
             const ids = Array.isArray(userIds) && userIds.length > 0
                 ? userIds
                 : Array.from(activityParticipantState.availableHighlighted);
@@ -2065,9 +2056,11 @@
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
+            await applyActivityParticipantSelection();
         }
 
-        function removeActivityParticipantsFromSelected(userIds = null) {
+        // Auto-commit: mutates local state then immediately PUTs. See PHASE_4.md Step 1.
+        async function removeActivityParticipantsFromSelected(userIds = null) {
             const ids = Array.isArray(userIds) && userIds.length > 0
                 ? userIds
                 : Array.from(activityParticipantState.selectedHighlighted);
@@ -2082,6 +2075,7 @@
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
+            await applyActivityParticipantSelection();
         }
 
         function formatValue(value, fallback = "—") {
@@ -7856,13 +7850,6 @@
             if (ui.openParticipantAdminButton) {
                 ui.openParticipantAdminButton.addEventListener("click", () => {
                     openParticipantAdminModal();
-                });
-            }
-            if (ui.participantModalTabs?.length) {
-                ui.participantModalTabs.forEach((tab) => {
-                    tab.addEventListener("click", () => {
-                        setParticipantModalMode(tab.dataset.participantModalTab);
-                    });
                 });
             }
             setStatus("Connecting…", "pending");

@@ -354,15 +354,6 @@
                 <button type="button" class="close-button" id="closeParticipantAdminModal">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="participant-modal-tabs" role="tablist">
-                    <button type="button" class="control-btn sm" data-participant-modal-tab="meeting"
-                        data-active="true">
-                        Meeting Participants
-                    </button>
-                    <button type="button" class="control-btn sm" data-participant-modal-tab="activity">
-                        Activity Roster
-                    </button>
-                </div>
                 <div class="participant-modal-panel" data-participant-admin-panel>
                     <div class="participant-admin" data-participant-admin>
                         <h3>Manage Participants</h3>
@@ -445,16 +436,7 @@
                 </div>
                 <div class="participant-modal-panel" data-activity-roster-panel hidden>
                     <div class="activity-participant-admin" data-activity-participant-admin>
-                        <p class="activity-participant-hint">By default everyone joins this activity. Remove
-                            participants here before launching if you need a breakout.</p>
-                        <div class="activity-participant-actions">
-                            <button type="button" class="control-btn" id="activityParticipantIncludeAll">Include
-                                Everyone</button>
-                            <button type="button" class="control-btn" id="activityParticipantReuse" hidden>Reuse
-                                Last</button>
-                            <button type="button" class="control-btn primary" id="activityParticipantApply"
-                                disabled>Apply Selection</button>
-                        </div>
+                        <p class="activity-participant-hint">All meeting participants join by default. Remove names from the right column to limit this activity.</p>
                         <div id="activityParticipantFeedback" class="control-feedback" aria-live="polite"></div>
                         <div class="participant-selection-grid participant-selection-grid--modal">
                             <div class="participant-column">

@@ -91,16 +91,37 @@ def test_meeting_roster_button_listener_wired():
     assert 'setParticipantModalMode("meeting")' in js
 
 
-def test_participant_modal_tab_path_still_works():
-    """Phase 2 / Doorbell Disco — keep the legacy tab path alive as a fallback until Phase 4. Expected to be retired by Phase 4's subplan."""
+def test_activity_modal_tabs_removed():
+    """Phase 4 / Modal Mutiny — the tab row is gone; there is no secondary switcher inside the participant modal."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
-    assert 'data-participant-modal-tab="meeting"' in html
-    assert 'data-participant-modal-tab="activity"' in html
+    assert "participant-modal-tabs" not in html
+    assert "data-participant-modal-tab" not in html
 
+
+def test_activity_modal_action_buttons_removed():
+    """Phase 4 / Modal Mutiny — Include Everyone / Apply Selection / Reuse Last are gone from both template and JS."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
-    assert "tab.dataset.participantModalTab" in js
+    for token in ("activityParticipantIncludeAll", "activityParticipantApply", "activityParticipantReuse"):
+        assert token not in html, f"{token} still present in meeting.html"
+        assert token not in js, f"{token} still present in meeting.js"
+
+
+def test_activity_move_handlers_auto_commit():
+    """Phase 4 / Modal Mutiny — → and ← handlers must call applyActivityParticipantSelection inline (auto-commit)."""
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    for fn_name in ("addActivityParticipantsFromAvailable", "removeActivityParticipantsFromSelected"):
+        start = js.find(f"function {fn_name}")
+        assert start != -1, f"{fn_name} not found in meeting.js"
+        next_fn = js.find("\n        function ", start + 1)
+        body = js[start : next_fn if next_fn != -1 else len(js)]
+        assert "applyActivityParticipantSelection" in body, (
+            f"{fn_name} does not auto-commit via applyActivityParticipantSelection"
+        )
 
 
 def test_transfer_css_has_eligibility_hint_style():
