@@ -110,6 +110,19 @@ def test_activity_modal_action_buttons_removed():
         assert token not in js, f"{token} still present in meeting.js"
 
 
+def test_no_dead_apply_button_references():
+    """Phase 4 / Modal Mutiny — structural proof of Step 4 cleanup: removed affordances leave no source trace."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    for token in ("activityParticipantApply", "activityParticipantIncludeAll", "activityParticipantReuse"):
+        assert token not in html, f"{token} still present in meeting.html"
+        assert token not in js, f"{token} still present in meeting.js"
+    assert "activityParticipantState.dirty" not in js
+    assert "activityParticipantState.lastCustomSelection" not in js
+
+
 def test_collision_rollback_reads_current_assignment():
     """Phase 4 / Modal Mutiny — structural pin: 409 handler parses current_assignment from the server body.
 

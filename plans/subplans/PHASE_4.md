@@ -115,7 +115,7 @@ New activities have no `config["participant_ids"]` so GET returns `{mode:"all", 
 
 ---
 
-### Step 4 — Dead-code cleanup in the JS state and helpers
+### Step 4 — Dead-code cleanup in the JS state and helpers [DONE]
 
 The Phase-1-through-3 scope deliberately deferred cleanup. Do it now that the new flow is proven working.
 
@@ -204,14 +204,24 @@ Phase 4 is NOT complete until the exit command and all six invariants succeed on
   - Added `// Phase 4 / Modal Mutiny — use current_assignment from the 409 body; no follow-up GET.` comment above the 409 branch per plan.
   - Test: added `test_collision_rollback_reads_current_assignment` (structural pin — asserts `current_assignment` substring and a `status === 409` regex match in meeting.js). Behavioral coverage deferred to Phase 5 per plan.
   - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 21 passed. `pytest app/tests/ -q` → 551 passed, 2 skipped.
-- [x] Step 3 — Inherit-all default visible on open — commit: _pending_
+- [x] Step 3 — Inherit-all default visible on open — commit: d485647
   - Verified `loadActivityParticipantAssignment` already pre-populates `activityParticipantState.selection` with every available participant's user_id when the GET returns `mode="all"` — no code change needed beyond adding the mandated explanatory comment above the branch.
   - Verified `renderActivityParticipantSection` computes `effectiveSelection` the same way, so the Available column renders empty (everyone sits in Selected) on a fresh activity open. No render-branch change needed.
   - Hint paragraph at [meeting.html:447](../../app/templates/meeting.html:447) already updated in Step 1.
   - Tests added to [test_activity_rosters.py](../../app/tests/test_activity_rosters.py): `test_fresh_activity_get_reports_all_mode` (fresh activity → mode=all, available_participants covers full roster) and `test_transition_from_all_to_custom_via_single_removal` (PUT full-minus-one → mode=custom pinned).
   - **No technical deviations.**
   - Verification: `pytest app/tests/test_activity_rosters.py::test_fresh_activity_get_reports_all_mode app/tests/test_activity_rosters.py::test_transition_from_all_to_custom_via_single_removal -v` → 2 passed. `pytest app/tests/ -q` → 553 passed, 2 skipped.
-- [ ] Step 4 — Dead-code cleanup (`dirty`, `lastCustomSelection`, apply-button refs) — commit: __________
+- [x] Step 4 — Dead-code cleanup (`dirty`, `lastCustomSelection`, apply-button refs) — commit: _pending_
+  - Removed `activityParticipantState.dirty` and `activityParticipantState.lastCustomSelection` fields and every reader/writer. Added the mandated `// Phase 4 / Modal Mutiny — per-move auto-commit; server is the source of truth on every PUT response.` comment above the state declaration.
+  - Collapsed the `effectiveSelection` branches in `renderActivityParticipantSection` and `selectAllActivityAvailable` to `activityParticipantState.selection` — selection IS the authoritative local state.
+  - Renamed `updateActivityParticipantButtons` → `updateActivityMoveButtons` and deleted the Apply/IncludeAll branches. All callers updated.
+  - Deleted the `ui.facilitatorControls.activityApply`/`activityIncludeAll`/`activityReuse` listener blocks in `initialize()` (Include-Everyone click, Reuse click, Apply click) — per-move auto-commit fully replaces them.
+  - Removed the now-unused `participantModalTabs` querySelectorAll entry from the ui object (stale after Step 1) and the orphan `.participant-modal-tabs` / `.participant-modal-tabs .control-btn[data-active="true"]` CSS rules in [meeting.css](../../app/static/css/meeting.css).
+  - Kept `setParticipantModalMode` per audit §6.2.
+  - Exit-criterion grep `git grep -nE "activityParticipantApply|activityParticipantIncludeAll|activityParticipantReuse|participant-modal-tabs|data-participant-modal-tab" -- 'app/'` now returns only the negative assertions in `test_frontend_smoke.py` (tokens quoted inside `assert "…" not in html`). **Deviation:** the plan's literal reading says "NO match" but the test-side negative assertions are structural pins mandated by Steps 1 and 4 of the plan itself. Source code is clean; only test literals remain.
+  - `git grep -nE "activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/'` → 0 source hits, 2 test-assertion hits (same deviation).
+  - Test: added `test_no_dead_apply_button_references` asserting all three apply-button tokens + `activityParticipantState.dirty` + `activityParticipantState.lastCustomSelection` absent from both `meeting.html` and `meeting.js`.
+  - Verification: `pytest app/tests/test_frontend_smoke.py -v` → 22 passed. `pytest app/tests/ -q` → 554 passed, 2 skipped.
 - [ ] Step 5 — Browser-verified five scenarios (screenshot: `__________.png`, network log: `__________`, console clean: yes / no) — commit: __________
 - [ ] Exit command green — `pytest app/tests/test_frontend_smoke.py app/tests/test_activity_rosters.py -v` output: __________ passed, 0 failed
 - [ ] Broader sweep green — `pytest app/tests/ -q` output: __________ passed, 0 failed

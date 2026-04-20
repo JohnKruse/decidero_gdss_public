@@ -306,7 +306,6 @@
             participantModalActivityMeta: document.getElementById("participantModalActivityMeta"),
             participantModalActivityName: document.getElementById("participantModalActivityName"),
             participantModalActivityType: document.getElementById("participantModalActivityType"),
-            participantModalTabs: Array.from(document.querySelectorAll("[data-participant-modal-tab]")),
             participantAdminPanel: document.querySelector("[data-participant-admin-panel]"),
             activityRosterPanel: document.querySelector("[data-activity-roster-panel]"),
             closeParticipantAdminModal: document.getElementById("closeParticipantAdminModal"),
@@ -851,14 +850,13 @@
         };
 
 
+        // Phase 4 / Modal Mutiny — per-move auto-commit; server is the source of truth on every PUT response.
         const activityParticipantState = {
             currentActivityId: null,
             selection: new Set(),
-            lastCustomSelection: null,
             availableHighlighted: new Set(),
             selectedHighlighted: new Set(),
             mode: "all",
-            dirty: false,
             loading: false,
             lastLoadFailed: false,
         };
@@ -1581,7 +1579,6 @@
             activityParticipantState.availableHighlighted = new Set();
             activityParticipantState.selectedHighlighted = new Set();
             activityParticipantState.mode = "all";
-            activityParticipantState.dirty = false;
         }
 
         function setActivityParticipantFeedback(message, variant = "info") {
@@ -1592,26 +1589,8 @@
             ui.facilitatorControls.activityFeedback.dataset.variant = message ? variant : "";
         }
 
-        function updateActivityParticipantButtons() {
-            const applyButton = ui.facilitatorControls.activityApply;
-            if (applyButton) {
-                const hasSelection = activityParticipantState.selection.size > 0;
-                applyButton.disabled =
-                    activityParticipantState.loading ||
-                    !state.isFacilitator ||
-                    !activityParticipantState.currentActivityId ||
-                    !activityParticipantState.dirty ||
-                    (!hasSelection && activityParticipantState.mode !== "all");
-            }
-            const includeAll = ui.facilitatorControls.activityIncludeAll;
-            if (includeAll) {
-                includeAll.disabled =
-                    activityParticipantState.loading ||
-                    !state.isFacilitator ||
-                    !activityParticipantState.currentActivityId ||
-                    (state.activityAssignments.get(activityParticipantState.currentActivityId)?.mode === "all" &&
-                        !activityParticipantState.dirty);
-            }
+        // Phase 4 / Modal Mutiny — shrunken responsibility: only the → / ← and Select All buttons remain.
+        function updateActivityMoveButtons() {
             updateActivityTransferControls();
         }
 
@@ -1631,13 +1610,7 @@
             if (ui.facilitatorControls.activityAvailableSelectAll) {
                 const assignment = state.activityAssignments.get(activityParticipantState.currentActivityId);
                 const roster = Array.isArray(assignment?.available_participants) ? assignment.available_participants : [];
-                const effectiveSelection = activityParticipantState.dirty
-                    ? activityParticipantState.selection
-                    : new Set(
-                        assignment?.mode === "all"
-                            ? roster.map((row) => row.user_id)
-                            : assignment?.participant_ids || [],
-                    );
+                const effectiveSelection = activityParticipantState.selection;
                 const selectableCount = roster.filter((row) => !effectiveSelection.has(row.user_id)).length;
                 ui.facilitatorControls.activityAvailableSelectAll.disabled = selectableCount === 0;
             }
@@ -1670,8 +1643,7 @@
                 activityParticipantState.availableHighlighted = new Set();
                 activityParticipantState.selectedHighlighted = new Set();
                 activityParticipantState.mode = "all";
-                activityParticipantState.dirty = false;
-                updateActivityParticipantButtons();
+                updateActivityMoveButtons();
                 return;
             }
             container.hidden = false;
@@ -1682,7 +1654,6 @@
                 activityParticipantState.availableHighlighted = new Set();
                 activityParticipantState.selectedHighlighted = new Set();
                 activityParticipantState.mode = "all";
-                activityParticipantState.dirty = false;
             }
 
             const assignment = state.activityAssignments.get(activityId);
@@ -1699,26 +1670,15 @@
                 if (!activityParticipantState.loading && !activityParticipantState.lastLoadFailed) {
                     loadActivityParticipantAssignment(activityId);
                 }
-                updateActivityParticipantButtons();
+                updateActivityMoveButtons();
                 return;
             }
 
             const roster = Array.isArray(assignment.available_participants)
                 ? assignment.available_participants
                 : [];
-            const effectiveSelection =
-                activityParticipantState.dirty || activityParticipantState.mode !== assignment.mode
-                    ? activityParticipantState.selection
-                    : new Set(
-                        assignment.mode === "all"
-                            ? roster.map((row) => row.user_id)
-                            : assignment.participant_ids || [],
-                    );
-
-            if (!activityParticipantState.dirty) {
-                activityParticipantState.mode = assignment.mode;
-                activityParticipantState.selection = new Set(effectiveSelection);
-            }
+            // Selection IS the authoritative local state; server re-sync happens on each PUT response.
+            const effectiveSelection = activityParticipantState.selection;
 
             const rosterById = new Map(roster.map((row) => [row.user_id, row]));
             activityParticipantState.availableHighlighted = new Set(
@@ -1856,19 +1816,14 @@
 
             const hint = container.querySelector(".activity-participant-hint");
             if (hint) {
-                const hintMode = activityParticipantState.dirty ? "custom" : assignment.mode;
                 hint.textContent =
-                    hintMode === "all"
+                    activityParticipantState.mode === "all"
                         ? "Everyone in the meeting will join unless you remove participants below."
                         : "Only the selected participants will join when this activity runs.";
             }
 
-            if (ui.facilitatorControls.activityReuse) {
-                ui.facilitatorControls.activityReuse.hidden = !activityParticipantState.lastCustomSelection;
-            }
-
             setActivityParticipantFeedback("");
-            updateActivityParticipantButtons();
+            updateActivityMoveButtons();
         }
 
         async function loadActivityParticipantAssignment(activityId, { force = false } = {}) {
@@ -1882,7 +1837,7 @@
 
             activityParticipantState.loading = true;
             activityParticipantState.lastLoadFailed = false;
-            updateActivityParticipantButtons();
+            updateActivityMoveButtons();
 
             try {
                 const resp = await fetch(
@@ -1908,7 +1863,6 @@
                 );
                 activityParticipantState.availableHighlighted = new Set();
                 activityParticipantState.selectedHighlighted = new Set();
-                activityParticipantState.dirty = false;
                 setActivityParticipantFeedback("");
             } catch (error) {
                 activityParticipantState.lastLoadFailed = true;
@@ -1933,7 +1887,7 @@
             const selectedIds = Array.from(activityParticipantState.selection);
 
             activityParticipantState.loading = true;
-            updateActivityParticipantButtons();
+            updateActivityMoveButtons();
             setActivityParticipantFeedback("", "info");
 
             try {
@@ -1976,10 +1930,6 @@
                         ? (assignment.available_participants || []).map((row) => row.user_id)
                         : assignment.participant_ids || [],
                 );
-                if (assignment.mode === "custom" && assignment.participant_ids && assignment.participant_ids.length > 0) {
-                    activityParticipantState.lastCustomSelection = new Set(assignment.participant_ids);
-                }
-                activityParticipantState.dirty = false;
                 setActivityParticipantFeedback("Activity participant list updated.", "success");
             } catch (error) {
                 console.error("Failed to update activity participant assignment:", error);
@@ -2039,13 +1989,7 @@
         function selectAllActivityAvailable() {
             const assignment = state.activityAssignments.get(activityParticipantState.currentActivityId);
             const roster = Array.isArray(assignment?.available_participants) ? assignment.available_participants : [];
-            const effectiveSelection = activityParticipantState.dirty
-                ? activityParticipantState.selection
-                : new Set(
-                    assignment?.mode === "all"
-                        ? roster.map((row) => row.user_id)
-                        : assignment?.participant_ids || [],
-                );
+            const effectiveSelection = activityParticipantState.selection;
             const selectable = roster
                 .filter((row) => !effectiveSelection.has(row.user_id))
                 .map((row) => row.user_id);
@@ -2070,7 +2014,6 @@
             ids.forEach((userId) => nextSelection.add(userId));
             activityParticipantState.selection = nextSelection;
             activityParticipantState.mode = "custom";
-            activityParticipantState.dirty = true;
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
@@ -2089,7 +2032,6 @@
             ids.forEach((userId) => nextSelection.delete(userId));
             activityParticipantState.selection = nextSelection;
             activityParticipantState.mode = "custom";
-            activityParticipantState.dirty = true;
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
@@ -6513,7 +6455,6 @@
             activityParticipantState.currentActivityId = activityId;
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
-            activityParticipantState.dirty = false;
             activityParticipantState.loading = false;
             activityParticipantState.lastLoadFailed = false;
             setParticipantModalMode("activity");
@@ -7936,25 +7877,6 @@
                     changeParticipantDirectoryPage(1);
                 });
             }
-            if (ui.facilitatorControls.activityIncludeAll) {
-                ui.facilitatorControls.activityIncludeAll.addEventListener("click", async () => {
-                    const activityId = activityParticipantState.currentActivityId;
-                    if (!activityId) {
-                        return;
-                    }
-                    const assignment = state.activityAssignments.get(activityId);
-                    if (!assignment) {
-                        await loadActivityParticipantAssignment(activityId, { force: true });
-                        return;
-                    }
-                    activityParticipantState.mode = "all";
-                    activityParticipantState.selection = new Set(
-                        (assignment.available_participants || []).map((row) => row.user_id),
-                    );
-                    activityParticipantState.dirty = false;
-                    await applyActivityParticipantSelection("all");
-                });
-            }
             if (ui.facilitatorControls.activityAvailableSelectAll) {
                 ui.facilitatorControls.activityAvailableSelectAll.addEventListener("click", () => {
                     selectAllActivityAvailable();
@@ -7973,26 +7895,6 @@
             if (ui.facilitatorControls.activityMoveToAvailable) {
                 ui.facilitatorControls.activityMoveToAvailable.addEventListener("click", () => {
                     removeActivityParticipantsFromSelected();
-                });
-            }
-            if (ui.facilitatorControls.activityReuse) {
-                ui.facilitatorControls.activityReuse.addEventListener("click", async () => {
-                    if (!activityParticipantState.lastCustomSelection) {
-                        return;
-                    }
-                    activityParticipantState.selection = new Set(activityParticipantState.lastCustomSelection);
-                    activityParticipantState.mode = "custom";
-                    activityParticipantState.dirty = true;
-                    // Re-render to show updated checkboxes
-                    renderActivityParticipantSection(activityParticipantState.currentActivityId);
-                    // Optional: Auto-apply? The prompt says "apply and reuse".
-                    // Let's just set the state so user can review and click Apply.
-                    setActivityParticipantFeedback("Previous selection loaded. Click Apply to save.", "info");
-                });
-            }
-            if (ui.facilitatorControls.activityApply) {
-                ui.facilitatorControls.activityApply.addEventListener("click", async () => {
-                    await applyActivityParticipantSelection();
                 });
             }
             // Add Activity Modal Logic
