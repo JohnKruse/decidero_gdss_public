@@ -33,6 +33,7 @@ from app.data.user_manager import (
     get_user_manager,
 )  # Import both class and dependency provider
 from app.data.meeting_manager import MeetingManager, get_meeting_manager
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.services.avatar_catalog import is_valid_avatar_key, list_avatar_entries
 from app.utils.encryption import encryption_manager
 from datetime import timedelta
@@ -62,16 +63,7 @@ router = APIRouter(
 
 
 def _user_can_manage_meeting(meeting, user: "User") -> bool:
-
-    facilitator_links = getattr(meeting, "facilitator_links", []) or []
-
-    return any(
-        (
-            user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN},
-            meeting.owner_id == getattr(user, "user_id", None),
-            any(link.user_id == user.user_id for link in facilitator_links),
-        )
-    )
+    return bool(resolve_meeting_capabilities(meeting, user)["can_manage"])
 
 
 @router.post(

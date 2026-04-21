@@ -29,8 +29,8 @@ from app.models.voting import VotingVote
 from app.data.meeting_manager import (
     MeetingManager,
     get_meeting_manager,
-    resolve_meeting_capabilities,
 )
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.auth.auth import (
     get_current_user,
     get_optional_user_model_dependency,

@@ -25,8 +25,8 @@ from ..data.user_manager import UserManager, get_user_manager
 from ..data.meeting_manager import (
     MeetingManager,
     get_meeting_manager,
-    resolve_meeting_capabilities,
 )
+from ..services.meeting_authorization import resolve_meeting_capabilities
 from sqlalchemy.orm import Session
 from ..database import get_db
 

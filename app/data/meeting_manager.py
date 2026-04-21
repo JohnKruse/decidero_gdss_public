@@ -28,52 +28,11 @@ from ..utils.identifiers import (
     derive_activity_prefix,
 )
 from ..services.activity_catalog import get_activity_definition, get_activity_catalog
+from ..services.meeting_authorization import resolve_meeting_capabilities
 from ..config.loader import get_activity_participant_exclusivity
 from ..services import meeting_state_manager
 
 ACTIVITY_SEQUENCE_WIDTH = 4
-
-
-def resolve_meeting_capabilities(meeting: Meeting, user: Optional[User]) -> Dict[str, bool]:
-    """Derive meeting-scoped capabilities from role, ownership, and roster membership only."""
-    if user is None:
-        return {
-            "is_admin": False,
-            "is_owner": False,
-            "is_participant": False,
-            "is_facilitator": False,
-            "can_view": False,
-            "can_manage": False,
-            "can_delete": False,
-        }
-
-    role_value = getattr(user, "role", None)
-    if isinstance(role_value, UserRole):
-        role_value = role_value.value
-
-    is_admin = role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
-    is_owner = getattr(meeting, "owner_id", None) == getattr(user, "user_id", None)
-    participant_ids = {
-        getattr(participant, "user_id", None)
-        for participant in (getattr(meeting, "participants", []) or [])
-        if getattr(participant, "user_id", None)
-    }
-    is_participant = getattr(user, "user_id", None) in participant_ids
-    has_facilitator_role = role_value == UserRole.FACILITATOR.value
-    is_facilitator = is_admin or is_owner or (has_facilitator_role and is_participant)
-    can_view = is_admin or is_owner or is_participant
-
-    return {
-        "is_admin": is_admin,
-        "is_owner": is_owner,
-        "is_participant": is_participant,
-        "is_facilitator": is_facilitator,
-        "can_view": can_view,
-        "can_manage": is_facilitator,
-        "can_delete": is_admin or is_owner,
-    }
-
-
 class MeetingManager:
     """Manages meeting data using SQLAlchemy."""
 

@@ -139,6 +139,31 @@ def test_facilitator_can_use_directory_in_draft_mode(
     assert isinstance(payload["items"], list)
 
 
+def test_off_roster_facilitator_cannot_manage_meeting_directory(
+    client: TestClient,
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Gravy Parachute: facilitator role alone does not unlock meeting-directory management without roster membership."""
+    facilitator_login = "dir_off_roster_fac"
+    _seed_user(
+        user_manager_with_admin,
+        facilitator_login,
+        role=UserRole.FACILITATOR,
+        password="DraftPass1!",
+    )
+    meeting_payload = _create_meeting(
+        authenticated_client, title="Off Roster Directory Boundary"
+    )
+
+    _login(client, facilitator_login, "DraftPass1!")
+    resp = client.get(
+        "/api/users/directory",
+        params={"meeting_id": meeting_payload["id"], "page_size": 50},
+    )
+    assert resp.status_code == 403
+
+
 def test_participant_cannot_use_directory_draft_mode(
     client: TestClient,
     user_manager_with_admin: UserManager,

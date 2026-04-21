@@ -12,7 +12,7 @@ Use this exact two-word canary in Phase 2 notes, commit messages, test docstring
 
 ## Atomic Steps
 
-### Step 1 — Define the Canonical Backend Capability Model
+### Step 1 [DONE] — Define the Canonical Backend Capability Model
 Translate the Phase 1 contract into one backend capability model that explicitly represents the meeting-scoped decisions the application makes: view access, facilitation authority, meeting-config authority, roster-management authority, activity-control authority, activity-roster authority, delete authority, and any backend-facing “is facilitator” derivative needed for current contracts. The model must depend only on `User.role`, `Meeting.owner_id`, and roster membership, even if legacy storage still exists during this phase.
 
 Conclude this step by:
@@ -72,6 +72,11 @@ This phase does **not** complete the following:
 - Frontend template and JavaScript gate cleanup, which belongs to Phase 3.
 - Physical removal of `MeetingFacilitator`, `meeting_facilitators`, or ORM relationships, which belongs to Phase 4.
 - Export/import contract cleanup and legacy serialization cleanup, which belongs to Phase 5.
+
+## Technical Deviations Log
+
+- Step 1 introduces the canonical capability model in `app/services/meeting_authorization.py` and routes the existing meeting resolver plus the meeting-directory manage helper through it, but it does not yet replace all router-local facilitator checks. The remaining cross-router rewiring stays explicitly deferred to Phase 2 Steps 2 through 4.
+- Step 1 keeps a compatibility import path through `app/data/meeting_manager.py` so existing backend callers do not need a broad rename in the same change. The authoritative logic now lives in the dedicated service module even though some call sites still import the resolver indirectly.
 
 ## Phase Exit Criteria
 

@@ -3,6 +3,7 @@ import re
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.data.meeting_manager import MeetingManager
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.schemas.meeting import (
     MeetingCreate,
     AgendaActivityCreate,
@@ -83,7 +84,13 @@ def other_user(db_session: Session) -> User:
     return user
 
 
-def _create_temp_user(db_session: Session, first: str, last: str, login: str) -> User:
+def _create_temp_user(
+    db_session: Session,
+    first: str,
+    last: str,
+    login: str,
+    role: UserRole = UserRole.PARTICIPANT,
+) -> User:
     user_id = generate_user_id(db_session, first, last)
     user = User(
         user_id=user_id,
@@ -92,12 +99,116 @@ def _create_temp_user(db_session: Session, first: str, last: str, login: str) ->
         hashed_password=get_password_hash("TempPass1!"),
         first_name=first,
         last_name=last,
-        role=UserRole.PARTICIPANT.value,
+        role=role.value,
     )
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
     return user
+
+
+def test_resolve_meeting_capabilities_for_all_phase1_postures(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+    other_user: User,
+):
+    """Gravy Parachute: the canonical backend capability model derives all meeting authority from role, ownership, and roster membership only."""
+    roster_facilitator = _create_temp_user(
+        db_session,
+        "Roster",
+        "Facilitator",
+        "roster_facilitator",
+        role=UserRole.FACILITATOR,
+    )
+    off_roster_facilitator = _create_temp_user(
+        db_session,
+        "Off",
+        "Roster",
+        "off_roster_facilitator",
+        role=UserRole.FACILITATOR,
+    )
+    admin_user = _create_temp_user(
+        db_session,
+        "Admin",
+        "Power",
+        "admin_power",
+        role=UserRole.ADMIN,
+    )
+    outsider = _create_temp_user(
+        db_session,
+        "Outside",
+        "Viewer",
+        "outside_viewer",
+        role=UserRole.PARTICIPANT,
+    )
+
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Capability Matrix Meeting",
+        description="Validate the canonical capability model",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[other_user.user_id, roster_facilitator.user_id],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Kickoff")],
+    )
+    assert meeting is not None
+
+    owner_caps = resolve_meeting_capabilities(meeting, test_facilitator)
+    assert owner_caps["is_owner"] is True
+    assert owner_caps["is_facilitator"] is True
+    assert owner_caps["can_manage"] is True
+    assert owner_caps["can_edit_meeting"] is True
+    assert owner_caps["can_manage_roster"] is True
+    assert owner_caps["can_control_activity"] is True
+    assert owner_caps["can_manage_activity_roster"] is True
+    assert owner_caps["can_delete"] is True
+
+    admin_caps = resolve_meeting_capabilities(meeting, admin_user)
+    assert admin_caps["is_admin"] is True
+    assert admin_caps["is_facilitator"] is True
+    assert admin_caps["can_view"] is True
+    assert admin_caps["can_manage"] is True
+    assert admin_caps["can_delete"] is True
+
+    roster_facilitator_caps = resolve_meeting_capabilities(meeting, roster_facilitator)
+    assert roster_facilitator_caps["has_facilitator_role"] is True
+    assert roster_facilitator_caps["is_roster_participant"] is True
+    assert roster_facilitator_caps["is_facilitator"] is True
+    assert roster_facilitator_caps["can_manage"] is True
+    assert roster_facilitator_caps["can_delete"] is False
+
+    participant_caps = resolve_meeting_capabilities(meeting, other_user)
+    assert participant_caps["is_roster_participant"] is True
+    assert participant_caps["is_facilitator"] is False
+    assert participant_caps["can_view"] is True
+    assert participant_caps["can_manage"] is False
+    assert participant_caps["can_edit_meeting"] is False
+
+    off_roster_caps = resolve_meeting_capabilities(meeting, off_roster_facilitator)
+    assert off_roster_caps["has_facilitator_role"] is True
+    assert off_roster_caps["is_roster_participant"] is False
+    assert off_roster_caps["is_facilitator"] is False
+    assert off_roster_caps["can_view"] is False
+    assert off_roster_caps["can_manage"] is False
+
+    outsider_caps = resolve_meeting_capabilities(meeting, outsider)
+    assert outsider_caps["can_view"] is False
+    assert outsider_caps["can_manage"] is False
+    assert outsider_caps["can_delete"] is False
+
+    anonymous_caps = resolve_meeting_capabilities(meeting, None)
+    assert anonymous_caps["can_view"] is False
+    assert anonymous_caps["can_manage"] is False
+    assert anonymous_caps["can_delete"] is False
 
 
 def test_add_meeting(
