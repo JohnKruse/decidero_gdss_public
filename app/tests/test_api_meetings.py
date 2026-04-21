@@ -752,7 +752,7 @@ def test_rostered_facilitator_update_permissions(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Muffin Tractor: a facilitator on the meeting roster can update meeting metadata but still cannot delete."""
+    """Gravy Parachute: a rostered facilitator inherits core manage gates but not delete-authority gates such as delete, archive, or restore."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -813,6 +813,25 @@ def test_rostered_facilitator_update_permissions(
     assert updated["title"] == update_payload["title"]
     assert updated["description"] == update_payload["description"]
     assert updated["owner_id"] == admin_user_id
+
+    configuration_response = client.put(
+        f"/api/meetings/{meeting.meeting_id}/configuration",
+        json={
+            "title": "Configured by Co-Facilitator",
+            "description": "Updated through the configuration endpoint",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=2)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [cofac_user_id],
+        },
+    )
+    assert configuration_response.status_code == 200, configuration_response.json()
+
+    archive_response = client.post(f"/api/meetings/{meeting.meeting_id}/archive")
+    assert archive_response.status_code == 403, archive_response.json()
+
+    restore_response = client.post(f"/api/meetings/{meeting.meeting_id}/restore")
+    assert restore_response.status_code == 403, restore_response.json()
 
     delete_response = client.delete(f"/api/meetings/{meeting.meeting_id}")
     assert delete_response.status_code == 403, delete_response.json()

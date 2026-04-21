@@ -226,6 +226,15 @@ def _assert_meeting_access(
         )
 
 
+def _assert_meeting_delete_authority(meeting, user) -> None:
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_delete"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to delete this meeting",
+        )
+
+
 def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
     if not value:
         return None
@@ -836,12 +845,8 @@ async def update_meeting_configuration(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
             )
 
-        facilitator_links = getattr(meeting, "facilitator_links", []) or []
-        is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        is_owner = meeting.owner_id == user.user_id
-        is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-
-        if not (is_admin or is_owner or is_facilitator):
+        capabilities = resolve_meeting_capabilities(meeting, user)
+        if not capabilities["can_edit_meeting"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to update this meeting",
@@ -1800,17 +1805,7 @@ async def get_meeting(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
             )
 
-        facilitator_links = getattr(meeting, "facilitator_links", []) or []
-        participants = getattr(meeting, "participants", []) or []
-        is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        is_owner = meeting.owner_id == user.user_id
-        is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-        is_participant = any(person.user_id == user.user_id for person in participants)
-        if not (is_admin or is_owner or is_facilitator or is_participant):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions to view this meeting",
-            )
+        _assert_meeting_access(meeting, user, require_facilitator=False)
 
         _apply_activity_lock_metadata(
             meeting_id,
@@ -2370,13 +2365,7 @@ async def delete_meeting(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
             )
 
-        is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        is_owner = existing_meeting.owner_id == user.user_id
-        if not (is_admin or is_owner):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions to delete this meeting",
-            )
+        _assert_meeting_delete_authority(existing_meeting, user)
 
         # Implement meeting deletion logic using injected meeting_manager
         success = meeting_manager.delete_meeting_permanently(
@@ -2415,7 +2404,7 @@ async def archive_meeting_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    _assert_meeting_access(meeting, user, require_facilitator=True)
+    _assert_meeting_delete_authority(meeting, user)
     archived = meeting_manager.archive_meeting(meeting_id)
     if not archived:
         raise HTTPException(
@@ -2453,7 +2442,7 @@ async def restore_meeting_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    _assert_meeting_access(meeting, user, require_facilitator=True)
+    _assert_meeting_delete_authority(meeting, user)
     updated = meeting_manager.update_meeting(meeting_id, {"status": "completed"})
     if not updated:
         raise HTTPException(

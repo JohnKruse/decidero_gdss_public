@@ -20,7 +20,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, preferring edits to existing backend/auth pytest modules over introducing a new pytest file unless an existing module cannot reasonably house the capability-model coverage.
 - Updating docstrings and documentation so the model’s inputs, outputs, and Phase 2 `Gravy Parachute` intent are unambiguous.
 
-### Step 2 — Rewire the Core Meeting Access Gates
+### Step 2 [DONE] — Rewire the Core Meeting Access Gates
 Replace the main meeting-access and meeting-management decision points with the canonical capability model. This includes the canonical meeting access helper, meeting update and activity-control checks, participant-management gates, archive/restore semantics, and any backend path that currently branches directly on facilitator rows or ad hoc owner/facilitator combinations.
 
 Conclude this step by:
@@ -77,6 +77,7 @@ This phase does **not** complete the following:
 
 - Step 1 introduces the canonical capability model in `app/services/meeting_authorization.py` and routes the existing meeting resolver plus the meeting-directory manage helper through it, but it does not yet replace all router-local facilitator checks. The remaining cross-router rewiring stays explicitly deferred to Phase 2 Steps 2 through 4.
 - Step 1 keeps a compatibility import path through `app/data/meeting_manager.py` so existing backend callers do not need a broad rename in the same change. The authoritative logic now lives in the dedicated service module even though some call sites still import the resolver indirectly.
+- Step 2 rewires the remaining core meeting gates in `app/routers/meetings.py`, but it intentionally leaves non-core page-route gate cleanup and meeting-context derived flag normalization for later phases. Archive and restore are now treated as delete-authority operations under the canonical model, which is stricter than the earlier generic facilitator gate and aligns those endpoints with the Phase 1 contract.
 
 ## Phase Exit Criteria
 
