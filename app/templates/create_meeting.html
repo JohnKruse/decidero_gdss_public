@@ -155,7 +155,13 @@ endblock %}
             {% endgrab %}
 
             <div class="actions-row">
+                {% if is_edit_mode %}
+                <a class="secondary-btn" id="cancelBtn" href="/dashboard">Cancel</a>
+                {% endif %}
                 <button type="submit" class="primary-btn" id="submitBtn">{{ submit_label }}</button>
+                {% if is_edit_mode %}
+                <button type="submit" class="primary-btn" id="submitAndEnterBtn">Save and Enter Meeting</button>
+                {% endif %}
             </div>
         </form>
         {% endcall %}
@@ -241,6 +247,8 @@ endblock %}
         const addAgendaButton = document.getElementById('addAgendaItem');
         const feedback = document.getElementById('formFeedback');
         const submitBtn = document.getElementById('submitBtn');
+        const submitAndEnterBtn = document.getElementById('submitAndEnterBtn');
+        let saveAndEnterRequested = false;
         const form = document.getElementById('createMeetingForm');
         const layoutRoot = document.querySelector('.layout-grid');
         const pageMode = layoutRoot?.dataset.mode || 'create';
@@ -1614,6 +1622,7 @@ endblock %}
 
         async function handleSubmit(event) {
             event.preventDefault(); setFeedback(null); submitBtn.disabled = true; submitBtn.textContent = isEditMode ? 'Saving...' : 'Creating...';
+            if (submitAndEnterBtn) { submitAndEnterBtn.disabled = true; }
             try {
                 const activityParam = new URLSearchParams(window.location.search).get('activity_id');
                 if (isEditMode && activityParam) {
@@ -1675,9 +1684,12 @@ endblock %}
                     throw new Error(detail);
                 }
                 setFeedback(isEditMode ? 'Meeting settings saved.' : 'Meeting created successfully.', 'success');
-                setTimeout(() => { window.location.href = '/dashboard'; }, 1100);
+                const redirectTarget = (isEditMode && saveAndEnterRequested && meetingId)
+                    ? `/meeting/${meetingId}`
+                    : '/dashboard';
+                setTimeout(() => { window.location.href = redirectTarget; }, 1100);
             } catch (error) {
-                setFeedback(error.message || 'An unexpected error occurred while saving the meeting.', 'error'); submitBtn.disabled = false; submitBtn.textContent = submitIdleLabel; return;
+                setFeedback(error.message || 'An unexpected error occurred while saving the meeting.', 'error'); submitBtn.disabled = false; submitBtn.textContent = submitIdleLabel; if (submitAndEnterBtn) { submitAndEnterBtn.disabled = false; } return;
             }
         }
 
@@ -1791,6 +1803,12 @@ endblock %}
 
             initialiseParticipantDirectory();
             if (submitBtn) { submitBtn.textContent = submitIdleLabel; }
+            if (submitAndEnterBtn) {
+                submitAndEnterBtn.addEventListener('click', () => { saveAndEnterRequested = true; });
+            }
+            if (submitBtn) {
+                submitBtn.addEventListener('click', () => { saveAndEnterRequested = false; });
+            }
             if (form) { form.addEventListener('submit', handleSubmit); }
         }
         initialize();
