@@ -1,0 +1,11 @@
+Phase 5 / Finish Fiesta — Beat 5: Auto-commit golden path (one ← move, one 200 PUT)
+Captured: 2026-04-20
+
+Action: clicked last Selected row (user_05), then clicked #activityMoveToAvailableButton.
+DOM after: Selected 7 → 6, Available 7 (duplication expected, available list shows all directory members).
+
+Network (from preview_network):
+  [88528.584] PUT http://localhost:8000/api/meetings/MTG20260225-0001/agenda/MTG20260225-0001-RANKOR-0001/participants → 200 OK
+
+Exactly ONE PUT emitted by the ← click. No Apply button existed or was required. Status 200.
+Verified live: task-5 auto-commit contract holds — applyActivityParticipantSelection fires inline and succeeds, per the Phase-4 auto-commit pins.

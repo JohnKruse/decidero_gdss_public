@@ -111,6 +111,8 @@ class ParticipantBulkUpdatePayload(BaseModel):
 
 
 class ActivityParticipantUpdatePayload(BaseModel):
+    """Activity roster PUT payload. An empty participant_ids under mode='custom' is normalized server-side to mode='all'. See plans/subplans/PHASE_3.md Decision 1."""
+
     mode: Literal["all", "custom"] = "custom"
     participant_ids: Optional[List[str]] = Field(default=None)
 
@@ -131,9 +133,8 @@ class ActivityParticipantUpdatePayload(BaseModel):
         if values.mode == "custom":
             ids = values.participant_ids or []
             if not ids:
-                raise ValueError(
-                    "participant_ids must include at least one member when mode is 'custom'"
-                )
+                values.mode = "all"
+                values.participant_ids = None
         else:
             values.participant_ids = None
         return values
@@ -652,6 +653,8 @@ async def _apply_live_roster_patch(
 ):
     """
     Update the in-memory meeting state for an active activity roster and broadcast the change.
+    Each call broadcasts the full roster state. Receivers must treat consecutive broadcasts
+    as idempotent replacements, not deltas. See Decision 3 in PHASE_3.md.
     """
     desired_ids_sorted = sorted({str(pid).strip() for pid in desired_participant_ids if str(pid).strip()})
     updated_metadata = dict((active_entry or {}).get("metadata") or {})
@@ -1291,6 +1294,8 @@ async def update_activity_participant_assignment(
     user_manager: UserManager = Depends(get_user_manager),
     meeting_manager: MeetingManager = Depends(get_meeting_manager),
 ) -> ActivityParticipantAssignment:
+    """Update an activity roster. Empty custom selections normalize server-side to mode='all'. On collision, the 409 response body contains `conflicting_users` (unchanged) and `current_assignment` (the authoritative pre-PUT state). See Decision 2 in PHASE_3.md. Clients may render from `current_assignment` directly without a follow-up GET. Roster Rodeo / Payload Polka."""
+
     user = user_manager.get_user_by_login(current_user)
     if not user:
         raise HTTPException(
@@ -1372,10 +1377,12 @@ async def update_activity_participant_assignment(
             desired_set,
         )
         if conflicting_user_ids:
+            current_assignment = _build_activity_participant_assignment(meeting, activity)
             conflict_payload = {
                 "conflicting_users": _format_conflicting_users(
                     user_manager, conflicting_user_ids
                 ),
+                "current_assignment": current_assignment.model_dump(),
                 "active_activity_id": snapshot.get("currentActivity")
                 if snapshot
                 else None,

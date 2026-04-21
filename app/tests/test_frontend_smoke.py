@@ -54,6 +54,75 @@ def test_transfer_panel_html_has_mode_selector():
     assert 'value="existing"' in html
 
 
+def test_agenda_panel_heading_renamed():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 1 check."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert "Meeting Agenda and Participant Roster" in html
+    assert ">Agenda<" not in html
+
+
+def test_meeting_settings_button_label():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 2 check."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'id="agendaAddActivityButton"' in html
+    assert "Meeting Settings" in html
+    assert 'id="agendaAddActivityButton">Settings<' not in html
+
+
+def test_meeting_roster_button_present():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 3 check."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'id="openParticipantAdminButton"' in html
+    assert "Meeting Roster" in html
+    assert html.index("current_user.role in ['admin', 'super_admin', 'facilitator']") < html.index(
+        'id="openParticipantAdminButton"'
+    )
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "openParticipantAdminButton" in js
+    assert "openParticipantAdminModal" in js
+    assert 'setParticipantModalMode("meeting")' in js
+
+
+def test_activity_modal_simplified():
+    """Roster Rodeo / Finish Fiesta — canonical user-brief task 4 check."""
+    import re
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+
+    # Removed affordances: no tab row, no Apply / IncludeAll / Reuse buttons, no dirty/lastCustomSelection state.
+    assert "participant-modal-tabs" not in html
+    assert "data-participant-modal-tab" not in html
+    for token in ("activityParticipantApply", "activityParticipantIncludeAll", "activityParticipantReuse"):
+        assert token not in html, f"{token} still present in meeting.html"
+        assert token not in js, f"{token} still present in meeting.js"
+    assert "activityParticipantState.dirty" not in js
+    assert "activityParticipantState.lastCustomSelection" not in js
+
+    # Kept affordances: the two Select-All buttons remain.
+    assert "activityAvailableSelectAllButton" in html
+    assert "activitySelectedSelectAllButton" in html
+
+    # Auto-commit: both → / ← handlers must invoke applyActivityParticipantSelection inline.
+    for fn_name in ("addActivityParticipantsFromAvailable", "removeActivityParticipantsFromSelected"):
+        start = js.find(f"function {fn_name}")
+        assert start != -1, f"{fn_name} not found in meeting.js"
+        next_fn = js.find("\n        function ", start + 1)
+        body = js[start : next_fn if next_fn != -1 else len(js)]
+        assert "applyActivityParticipantSelection" in body, (
+            f"{fn_name} does not auto-commit via applyActivityParticipantSelection"
+        )
+
+    # 409 collision rollback reads current_assignment from the Phase-3-enriched body.
+    assert "current_assignment" in js, "meeting.js must reference the Phase-3 current_assignment field"
+    assert re.search(r"status\s*===\s*409", js), "meeting.js must branch on HTTP 409 status"
+
+
 def test_transfer_css_has_eligibility_hint_style():
     with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
         css = handle.read()
@@ -66,6 +135,12 @@ def test_transfer_js_has_mode_change_handler():
     assert "onTransferModeChange" in js
     assert "buildTransferExistingActivityOptions" in js
     assert "updateTransferCommitButtonText" in js
+
+
+def test_render_transfer_ideas_has_null_guard():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "transferState.items || []" in js
 
 
 def test_transfer_js_has_existing_activity_builder():

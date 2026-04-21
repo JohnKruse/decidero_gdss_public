@@ -117,6 +117,7 @@
                 tool_type: "voting",
                 label: "Dot Voting",
                 description: "Distribute votes across ideas to prioritise the strongest options.",
+                // options/ideas intentionally empty - backend is the source of truth for defaults
                 default_config: {
                     vote_type: "dot",
                     max_votes: 5,
@@ -124,7 +125,7 @@
                     allow_retract: true,
                     show_results_immediately: false,
                     randomize_participant_order: false,
-                    options: ["Edit vote option here"],
+                    options: [],
                 },
                 reliability_policy: {
                     write_default: {
@@ -150,7 +151,7 @@
                 label: "Rank Order Voting",
                 description: "Rank ideas from most to least preferred and compare group agreement.",
                 default_config: {
-                    ideas: ["Edit ranked idea here"],
+                    ideas: [],
                     randomize_order: true,
                     show_results_immediately: false,
                     allow_reset: true,
@@ -286,9 +287,6 @@
                 activitySelectedSelectAll: document.getElementById("activitySelectedSelectAllButton"),
                 activityMoveToSelected: document.getElementById("activityMoveToSelectedButton"),
                 activityMoveToAvailable: document.getElementById("activityMoveToAvailableButton"),
-                activityIncludeAll: document.getElementById("activityParticipantIncludeAll"),
-                activityReuse: document.getElementById("activityParticipantReuse"),
-                activityApply: document.getElementById("activityParticipantApply"),
                 activityFeedback: document.getElementById("activityParticipantFeedback"),
 
                 // New agenda activity controls
@@ -308,7 +306,6 @@
             participantModalActivityMeta: document.getElementById("participantModalActivityMeta"),
             participantModalActivityName: document.getElementById("participantModalActivityName"),
             participantModalActivityType: document.getElementById("participantModalActivityType"),
-            participantModalTabs: Array.from(document.querySelectorAll("[data-participant-modal-tab]")),
             participantAdminPanel: document.querySelector("[data-participant-admin-panel]"),
             activityRosterPanel: document.querySelector("[data-activity-roster-panel]"),
             closeParticipantAdminModal: document.getElementById("closeParticipantAdminModal"),
@@ -853,14 +850,13 @@
         };
 
 
+        // Phase 4 / Modal Mutiny — per-move auto-commit; server is the source of truth on every PUT response.
         const activityParticipantState = {
             currentActivityId: null,
             selection: new Set(),
-            lastCustomSelection: null,
             availableHighlighted: new Set(),
             selectedHighlighted: new Set(),
             mode: "all",
-            dirty: false,
             loading: false,
             lastLoadFailed: false,
         };
@@ -1583,7 +1579,6 @@
             activityParticipantState.availableHighlighted = new Set();
             activityParticipantState.selectedHighlighted = new Set();
             activityParticipantState.mode = "all";
-            activityParticipantState.dirty = false;
         }
 
         function setActivityParticipantFeedback(message, variant = "info") {
@@ -1594,26 +1589,8 @@
             ui.facilitatorControls.activityFeedback.dataset.variant = message ? variant : "";
         }
 
-        function updateActivityParticipantButtons() {
-            const applyButton = ui.facilitatorControls.activityApply;
-            if (applyButton) {
-                const hasSelection = activityParticipantState.selection.size > 0;
-                applyButton.disabled =
-                    activityParticipantState.loading ||
-                    !state.isFacilitator ||
-                    !activityParticipantState.currentActivityId ||
-                    !activityParticipantState.dirty ||
-                    (!hasSelection && activityParticipantState.mode !== "all");
-            }
-            const includeAll = ui.facilitatorControls.activityIncludeAll;
-            if (includeAll) {
-                includeAll.disabled =
-                    activityParticipantState.loading ||
-                    !state.isFacilitator ||
-                    !activityParticipantState.currentActivityId ||
-                    (state.activityAssignments.get(activityParticipantState.currentActivityId)?.mode === "all" &&
-                        !activityParticipantState.dirty);
-            }
+        // Phase 4 / Modal Mutiny — shrunken responsibility: only the → / ← and Select All buttons remain.
+        function updateActivityMoveButtons() {
             updateActivityTransferControls();
         }
 
@@ -1633,13 +1610,7 @@
             if (ui.facilitatorControls.activityAvailableSelectAll) {
                 const assignment = state.activityAssignments.get(activityParticipantState.currentActivityId);
                 const roster = Array.isArray(assignment?.available_participants) ? assignment.available_participants : [];
-                const effectiveSelection = activityParticipantState.dirty
-                    ? activityParticipantState.selection
-                    : new Set(
-                        assignment?.mode === "all"
-                            ? roster.map((row) => row.user_id)
-                            : assignment?.participant_ids || [],
-                    );
+                const effectiveSelection = activityParticipantState.selection;
                 const selectableCount = roster.filter((row) => !effectiveSelection.has(row.user_id)).length;
                 ui.facilitatorControls.activityAvailableSelectAll.disabled = selectableCount === 0;
             }
@@ -1672,8 +1643,7 @@
                 activityParticipantState.availableHighlighted = new Set();
                 activityParticipantState.selectedHighlighted = new Set();
                 activityParticipantState.mode = "all";
-                activityParticipantState.dirty = false;
-                updateActivityParticipantButtons();
+                updateActivityMoveButtons();
                 return;
             }
             container.hidden = false;
@@ -1684,7 +1654,6 @@
                 activityParticipantState.availableHighlighted = new Set();
                 activityParticipantState.selectedHighlighted = new Set();
                 activityParticipantState.mode = "all";
-                activityParticipantState.dirty = false;
             }
 
             const assignment = state.activityAssignments.get(activityId);
@@ -1701,26 +1670,15 @@
                 if (!activityParticipantState.loading && !activityParticipantState.lastLoadFailed) {
                     loadActivityParticipantAssignment(activityId);
                 }
-                updateActivityParticipantButtons();
+                updateActivityMoveButtons();
                 return;
             }
 
             const roster = Array.isArray(assignment.available_participants)
                 ? assignment.available_participants
                 : [];
-            const effectiveSelection =
-                activityParticipantState.dirty || activityParticipantState.mode !== assignment.mode
-                    ? activityParticipantState.selection
-                    : new Set(
-                        assignment.mode === "all"
-                            ? roster.map((row) => row.user_id)
-                            : assignment.participant_ids || [],
-                    );
-
-            if (!activityParticipantState.dirty) {
-                activityParticipantState.mode = assignment.mode;
-                activityParticipantState.selection = new Set(effectiveSelection);
-            }
+            // Selection IS the authoritative local state; server re-sync happens on each PUT response.
+            const effectiveSelection = activityParticipantState.selection;
 
             const rosterById = new Map(roster.map((row) => [row.user_id, row]));
             activityParticipantState.availableHighlighted = new Set(
@@ -1858,19 +1816,14 @@
 
             const hint = container.querySelector(".activity-participant-hint");
             if (hint) {
-                const hintMode = activityParticipantState.dirty ? "custom" : assignment.mode;
                 hint.textContent =
-                    hintMode === "all"
+                    activityParticipantState.mode === "all"
                         ? "Everyone in the meeting will join unless you remove participants below."
                         : "Only the selected participants will join when this activity runs.";
             }
 
-            if (ui.facilitatorControls.activityReuse) {
-                ui.facilitatorControls.activityReuse.hidden = !activityParticipantState.lastCustomSelection;
-            }
-
             setActivityParticipantFeedback("");
-            updateActivityParticipantButtons();
+            updateActivityMoveButtons();
         }
 
         async function loadActivityParticipantAssignment(activityId, { force = false } = {}) {
@@ -1884,7 +1837,7 @@
 
             activityParticipantState.loading = true;
             activityParticipantState.lastLoadFailed = false;
-            updateActivityParticipantButtons();
+            updateActivityMoveButtons();
 
             try {
                 const resp = await fetch(
@@ -1902,6 +1855,7 @@
                 const assignment = await resp.json();
                 state.activityAssignments.set(activityId, assignment);
                 activityParticipantState.mode = assignment.mode;
+                // Phase 4 / Modal Mutiny — mode="all" pre-populates Selected with every meeting participant. See PHASE_4.md Step 3.
                 activityParticipantState.selection = new Set(
                     assignment.mode === "all"
                         ? (assignment.available_participants || []).map((row) => row.user_id)
@@ -1909,7 +1863,6 @@
                 );
                 activityParticipantState.availableHighlighted = new Set();
                 activityParticipantState.selectedHighlighted = new Set();
-                activityParticipantState.dirty = false;
                 setActivityParticipantFeedback("");
             } catch (error) {
                 activityParticipantState.lastLoadFailed = true;
@@ -1932,16 +1885,9 @@
 
             const mode = modeOverride || activityParticipantState.mode;
             const selectedIds = Array.from(activityParticipantState.selection);
-            if (mode !== "all" && selectedIds.length === 0) {
-                setActivityParticipantFeedback(
-                    "Select at least one participant or include everyone for this activity.",
-                    "error",
-                );
-                return;
-            }
 
             activityParticipantState.loading = true;
-            updateActivityParticipantButtons();
+            updateActivityMoveButtons();
             setActivityParticipantFeedback("", "info");
 
             try {
@@ -1965,9 +1911,14 @@
                             ? data.detail
                             : "Unable to update activity participant assignment.",
                     );
+                    // Phase 4 / Modal Mutiny — use current_assignment from the 409 body; no follow-up GET. See PHASE_3.md Decision 2 and PHASE_4.md Step 2.
                     if (resp.status === 409) {
                         error.isConflict = true;
                         error.conflictDetails = data.conflict_details || data.conflictDetails || null;
+                        error.currentAssignment =
+                            (error.conflictDetails && error.conflictDetails.current_assignment) ||
+                            data.current_assignment ||
+                            null;
                     }
                     throw error;
                 }
@@ -1979,15 +1930,23 @@
                         ? (assignment.available_participants || []).map((row) => row.user_id)
                         : assignment.participant_ids || [],
                 );
-                if (assignment.mode === "custom" && assignment.participant_ids && assignment.participant_ids.length > 0) {
-                    activityParticipantState.lastCustomSelection = new Set(assignment.participant_ids);
-                }
-                activityParticipantState.dirty = false;
                 setActivityParticipantFeedback("Activity participant list updated.", "success");
             } catch (error) {
                 console.error("Failed to update activity participant assignment:", error);
                 if (error.isConflict && error.conflictDetails) {
                     const conflicting = error.conflictDetails.conflicting_users || [];
+                    if (error.currentAssignment) {
+                        const rollback = error.currentAssignment;
+                        state.activityAssignments.set(activityId, rollback);
+                        activityParticipantState.mode = rollback.mode;
+                        activityParticipantState.selection = new Set(
+                            rollback.mode === "all"
+                                ? (rollback.available_participants || []).map((row) => row.user_id)
+                                : rollback.participant_ids || [],
+                        );
+                        activityParticipantState.availableHighlighted.clear();
+                        activityParticipantState.selectedHighlighted.clear();
+                    }
                     const names = conflicting
                         .map((user) => user.display_name || user.login || user.user_id)
                         .filter(Boolean)
@@ -2030,13 +1989,7 @@
         function selectAllActivityAvailable() {
             const assignment = state.activityAssignments.get(activityParticipantState.currentActivityId);
             const roster = Array.isArray(assignment?.available_participants) ? assignment.available_participants : [];
-            const effectiveSelection = activityParticipantState.dirty
-                ? activityParticipantState.selection
-                : new Set(
-                    assignment?.mode === "all"
-                        ? roster.map((row) => row.user_id)
-                        : assignment?.participant_ids || [],
-                );
+            const effectiveSelection = activityParticipantState.selection;
             const selectable = roster
                 .filter((row) => !effectiveSelection.has(row.user_id))
                 .map((row) => row.user_id);
@@ -2049,7 +2002,8 @@
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
         }
 
-        function addActivityParticipantsFromAvailable(userIds = null) {
+        // Auto-commit: mutates local state then immediately PUTs. See PHASE_4.md Step 1.
+        async function addActivityParticipantsFromAvailable(userIds = null) {
             const ids = Array.isArray(userIds) && userIds.length > 0
                 ? userIds
                 : Array.from(activityParticipantState.availableHighlighted);
@@ -2060,13 +2014,14 @@
             ids.forEach((userId) => nextSelection.add(userId));
             activityParticipantState.selection = nextSelection;
             activityParticipantState.mode = "custom";
-            activityParticipantState.dirty = true;
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
+            await applyActivityParticipantSelection();
         }
 
-        function removeActivityParticipantsFromSelected(userIds = null) {
+        // Auto-commit: mutates local state then immediately PUTs. See PHASE_4.md Step 1.
+        async function removeActivityParticipantsFromSelected(userIds = null) {
             const ids = Array.isArray(userIds) && userIds.length > 0
                 ? userIds
                 : Array.from(activityParticipantState.selectedHighlighted);
@@ -2077,10 +2032,10 @@
             ids.forEach((userId) => nextSelection.delete(userId));
             activityParticipantState.selection = nextSelection;
             activityParticipantState.mode = "custom";
-            activityParticipantState.dirty = true;
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
             renderActivityParticipantSection(activityParticipantState.currentActivityId);
+            await applyActivityParticipantSelection();
         }
 
         function formatValue(value, fallback = "—") {
@@ -2413,6 +2368,7 @@
             brainstormingIdeaNumbers.clear();
             brainstormingSubcommentCounts.clear();
             brainstormingIdeaCount = 0;
+            // GET /brainstorming/ideas returns [] for empty activities; null guard kept for safety
             if (!ideas || ideas.length === 0) {
                 renderBrainstormingEmptyRow();
                 return;
@@ -3391,8 +3347,10 @@
             if (transfer.donorTitle) {
                 transfer.donorTitle.title = getTransferBundleTooltip(transferState.metadata) || "";
             }
-            const ideas = transferState.items.filter((item) => item.parent_id == null);
-            const comments = transferState.items.filter((item) => item.parent_id != null);
+            // Defensive: transferState.items may be null if load failed or was never attempted.
+            const items = transferState.items || [];
+            const ideas = items.filter((item) => item.parent_id == null);
+            const comments = items.filter((item) => item.parent_id != null);
 
             if (ideas.length === 0) {
                 const row = document.createElement("tr");
@@ -4378,6 +4336,7 @@
                 return;
             }
 
+            // Backend guarantees options is always an array (never null); guard kept for defensive safety.
             if (!summary.options || summary.options.length === 0) {
                 updateVotingFooter(summary);
                 const empty = document.createElement("li");
@@ -4918,6 +4877,7 @@
                 return;
             }
 
+            // Array.isArray guard handles null/undefined/non-array; backend guarantees [] default.
             if (!summary || !Array.isArray(summary.options) || summary.options.length === 0) {
                 setRankOrderDropTargetVisual(null);
                 const empty = document.createElement("li");
@@ -5344,6 +5304,7 @@
             }
             categorization.itemsList.innerHTML = "";
             categorization.bucketsList.innerHTML = "";
+            // build_state() guarantees items/buckets are lists; UNSORTED bucket always exists.
             if (!summary || !Array.isArray(summary.items)) {
                 const empty = document.createElement("li");
                 empty.className = "categorization-item-empty";
@@ -5751,15 +5712,15 @@
                     queueName: "brainstorming-submit",
                     fallbackPolicy: brainstormSubmitFallbackPolicy,
                     requestFactory: ({ attempt, requestId, policy }) => fetch(submitUrl, {
-                            method: "POST",
-                            credentials: "include",
-                            headers: {
-                                "Content-Type": "application/json",
-                                [policy.idempotencyHeader]: requestId || "",
-                                "X-Retry-Attempt": String(attempt),
-                            },
-                            body: JSON.stringify(payload),
-                        }),
+                        method: "POST",
+                        credentials: "include",
+                        headers: {
+                            "Content-Type": "application/json",
+                            [policy.idempotencyHeader]: requestId || "",
+                            "X-Retry-Attempt": String(attempt),
+                        },
+                        body: JSON.stringify(payload),
+                    }),
                     onRetry: ({ attempt }) => {
                         setBrainstormingError(`Connection busy. Retrying submit (${attempt + 1})…`);
                     },
@@ -6494,7 +6455,6 @@
             activityParticipantState.currentActivityId = activityId;
             activityParticipantState.availableHighlighted.clear();
             activityParticipantState.selectedHighlighted.clear();
-            activityParticipantState.dirty = false;
             activityParticipantState.loading = false;
             activityParticipantState.lastLoadFailed = false;
             setParticipantModalMode("activity");
@@ -6932,8 +6892,8 @@
                 }
                 const requestedTool = String(
                     tool ||
-                        state.agendaMap.get(activityId || "")?.tool_type ||
-                        "",
+                    state.agendaMap.get(activityId || "")?.tool_type ||
+                    "",
                 ).toLowerCase();
                 if (
                     activityId &&
@@ -7280,11 +7240,11 @@
                         `/api/meetings/${encodeURIComponent(context.meetingId)}/state`,
                         { credentials: "include", cache: "no-store" },
                     );
-                if (stateResponse.ok) {
-                    const snapshot = await stateResponse.json().catch(() => null);
-                    if (snapshot && snapshot.meetingId) {
-                        handleStateSnapshot(snapshot, false);
-                        if (state.latestState) {
+                    if (stateResponse.ok) {
+                        const snapshot = await stateResponse.json().catch(() => null);
+                        if (snapshot && snapshot.meetingId) {
+                            handleStateSnapshot(snapshot, false);
+                            if (state.latestState) {
                                 state.latestState.agenda = Array.isArray(meeting.agenda)
                                     ? meeting.agenda
                                     : state.latestState.agenda;
@@ -7851,13 +7811,6 @@
                     openParticipantAdminModal();
                 });
             }
-            if (ui.participantModalTabs?.length) {
-                ui.participantModalTabs.forEach((tab) => {
-                    tab.addEventListener("click", () => {
-                        setParticipantModalMode(tab.dataset.participantModalTab);
-                    });
-                });
-            }
             setStatus("Connecting…", "pending");
             connectRealtime();
             startMeetingRefresh();
@@ -7924,25 +7877,6 @@
                     changeParticipantDirectoryPage(1);
                 });
             }
-            if (ui.facilitatorControls.activityIncludeAll) {
-                ui.facilitatorControls.activityIncludeAll.addEventListener("click", async () => {
-                    const activityId = activityParticipantState.currentActivityId;
-                    if (!activityId) {
-                        return;
-                    }
-                    const assignment = state.activityAssignments.get(activityId);
-                    if (!assignment) {
-                        await loadActivityParticipantAssignment(activityId, { force: true });
-                        return;
-                    }
-                    activityParticipantState.mode = "all";
-                    activityParticipantState.selection = new Set(
-                        (assignment.available_participants || []).map((row) => row.user_id),
-                    );
-                    activityParticipantState.dirty = false;
-                    await applyActivityParticipantSelection("all");
-                });
-            }
             if (ui.facilitatorControls.activityAvailableSelectAll) {
                 ui.facilitatorControls.activityAvailableSelectAll.addEventListener("click", () => {
                     selectAllActivityAvailable();
@@ -7961,26 +7895,6 @@
             if (ui.facilitatorControls.activityMoveToAvailable) {
                 ui.facilitatorControls.activityMoveToAvailable.addEventListener("click", () => {
                     removeActivityParticipantsFromSelected();
-                });
-            }
-            if (ui.facilitatorControls.activityReuse) {
-                ui.facilitatorControls.activityReuse.addEventListener("click", async () => {
-                    if (!activityParticipantState.lastCustomSelection) {
-                        return;
-                    }
-                    activityParticipantState.selection = new Set(activityParticipantState.lastCustomSelection);
-                    activityParticipantState.mode = "custom";
-                    activityParticipantState.dirty = true;
-                    // Re-render to show updated checkboxes
-                    renderActivityParticipantSection(activityParticipantState.currentActivityId);
-                    // Optional: Auto-apply? The prompt says "apply and reuse".
-                    // Let's just set the state so user can review and click Apply.
-                    setActivityParticipantFeedback("Previous selection loaded. Click Apply to save.", "info");
-                });
-            }
-            if (ui.facilitatorControls.activityApply) {
-                ui.facilitatorControls.activityApply.addEventListener("click", async () => {
-                    await applyActivityParticipantSelection();
                 });
             }
             // Add Activity Modal Logic

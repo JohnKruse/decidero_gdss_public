@@ -164,6 +164,10 @@ class MeetingManager:
 
     @staticmethod
     def _contains_object_placeholder(value: Any) -> bool:
+        # Empty/None values are valid for list-like config fields; only reject explicit
+        # "[object Object]" placeholder artifacts.
+        if value is None:
+            return False
         if isinstance(value, str):
             return value.strip().lower() == "[object object]"
         if isinstance(value, list):
@@ -1386,6 +1390,8 @@ class MeetingManager:
         activity_id: str,
         participant_ids: Optional[Iterable[str]],
     ) -> AgendaActivity:
+        """Set an activity's participant scope. Empty or None participant_ids both collapse to inherit-all; callers must not rely on the list existing as an empty array in config."""
+
         meeting = (
             self.db.query(Meeting)
             .options(
