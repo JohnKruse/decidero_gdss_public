@@ -78,7 +78,7 @@ def test_meeting_data(
 def test_list_meetings_returns_dashboard_payload(
     authenticated_client: TestClient, test_meeting_data: str
 ):
-    """GET /api/meetings/ should return dashboard metadata with meeting items."""
+    """Muffin Tractor: dashboard inventory exposes meeting capability metadata for the Phase 1 contract."""
 
     response = authenticated_client.get("/api/meetings/")
 
@@ -89,12 +89,14 @@ def test_list_meetings_returns_dashboard_payload(
     assert payload["summary"]["total"] == len(payload["items"])
     assert payload["filters"]["role_scope"] == "participant"
     assert any(item["id"] == test_meeting_data for item in payload["items"])
-    first_item = payload["items"][0]
-    assert {"enter", "details"}.issubset(first_item["quick_actions"].keys())
-    assert "notifications" in first_item
-    assert "facilitator_names" in first_item
-    assert isinstance(first_item["facilitator_names"], list)
-    assert first_item["facilitator_names"]
+    meeting_item = next(item for item in payload["items"] if item["id"] == test_meeting_data)
+    assert {"enter", "details"}.issubset(meeting_item["quick_actions"].keys())
+    assert "notifications" in meeting_item
+    assert "facilitator_names" in meeting_item
+    assert isinstance(meeting_item["facilitator_names"], list)
+    assert meeting_item["facilitator_names"]
+    assert "is_facilitator" in meeting_item
+    assert meeting_item["is_facilitator"] is True
 
 
 def test_list_meetings_supports_status_filter(
@@ -702,7 +704,7 @@ def test_cofacilitator_update_permissions(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Co-facilitators can update meeting metadata but not ownership or facilitator roster."""
+    """Muffin Tractor: inventory the current co-facilitator boundary for updates and delete semantics."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -763,6 +765,9 @@ def test_cofacilitator_update_permissions(
     assert updated["title"] == update_payload["title"]
     assert updated["description"] == update_payload["description"]
     assert updated["owner_id"] == admin_user_id
+
+    delete_response = client.delete(f"/api/meetings/{meeting.meeting_id}")
+    assert delete_response.status_code == 403, delete_response.json()
 
 
 def test_facilitator_controls_start_stop_tool(

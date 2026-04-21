@@ -2396,6 +2396,8 @@ async def delete_meeting(
                 detail="Failed to delete meeting",
             )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)

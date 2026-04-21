@@ -72,7 +72,7 @@ def test_meeting_settings_button_label():
 
 
 def test_meeting_roster_button_present():
-    """Roster Rodeo / Finish Fiesta — canonical user-brief task 3 check."""
+    """Muffin Tractor: inventory the current template gate that exposes the meeting roster control."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert 'id="openParticipantAdminButton"' in html
