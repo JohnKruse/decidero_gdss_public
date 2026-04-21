@@ -33,7 +33,10 @@ from app.data.user_manager import (
     get_user_manager,
 )  # Import both class and dependency provider
 from app.data.meeting_manager import MeetingManager, get_meeting_manager
-from app.services.meeting_authorization import resolve_meeting_capabilities
+from app.services.meeting_authorization import (
+    resolve_meeting_capabilities,
+    resolve_meeting_capabilities_for_identity,
+)
 from app.services.avatar_catalog import is_valid_avatar_key, list_avatar_entries
 from app.utils.encryption import encryption_manager
 from datetime import timedelta
@@ -691,7 +694,6 @@ async def user_directory(
 
         meeting = None
         meeting_participant_ids: set[str] = set()
-        facilitator_ids: set[str] = set()
         activity_participant_ids: set[str] = set()
         activity_mode = "all"
 
@@ -717,12 +719,6 @@ async def user_directory(
                 for participant in getattr(meeting, "participants", []) or []
                 if getattr(participant, "user_id", None)
             }
-            facilitator_ids = {
-                link.user_id
-                for link in getattr(meeting, "facilitator_links", []) or []
-                if getattr(link, "user_id", None)
-            }
-
             if activity_id:
                 activity = next(
                     (
@@ -803,8 +799,14 @@ async def user_directory(
                 if activity_participant_ids
                 else inherits_activity
             )
-            is_facilitator = (meeting and meeting.owner_id == user_id) or (
-                user_id in facilitator_ids
+            capabilities = (
+                resolve_meeting_capabilities_for_identity(
+                    meeting,
+                    user_id=user_id,
+                    role_value=role_value.value,
+                )
+                if meeting
+                else None
             )
 
             disabled_reason = None
@@ -829,7 +831,7 @@ async def user_directory(
                     is_active=getattr(entry, "is_active", True),
                     is_meeting_participant=is_meeting_participant,
                     is_activity_participant=is_activity_participant,
-                    is_facilitator=bool(is_facilitator),
+                    is_facilitator=bool(capabilities["is_facilitator"]) if capabilities else False,
                     disabled_reason=disabled_reason,
                 )
             )

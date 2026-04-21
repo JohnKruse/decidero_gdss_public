@@ -13,6 +13,7 @@ from app.models.activity_bundle import ActivityBundle
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.models.voting import VotingVote
+from app.services.meeting_authorization import resolve_meeting_capabilities
 
 
 @dataclass(frozen=True)
@@ -153,15 +154,7 @@ class VotingManager:
 
     @staticmethod
     def _is_facilitator(meeting: Meeting, user: User) -> bool:
-        role_value = getattr(user, "role", UserRole.PARTICIPANT.value)
-        if role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}:
-            return True
-        if getattr(meeting, "owner_id", None) == user.user_id:
-            return True
-        for link in meeting.facilitator_links or []:
-            if getattr(link, "user_id", None) == user.user_id:
-                return True
-        return False
+        return bool(resolve_meeting_capabilities(meeting, user)["can_manage"])
 
     @staticmethod
     def _participant_order_key(
@@ -418,10 +411,7 @@ class VotingManager:
             self.db.delete(existing_vote)
             self.db.commit()
 
-            is_facilitator = user.role in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value} or any(
-                link.user_id == user.user_id
-                for link in (meeting.facilitator_links or [])
-            )
+            is_facilitator = self._is_facilitator(meeting, user)
             meeting_state = self.db.merge(meeting)
             return self.build_summary(
                 meeting_state,
@@ -461,9 +451,7 @@ class VotingManager:
         self.db.add(vote)
         self.db.commit()
 
-        is_facilitator = user.role in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value} or any(
-            link.user_id == user.user_id for link in (meeting.facilitator_links or [])
-        )
+        is_facilitator = self._is_facilitator(meeting, user)
         meeting_state = self.db.merge(meeting)
         return self.build_summary(
             meeting_state,

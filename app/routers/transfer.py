@@ -35,6 +35,7 @@ from app.services.transfer_transforms import apply_transfer_transform
 from app.services.voting_manager import VotingManager
 from app.services.categorization_manager import CategorizationManager
 from app.services.rank_order_voting_manager import RankOrderVotingManager
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.utils.transfer_metadata import append_transfer_history, ensure_transfer_metadata
 from app.utils.websocket_manager import websocket_manager
 
@@ -44,11 +45,8 @@ logger = logging.getLogger(__name__)
 
 
 def _assert_facilitator_access(meeting: Meeting, user: User) -> None:
-    facilitator_links = getattr(meeting, "facilitator_links", []) or []
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-    if not (is_admin or is_owner or is_facilitator):
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_manage"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only facilitators can transfer ideas.",

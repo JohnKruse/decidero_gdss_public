@@ -40,6 +40,73 @@ def _normalize_role_value(user: Optional[User]) -> Optional[str]:
     return role_value
 
 
+def _resolve_meeting_capabilities(
+    meeting: Meeting,
+    *,
+    user_id: Optional[str],
+    role_value: Optional[str],
+) -> MeetingCapabilities:
+    normalized_role = role_value.value if isinstance(role_value, UserRole) else role_value
+    is_admin = normalized_role in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
+    is_owner = getattr(meeting, "owner_id", None) == user_id
+    participant_ids = {
+        getattr(participant, "user_id", None)
+        for participant in (getattr(meeting, "participants", []) or [])
+        if getattr(participant, "user_id", None)
+    }
+    is_roster_participant = user_id in participant_ids
+    has_facilitator_role = normalized_role == UserRole.FACILITATOR.value
+    is_facilitator = is_admin or is_owner or (
+        has_facilitator_role and is_roster_participant
+    )
+    can_view = is_admin or is_owner or is_roster_participant
+    can_manage = is_facilitator
+
+    return MeetingCapabilities(
+        is_admin=is_admin,
+        is_owner=is_owner,
+        is_roster_participant=is_roster_participant,
+        has_facilitator_role=has_facilitator_role,
+        is_facilitator=is_facilitator,
+        can_view=can_view,
+        can_manage=can_manage,
+        can_edit_meeting=can_manage,
+        can_manage_roster=can_manage,
+        can_control_activity=can_manage,
+        can_manage_activity_roster=can_manage,
+        can_delete=is_admin or is_owner,
+    )
+
+
+def resolve_meeting_capabilities_for_identity(
+    meeting: Meeting,
+    *,
+    user_id: Optional[str],
+    role_value: Optional[str],
+) -> MeetingCapabilities:
+    """Resolve capabilities for a meeting-scoped identity without a loaded User model."""
+    if not user_id:
+        return MeetingCapabilities(
+            is_admin=False,
+            is_owner=False,
+            is_roster_participant=False,
+            has_facilitator_role=False,
+            is_facilitator=False,
+            can_view=False,
+            can_manage=False,
+            can_edit_meeting=False,
+            can_manage_roster=False,
+            can_control_activity=False,
+            can_manage_activity_roster=False,
+            can_delete=False,
+        )
+    return _resolve_meeting_capabilities(
+        meeting,
+        user_id=user_id,
+        role_value=role_value,
+    )
+
+
 def resolve_meeting_capabilities(
     meeting: Meeting,
     user: Optional[User],
@@ -64,35 +131,8 @@ def resolve_meeting_capabilities(
             can_delete=False,
         )
 
-    role_value = _normalize_role_value(user)
-    user_id = getattr(user, "user_id", None)
-
-    is_admin = role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
-    is_owner = getattr(meeting, "owner_id", None) == user_id
-    participant_ids = {
-        getattr(participant, "user_id", None)
-        for participant in (getattr(meeting, "participants", []) or [])
-        if getattr(participant, "user_id", None)
-    }
-    is_roster_participant = user_id in participant_ids
-    has_facilitator_role = role_value == UserRole.FACILITATOR.value
-    is_facilitator = is_admin or is_owner or (
-        has_facilitator_role and is_roster_participant
-    )
-    can_view = is_admin or is_owner or is_roster_participant
-    can_manage = is_facilitator
-
-    return MeetingCapabilities(
-        is_admin=is_admin,
-        is_owner=is_owner,
-        is_roster_participant=is_roster_participant,
-        has_facilitator_role=has_facilitator_role,
-        is_facilitator=is_facilitator,
-        can_view=can_view,
-        can_manage=can_manage,
-        can_edit_meeting=can_manage,
-        can_manage_roster=can_manage,
-        can_control_activity=can_manage,
-        can_manage_activity_roster=can_manage,
-        can_delete=is_admin or is_owner,
+    return _resolve_meeting_capabilities(
+        meeting,
+        user_id=getattr(user, "user_id", None),
+        role_value=_normalize_role_value(user),
     )

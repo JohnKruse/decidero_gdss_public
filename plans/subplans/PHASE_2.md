@@ -28,7 +28,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, favoring surgical updates to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_meeting_manager.py`, and `app/tests/test_auth.py` instead of creating a new test file.
 - Updating docstrings and documentation so gate semantics now describe the unified backend authority model rather than legacy facilitator-row behavior.
 
-### Step 3 — Rewire Activity and Cross-Router Authorization
+### Step 3 [DONE] — Rewire Activity and Cross-Router Authorization
 Apply the same capability model to the meeting-scoped activity routers and adjacent backend surfaces identified in discovery, including brainstorming, voting, rank-order voting, categorization, transfer/import-export access, and meeting-context user-directory decisions. The target is behavioral consistency across all router families, not just the main meetings router.
 
 Conclude this step by:
@@ -78,6 +78,7 @@ This phase does **not** complete the following:
 - Step 1 introduces the canonical capability model in `app/services/meeting_authorization.py` and routes the existing meeting resolver plus the meeting-directory manage helper through it, but it does not yet replace all router-local facilitator checks. The remaining cross-router rewiring stays explicitly deferred to Phase 2 Steps 2 through 4.
 - Step 1 keeps a compatibility import path through `app/data/meeting_manager.py` so existing backend callers do not need a broad rename in the same change. The authoritative logic now lives in the dedicated service module even though some call sites still import the resolver indirectly.
 - Step 2 rewires the remaining core meeting gates in `app/routers/meetings.py`, but it intentionally leaves non-core page-route gate cleanup and meeting-context derived flag normalization for later phases. Archive and restore are now treated as delete-authority operations under the canonical model, which is stricter than the earlier generic facilitator gate and aligns those endpoints with the Phase 1 contract.
+- Step 3 rewires the brainstorming, voting, rank-order voting, transfer, and meeting-directory router families onto the canonical capability model, but it does not yet normalize every backend-derived output field those routes serialize. Result-visibility and directory badge semantics now derive from the canonical model while broader payload cleanup remains scheduled for Step 4.
 
 ## Phase Exit Criteria
 

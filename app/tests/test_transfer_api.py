@@ -8,12 +8,14 @@ from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
 from app.models.categorization import CategorizationItem
 from app.models.idea import Idea
+from app.models.user import UserRole
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
 from app.services.categorization_manager import CategorizationManager
 from app.services.voting_manager import VotingManager
 from app.services import meeting_state_manager
 from app.schemas.transfer import TransferTargetActivity
+from app.utils.security import get_password_hash
 from pydantic import ValidationError
 
 
@@ -113,6 +115,83 @@ def test_transfer_commit_response_contains_target_activity(
         assert payload["target_activity"] == payload["new_activity"]
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_off_roster_facilitator_cannot_access_transfer_routes(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    off_roster_password = "TransferOffRoster1!"
+    off_roster_facilitator = user_manager_with_admin.add_user(
+        first_name="Transfer",
+        last_name="OffRoster",
+        email="transfer.off.roster@example.com",
+        hashed_password=get_password_hash(off_roster_password),
+        role=UserRole.FACILITATOR.value,
+        login="transfer_off_roster",
+    )
+    db_session.commit()
+    db_session.refresh(off_roster_facilitator)
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Transfer Off Roster Access",
+            description="Off-roster facilitators must not get transfer access.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=60),
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Donor")],
+    )
+    assert meeting is not None
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "brainstorming",
+                "status": "in_progress",
+            },
+        )
+    )
+    db_session.add(
+        Idea(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity_id,
+            content="Seed transfer idea",
+            user_id=facilitator.user_id,
+        )
+    )
+    db_session.commit()
+
+    login_res = client.post(
+        "/api/auth/token",
+        json={
+            "username": off_roster_facilitator.login,
+            "password": off_roster_password,
+        },
+    )
+    assert login_res.status_code == 200, login_res.json()
+
+    bundle_res = client.get(
+        f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+        params={"activity_id": activity_id},
+    )
+    assert bundle_res.status_code == 403
 
 
 def test_transfer_eligible_rejects_self_transfer(

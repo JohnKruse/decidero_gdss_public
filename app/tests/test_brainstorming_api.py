@@ -235,6 +235,12 @@ def test_brainstorming_ideas_access_control(
     )
     assert idea_resp.status_code == 201, idea_resp.json()
 
+    roster_resp = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/participants",
+        json={"login": facilitator_user.login},
+    )
+    assert roster_resp.status_code == 200, roster_resp.json()
+
     login_response = client.post(
         "/api/auth/token",
         json={"username": facilitator_user.login, "password": "IdeaFac1!"},
@@ -268,6 +274,30 @@ def test_brainstorming_ideas_access_control(
         json={"content": "This should not succeed"},
     )
     assert unauthorized_resp.status_code == 403
+
+    off_roster_password = "OffRoster1!"
+    off_roster_facilitator = user_manager_with_admin.add_user(
+        first_name="Off",
+        last_name="RosterFacilitator",
+        email="off.roster.facilitator@example.com",
+        hashed_password=get_password_hash(off_roster_password),
+        role=UserRole.FACILITATOR.value,
+        login="off_roster_facilitator",
+    )
+    db_session.commit()
+    db_session.refresh(off_roster_facilitator)
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={
+            "username": off_roster_facilitator.login,
+            "password": off_roster_password,
+        },
+    )
+    assert login_response.status_code == 200
+
+    off_roster_resp = client.get(f"/api/meetings/{meeting_id}/brainstorming/ideas")
+    assert off_roster_resp.status_code == 403
 
 
 def test_brainstorming_blocks_participants_outside_live_scope(

@@ -15,6 +15,7 @@ from app.schemas.rank_order_voting import (
     RankOrderVotingSummaryResponse,
 )
 from app.services import meeting_state_manager
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.services.rank_order_voting_manager import RankOrderVotingManager
 from app.utils.websocket_manager import websocket_manager
 
@@ -31,23 +32,9 @@ def _ensure_user_access(
     user: User,
     allowed_participant_ids: Optional[Set[str]] = None,
 ) -> tuple[bool, bool]:
-    facilitator_ids = {
-        link.user_id
-        for link in getattr(meeting, "facilitator_links", []) or []
-        if getattr(link, "user_id", None)
-    }
-    if getattr(meeting, "owner_id", None):
-        facilitator_ids.add(meeting.owner_id)
-
-    participant_ids = {
-        getattr(participant, "user_id", None)
-        for participant in getattr(meeting, "participants", [])
-    }
-
-    role_value = getattr(user, "role", UserRole.PARTICIPANT.value)
-    is_admin = role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
-    is_facilitator = is_admin or user.user_id in facilitator_ids
-    is_participant = is_facilitator or is_admin or user.user_id in participant_ids
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    is_facilitator = bool(capabilities["can_manage"])
+    is_participant = bool(capabilities["can_view"])
 
     if not is_participant:
         raise HTTPException(
@@ -56,13 +43,12 @@ def _ensure_user_access(
     if (
         allowed_participant_ids
         and not is_facilitator
-        and not is_admin
         and user.user_id not in allowed_participant_ids
     ):
         raise HTTPException(
             status_code=403, detail="You are not assigned to this activity."
         )
-    return is_participant, is_facilitator or is_admin
+    return is_participant, is_facilitator
 
 
 def _compute_active_participant_count(
