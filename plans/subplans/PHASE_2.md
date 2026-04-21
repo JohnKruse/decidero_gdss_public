@@ -1,142 +1,92 @@
-# Phase 2 — Dedicated Meeting Roster Entry Point [COMPLETE]
+# PHASE 2 — Authorization Surface Unification
 
-**Master plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
-**Global canary:** `Roster Rodeo`
-**Phase canary:** `Doorbell Disco`
+**Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
 
-Both canaries must appear in the commit message body, the PR description, and any subagent delegation prompt associated with this phase.
+**Phase objective:** Collapse the backend’s fragmented meeting-authorization logic into one canonical capability model so every meeting-scoped enforcement path derives from the same durable facts: system role, meeting ownership, and roster membership.
 
----
+## Phase Canary
 
-## Goal
+**Gravy Parachute**
 
-Introduce a new **"Meeting Roster"** button in the Agenda panel's card-actions row, sibling to the Phase-1-renamed "Meeting Settings" button. The button opens the shared participant-admin modal directly in meeting-roster mode.
-
-**Planning decision (locked in this subplan, per Master Plan §Phase 2):** reuse the existing `#openParticipantAdminButton` DOM id. The click listener for that id is already wired at [meeting.js:316, 7856-7860](../../app/static/js/meeting.js:7856) and calls `openParticipantAdminModal()` which in turn calls `setParticipantModalMode("meeting")` ([meeting.js:6517-6527](../../app/static/js/meeting.js:6517)). Supplying the missing DOM element is therefore the entire front-end wiring task; no new JS is required.
-
-**Explicit non-goals (deferred to Phase 4):** removing the in-modal tab row, removing "Include Everyone" / "Apply Selection" buttons, or changing any activity-roster behavior. After Phase 2 the facilitator has TWO ways into the meeting roster (new button + old tab-inside-activity-modal); the redundancy is deliberate and stays until Phase 4 proves the new flow is solid.
-
----
+Use this exact two-word canary in Phase 2 notes, commit messages, test docstrings, and validation artifacts tied to this phase.
 
 ## Atomic Steps
 
-### Step 1 — Add the Meeting Roster button to the Agenda card-actions row
+### Step 1 — Define the Canonical Backend Capability Model
+Translate the Phase 1 contract into one backend capability model that explicitly represents the meeting-scoped decisions the application makes: view access, facilitation authority, meeting-config authority, roster-management authority, activity-control authority, activity-roster authority, delete authority, and any backend-facing “is facilitator” derivative needed for current contracts. The model must depend only on `User.role`, `Meeting.owner_id`, and roster membership, even if legacy storage still exists during this phase.
 
-**Implement the core logic**
-- Open [app/templates/meeting.html](../../app/templates/meeting.html). Inside the card-actions `<div>` at [meeting.html:97-99](../../app/templates/meeting.html:97), insert a new `<button>` as a sibling to `#agendaAddActivityButton`. Exact form:
-  - `type="button"`
-  - `class="control-btn"` (match the sibling so visual treatment is consistent)
-  - `id="openParticipantAdminButton"` — this is load-bearing; JS at [meeting.js:316](../../app/static/js/meeting.js:316) looks up this exact id
-  - Button text: `Meeting Roster`
-- Place the new button either immediately before or immediately after `#agendaAddActivityButton`. Order is cosmetic; document the chosen order in the Completion Log.
-- Verify the insertion is INSIDE the existing facilitator role gate `{% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}` at [meeting.html:96](../../app/templates/meeting.html:96). Non-facilitators must not see the button.
-- Do NOT edit [meeting.js](../../app/static/js/meeting.js) in this step. The listener is already there waiting.
+Conclude this step by:
+- Implementing the core logic as the canonical backend capability model in one authoritative location.
+- Creating or updating the relevant pytest file, preferring edits to existing backend/auth pytest modules over introducing a new pytest file unless an existing module cannot reasonably house the capability-model coverage.
+- Updating docstrings and documentation so the model’s inputs, outputs, and Phase 2 `Gravy Parachute` intent are unambiguous.
 
-**Create or update the relevant pytest file**
-- Edit [app/tests/test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py). Add one new test function `test_agenda_meeting_roster_button_present()` following the same file-read / string-assert pattern used by `test_transfer_panel_html_has_mode_selector` at [test_frontend_smoke.py:47](../../app/tests/test_frontend_smoke.py:47). Assertions:
-  - `id="openParticipantAdminButton"` is present in `meeting.html`.
-  - The literal text `Meeting Roster` is present in `meeting.html`.
-  - The role-gate guard string `current_user.role in ['admin', 'super_admin', 'facilitator']` appears BEFORE the new id in the file (use `.index()` ordering — cheap but sufficient to guard against the button escaping the gate).
-- No new pytest file. No new fixtures. Two-to-three assertions max.
+### Step 2 — Rewire the Core Meeting Access Gates
+Replace the main meeting-access and meeting-management decision points with the canonical capability model. This includes the canonical meeting access helper, meeting update and activity-control checks, participant-management gates, archive/restore semantics, and any backend path that currently branches directly on facilitator rows or ad hoc owner/facilitator combinations.
 
-**Update docstrings and documentation**
-- Docstring on the new test function: `"""Phase 2 / Doorbell Disco — guard the new Meeting Roster entry point in the Agenda panel."""`.
-- Append Step 1 result to this file's Completion Log.
+Conclude this step by:
+- Implementing the core logic by routing the core meeting gates through the canonical capability model.
+- Creating or updating the relevant pytest file, favoring surgical updates to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_meeting_manager.py`, and `app/tests/test_auth.py` instead of creating a new test file.
+- Updating docstrings and documentation so gate semantics now describe the unified backend authority model rather than legacy facilitator-row behavior.
 
----
+### Step 3 — Rewire Activity and Cross-Router Authorization
+Apply the same capability model to the meeting-scoped activity routers and adjacent backend surfaces identified in discovery, including brainstorming, voting, rank-order voting, categorization, transfer/import-export access, and meeting-context user-directory decisions. The target is behavioral consistency across all router families, not just the main meetings router.
 
-### Step 2 — Confirm the pre-existing JS listener is intact
+Conclude this step by:
+- Implementing the core logic by replacing per-router ad hoc facilitator checks with the canonical capability model wherever the phase scope requires.
+- Creating or updating the relevant pytest file, preferring edits to existing router-specific suites such as `app/tests/test_brainstorming_api.py`, `app/tests/test_voting_api.py`, `app/tests/test_rank_order_voting_api.py`, `app/tests/test_categorization_api.py`, `app/tests/test_transfer_api.py`, and related backend tests instead of adding new pytest modules.
+- Updating docstrings and documentation so router-level authorization descriptions match the same meeting authority language used in the canonical model.
 
-No code is added here; this step exists to codify a structural invariant that the new button depends on. If somebody deletes the listener in a future cleanup pass, this test will fail and flag Phase 2's contract.
+### Step 4 — Normalize Backend-Derived Capability Outputs
+Unify the backend-produced capability signals that other layers consume, especially dashboard meeting capability fields, meeting-context user flags, and any serialized “is facilitator” derivative that remains temporarily necessary before the Phase 3 interface cleanup. At the end of this step, any retained derived flag must be computed from the canonical capability model rather than legacy facilitator rows.
 
-**Implement the core logic**
-- No template or JS edits. Read [meeting.js](../../app/static/js/meeting.js) and eyeball the listener at lines 7856-7860: the handler must still call `openParticipantAdminModal()`, which must still call `setParticipantModalMode("meeting")`. If either chain is broken, halt this phase and escalate — the Phase 2 master-plan planning decision (reuse existing wiring) is invalid and the subplan must be revised.
+Conclude this step by:
+- Implementing the core logic by deriving backend-facing capability outputs exclusively from the canonical model.
+- Creating or updating the relevant pytest file, favoring targeted edits to existing meeting-manager, meetings API, and related backend suites over creating a new pytest file.
+- Updating docstrings and documentation so any surviving derived capability fields are explicitly documented as outputs of the unified model, not separate sources of truth.
 
-**Create or update the relevant pytest file**
-- In the same file [app/tests/test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py), add `test_meeting_roster_button_listener_wired()`. Using the same file-read pattern, assert:
-  - `openParticipantAdminButton` appears in `meeting.js` (the lookup at line 316).
-  - `openParticipantAdminModal` appears in `meeting.js` (the handler).
-  - Inside `meeting.js`, the substring `setParticipantModalMode("meeting")` appears — confirming the handler still lands in meeting mode.
-- Keep this to three substring assertions. Do NOT try to parse the AST or simulate the click — that's browser work for Step 4.
+### Step 5 — Lock the Backend Verification Boundary
+Define and verify the exact backend-oriented command that certifies this phase. Phase 2 is complete only when the canonical capability model is the sole meeting-scoped backend authority source, all selected backend suites pass, and no router/data enforcement path within scope still depends on per-meeting facilitator rows for authorization.
 
-**Update docstrings and documentation**
-- Docstring: `"""Phase 2 / Doorbell Disco — guard the pre-existing JS wiring the new button relies on."""`.
-- Append Step 2 result to the Completion Log.
+Conclude this step by:
+- Implementing the core logic as the final Phase 2 verification checklist and completion notes in this file.
+- Creating or updating the relevant pytest file so the backend authorization coverage needed for Phase 2 is included in the exit command below without unnecessary pytest file proliferation.
+- Updating docstrings and documentation so the verification command, intended authority model, and Phase 2 canary remain aligned.
 
----
+## Phase 2 Backend Scope Map
 
-### Step 3 — Regression-guard the legacy tab path
+The following backend surfaces must be brought under the canonical capability model during this phase:
 
-Until Phase 4 removes them, the tab row at [meeting.html:356-364](../../app/templates/meeting.html:356) and its click listener at [meeting.js:7861-7867](../../app/static/js/meeting.js:7861) remain the fallback path into the meeting roster. Phase 2 MUST NOT break them.
+| Surface | Required Phase 2 outcome |
+|---|---|
+| Main meeting access gate | Canonical capability model decides view/facilitation authority |
+| Meeting update / archive / restore / control endpoints | No ad hoc facilitator-row checks remain in enforcement logic |
+| Participant and activity-roster management | Authority derives from canonical model |
+| Brainstorming / voting / rank-order voting / categorization | Meeting-scoped authority decisions are consistent with the canonical model |
+| Transfer / export / meeting-context user-directory behavior | Authorization uses the same canonical model |
+| Dashboard `is_facilitator` and similar backend-derived flags | Derived from canonical model only |
 
-**Implement the core logic**
-- No template or JS edits. This step's sole purpose is to add a regression guard.
-- Eyeball the tab markup and listener; confirm nothing in Step 1 accidentally altered them. A `git diff` over those exact line ranges should be empty.
+## Phase 2 Non-Goals
 
-**Create or update the relevant pytest file**
-- Reuse [app/tests/test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py). Add `test_participant_modal_tab_path_still_works()`:
-  - Assert `data-participant-modal-tab="meeting"` is present in `meeting.html`.
-  - Assert `data-participant-modal-tab="activity"` is present in `meeting.html`.
-  - Assert the substring `tab.dataset.participantModalTab` appears in `meeting.js` (the listener's access pattern at line 7864).
-- This test is INTENTIONALLY brittle against Phase 4 — when Phase 4 removes the tab row, this test will be deleted or rewritten as part of that phase. That is the expected lifecycle and documenting it here makes the intent explicit for reviewers.
+This phase does **not** complete the following:
 
-**Update docstrings and documentation**
-- Docstring: `"""Phase 2 / Doorbell Disco — keep the legacy tab path alive as a fallback until Phase 4. Expected to be retired by Phase 4's subplan."""`.
-- Append Step 3 result to the Completion Log.
-
----
-
-### Step 4 — Browser verification and ship-ready
-
-**Implement the core logic**
-- Start a preview server (`preview_start`) and load the meeting page as a facilitator test account.
-- Exercise the new button:
-  - Confirm the **"Meeting Roster"** button is visible in the Agenda card-actions row, next to **"Meeting Settings"**.
-  - Click it. The modal opens with `#participantModalTitle` reading **"Manage Meeting Participants"**, `[data-participant-admin-panel]` visible, `[data-activity-roster-panel]` hidden. Use `preview_snapshot` + `preview_inspect` to verify the hidden attribute on the activity panel.
-- Exercise the legacy path:
-  - Close the modal, open an activity's "Edit Roster" button, click the "Meeting Participants" tab inside the modal, confirm it switches to the same meeting view. This path must still work.
-- Exercise the role gate:
-  - Reload the meeting page as a non-facilitator test account. Confirm the Meeting Roster button is absent from the DOM (`preview_snapshot`).
-- Capture three pieces of proof for the PR reviewer:
-  - `preview_screenshot` of the Agenda panel showing both "Meeting Settings" and "Meeting Roster" side by side.
-  - `preview_console_logs` confirming zero errors after clicking the new button.
-  - `preview_network` entry for the modal-open sequence (should be the existing participant-directory GET, no new API calls).
-
-**Create or update the relevant pytest file**
-- Run the exit command (see below) and confirm 100% pass. Three new tests from Steps 1-3 must be among the passing set.
-- If any assertion fails, do NOT patch the test — diagnose the render. Phase 2 only closes when template, JS, and tests agree.
-
-**Update docstrings and documentation**
-- Append a final entry to the `## Completion Log` with the commit SHA, the exit-command pass count, the screenshot path, and which button-order variant was chosen in Step 1 (before or after Meeting Settings).
-- Commit message body must include `Roster Rodeo / Doorbell Disco` on its own line so `git log --grep "Doorbell Disco"` finds this phase later.
-
----
+- Frontend template and JavaScript gate cleanup, which belongs to Phase 3.
+- Physical removal of `MeetingFacilitator`, `meeting_facilitators`, or ORM relationships, which belongs to Phase 4.
+- Export/import contract cleanup and legacy serialization cleanup, which belongs to Phase 5.
 
 ## Phase Exit Criteria
 
-The following terminal command must exit 0 with **100% of tests passing** and no skips introduced by this phase:
+Phase 2 clears only when the following command passes 100%:
 
+```bash
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_auth.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_transfer_api.py -v
 ```
-pytest app/tests/test_frontend_smoke.py -v
-```
 
-Additionally, all four must hold simultaneously at phase exit:
-
-- The new `#openParticipantAdminButton` is visible in the Agenda card-actions row for facilitator users and hidden for non-facilitators (browser-verified, Step 4).
-- Clicking the new button opens the shared modal in meeting-roster mode with the expected title and panel visibility (browser-verified, Step 4).
-- The legacy "Edit Roster" → "Meeting Participants" tab path still opens the same view (browser-verified, Step 4).
-- `git diff main -- ':!app/templates/meeting.html' ':!app/tests/test_frontend_smoke.py' ':!plans/'` returns empty — Phase 2 touched nothing outside those two files and the plans directory. In particular, `meeting.js` is unchanged by this phase.
-
-Phase 2 is NOT complete until the exit command and all four invariants succeed on the same commit.
+Passing this command means:
+- the canonical backend capability model is implemented and in active use,
+- the selected existing pytest modules have been updated instead of unnecessarily duplicated,
+- backend authorization is consistent across the meeting and activity router surface in scope for this phase,
+- and documentation/docstrings describe one unified backend authority model.
 
 ---
 
-## Completion Log
-
-*(append entries here as each step closes)*
-
-- [DONE] Step 1 — Meeting Roster button added — placement: `before` Meeting Settings — commit: working tree
-- [DONE] Step 2 — JS wiring regression-guarded — commit: working tree
-- [DONE] Step 3 — Legacy tab path regression-guarded — commit: working tree
-- [DONE] Step 4 — Browser-verified substitute via authenticated page requests plus DOM/JS contract inspection (technical deviation: no `preview_*` browser tooling available in this Codex environment, so no screenshot/console/network artifacts were captured; facilitator page showed both buttons and meeting-mode modal scaffolding, joined participant page hid the Meeting Roster button) — commit: working tree
-- [DONE] Exit command green — `pytest app/tests/test_frontend_smoke.py -v` output: 18 passed, 0 failed
+*End of Phase 2 execution file. This phase unifies backend authorization logic; it does not yet remove the persistent facilitator schema or clean up frontend gating.*

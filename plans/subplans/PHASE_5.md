@@ -1,211 +1,91 @@
-# Phase 5 — Sweeper: Test Coverage, Verification, Ship-Readiness [COMPLETE]
+# PHASE 5 — Compatibility and Contract Cleanup
 
-**Master plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
-**Global canary:** `Roster Rodeo`
-**Phase canary:** `Finish Fiesta`
+**Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
 
-Both canaries must appear in every Phase-5 commit body, the PR description, and any subagent delegation prompt.
+**Phase objective:** Normalize outward-facing contracts so active APIs, exports, imports, serialized meeting payloads, and tests reflect the collapsed authorization model without leaving legacy facilitator semantics in the live contract.
 
-**Hard prerequisite:** Phases 1-4 must be merged and green. This phase does not alter Phase 1-4 contracts — if a regression is found during sweeping, the fix belongs in whichever earlier phase owns the contract, not in Phase 5. Phase 5 only adds coverage, consolidates assertions, and captures ship-proof.
+## Phase Canary
 
----
+**Pickle Trombone**
 
-## Goal
-
-Close out the Roster Rodeo effort. After this phase:
-
-- The full pytest suite passes with zero new skips introduced by this initiative.
-- [test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py) has canonical single-source-of-truth assertions for each of the four user-brief tasks (heading rename, Meeting Settings button, Meeting Roster button, simplified Activity modal).
-- One preview-server walkthrough has exercised every user-brief task end-to-end and produced attached artifacts (screenshots, console logs, network logs) the reviewer can open without rerunning anything.
-- All five phase subplans (`PHASE_1.md` through `PHASE_5.md`) are marked complete in their Completion Logs.
-- `git log --grep "Roster Rodeo"` across the branch shows one commit per phase-bearing step; every Phase 2-5 commit carries its phase canary.
-
----
+Use this exact two-word canary in Phase 5 notes, commit messages, test docstrings, and validation artifacts tied to this phase.
 
 ## Atomic Steps
 
-### Step 1 — Full-suite audit against the new contracts
+### Step 1 — Inventory the Remaining External Contract Surface
+Identify every outward-facing contract element that can still leak the old facilitator model after Phase 4, including meeting payload fields, dashboard summaries, export bundle contents, transfer/import schemas, and any test assertions that still validate legacy facilitator artifacts as if they were part of the intended active API. The output of this step is a complete cleanup ledger for all remaining public-facing contract debt.
 
-Sweep every test file under [app/tests/](../../app/tests/) for assertions that incidentally passed under the old UI/contracts but no longer correctly pin behavior. Typical culprits:
+Conclude this step by:
+- Implementing the core logic as the complete Phase 5 ledger of remaining API/export/import/test contract elements tied to the old facilitator model.
+- Creating or updating the relevant pytest file, preferring edits to existing API/transfer/meeting pytest modules over creating a new pytest file unless an existing suite cannot reasonably carry the contract-cleanup coverage.
+- Updating docstrings and documentation so the Phase 5 `Pickle Trombone` scope clearly distinguishes active contract cleanup from narrowly-isolated backward-compatibility handling.
 
-- Tests that posted `{mode:"custom", participant_ids:[non_empty]}` and implicitly assumed `mode="custom"` was the only accepted shape.
-- Tests that asserted an activity "starts empty" (pre-Phase-4 the Selected column was empty until Include Everyone was clicked; now the data-layer default was always "all", so an old test might mask the new default).
-- Tests that referenced removed DOM ids or CSS classes (`activityParticipantApply`, `participant-modal-tabs`, etc.) anywhere — including comments.
+### Step 2 — Remove Legacy Facilitator Semantics from Active API Responses
+Clean the live API surface so active responses no longer expose `facilitator_links`, facilitator-assignment arrays, `is_owner`-style facilitator-row semantics, or equivalent remnants of the old model. Any capability or meeting-authority fields that remain must describe the collapsed model directly and be consumed as such by dependent code and tests.
 
-**Implement the core logic**
-- Run `pytest app/tests/ -q` and read the output carefully. For each failing test:
-  - Is the failure an outdated assertion? → fix it in-place, using the Phase-1-through-4 contracts as the source of truth.
-  - Is it a genuine regression of a Phase 1-4 contract? → halt, escalate; the fix belongs in the phase that owns the contract, not here.
-- Run `git grep -nE "participant-modal-tabs|data-participant-modal-tab|activityParticipantApply|activityParticipantIncludeAll|activityParticipantReuse|activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/tests/'` — every hit is a stale reference to delete.
-- Run `git grep -nE "\"Agenda\"|'Agenda'|>Agenda<|\"Settings\"" -- 'app/tests/'` — review each hit for relevance to the renamed labels (these strings are generic; most hits will be unrelated, but any that refer to the Agenda panel heading or the old "Settings" button text must be updated).
+Conclude this step by:
+- Implementing the core logic by removing old facilitator semantics from active API response contracts.
+- Creating or updating the relevant pytest file, favoring surgical edits to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_meeting_manager.py`, and related API-facing tests instead of creating a new test file.
+- Updating docstrings and documentation so active API contracts and test descriptions describe only the collapsed authority model.
 
-**Create or update the relevant pytest file**
-- Update existing tests in-place. Prefer tiny edits to the affected assertion; do NOT rewrite entire test functions unless the whole premise is invalid.
-- If a test becomes empty after removing a stale assertion, delete the whole test function (document the removal in the Completion Log).
-- Do NOT add NEW tests in this step — coverage additions belong in Step 2.
+### Step 3 — Isolate Legacy Import/Export Compatibility
+Rewrite export and transfer-facing contracts so newly produced artifacts no longer encode the old facilitator model while preserving only the minimum one-way compatibility needed to read older serialized meeting data. Legacy compatibility must be explicitly isolated to compatibility handling and must not re-enter the active authorization path or active API contract.
 
-**Update docstrings and documentation**
-- Every test function touched in this step gets a one-line docstring suffix: `# Updated by Phase 5 / Finish Fiesta.` (or a fresh docstring if none existed).
-- Append Step 1 results to the Completion Log, including a bullet list of each test file touched with one-word reason (e.g. `test_meeting_manager.py: stale-mode-assertion`).
+Conclude this step by:
+- Implementing the core logic by separating active export/import contracts from narrowly-scoped legacy compatibility handling.
+- Creating or updating the relevant pytest file, preferring edits to existing suites such as `app/tests/test_transfer_api.py`, `app/tests/test_transfer_transforms.py`, `app/tests/test_transfer_metadata.py`, `app/tests/test_transfer_comment_format_parity.py`, and other already-relevant transfer/export tests instead of adding new pytest modules.
+- Updating docstrings and documentation so export/import expectations clearly state what the system now writes, what legacy data it can still read, and that compatibility handling is one-way.
 
----
+### Step 4 — Purge Legacy Test Assumptions and Contract Language
+Resolve the remaining Phase 1 rewrite/delete ledger items that encoded stale auto-grant behavior, facilitator-row persistence, or old payload shapes as intended behavior. By the end of this step, the test suite and its naming/docstrings must reinforce only the collapsed model and its intentionally isolated compatibility exceptions.
 
-### Step 2 — Consolidate user-brief coverage in the frontend smoke test
+Conclude this step by:
+- Implementing the core logic by purging stale contract assumptions from tests and any supporting code comments or references.
+- Creating or updating the relevant pytest file, favoring edits to the existing affected suites instead of creating a new test file for cleanup work.
+- Updating docstrings and documentation so no active test or repository narrative still treats the old facilitator contract as intended behavior.
 
-After Phases 1-4, [test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py) accumulated several scattered assertions. Step 2 makes each of the four user-brief tasks provable from a single canonical test function so future regressions are obvious in test output.
+### Step 5 — Lock the Phase 5 Verification Boundary
+Define the exact validation command for outward-facing contract cleanup and treat this phase as complete only when active contracts are free of old facilitator semantics, legacy import compatibility is isolated, and the selected suites pass with the collapsed model represented consistently across APIs, exports, imports, and tests.
 
-**Implement the core logic**
-- In [test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py) rationalize the Roster-Rodeo-added tests into **exactly four canonical functions**, one per user-brief task:
-  1. `test_agenda_panel_heading_renamed()` — asserts "Meeting Agenda and Participant Roster" present and old `<h2>Agenda</h2>` absent. Absorb the Phase-1 Step-1 test.
-  2. `test_meeting_settings_button_label()` — asserts "Meeting Settings" text AND `id="agendaAddActivityButton"` AND old `>Settings<` adjacency absent. Absorb the Phase-1 Step-2 test.
-  3. `test_meeting_roster_button_present()` — asserts `id="openParticipantAdminButton"`, text "Meeting Roster", role-gate ordering, AND JS listener wiring (`openParticipantAdminModal` + `setParticipantModalMode("meeting")` present in `meeting.js`). Absorb the Phase-2 Steps 1-2 tests.
-  4. `test_activity_modal_simplified()` — asserts absence of `participant-modal-tabs`, `activityParticipantApply`, `activityParticipantIncludeAll`, `activityParticipantReuse`; asserts presence of `activityAvailableSelectAllButton`, `activitySelectedSelectAllButton` (keep-list); asserts `applyActivityParticipantSelection` appears inside both `addActivityParticipantsFromAvailable` and `removeActivityParticipantsFromSelected` function bodies. Absorb the Phase-4 Step-1 and Step-4 tests.
-- Delete any now-redundant helper test functions that were split across phases (e.g. `test_no_dead_apply_button_references`, `test_activity_modal_action_buttons_removed` merge into `test_activity_modal_simplified`).
-- Preserve the non-Roster-Rodeo tests already in the file (`test_meeting_js_has_valid_syntax`, `test_transfer_panel_*`, `test_categorization_*`, etc.) untouched.
+Conclude this step by:
+- Implementing the core logic as the final Phase 5 verification checklist and completion notes in this file.
+- Creating or updating the relevant pytest file so the contract-cleanup coverage required for Phase 5 is included in the exit command below without unnecessary pytest file proliferation.
+- Updating docstrings and documentation so the verification command, compatibility boundary, and Phase 5 canary remain aligned.
 
-**Create or update the relevant pytest file**
-- The file edits above ARE the pytest update. Verify line count did not balloon — four consolidated tests should net a smaller file than the per-phase accumulation.
-- No new fixtures, no new imports, no test-runner flags. The file remains the same flat module it was.
+## Phase 5 Contract Cleanup Scope Map
 
-**Update docstrings and documentation**
-- Each of the four canonical tests gets a docstring: `"""Roster Rodeo / Finish Fiesta — canonical user-brief task N check."""` with N ∈ {1,2,3,4}.
-- Append Step 2 result to the Completion Log with the final line count of `test_frontend_smoke.py` and the SHA of the consolidating commit.
+The following outward-facing surfaces must be normalized during this phase:
 
----
+| Surface | Required Phase 5 outcome |
+|---|---|
+| Active meeting/dash/API payloads | No live facilitator-assignment contract artifacts remain |
+| Export bundle output | No new export writes old facilitator structures |
+| Legacy import/transfer readers | Old facilitator-bearing artifacts can be read only through isolated one-way compatibility handling |
+| Test suite contract language | No old facilitator semantics are asserted as intended active behavior |
+| Repository documentation for contracts | Describes collapsed model plus explicit compatibility exception only |
 
-### Step 3 — End-to-end browser walkthrough
+## Phase 5 Non-Goals
 
-One preview-server session that exercises every user-brief task in the order a facilitator would encounter them. Artifacts produced here are the ship-proof attached to the final PR.
+This phase does **not** complete the following:
 
-**Implement the core logic**
-- Start a preview server (`preview_start`). Log in as a facilitator test account and load a meeting page that has at least one activity.
-- Execute the walkthrough in this exact order, capturing the named artifact at each beat:
-  1. **Heading rename** — confirm the Agenda panel heading reads "Meeting Agenda and Participant Roster". Artifact: `preview_screenshot` → `phase5-heading.png`.
-  2. **Meeting Settings button** — click the button; confirm navigation to `/meeting/{id}/settings`. Artifact: `preview_network` entry for the navigation.
-  3. **Meeting Roster button** — return to the meeting page; click the new button; confirm the modal opens in meeting mode with title "Manage Meeting Participants". Artifact: `preview_screenshot` → `phase5-meeting-roster-modal.png`.
-  4. **Activity modal fresh-activity default** — close the meeting-roster modal; click "Edit Roster" on a fresh activity; confirm the Selected column contains every meeting participant. Artifact: `preview_screenshot` → `phase5-activity-inherit-all.png`.
-  5. **Auto-commit golden path** — ← one participant; confirm one PUT in `preview_network` with status 200; confirm Selected updated without an Apply click. Artifact: `preview_network` log segment.
-  6. **Auto-commit empty-custom normalization** — ← every remaining Selected participant one by one; the last removal's PUT returns `mode:"all"`; UI re-renders with everyone back in Selected. Artifact: `preview_network` log segment + a final `preview_screenshot` → `phase5-empty-custom-restored.png`.
-  7. **Close is no-op** — click the ×; confirm `preview_network` shows no server call on close. Artifact: final `preview_network` log confirming silence.
-- Run `preview_console_logs` once at the end and confirm zero errors across the entire walkthrough.
-
-**Create or update the relevant pytest file**
-- No pytest changes in this step. The walkthrough is a manual-but-captured verification, not an automated test. Phase 5 Step 2's consolidated tests are the automated backstop.
-
-**Update docstrings and documentation**
-- Append Step 3 results to the Completion Log with the seven artifact paths and the console-log summary line.
-
----
-
-### Step 4 — Diff hygiene and working-tree cleanup
-
-Confirm the branch's total diff against `main` contains only Roster Rodeo work — no drift, no leftover debug statements, no stray edits from the pre-existing modifications that were in the working tree when the branch was created (audit §6.7).
-
-**Implement the core logic**
-- Run `git diff main --stat` and `git diff main --name-only`. Cross-reference every listed file against the four task buckets:
-  - `app/templates/meeting.html` (Phases 1, 2, 4)
-  - `app/static/js/meeting.js` (Phases 2, 4)
-  - `app/routers/meetings.py`, `app/data/meeting_manager.py` (Phase 3)
-  - `app/tests/test_frontend_smoke.py`, `app/tests/test_activity_rosters.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py` (Phases 1-4 tests + Phase 5 sweep)
-  - `plans/` (planning docs and preserved prior-effort siblings)
-- Any file outside those buckets in the diff is a carry-over from the starting working-tree state; decide per file: (a) directly related to Roster Rodeo → keep, (b) unrelated → revert to `main` state (use `git checkout main -- <file>` narrowly scoped), (c) ambiguous → halt and escalate.
-- The `modified` files listed at session start (`app/plugins/builtin/voting_plugin.py`, `app/routers/brainstorming.py`, `app/routers/transfer.py`, etc.) are the primary drift risk. Each deserves individual consideration — do NOT batch-revert without reading the diff.
-
-**Create or update the relevant pytest file**
-- After any narrow revert, rerun `pytest app/tests/ -q` to confirm the revert did not break anything now depending on the change. If it does, the change is indirectly Roster Rodeo and should be kept; document the coupling in the Completion Log.
-
-**Update docstrings and documentation**
-- Append Step 4 results to the Completion Log with: (a) the final file count in `git diff main --stat`, (b) any drift files that were reverted, (c) any drift files that were kept with justification.
-
----
-
-### Step 5 — Phase completion sign-off
-
-Final housekeeping to make the effort auditable after the PR merges.
-
-**Implement the core logic**
-- Open each of `PHASE_1.md`, `PHASE_2.md`, `PHASE_3.md`, `PHASE_4.md`, `PHASE_5.md`. In every Completion Log, replace `[ ]` with `[x]` for completed steps and fill in the blanks (commit SHAs, pass counts, artifact paths). Any lingering `[ ]` at this stage is a bug — the phase is not done.
-- Run `git log main..HEAD --grep "Roster Rodeo"` and confirm one or more hits per phase from Phase 2 onward (Phase 1 canary rule is "codeword in commit body" — check the message too).
-- Run `git log main..HEAD --oneline` and verify the commit graph tells a coherent story: Phase 1 cosmetic → Phase 2 entry point → Phase 3 backend → Phase 4 modal → Phase 5 sweep.
-- Run the phase exit command (below) one last time and paste the output into this file's Completion Log.
-
-**Create or update the relevant pytest file**
-- No test file edits in this step. The suite is frozen as of Step 2's consolidation and Step 1's sweep.
-
-**Update docstrings and documentation**
-- Append the final Completion Log entry with: the exit-command pass count, the commit graph summary, and the PR URL (once opened).
-- The PR description must list all five phase canaries: `Placard Parade / Doorbell Disco / Payload Polka / Modal Mutiny / Finish Fiesta` under the global `Roster Rodeo` umbrella.
-
----
+- Broad end-to-end merge-readiness verification across the entire application surface, which belongs to Phase 6.
+- New authorization model design work; Phase 5 cleans contracts, it does not redefine authority rules.
+- WebSocket auth cleanup or unrelated transfer-system redesign outside the facilitator-contract cleanup path.
 
 ## Phase Exit Criteria
 
-The following terminal command must exit 0 with **100% of tests passing** and no skips introduced by any Roster Rodeo phase:
+Phase 5 clears only when the following command passes 100%:
 
+```bash
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_meeting_manager.py app/tests/test_transfer_api.py app/tests/test_transfer_transforms.py app/tests/test_transfer_metadata.py app/tests/test_transfer_comment_format_parity.py app/tests/test_frontend_smoke.py app/tests/test_pages.py -v
 ```
-pytest app/tests/ -v
-```
 
-Additionally, all seven must hold simultaneously at phase exit:
-
-- Every subplan's Completion Log has all `[ ]` replaced with `[x]` and no blank-filled fields remain.
-- `git grep -nE "participant-modal-tabs|activityParticipantApply|activityParticipantIncludeAll|activityParticipantReuse|activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/'` returns NO match.
-- [test_frontend_smoke.py](../../app/tests/test_frontend_smoke.py) contains exactly four canonical Roster Rodeo assertions (Step 2's four functions) and no Roster-Rodeo-era test functions outside that set.
-- The seven browser-walkthrough artifacts from Step 3 exist at the paths listed in this subplan's Completion Log.
-- `git diff main --name-only` returns ONLY files inside the buckets enumerated in Step 4; any drift is either reverted or justified in the Completion Log.
-- `git log main..HEAD --grep "Roster Rodeo"` returns one or more commits; the phase canaries `Placard Parade`, `Doorbell Disco`, `Payload Polka`, `Modal Mutiny`, `Finish Fiesta` each appear at least once in the branch's commit history.
-- All five phase subplans (`PHASE_1.md` through `PHASE_5.md`) live in `plans/subplans/` and are marked complete.
-
-Phase 5 is NOT complete — and the Roster Rodeo effort is NOT ready to ship — until the exit command and all seven invariants succeed on the same commit.
+Passing this command means:
+- active API and export contracts no longer expose the old facilitator model,
+- any retained legacy compatibility is isolated to one-way import/reader handling,
+- the selected existing pytest modules have been updated instead of unnecessarily duplicated,
+- and documentation/docstrings describe the cleaned contract surface accurately.
 
 ---
 
-## Completion Log
-
-*(append entries here as each step closes)*
-
-- [x] Step 1 — Full-suite audit; tests touched: **none** — commit: e87129c
-  - `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q` → **554 passed, 2 skipped, 0 failed** on parent 9034bf7. No outdated-assertion failures surfaced, so no in-place edits were required.
-  - Stale-token grep `git grep -nE "participant-modal-tabs|data-participant-modal-tab|activityParticipantApply|activityParticipantIncludeAll|activityParticipantReuse|activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/tests/'` returned six hits, all inside **absence-assertions** introduced by Phase 4 Step 1 / Step 5 (`test_frontend_smoke.py` lines 98, 99, 108, 119, 122, 123). These pin removal and are intentionally kept; Step 2 will fold them into the consolidated `test_activity_modal_simplified`.
-  - Agenda/Settings grep `git grep -nE "\"Agenda\"|'Agenda'|>Agenda<|\"Settings\"" -- 'app/tests/'` returned one hit at `test_frontend_smoke.py:62` (`">Agenda<" not in html`) — again an absence-assertion from Phase 1, kept intentionally and earmarked for absorption into `test_agenda_panel_heading_renamed` in Step 2.
-  - No test functions were edited, deleted, or newly docstring-tagged in this step (the "touched → `# Updated by Phase 5 / Finish Fiesta.` suffix" rule had no subjects). No deviations.
-- [x] Step 2 — `test_frontend_smoke.py` consolidated to four canonical tests; line count: **201** — commit: b18a3ed
-  - Nine Roster-Rodeo-era tests (Phase 1: `test_agenda_panel_heading_text`, `test_agenda_settings_button_label`; Phase 2: `test_agenda_meeting_roster_button_present`, `test_meeting_roster_button_listener_wired`; Phase 4: `test_activity_modal_tabs_removed`, `test_activity_modal_action_buttons_removed`, `test_no_dead_apply_button_references`, `test_collision_rollback_reads_current_assignment`, `test_activity_move_handlers_auto_commit`) were folded into exactly four canonical functions with `"""Roster Rodeo / Finish Fiesta — canonical user-brief task N check."""` docstrings: `test_agenda_panel_heading_renamed` (N=1), `test_meeting_settings_button_label` (N=2), `test_meeting_roster_button_present` (N=3, merged template + JS-wiring assertions), `test_activity_modal_simplified` (N=4, merged tab-removal, dead-token removal, state-removal, keep-list Select-All buttons, auto-commit `applyActivityParticipantSelection` inside both handlers, and the 409 `current_assignment` + `status === 409` pins).
-  - Non-Roster-Rodeo tests in the file (`test_meeting_js_has_valid_syntax`, `test_meeting_js_includes_voting_dot_rail`, `test_meeting_page_includes_categorization_panel_hooks`, all `test_transfer_*`, `test_render_transfer_ideas_has_null_guard`, `test_meeting_js_redirects_on_unauth`, `test_meeting_page_renders_agenda_items`, `test_remote_tunnel_script_has_retry_and_log_rotation`) were left untouched. No new fixtures or imports; `import re` continues to live inside `test_activity_modal_simplified` (previously inside the collision-rollback test).
-  - Verification: `PYTHONPATH=. ./venv/bin/pytest app/tests/test_frontend_smoke.py -q` → **17 passed, 7 warnings**. Full-suite `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q` → **549 passed, 2 skipped, 0 failed** (down from 554 by the expected −5: 9 Roster-Rodeo tests → 4).
-  - File shrank from 228 → 201 lines (−27) as the spec required ("four consolidated tests should net a smaller file"). No deviations.
-- [x] Step 3 — Browser walkthrough captured; artifacts live under `plans/subplans/artifacts/phase5/` — commit: 04a089c
-  - Preview server: `preview_start("dev")` on port 8000. Logged in as facilitator (user_01 → "Welcome, Abe" once credentials landed). Meeting under test: `MTG20260225-0001` with two activities (`-BRAINS-0001`, `-RANKOR-0001`).
-  - Beat 1 (heading): `phase5-heading.txt` — live DOM inventory shows `H2 "Meeting Agenda and Participant Roster"` present, no H2 exactly "Agenda"; both `#agendaAddActivityButton → "Meeting Settings"` and `#openParticipantAdminButton → "Meeting Roster"` visible.
-  - Beat 2 (settings nav): `phase5-meeting-settings-nav.txt` — click of `#agendaAddActivityButton` lands on `/meeting/MTG20260225-0001/settings` (network entry `[CB956728…] GET …/settings → 200 OK`).
-  - Beat 3 (meeting-roster modal): `phase5-meeting-roster-modal.txt` — click of `#openParticipantAdminButton` opens `#participantAdminModal` (`display=flex`) with title "Manage Meeting Participants".
-  - Beat 4 (fresh-activity inherit-all): `phase5-activity-inherit-all.txt` — server GET for the Rank Order activity reports `mode="all"`, `participant_ids=[]`, `available_participants` length 7; after "Edit Roster" click the modal renders Selected with 7 rows (the full meeting roster).
-  - Beat 5 (auto-commit golden): `phase5-auto-commit-golden.txt` — one ← click emitted exactly one `PUT .../agenda/MTG20260225-0001-RANKOR-0001/participants → 200 OK` (entry `[88528.584]`); Selected collapsed 7→6 with no Apply click.
-  - Beat 6 (empty-custom normalization): `phase5-empty-custom-restored.txt` — bulk Select-All + ← (in place of the spec's one-by-one — see deviation below) fired `PUT …RANKOR-0001/participants → 200 OK` (entry `[88528.682]`); post-PUT GET returns `mode="all"`, `participant_ids=[]`, and the DOM re-renders Selected back to 7.
-  - Beat 7 (close-is-no-op): `phase5-close-is-noop.txt` — `performance.getEntriesByType('resource')` recorded 250 entries before closing; after `#closeParticipantAdminModal` click 0 new entries, 0 `/agenda/…/participants` calls, modal `display="none"`.
-  - Final console sweep: `phase5-console-final.txt` — `preview_console_logs(level="error")` reported "No console logs." at walkthrough end. Zero errors.
-  - Deviations:
-    1. The spec named four `.png` screenshots; the preview harness renders screenshots inline in the chat rather than writing to disk, so each of those four artifacts is captured as a `.txt` with the live DOM / network / server-state probe instead. The structural evidence is stronger than a pixel snapshot (mode/ids/classes vs. visual read).
-    2. Beat 6 used a bulk Select-All + ← rather than one-by-one removals. The branch being tested (empty-custom → mode=all) is gated on the final post-PUT state, which both paths hit; the PUT payload ends in `participant_ids=[]` either way and the server's auto-normalization fires once. Flagged explicitly so a follow-up one-by-one drill stays cheap.
-- [x] Step 4 — Diff hygiene; drift files reverted & drift-in-bucket tests removed — commit: 6ef1d19
-  - Starting state: 37-file branch diff against `main`; the bundle commit `e25f695 "Commit outstanding work"` had swept pre-existing working-tree changes onto the branch along with the legitimate Phase-start baseline (each file's blame was either that one bundle commit or a subsequent Roster Rodeo commit).
-  - **Reverted to main** (14 files): `.claude/worktrees/jovial-bohr` (stray worktree submodule pointer, not Roster Rodeo), `app/plugins/builtin/voting_plugin.py` (voting default placeholder, unrelated "empty options" effort), `app/templates/create_meeting.html` (sibling of the voting plugin change), `app/routers/brainstorming.py` (lone get_ideas docstring — unrelated), `app/routers/transfer.py` (33 lines of transfer-config placeholder mapping — unrelated to Roster Rodeo), `app/services/categorization_manager.py`, `app/services/rank_order_voting_manager.py`, `app/services/voting_manager.py` (pure docstring additions — unrelated), and six drift test files added by e25f695 (`test_brainstorming_api.py`, `test_categorization_api.py`, `test_rank_order_voting_api.py`, `test_transfer_api.py`, `test_voting_api.py`, `test_voting_manager.py` — each added empty-config / empty-options coverage for the unrelated effort). Reverts used `git checkout main -- <file>` per file plus `git rm` for the submodule entry.
-  - **Drift-in-bucket tests removed** (3 tests in `app/tests/test_meeting_manager.py`, a kept-bucket file): `test_voting_default_config_has_empty_options`, `test_activity_config_accepts_empty_options_list`, `test_activity_config_accepts_none_options`. All three were added by e25f695 and are exclusively about the reverted voting-default placeholder contract (not Roster Rodeo). `test_voting_default_config_has_empty_options` failed after the code revert (it asserts `options == []` against the reverted plugin default `["Edit vote option here"]`); the two siblings pass coincidentally but are part of the same drift effort. Removed all three to keep the revert coherent — per the subplan's escalation rule ("indirectly Roster Rodeo → keep") these tests do NOT exercise Roster Rodeo contracts, so keeping them just to avoid a local failure would have been dishonest bookkeeping.
-  - **Kept with justification** (1 file outside the Step-4 enumerated bucket): `app/static/css/meeting.css` — contains Phase 4 Step 5's removal of the orphan `.participant-modal-tabs` CSS block (see the Phase 4 subplan Completion Log). Directly Roster Rodeo; the Step-4 bucket list just didn't enumerate it explicitly. No revert.
-  - Verification: full suite re-run post-revert → **526 passed, 2 skipped, 0 failed** (down from 549 by the expected −23: 18 drift tests reverted out of the six unrelated test files + 3 drift-in-bucket tests removed from test_meeting_manager.py + 2 tests whose parametrizations collapsed; the −23 is the price of honest bucketing). Final `git diff main --name-only` now lists exactly 23 files, all inside the Step-4 buckets: meeting.html + meeting.js (Phase 1/2/4), routers/meetings.py + data/meeting_manager.py (Phase 3), test_frontend_smoke.py + test_activity_rosters.py + test_meeting_manager.py (Phases 1-4 tests + Phase 5 sweep), meeting.css (Phase 4 Step 5, kept with justification above), and 15 plans/ entries (5 phase subplans, 2 top-level planning docs, 8 Phase-5 artifact captures).
-  - Deviations: two. (1) The Step-4 bucket enumeration did not include `app/static/css/meeting.css`; keeping it is justified as Phase 4 Step 5 work (kept-with-reason is an explicit Step-4 outcome). (2) The Step-4 revert rule said "if revert breaks a dependent test, the change is indirectly Roster Rodeo — keep it"; the one failing test (`test_voting_default_config_has_empty_options`) was itself drift, not Roster Rodeo, so removing the test was the correct resolution rather than un-reverting the voting plugin. Both deviations stay within the spirit of the spec's "clean, justified Roster-Rodeo-only diff".
-- [x] Step 5 — All subplans signed off; PR opened at: _not-yet-opened_ (branch `ui/meeting-roster-cleanup`; user will open the PR after this commit lands) — commit: 4f3dac3
-  - Subplan sign-off audit: PHASE_1.md, PHASE_2.md, PHASE_3.md, PHASE_4.md all carry `[COMPLETE]` in the header; each of their Completion Logs has every `[ ]` flipped to `[x]` with commit SHAs and pass counts pinned. PHASE_5.md header flipped to `[COMPLETE]` in this step; Steps 1-5 are all `[x]`.
-  - Commit-graph verification: `git log main..HEAD --grep "Roster Rodeo"` returns 22 hits. Per-canary counts via `git log main..HEAD --grep "<canary>" --oneline | wc -l`: `Placard Parade`: 1, `Doorbell Disco`: 1, `Payload Polka`: 3, `Modal Mutiny`: 7, `Finish Fiesta`: 9 — every phase canary appears at least once, satisfying the exit invariant.
-  - Commit-story coherence (`git log main..HEAD --oneline`): Phase 1 cosmetic (`Placard Parade`) → Phase 2 entry point (`Doorbell Disco`) → Phase 3 backend (`Payload Polka`: empty-custom normalization, 409 enrichment, full-state broadcast, verification) → Phase 4 modal (`Modal Mutiny`: tab/button removal, 409 rollback, inherit-all pin, state collapse, completion) → Phase 5 sweeper (`Finish Fiesta`: Steps 1-5). Story reads linearly bottom-up with no out-of-order commits.
-  - Exit command: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` → **526 passed, 2 skipped, 0 failed, 717 warnings in 147.78s**. Exit 0. Zero new skips introduced by Roster Rodeo (the 2 skips are pre-existing).
-  - Exit-invariant sweep (all seven):
-    1. ✅ All five subplans' Completion Logs have every `[ ]` replaced with `[x]` and no blank placeholders remain after this commit.
-    2. ✅ `git grep -nE "participant-modal-tabs|activityParticipantApply|activityParticipantIncludeAll|activityParticipantReuse|activityParticipantState\.dirty|activityParticipantState\.lastCustomSelection" -- 'app/'` returns zero hits (all such tokens live exclusively in `app/tests/test_frontend_smoke.py` absence-assertions, which is `app/tests/`, not `app/`).
-    3. ✅ `test_frontend_smoke.py` holds exactly four canonical Roster Rodeo functions (Step 2 consolidation): `test_agenda_panel_heading_renamed`, `test_meeting_settings_button_label`, `test_meeting_roster_button_present`, `test_activity_modal_simplified`.
-    4. ✅ Seven browser-walkthrough artifacts from Step 3 live under `plans/subplans/artifacts/phase5/` (phase5-heading.txt, phase5-meeting-settings-nav.txt, phase5-meeting-roster-modal.txt, phase5-activity-inherit-all.txt, phase5-auto-commit-golden.txt, phase5-empty-custom-restored.txt, phase5-close-is-noop.txt + phase5-console-final.txt).
-    5. ✅ `git diff main --name-only` lists only files inside Step-4 buckets (23 files: meeting.html, meeting.js, meetings.py, meeting_manager.py, 3 test files, meeting.css kept-with-justification, 15 plans/ entries). Post-Step-5 this commit adds PHASE_5.md only, which stays inside the `plans/` bucket.
-    6. ✅ `git log main..HEAD --grep "Roster Rodeo"` returns 22 hits; all five phase canaries appear (counts above).
-    7. ✅ All five phase subplans live in `plans/subplans/` and are marked `[COMPLETE]`.
-  - Deviation: PR URL is not pinned in this commit because the PR is opened by the user post-merge-preparation, not by this automation. The branch name `ui/meeting-roster-cleanup` is the authoritative handle; the PR URL can be back-filled into this log in a trailing tidy commit if desired, or left as-is since the branch + commit graph are the auditable artifacts the subplan actually requires.
-- [x] Exit command green — `pytest app/tests/ -v` output: **526 passed, 2 skipped, 0 failed, 717 warnings in 147.78s** — 0 failed, 0 new skips
+*End of Phase 5 execution file. This phase cleans active contracts and isolates legacy compatibility; Phase 6 remains responsible for full end-to-end validation and ship readiness.*
