@@ -36,7 +36,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, preferring edits to existing router-specific suites such as `app/tests/test_brainstorming_api.py`, `app/tests/test_voting_api.py`, `app/tests/test_rank_order_voting_api.py`, `app/tests/test_categorization_api.py`, `app/tests/test_transfer_api.py`, and related backend tests instead of adding new pytest modules.
 - Updating docstrings and documentation so router-level authorization descriptions match the same meeting authority language used in the canonical model.
 
-### Step 4 — Normalize Backend-Derived Capability Outputs
+### Step 4 [DONE] — Normalize Backend-Derived Capability Outputs
 Unify the backend-produced capability signals that other layers consume, especially dashboard meeting capability fields, meeting-context user flags, and any serialized “is facilitator” derivative that remains temporarily necessary before the Phase 3 interface cleanup. At the end of this step, any retained derived flag must be computed from the canonical capability model rather than legacy facilitator rows.
 
 Conclude this step by:
@@ -79,6 +79,7 @@ This phase does **not** complete the following:
 - Step 1 keeps a compatibility import path through `app/data/meeting_manager.py` so existing backend callers do not need a broad rename in the same change. The authoritative logic now lives in the dedicated service module even though some call sites still import the resolver indirectly.
 - Step 2 rewires the remaining core meeting gates in `app/routers/meetings.py`, but it intentionally leaves non-core page-route gate cleanup and meeting-context derived flag normalization for later phases. Archive and restore are now treated as delete-authority operations under the canonical model, which is stricter than the earlier generic facilitator gate and aligns those endpoints with the Phase 1 contract.
 - Step 3 rewires the brainstorming, voting, rank-order voting, transfer, and meeting-directory router families onto the canonical capability model, but it does not yet normalize every backend-derived output field those routes serialize. Result-visibility and directory badge semantics now derive from the canonical model while broader payload cleanup remains scheduled for Step 4.
+- Step 4 normalizes meeting response, dashboard, and meeting-directory capability outputs so retained facilitator-facing flags now derive from the canonical model even when legacy facilitator rows still exist in storage. The backend continues to preserve matching legacy facilitator identifiers in serialized summaries when they correspond to canonical facilitators, but row presence alone no longer grants serializer visibility or meeting-context badge status.
 
 ## Phase Exit Criteria
 

@@ -412,6 +412,63 @@ def test_get_meeting_returns_meeting(
     assert len(result["agenda"]) >= 1
 
 
+def test_meeting_outputs_ignore_off_roster_legacy_facilitator_rows(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Gravy Parachute: serialized meeting and dashboard facilitator outputs ignore off-roster legacy facilitator rows."""
+    off_roster_password = "LegacyFac1!"
+    off_roster_user = user_manager_with_admin.add_user(
+        first_name="Legacy",
+        last_name="Facilitator",
+        email="legacy.facilitator@example.com",
+        hashed_password=get_password_hash(off_roster_password),
+        role=UserRole.FACILITATOR.value,
+        login="legacy_off_roster_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(off_roster_user)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Canonical Output Meeting",
+            "description": "Step 4 capability output regression",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    update_response = authenticated_client.put(
+        f"/api/meetings/{meeting_id}",
+        json={"facilitator_ids": [off_roster_user.user_id]},
+    )
+    assert update_response.status_code == 200, update_response.json()
+
+    meeting_response = authenticated_client.get(f"/api/meetings/{meeting_id}")
+    assert meeting_response.status_code == 200, meeting_response.json()
+    meeting_payload = meeting_response.json()
+    assert off_roster_user.user_id not in meeting_payload["facilitator_user_ids"]
+    assert "Legacy Facilitator" not in meeting_payload["facilitator_names"]
+    assert all(
+        facilitator["user_id"] != off_roster_user.user_id
+        for facilitator in meeting_payload["facilitators"]
+    )
+
+    dashboard_response = authenticated_client.get("/api/meetings/")
+    assert dashboard_response.status_code == 200, dashboard_response.json()
+    meeting_item = next(
+        item for item in dashboard_response.json()["items"] if item["id"] == meeting_id
+    )
+    assert off_roster_user.user_id not in [
+        facilitator["user_id"] for facilitator in meeting_item["facilitators"]
+    ]
+    assert "Legacy Facilitator" not in meeting_item["facilitator_names"]
+
+
 def test_get_active_meetings_returns_active_meetings(
     authenticated_client: TestClient, test_meeting_data: str
 ):

@@ -28,7 +28,10 @@ from ..utils.identifiers import (
     derive_activity_prefix,
 )
 from ..services.activity_catalog import get_activity_definition, get_activity_catalog
-from ..services.meeting_authorization import resolve_meeting_capabilities
+from ..services.meeting_authorization import (
+    derive_meeting_facilitator_outputs,
+    resolve_meeting_capabilities,
+)
 from ..config.loader import get_activity_participant_exclusivity
 from ..services import meeting_state_manager
 
@@ -1575,44 +1578,7 @@ class MeetingManager:
 
             status_counts[computed_status] += 1
 
-            facilitator_assignments = self._collect_facilitator_assignments(meeting)
-            facilitator_names = [
-                self._format_user_name(link.user)
-                for link in facilitator_assignments
-                if link.user
-            ]
-            facilitator_name = (
-                ", ".join(facilitator_names)
-                if facilitator_names
-                else self._format_facilitator_name(meeting, facilitator_assignments)
-            )
-            facilitator_payload = [
-                {
-                    "id": link.facilitator_id,
-                    "user_id": link.user_id,
-                    "name": (
-                        self._format_user_name(link.user) if link.user else "Unknown"
-                    ),
-                    "is_owner": bool(link.is_owner),
-                }
-                for link in facilitator_assignments
-            ]
-            owner_link = next(
-                (link for link in facilitator_assignments if link.is_owner), None
-            )
-            owner_summary = {
-                "id": owner_link.facilitator_id if owner_link else None,
-                "user_id": (
-                    owner_link.user_id
-                    if owner_link
-                    else getattr(meeting.owner, "user_id", None)
-                ),
-                "name": (
-                    self._format_user_name(owner_link.user)
-                    if owner_link and owner_link.user
-                    else self._format_facilitator_name(meeting, facilitator_assignments)
-                ),
-            }
+            facilitator_outputs = derive_meeting_facilitator_outputs(meeting)
 
             items.append(
                 {
@@ -1628,9 +1594,12 @@ class MeetingManager:
                     "description_snippet": self._build_description_snippet(
                         meeting.description
                     ),
-                    "facilitator": owner_summary,
-                    "facilitator_names": facilitator_names,
-                    "facilitators": facilitator_payload,
+                    "facilitator": facilitator_outputs.owner_summary(),
+                    "facilitator_names": facilitator_outputs.facilitator_names,
+                    "facilitators": [
+                        summary.to_dict()
+                        for summary in facilitator_outputs.facilitators
+                    ],
                     "is_facilitator": capabilities["is_facilitator"],
                     "is_participant": capabilities["is_participant"],
                     "is_public": meeting.is_public,

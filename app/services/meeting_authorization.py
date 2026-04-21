@@ -33,11 +33,57 @@ class MeetingCapabilities:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class MeetingFacilitatorOutput:
+    """Canonical facilitator-facing meeting metadata derived from capabilities."""
+
+    id: Optional[str]
+    user_id: Optional[str]
+    name: str
+    is_owner: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class MeetingFacilitatorOutputs:
+    facilitators: list[MeetingFacilitatorOutput]
+    facilitator_ids: list[str]
+    facilitator_user_ids: list[str]
+    facilitator_names: list[str]
+
+    def owner_summary(self) -> dict[str, Any]:
+        owner = next((item for item in self.facilitators if item.is_owner), None)
+        if owner is None:
+            return {"id": None, "user_id": None, "name": "Unknown"}
+        return {
+            "id": owner.id,
+            "user_id": owner.user_id,
+            "name": owner.name,
+        }
+
+
 def _normalize_role_value(user: Optional[User]) -> Optional[str]:
     role_value = getattr(user, "role", None)
     if isinstance(role_value, UserRole):
         return role_value.value
     return role_value
+
+
+def _format_user_display(user: Any) -> str:
+    first = (getattr(user, "first_name", None) or "").strip()
+    last = (getattr(user, "last_name", None) or "").strip()
+    name = " ".join(part for part in (first, last) if part)
+    if name:
+        return name
+    login = getattr(user, "login", None)
+    if login:
+        return login
+    email = getattr(user, "email", None)
+    if email:
+        return email
+    return "Unknown"
 
 
 def _resolve_meeting_capabilities(
@@ -135,4 +181,94 @@ def resolve_meeting_capabilities(
         meeting,
         user_id=getattr(user, "user_id", None),
         role_value=_normalize_role_value(user),
+    )
+
+
+def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutputs:
+    """
+    Gravy Parachute: derive surviving facilitator-facing meeting metadata from the
+    canonical capability model, not from facilitator rows.
+    """
+
+    facilitator_links = list(getattr(meeting, "facilitator_links", []) or [])
+    links_by_user_id = {
+        getattr(link, "user_id", None): link
+        for link in facilitator_links
+        if getattr(link, "user_id", None)
+    }
+
+    identities: list[tuple[Optional[str], Optional[str], str, bool]] = []
+    seen_user_ids: set[str] = set()
+
+    def add_identity(
+        user_id: Optional[str],
+        *,
+        role_value: Optional[str],
+        name: str,
+        is_owner: bool = False,
+    ) -> None:
+        if not user_id or user_id in seen_user_ids:
+            return
+        seen_user_ids.add(user_id)
+        identities.append((user_id, role_value, name, is_owner))
+
+    owner = getattr(meeting, "owner", None)
+    owner_id = getattr(meeting, "owner_id", None)
+    owner_link = links_by_user_id.get(owner_id)
+    add_identity(
+        owner_id,
+        role_value=(
+            _normalize_role_value(owner)
+            if owner is not None
+            else _normalize_role_value(getattr(owner_link, "user", None))
+        ),
+        name=_format_user_display(
+            owner
+            or getattr(owner_link, "user", None)
+            or type("MeetingOwnerIdentity", (), {"login": owner_id})()
+        ),
+        is_owner=True,
+    )
+
+    for participant in list(getattr(meeting, "participants", []) or []):
+        add_identity(
+            getattr(participant, "user_id", None),
+            role_value=_normalize_role_value(participant),
+            name=_format_user_display(participant),
+        )
+
+    facilitators: list[MeetingFacilitatorOutput] = []
+    facilitator_ids: list[str] = []
+    facilitator_user_ids: list[str] = []
+    facilitator_names: list[str] = []
+
+    for user_id, role_value, name, is_owner in identities:
+        capabilities = resolve_meeting_capabilities_for_identity(
+            meeting,
+            user_id=user_id,
+            role_value=role_value,
+        )
+        if not capabilities.is_facilitator:
+            continue
+
+        link = links_by_user_id.get(user_id)
+        facilitator_id = getattr(link, "facilitator_id", None)
+        summary = MeetingFacilitatorOutput(
+            id=facilitator_id,
+            user_id=user_id,
+            name=name,
+            is_owner=is_owner,
+        )
+        facilitators.append(summary)
+        if facilitator_id:
+            facilitator_ids.append(facilitator_id)
+        facilitator_user_ids.append(user_id)
+        if name and name not in facilitator_names:
+            facilitator_names.append(name)
+
+    return MeetingFacilitatorOutputs(
+        facilitators=facilitators,
+        facilitator_ids=facilitator_ids,
+        facilitator_user_ids=facilitator_user_ids,
+        facilitator_names=facilitator_names,
     )
