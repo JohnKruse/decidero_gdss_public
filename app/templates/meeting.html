@@ -12,7 +12,7 @@
     data-user-login="{{ current_user.login if current_user else '' }}"
     data-user-id="{{ current_user.user_id if current_user else '' }}"
     data-user-role="{{ ((current_user.role.value if current_user and current_user.role.value is defined else (current_user.role if current_user else 'guest'))) | lower }}"
-    data-view-mode="{{ 'facilitator' if current_user.role in ['admin', 'super_admin', 'facilitator'] else 'participant' }}"
+    data-view-mode="{{ 'facilitator' if can_manage_meeting else 'participant' }}"
     data-brainstorm-max-length="{{ brainstorming_limits.idea_character_limit | default(500) }}"
     data-brainstorm-max-ideas="{{ brainstorming_limits.max_ideas_per_user | default(0) }}"
     data-meeting-refresh-enabled="{{ 'true' if meeting_refresh.get('enabled', True) else 'false' }}"
@@ -56,7 +56,7 @@
                 <span class="meeting-overview-label">Facilitator</span>
                 <strong id="meetingOverviewFacilitator">—</strong>
             </div>
-            {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
+            {% if can_manage_meeting %}
             <div class="meeting-overview-meta-item">
                 <span class="meeting-overview-label">Activity log</span>
                 <a class="control-btn sm meeting-log-button" href="/meeting/{{ meeting_id }}/activity-log"
@@ -93,7 +93,7 @@
                 </div>
                 <div class="section-body" id="agendaSectionBody">
                     <ol class="agenda-timeline" id="meetingAgendaList"></ol>
-                    {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
+                    {% if can_manage_meeting %}
                     <div class="card-actions">
                     <button type="button" class="control-btn" id="openParticipantAdminButton">Meeting Roster</button>
                     <button type="button" class="control-btn" id="agendaAddActivityButton">Meeting Settings</button>

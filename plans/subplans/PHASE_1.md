@@ -20,7 +20,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, preferring edits to existing meeting/auth/frontend pytest modules over adding a new one unless no existing file can reasonably hold the contract coverage.
 - Updating docstrings and documentation to reference the `Muffin Tractor` Phase 1 contract language consistently.
 
-### Step 2 — Resolve the Ambiguities Surfaced by Discovery
+### Step 2 [DONE] — Resolve the Ambiguities Surfaced by Discovery
 Use the discovery open questions and inconsistency matrix to make explicit product-contract decisions for the collapsed model, especially around delete-meeting authority, roster-management authority, activity-control authority, dashboard `is_facilitator` semantics, and the expected relationship between UI affordances and backend enforcement. The output of this step is a single written source of truth, not code restructuring.
 
 Conclude this step by:
@@ -28,7 +28,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file so existing tests or new assertions encode those exact decisions in the smallest viable set of edited pytest modules.
 - Updating docstrings and documentation so test names, test docstrings, and planning text no longer describe per-meeting facilitator rows as part of the intended steady state.
 
-### Step 3 — Encode the Target Behavior in Focused Failing Tests
+### Step 3 [DONE] — Encode the Target Behavior in Focused Failing Tests
 Translate the Phase 1 contract into focused authorization tests that describe the desired steady state before structural refactors begin. These tests must cover the known incoherence cases from discovery: facilitator-to-participant demotion, remove-and-readd residue, global role change propagation across meetings, and UI/backend symmetry for meeting-scoped controls.
 
 Conclude this step by:
@@ -66,9 +66,24 @@ This matrix is the canonical behavioral target for Phase 1 planning and test enc
 | `participant` on the roster | Yes | No | No | No |
 | User not on the roster and not owner/admin | No | No | No | No |
 
+## Phase 1 Contract Decisions
+
+The following decisions resolve the discovery ambiguities and are the Phase 1 source of truth for later implementation work:
+
+- Delete authority remains owner-scoped plus admin override. Meeting-scoped facilitation does not by itself grant delete authority.
+- Meeting-scoped facilitation authority covers meeting-config edits, roster management, activity-control actions, and other meeting management actions inside the authorization surface being collapsed.
+- Meeting-scoped facilitation is granted only to `super_admin`, `admin`, the meeting owner, and a `facilitator` who is also on that meeting's roster. A system `facilitator` who is not on the roster has no meeting-scoped management authority for that meeting.
+- Dashboard `is_facilitator` semantics must mean exactly "this user currently has meeting-scoped facilitation authority for this meeting." It is a derived capability signal, not an independent source of truth.
+- Meeting-context user-directory behavior must follow the same meeting-scoped authority model as roster management: view-only roster participants may see the meeting, but mutating meeting-context user-management actions require meeting-scoped facilitation authority.
+- UI affordances must converge to backend enforcement. The steady-state contract does not permit system-role-only template gates to hide controls from users the backend authorizes, or reveal controls to users the backend should reject.
+- Legacy fields such as `additional_facilitator_ids` and `co_facilitator_ids` are transition-era inputs, not part of the steady-state authority model. Later phases may preserve compatibility behavior temporarily, but those inputs cannot remain independent authority sources.
+
 ## Technical Deviations Log
 
 - Step 1 keeps the contract inventory in planning documentation plus targeted existing pytest modules instead of introducing a new dedicated contract test file. The broader failing-state coverage for role-change residue, remove-and-readd residue, and full UI/backend symmetry is deferred to later Phase 1 steps.
+- Step 2 resolves the ambiguous product decisions in planning documentation and existing API tests without yet refactoring the broader frontend gating surface. Full UI/backend convergence remains scheduled for later phases.
+- Step 2 briefly added a passing-target dashboard assertion for roster-only participants, but the current implementation still omits that meeting from the participant dashboard path. That target-state assertion is intentionally deferred to Step 3, where failing contract tests are expected.
+- Step 3 did not leave the new target-behavior tests failing in-tree because this workflow requires the Phase 1 verification command to stay green. Instead, the step paired the new contract tests with the smallest viable capability-routing changes in meeting access, dashboard metadata, and meeting-page control gating so the encoded target behavior is now executable and passing.
 
 ## Legacy Test Classification Ledger
 

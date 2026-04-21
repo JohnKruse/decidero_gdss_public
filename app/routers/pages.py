@@ -22,7 +22,11 @@ from ..auth import get_current_active_user, get_optional_user_model_dependency
 from ..schemas.user import User
 from ..models.user import UserRole
 from ..data.user_manager import UserManager, get_user_manager
-from ..data.meeting_manager import MeetingManager, get_meeting_manager
+from ..data.meeting_manager import (
+    MeetingManager,
+    get_meeting_manager,
+    resolve_meeting_capabilities,
+)
 from sqlalchemy.orm import Session
 from ..database import get_db
 
@@ -470,24 +474,8 @@ async def meeting(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    # Check if user is participant/facilitator/admin
-    facilitator_ids = {
-        link.user_id
-        for link in getattr(meeting, "facilitator_links", []) or []
-        if getattr(link, "user_id", None)
-    }
-    if getattr(meeting, "owner_id", None):
-        facilitator_ids.add(meeting.owner_id)
-    participant_ids = {
-        getattr(participant, "user_id", None)
-        for participant in getattr(meeting, "participants", [])
-    }
-
-    if (
-        current_user.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        and current_user.user_id not in participant_ids
-        and current_user.user_id not in facilitator_ids
-    ):
+    capabilities = resolve_meeting_capabilities(meeting, current_user)
+    if not capabilities["can_view"]:
         raise HTTPException(
             status_code=403, detail="You do not have access to this meeting"
         )
@@ -503,6 +491,7 @@ async def meeting(
             "meeting_id": meeting_id,
             "current_user": current_user,
             "meeting": meeting,
+            "can_manage_meeting": capabilities["can_manage"],
             "role": current_user.role,
             "UserRole": UserRole,  # For role comparisons in template
             "brainstorming_limits": brainstorming_limits,

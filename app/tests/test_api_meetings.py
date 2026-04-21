@@ -168,6 +168,7 @@ def test_participant_cannot_archive_meeting(
     user_manager_with_admin: UserManager,
     test_meeting_data: str,
 ):
+    """Muffin Tractor: roster participants can view meetings but cannot archive or otherwise manage them."""
     participant_password = "ParticipantArchive@123!"
     participant = user_manager_with_admin.add_user(
         first_name="Part",
@@ -188,6 +189,53 @@ def test_participant_cannot_archive_meeting(
 
     archive_response = client.post(f"/api/meetings/{test_meeting_data}/archive")
     assert archive_response.status_code == 403
+
+
+def test_dashboard_marks_rostered_participant_as_non_facilitator(
+    authenticated_client: TestClient,
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Muffin Tractor: roster-only participants appear on the dashboard without facilitator authority."""
+    participant_password = "ParticipantDashboard@123!"
+    participant = user_manager_with_admin.add_user(
+        first_name="Dash",
+        last_name="Participant",
+        email="participant.dashboard@example.com",
+        hashed_password=get_password_hash(participant_password),
+        role=UserRole.PARTICIPANT.value,
+        login="participant_dashboard",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(participant)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Participant Dashboard Scope",
+            "description": "Verifies participant-facing meeting capability output",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [participant.user_id],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": participant.login, "password": participant_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    dashboard_response = client.get("/api/meetings/")
+    assert dashboard_response.status_code == 200, dashboard_response.json()
+    meeting_item = next(
+        item for item in dashboard_response.json()["items"] if item["id"] == meeting_id
+    )
+    assert meeting_item["is_participant"] is True
+    assert meeting_item["is_facilitator"] is False
 
 
 def test_export_meeting_returns_zip_bundle(
@@ -699,12 +747,12 @@ def test_get_meeting_agenda_includes_lock_metadata(
     assert "mode" in categorization_row["locked_config_keys"]
 
 
-def test_cofacilitator_update_permissions(
+def test_rostered_facilitator_update_permissions(
     client: TestClient,
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Muffin Tractor: inventory the current co-facilitator boundary for updates and delete semantics."""
+    """Muffin Tractor: a facilitator on the meeting roster can update meeting metadata but still cannot delete."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -732,8 +780,8 @@ def test_cofacilitator_update_permissions(
         duration_minutes=60,
         publicity=PublicityType.PUBLIC,
         owner_id=admin_user_id,
-        participant_ids=[],
-        additional_facilitator_ids=[cofac_user_id],
+        participant_ids=[cofac_user_id],
+        additional_facilitator_ids=[],
     )
     meeting = meeting_manager.create_meeting(meeting_payload, admin_user.user_id)
     assert meeting is not None
@@ -774,6 +822,7 @@ def test_facilitator_controls_start_stop_tool(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: meeting-scoped facilitation authority includes activity-control operations."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -833,6 +882,158 @@ def test_facilitator_controls_start_stop_tool(
     stop_state = stop_response.json()["state"]
     assert stop_state["currentTool"] is None
     assert stop_state["status"] == "completed"
+
+
+def test_removed_facilitator_loses_control_until_readded(
+    client: TestClient,
+    db_session,
+    user_manager_with_admin: UserManager,
+):
+    """Muffin Tractor: removing a facilitator from the roster strips meeting-scoped control until roster membership returns."""
+    admin_user = user_manager_with_admin.get_user_by_email(
+        os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    )
+    assert admin_user is not None
+
+    facilitator_password = "RosterFac1!"
+    facilitator_user = user_manager_with_admin.add_user(
+        first_name="Roster",
+        last_name="Facilitator",
+        email="roster.facilitator@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="roster_facilitator",
+    )
+    db_session.commit()
+    db_session.refresh(facilitator_user)
+
+    meeting_manager = MeetingManager(db_session)
+    meeting_payload = MeetingCreate(
+        title="Roster Access Boundary",
+        description="Exercise remove and re-add facilitator behavior",
+        start_time=datetime.now(UTC) + timedelta(hours=2),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=admin_user.user_id,
+        participant_ids=[facilitator_user.user_id],
+        additional_facilitator_ids=[facilitator_user.user_id],
+    )
+    meeting = meeting_manager.create_meeting(
+        meeting_payload,
+        admin_user.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Kickoff")],
+    )
+    assert meeting is not None
+    activity_id = meeting.agenda_activities[0].activity_id if meeting.agenda_activities else None
+    assert activity_id is not None
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator_user.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    control_payload = {
+        "action": "start_tool",
+        "tool": "brainstorming",
+        "activityId": activity_id,
+    }
+    initial_control = client.post(
+        f"/api/meetings/{meeting.meeting_id}/control",
+        json=control_payload,
+    )
+    assert initial_control.status_code == 200, initial_control.json()
+
+    meeting_manager.remove_participant(meeting.meeting_id, facilitator_user.user_id)
+    after_removal = client.post(
+        f"/api/meetings/{meeting.meeting_id}/control",
+        json=control_payload,
+    )
+    assert after_removal.status_code == 403, after_removal.json()
+
+    meeting_manager.add_participant(meeting.meeting_id, facilitator_user)
+    after_readd = client.post(
+        f"/api/meetings/{meeting.meeting_id}/control",
+        json=control_payload,
+    )
+    assert after_readd.status_code == 200, after_readd.json()
+
+
+def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
+    client: TestClient,
+    db_session,
+    user_manager_with_admin: UserManager,
+):
+    """Muffin Tractor: demotion to participant removes meeting-scoped control across meetings and hides management controls in the UI."""
+    admin_user = user_manager_with_admin.get_user_by_email(
+        os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    )
+    assert admin_user is not None
+
+    facilitator_password = "DemoteFac1!"
+    facilitator_user = user_manager_with_admin.add_user(
+        first_name="Demoted",
+        last_name="Facilitator",
+        email="demoted.facilitator@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="demoted_facilitator",
+    )
+    db_session.commit()
+    db_session.refresh(facilitator_user)
+
+    meeting_manager = MeetingManager(db_session)
+    meeting_ids = []
+    for index in range(2):
+        meeting_payload = MeetingCreate(
+            title=f"Demotion Meeting {index + 1}",
+            description="Verify role change propagation",
+            start_time=datetime.now(UTC) + timedelta(hours=2 + index),
+            duration_minutes=30,
+            publicity=PublicityType.PUBLIC,
+            owner_id=admin_user.user_id,
+            participant_ids=[facilitator_user.user_id],
+            additional_facilitator_ids=[facilitator_user.user_id],
+        )
+        meeting = meeting_manager.create_meeting(
+            meeting_payload,
+            admin_user.user_id,
+            agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Kickoff")],
+        )
+        assert meeting is not None
+        meeting_ids.append((meeting.meeting_id, meeting.agenda_activities[0].activity_id))
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator_user.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    pre_demote_control = client.post(
+        f"/api/meetings/{meeting_ids[0][0]}/control",
+        json={"action": "start_tool", "tool": "brainstorming", "activityId": meeting_ids[0][1]},
+    )
+    assert pre_demote_control.status_code == 200, pre_demote_control.json()
+
+    updated_user = user_manager_with_admin.update_user_role(
+        facilitator_user.login,
+        UserRole.PARTICIPANT.value,
+    )
+    assert updated_user is not None
+    assert updated_user.role == UserRole.PARTICIPANT.value
+
+    meeting_page = client.get(f"/meeting/{meeting_ids[0][0]}")
+    assert meeting_page.status_code == 200, meeting_page.text
+    assert "Meeting Roster" not in meeting_page.text
+    assert "Meeting Settings" not in meeting_page.text
+    assert 'data-view-mode="participant"' in meeting_page.text
+
+    for meeting_id, activity_id in meeting_ids:
+        control_attempt = client.post(
+            f"/api/meetings/{meeting_id}/control",
+            json={"action": "start_tool", "tool": "brainstorming", "activityId": activity_id},
+        )
+        assert control_attempt.status_code == 403, control_attempt.json()
 
 
 def test_start_preserves_accumulated_elapsed_time(

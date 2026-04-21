@@ -34,6 +34,46 @@ from ..services import meeting_state_manager
 ACTIVITY_SEQUENCE_WIDTH = 4
 
 
+def resolve_meeting_capabilities(meeting: Meeting, user: Optional[User]) -> Dict[str, bool]:
+    """Derive meeting-scoped capabilities from role, ownership, and roster membership only."""
+    if user is None:
+        return {
+            "is_admin": False,
+            "is_owner": False,
+            "is_participant": False,
+            "is_facilitator": False,
+            "can_view": False,
+            "can_manage": False,
+            "can_delete": False,
+        }
+
+    role_value = getattr(user, "role", None)
+    if isinstance(role_value, UserRole):
+        role_value = role_value.value
+
+    is_admin = role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
+    is_owner = getattr(meeting, "owner_id", None) == getattr(user, "user_id", None)
+    participant_ids = {
+        getattr(participant, "user_id", None)
+        for participant in (getattr(meeting, "participants", []) or [])
+        if getattr(participant, "user_id", None)
+    }
+    is_participant = getattr(user, "user_id", None) in participant_ids
+    has_facilitator_role = role_value == UserRole.FACILITATOR.value
+    is_facilitator = is_admin or is_owner or (has_facilitator_role and is_participant)
+    can_view = is_admin or is_owner or is_participant
+
+    return {
+        "is_admin": is_admin,
+        "is_owner": is_owner,
+        "is_participant": is_participant,
+        "is_facilitator": is_facilitator,
+        "can_view": can_view,
+        "can_manage": is_facilitator,
+        "can_delete": is_admin or is_owner,
+    }
+
+
 class MeetingManager:
     """Manages meeting data using SQLAlchemy."""
 
@@ -1502,10 +1542,8 @@ class MeetingManager:
             if include_facilitator:
                 filters.append(
                     or_(
-                        Meeting.facilitator_links.any(
-                            MeetingFacilitator.user_id == user.user_id
-                        ),
                         Meeting.owner_id == user.user_id,
+                        Meeting.participants.any(User.user_id == user.user_id),
                     )
                 )
             if include_participant:
@@ -1552,6 +1590,7 @@ class MeetingManager:
         now = datetime.now(timezone.utc)
 
         for meeting in meetings:
+            capabilities = resolve_meeting_capabilities(meeting, user)
             start_at = self._ensure_aware(meeting.started_at)
             end_at = self._ensure_aware(meeting.end_time)
             created_at = self._ensure_aware(meeting.created_at)
@@ -1633,13 +1672,8 @@ class MeetingManager:
                     "facilitator": owner_summary,
                     "facilitator_names": facilitator_names,
                     "facilitators": facilitator_payload,
-                    "is_facilitator": any(
-                        link.user_id == user.user_id for link in facilitator_assignments
-                    ),
-                    "is_participant": any(
-                        p.user_id == user.user_id
-                        for p in getattr(meeting, "participants", [])
-                    ),
+                    "is_facilitator": capabilities["is_facilitator"],
+                    "is_participant": capabilities["is_participant"],
                     "is_public": meeting.is_public,
                     "participant_count": len(getattr(meeting, "participants", [])),
                     "archive_file": (

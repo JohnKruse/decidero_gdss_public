@@ -26,7 +26,11 @@ from app.models.meeting import AgendaActivity, Meeting
 from app.models.idea import Idea
 from app.models.activity_bundle import ActivityBundle
 from app.models.voting import VotingVote
-from app.data.meeting_manager import MeetingManager, get_meeting_manager
+from app.data.meeting_manager import (
+    MeetingManager,
+    get_meeting_manager,
+    resolve_meeting_capabilities,
+)
 from app.auth.auth import (
     get_current_user,
     get_optional_user_model_dependency,
@@ -205,23 +209,17 @@ def _assert_meeting_access(
     user,
     require_facilitator: bool = False,
 ) -> None:
-    facilitator_links = getattr(meeting, "facilitator_links", []) or []
-    participants = getattr(meeting, "participants", []) or []
-
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-    is_participant = any(person.user_id == user.user_id for person in participants)
+    capabilities = resolve_meeting_capabilities(meeting, user)
 
     if require_facilitator:
-        if not (is_admin or is_owner or is_facilitator):
+        if not capabilities["can_manage"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only facilitators can modify the meeting agenda.",
             )
         return
 
-    if not (is_admin or is_owner or is_facilitator or is_participant):
+    if not capabilities["can_view"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to access this meeting",
@@ -1881,19 +1879,16 @@ async def update_meeting(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    facilitator_links = getattr(existing_meeting, "facilitator_links", []) or []
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = existing_meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
+    capabilities = resolve_meeting_capabilities(existing_meeting, user)
 
-    if not (is_admin or is_owner or is_facilitator):
+    if not capabilities["can_manage"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this meeting",
         )
 
     update_payload = meeting.model_dump(exclude_unset=True)
-    if is_facilitator and not (is_admin or is_owner):
+    if capabilities["is_facilitator"] and not capabilities["can_delete"]:
         restricted_fields = {"owner_id", "facilitator_ids"}
         attempted = restricted_fields.intersection(update_payload.keys())
         if attempted:
@@ -1932,12 +1927,9 @@ async def control_meeting(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    facilitator_links = getattr(meeting, "facilitator_links", []) or []
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
+    capabilities = resolve_meeting_capabilities(meeting, user)
 
-    if not (is_admin or is_owner or is_facilitator):
+    if not capabilities["can_manage"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only facilitators can control meeting tools.",

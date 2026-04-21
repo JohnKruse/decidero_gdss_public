@@ -72,14 +72,14 @@ def test_meeting_settings_button_label():
 
 
 def test_meeting_roster_button_present():
-    """Muffin Tractor: inventory the current template gate that exposes the meeting roster control."""
+    """Muffin Tractor: meeting roster controls are gated by meeting-scoped manage authority in the template."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert 'id="openParticipantAdminButton"' in html
     assert "Meeting Roster" in html
-    assert html.index("current_user.role in ['admin', 'super_admin', 'facilitator']") < html.index(
-        'id="openParticipantAdminButton"'
-    )
+    assert "{% if can_manage_meeting %}" in html
+    assert html.index("{% if can_manage_meeting %}") < html.index('id="openParticipantAdminButton"')
+    assert "'facilitator' if can_manage_meeting else 'participant'" in html
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
     assert "openParticipantAdminButton" in js
