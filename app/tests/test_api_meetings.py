@@ -822,7 +822,7 @@ def test_facilitator_controls_start_stop_tool(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
-    """Muffin Tractor: meeting-scoped facilitation authority includes activity-control operations."""
+    """Muffin Tractor: meeting-scoped facilitation authority includes activity-control operations, even while this test still uses transition-era setup fields."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )

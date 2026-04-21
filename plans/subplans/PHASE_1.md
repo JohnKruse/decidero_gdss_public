@@ -36,7 +36,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, favoring surgical edits to existing files such as `app/tests/test_api_meetings.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_frontend_smoke.py`, `app/tests/test_auth.py`, or other already-relevant suites instead of creating a new test file.
 - Updating docstrings and documentation so every new or revised contract test clearly states the intended collapsed-model behavior and carries the `Muffin Tractor` phase marker where appropriate.
 
-### Step 4 — Classify Legacy Tests Against the New Contract
+### Step 4 [DONE] — Classify Legacy Tests Against the New Contract
 Review the existing tests identified in discovery that currently pin auto-grant behavior or facilitator-row assumptions. For each affected test, classify it as `keep`, `rewrite`, or `delete`, with one-line rationale tied to the Phase 1 contract. This creates the controlled migration map for later phases without performing the later-phase rewrites yet.
 
 Conclude this step by:
@@ -84,19 +84,23 @@ The following decisions resolve the discovery ambiguities and are the Phase 1 so
 - Step 2 resolves the ambiguous product decisions in planning documentation and existing API tests without yet refactoring the broader frontend gating surface. Full UI/backend convergence remains scheduled for later phases.
 - Step 2 briefly added a passing-target dashboard assertion for roster-only participants, but the current implementation still omits that meeting from the participant dashboard path. That target-state assertion is intentionally deferred to Step 3, where failing contract tests are expected.
 - Step 3 did not leave the new target-behavior tests failing in-tree because this workflow requires the Phase 1 verification command to stay green. Instead, the step paired the new contract tests with the smallest viable capability-routing changes in meeting access, dashboard metadata, and meeting-page control gating so the encoded target behavior is now executable and passing.
+- Step 4 records migration status against the currently renamed pytest anchors rather than the stale discovery-era names alone. Where a test still uses compatibility payload fields such as `co_facilitator_ids`, the ledger now treats that field as transition-only setup input and flags the remaining cleanup for later phases instead of forcing a premature API-surface rewrite here.
 
 ## Legacy Test Classification Ledger
 
-The following tests from discovery require explicit disposition during later phases:
+The following tests from discovery now have an explicit Phase 1 migration disposition and one-line contract rationale:
 
-| Existing test anchor | Current premise | Phase 1 disposition |
-|---|---|---|
-| `app/tests/test_meeting_manager.py::test_activity_participant_scope_management` | Facilitator users auto-acquire facilitator meeting power | Rewrite |
-| `app/tests/test_meeting_manager.py::test_bulk_update_participants_adds_and_removes_users` | Bulk add auto-grants facilitator status | Rewrite |
-| `app/tests/test_api_meetings.py::test_cofacilitator_update_permissions` | Co-facilitator row is a live authorization concept | Rewrite |
-| `app/tests/test_api_meetings.py::test_facilitator_controls_start_stop_tool` | Facilitator authority may derive from per-meeting facilitator assignment | Rewrite |
-| `app/tests/test_api_participants.py` roster CRUD coverage | Facilitator-only management likely assumes old facilitator derivation | Review and rewrite where needed |
-| `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` | Meeting Roster button gated by system role template branch | Rewrite |
+| Test anchor | Disposition | Contract rationale | Phase 1 note |
+|---|---|---|---|
+| `app/tests/test_meeting_manager.py::test_activity_participant_scope_management` | Keep | Activity participant scoping is valid only inside the meeting roster and does not depend on legacy facilitator rows. | Keep as a target-state roster-scope assertion; later phases may rename it to emphasize meeting-scoped management instead of generic facilitator language. |
+| `app/tests/test_meeting_manager.py::test_bulk_update_participants_adds_and_removes_users` | Keep | Bulk roster updates remain valid under the collapsed model because they mutate roster membership rather than deriving independent facilitator authority. | Keep the behavior, but later phases should scrub any lingering implication that added users acquire facilitation automatically. |
+| `app/tests/test_api_meetings.py::test_rostered_facilitator_update_permissions` | Rewrite | The contract is about roster-backed meeting authority, not a standalone co-facilitator row. | This is the live successor to discovery's `test_cofacilitator_update_permissions`; later cleanup should remove co-facilitator naming and transition-era setup cues. |
+| `app/tests/test_api_meetings.py::test_facilitator_controls_start_stop_tool` | Rewrite | Activity control belongs to meeting-scoped facilitation authority, but this test still bootstraps that authority through compatibility `co_facilitator_ids` input. | Keep the assertion, but later phases should create the roster-backed setup without implying that legacy fields are the source of truth. |
+| `app/tests/test_api_participants.py::test_facilitator_can_add_and_remove_participants` | Keep | Meeting roster CRUD is a direct expression of meeting-scoped management authority. | This already matches the target contract and only needs contract labeling. |
+| `app/tests/test_api_participants.py::test_non_facilitator_cannot_manage_participants` | Keep | Roster-only viewers must not gain mutation authority. | This already encodes the collapsed-model boundary and remains authoritative. |
+| `app/tests/test_api_participants.py::test_facilitator_can_assign_activity_participants` | Keep | Meeting-scoped managers may control activity participation, but only for roster members. | Keep as-is; it aligns with the contract and the roster-boundary model. |
+| `app/tests/test_api_participants.py::test_bulk_participant_endpoint_supports_add_and_remove` | Keep | Bulk roster management is still valid when authorized by meeting-scoped management authority. | Keep as a roster-management regression anchor. |
+| `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` | Keep | The button is now gated by `can_manage_meeting`, which matches the backend-derived meeting capability contract. | Discovery flagged the old system-role gate; the current test is already rewritten and should stay as the UI-side contract sentinel. |
 
 ## Phase Exit Criteria
 

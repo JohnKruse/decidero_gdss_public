@@ -39,6 +39,7 @@ def _create_user(
 def test_facilitator_can_add_and_remove_participants(
     authenticated_client: TestClient, user_manager_with_admin: UserManager
 ):
+    """Muffin Tractor: keep this roster CRUD coverage because meeting-scoped managers may add and remove participants."""
     # Arrange: create meeting and a participant user
     meeting_id = _create_meeting(authenticated_client)
     new_user = _create_user(user_manager_with_admin, login="pool_user")
@@ -75,6 +76,7 @@ def test_non_facilitator_cannot_manage_participants(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: keep this boundary because roster viewers cannot mutate meeting membership."""
     # Arrange: create meeting and a non-facilitator user, add them as participant
     meeting_id = _create_meeting(authenticated_client)
     participant = _create_user(user_manager_with_admin, login="participant_only")
@@ -107,6 +109,7 @@ def test_facilitator_can_assign_activity_participants(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: keep this activity-scope test because meeting-scoped managers may assign only roster participants."""
     meeting_id = _create_meeting(authenticated_client)
     meeting_res = authenticated_client.get(f"/api/meetings/{meeting_id}")
     assert meeting_res.status_code == 200, meeting_res.json()
@@ -182,6 +185,7 @@ def test_bulk_participant_endpoint_supports_add_and_remove(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: keep this bulk roster update coverage as a meeting-scoped management regression anchor."""
     meeting_id = _create_meeting(authenticated_client)
     roster_one = _create_user(user_manager_with_admin, login="bulk_api_one")
     roster_two = _create_user(user_manager_with_admin, login="bulk_api_two")

@@ -825,6 +825,7 @@ def test_activity_participant_scope_management(
     test_facilitator: User,
     other_user: User,
 ):
+    """Muffin Tractor: activity participant scoping stays roster-bound and does not rely on legacy facilitator rows."""
     second_participant_id = generate_user_id(db_session, "Participant", "Two")
     second_participant = User(
         user_id=second_participant_id,
@@ -1036,6 +1037,7 @@ def test_bulk_update_participants_adds_and_removes_users(
     test_facilitator: User,
     other_user: User,
 ):
+    """Muffin Tractor: bulk roster updates remain valid under the collapsed contract without auto-granting meeting authority."""
     start_time = datetime.now(UTC) + timedelta(hours=1)
     meeting_payload = MeetingCreate(
         title="Bulk Update Meeting",
