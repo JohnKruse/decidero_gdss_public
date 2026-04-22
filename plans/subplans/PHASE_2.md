@@ -1,4 +1,4 @@
-# PHASE 2 — Authorization Surface Unification
+# PHASE 2 [COMPLETE] — Authorization Surface Unification
 
 **Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
 
@@ -44,7 +44,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, favoring targeted edits to existing meeting-manager, meetings API, and related backend suites over creating a new pytest file.
 - Updating docstrings and documentation so any surviving derived capability fields are explicitly documented as outputs of the unified model, not separate sources of truth.
 
-### Step 5 — Lock the Backend Verification Boundary
+### Step 5 [DONE] — Lock the Backend Verification Boundary
 Define and verify the exact backend-oriented command that certifies this phase. Phase 2 is complete only when the canonical capability model is the sole meeting-scoped backend authority source, all selected backend suites pass, and no router/data enforcement path within scope still depends on per-meeting facilitator rows for authorization.
 
 Conclude this step by:
@@ -80,20 +80,22 @@ This phase does **not** complete the following:
 - Step 2 rewires the remaining core meeting gates in `app/routers/meetings.py`, but it intentionally leaves non-core page-route gate cleanup and meeting-context derived flag normalization for later phases. Archive and restore are now treated as delete-authority operations under the canonical model, which is stricter than the earlier generic facilitator gate and aligns those endpoints with the Phase 1 contract.
 - Step 3 rewires the brainstorming, voting, rank-order voting, transfer, and meeting-directory router families onto the canonical capability model, but it does not yet normalize every backend-derived output field those routes serialize. Result-visibility and directory badge semantics now derive from the canonical model while broader payload cleanup remains scheduled for Step 4.
 - Step 4 normalizes meeting response, dashboard, and meeting-directory capability outputs so retained facilitator-facing flags now derive from the canonical model even when legacy facilitator rows still exist in storage. The backend continues to preserve matching legacy facilitator identifiers in serialized summaries when they correspond to canonical facilitators, but row presence alone no longer grants serializer visibility or meeting-context badge status.
+- Step 5 locks the backend verification boundary around the full Phase 2 scope map, including the meeting-directory suite added in Step 4. The final certification run reaches `[100%]` with the guest-join feature-flag tests reported as skipped by design, so the boundary now treats those skips as expected non-failures rather than carving them out with a separate filter.
 
 ## Phase Exit Criteria
 
-Phase 2 clears only when the following command passes 100%:
+Phase 2 clears only when the following command reaches `[100%]` and finishes without failures:
 
 ```bash
-PYTHONPATH=. ./venv/bin/pytest app/tests/test_auth.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_transfer_api.py -v
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_auth.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_api_user_directory.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_transfer_api.py -v
 ```
 
 Passing this command means:
 - the canonical backend capability model is implemented and in active use,
 - the selected existing pytest modules have been updated instead of unnecessarily duplicated,
 - backend authorization is consistent across the meeting and activity router surface in scope for this phase,
-- and documentation/docstrings describe one unified backend authority model.
+- documentation/docstrings describe one unified backend authority model,
+- and feature-gated guest join tests may report `SKIPPED` when the guest entry flag is disabled, but no authorization-path test in scope may fail.
 
 ---
 
