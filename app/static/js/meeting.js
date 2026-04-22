@@ -18,6 +18,19 @@
             userId: root.dataset.userId || null,
             userRole: (root.dataset.userRole || "participant").toLowerCase(),
         };
+        const parseBool = (value, fallback = false) => {
+            if (value === undefined || value === null || value === "") {
+                return fallback;
+            }
+            return String(value).toLowerCase() === "true";
+        };
+        const initialMeetingCapabilities = {
+            canView: parseBool(root.dataset.meetingCanView, false),
+            canManage: parseBool(root.dataset.meetingCanManage, false),
+            canDelete: parseBool(root.dataset.meetingCanDelete, false),
+            isFacilitator: parseBool(root.dataset.meetingIsFacilitator, false),
+            isParticipant: parseBool(root.dataset.meetingIsParticipant, false),
+        };
         const parsePositiveInt = (value, fallback) => {
             const parsed = Number.parseInt(value, 10);
             return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -49,13 +62,6 @@
             maxIdeasPerUser: Number(root.dataset.brainstormMaxIdeas || "") || 0,
         };
         const meetingRefreshConfig = (() => {
-            const parseBool = (value, fallback) => {
-                if (value === undefined || value === null || value === "") {
-                    return fallback;
-                }
-                return String(value).toLowerCase() === "true";
-            };
-
             const enabled = parseBool(root.dataset.meetingRefreshEnabled, true);
             const intervalSeconds = parsePositiveInt(root.dataset.meetingRefreshIntervalSeconds, 8);
             const hiddenIntervalSeconds = parsePositiveInt(
@@ -438,6 +444,10 @@
             latestState: null,
             isFacilitator: false,
             isParticipant: false,
+            canViewMeeting: initialMeetingCapabilities.canView,
+            canManageMeeting: initialMeetingCapabilities.canManage,
+            canDeleteMeeting: initialMeetingCapabilities.canDelete,
+            viewerCapabilities: { ...initialMeetingCapabilities },
             facilitatorBusy: false,
             activityAssignments: new Map(),
             participantStage: "waiting",
@@ -511,6 +521,41 @@
                 active.push({ id: currentId, status: currentStatus });
             }
             return active;
+        }
+
+        function resolveViewerCapabilities(meeting) {
+            const capabilityRecord =
+                meeting && typeof meeting.viewer_capabilities === "object" && meeting.viewer_capabilities
+                    ? meeting.viewer_capabilities
+                    : null;
+            if (capabilityRecord) {
+                return {
+                    canView: Boolean(capabilityRecord.can_view),
+                    canManage: Boolean(capabilityRecord.can_manage),
+                    canDelete: Boolean(capabilityRecord.can_delete),
+                    isFacilitator: Boolean(capabilityRecord.is_facilitator),
+                    isParticipant: Boolean(capabilityRecord.is_participant),
+                };
+            }
+
+            return { ...initialMeetingCapabilities };
+        }
+
+        function applyViewerCapabilities(capabilities) {
+            state.viewerCapabilities = { ...capabilities };
+            state.canViewMeeting = Boolean(capabilities.canView);
+            state.canManageMeeting = Boolean(capabilities.canManage);
+            state.canDeleteMeeting = Boolean(capabilities.canDelete);
+            state.isFacilitator = Boolean(capabilities.isFacilitator);
+            state.isParticipant = Boolean(capabilities.isParticipant);
+            if (root) {
+                root.dataset.meetingCanView = state.canViewMeeting ? "true" : "false";
+                root.dataset.meetingCanManage = state.canManageMeeting ? "true" : "false";
+                root.dataset.meetingCanDelete = state.canDeleteMeeting ? "true" : "false";
+                root.dataset.meetingIsFacilitator = state.isFacilitator ? "true" : "false";
+                root.dataset.meetingIsParticipant = state.isParticipant ? "true" : "false";
+                root.dataset.viewMode = state.isFacilitator ? "facilitator" : "participant";
+            }
         }
 
         function getActivityRosterSummary(activityId) {
@@ -7136,20 +7181,10 @@
             state.meeting = meeting;
             document.title = `${meeting.title} – Meeting`;
 
-            const facilitatorIds = new Set(
-                (meeting.facilitator_user_ids || []).concat(meeting.owner_id ? [meeting.owner_id] : []),
-            );
-            const participantIds = new Set(meeting.participant_ids || []);
-
-            state.isFacilitator =
-                facilitatorIds.has(context.userId) || isAdminUser;
-            state.isParticipant = state.isFacilitator || participantIds.has(context.userId);
+            applyViewerCapabilities(resolveViewerCapabilities(meeting));
 
             if (!state.isParticipant) {
                 throw new Error("You are not registered for this meeting.");
-            }
-            if (root) {
-                root.dataset.viewMode = state.isFacilitator ? "facilitator" : "participant";
             }
 
             renderAgenda(meeting.agenda || []);
@@ -7184,18 +7219,9 @@
             if (!meeting || typeof meeting !== "object") {
                 return false;
             }
-            const facilitatorIds = new Set(
-                (meeting.facilitator_user_ids || []).concat(meeting.owner_id ? [meeting.owner_id] : []),
-            );
-            const participantIds = new Set(meeting.participant_ids || []);
+            applyViewerCapabilities(resolveViewerCapabilities(meeting));
 
-            const isFacilitator = facilitatorIds.has(context.userId) || isAdminUser;
-            const isParticipant = isFacilitator || participantIds.has(context.userId);
-
-            state.isFacilitator = isFacilitator;
-            state.isParticipant = isParticipant;
-
-            if (!isParticipant) {
+            if (!state.isParticipant && !state.canViewMeeting) {
                 showAccessMessage("Your access to this meeting has been revoked.");
                 setStatus("Access revoked", "error");
                 setTimeout(() => {

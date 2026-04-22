@@ -20,7 +20,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, preferring edits to existing frontend, page, and meeting/API pytest modules over creating a new pytest file unless no existing suite can reasonably hold the coverage.
 - Updating docstrings and documentation so the Phase 3 `Toaster Sombrero` scope clearly distinguishes per-meeting authority from global-role-only UI.
 
-### Step 2 — Rebase Meeting Templates and Frontend State on Backend Capability
+### Step 2 [DONE] — Rebase Meeting Templates and Frontend State on Backend Capability
 Update the meeting-facing templates and JavaScript initialization path so meeting-scoped controls are driven by a backend-derived capability record rather than raw system role. This includes in-meeting settings access, roster access, activity controls, view-mode derivation, and any frontend state that currently treats a global facilitator role as sufficient meeting authority.
 
 Conclude this step by:
@@ -75,6 +75,7 @@ This phase does **not** complete the following:
 ## Technical Deviations Log
 
 - Step 1 inventories the Phase 3 coherence surfaces by moving the meeting settings page, activity-log page, and meeting-page SSR shell onto the canonical backend capability model while exposing a backend-derived per-meeting capability record in `meeting.html`. The client bootstrap in `app/static/js/meeting.js` still reconstructs facilitator state from compatibility fields at runtime, and dashboard role-panels still hinge on global-role shells; those frontend-state and dashboard-affordance rebases remain explicitly deferred to Steps 2 and 3.
+- Step 2 rebases the meeting page bootstrap and refresh path onto a backend-derived `viewer_capabilities` record in the meeting API payload, so page view mode and facilitator controls no longer depend on compatibility facilitator IDs or raw system role. Dashboard meeting affordances and other frontend consumers outside the meeting page still need the same capability-semantic cleanup, which remains explicitly deferred to Step 3.
 
 ## Phase Exit Criteria
 

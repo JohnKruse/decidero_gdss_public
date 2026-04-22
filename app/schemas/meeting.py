@@ -227,6 +227,14 @@ class MeetingFacilitatorSummary(BaseModel):
     is_owner: bool = False
 
 
+class MeetingViewerCapabilities(BaseModel):
+    can_view: bool = False
+    can_manage: bool = False
+    can_delete: bool = False
+    is_facilitator: bool = False
+    is_participant: bool = False
+
+
 class MeetingResponse(BaseModel):
     meeting_id: str
     id: Optional[str] = None  # Legacy alias mirroring meeting_id
@@ -249,6 +257,10 @@ class MeetingResponse(BaseModel):
     facilitator_names: List[str] = Field(
         default_factory=list,
         description="Display names for canonical meeting facilitators only.",
+    )
+    viewer_capabilities: MeetingViewerCapabilities = Field(
+        default_factory=MeetingViewerCapabilities,
+        description="Backend-derived meeting capability record for the current viewer.",
     )
     agenda: List["AgendaActivityResponse"] = Field(default_factory=list)
 

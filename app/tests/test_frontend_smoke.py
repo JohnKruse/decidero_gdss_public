@@ -90,6 +90,10 @@ def test_meeting_roster_button_present():
     assert "openParticipantAdminButton" in js
     assert "openParticipantAdminModal" in js
     assert 'setParticipantModalMode("meeting")' in js
+    assert "viewer_capabilities" in js
+    assert "resolveViewerCapabilities" in js
+    assert "applyViewerCapabilities" in js
+    assert "root.dataset.meetingCanManage" in js
 
 
 def test_activity_modal_simplified():

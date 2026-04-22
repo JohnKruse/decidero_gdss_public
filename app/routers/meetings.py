@@ -235,6 +235,12 @@ def _assert_meeting_delete_authority(meeting, user) -> None:
         )
 
 
+def _serialize_meeting_response(meeting: Meeting, user: User) -> MeetingResponse:
+    payload = MeetingResponse.model_validate(meeting).model_dump()
+    payload["viewer_capabilities"] = resolve_meeting_capabilities(meeting, user).to_dict()
+    return MeetingResponse.model_validate(payload)
+
+
 def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
     if not value:
         return None
@@ -723,6 +729,7 @@ async def _apply_live_roster_patch(
 @router.get("/active", response_model=List[MeetingResponse])
 async def get_active_meetings(
     current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
     meeting_manager: MeetingManager = Depends(
         get_meeting_manager
     ),  # Inject MeetingManager
@@ -732,9 +739,14 @@ async def get_active_meetings(
     """
     try:
         logger.debug(f"Fetching active meetings for user: {current_user}")
+        user = user_manager.get_user_by_login(current_user)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
         # Removed await as get_active_meetings is synchronous
         meetings = meeting_manager.get_active_meetings()
-        return [MeetingResponse.model_validate(meeting) for meeting in meetings]
+        return [_serialize_meeting_response(meeting, user) for meeting in meetings]
     except Exception as e:
         logger.error(f"Error fetching active meetings: {str(e)}")
         raise HTTPException(
@@ -815,7 +827,7 @@ async def create_meeting(
             user.user_id,
             agenda_items=agenda_payloads,
         )
-        return MeetingResponse.model_validate(new_meeting)
+        return _serialize_meeting_response(new_meeting, user)
     except Exception as e:
         logger.error(f"Error creating meeting: {str(e)}")
         raise HTTPException(
@@ -896,7 +908,7 @@ async def update_meeting_configuration(
         ):
             setattr(updated_meeting, "start_time", updated_meeting.started_at)
 
-        return MeetingResponse.model_validate(updated_meeting)
+        return _serialize_meeting_response(updated_meeting, user)
     except HTTPException:
         raise
     except Exception as e:
@@ -1766,7 +1778,7 @@ async def import_meeting(
 
         meeting_manager.db.commit()
         refreshed = meeting_manager.get_meeting(new_meeting.meeting_id) or new_meeting
-        return MeetingResponse.model_validate(refreshed)
+        return _serialize_meeting_response(refreshed, user)
     except HTTPException:
         meeting_manager.db.rollback()
         raise
@@ -1816,7 +1828,7 @@ async def get_meeting(
             meeting_id, meeting_manager, getattr(meeting, "agenda_activities", []) or []
         )
 
-        return MeetingResponse.model_validate(meeting)
+        return _serialize_meeting_response(meeting, user)
     except HTTPException:
         raise
     except Exception as e:
@@ -1898,7 +1910,7 @@ async def update_meeting(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update meeting",
         )
-    return MeetingResponse.model_validate(updated_meeting)
+    return _serialize_meeting_response(updated_meeting, user)
 
 
 @router.post("/{meeting_id}/control", response_model=MeetingControlResponse)
@@ -2420,7 +2432,7 @@ async def archive_meeting_endpoint(
             exc,
         )
 
-    return MeetingResponse.model_validate(archived)
+    return _serialize_meeting_response(archived, user)
 
 
 @router.post("/{meeting_id}/restore", response_model=MeetingResponse)
@@ -2450,7 +2462,7 @@ async def restore_meeting_endpoint(
             detail="Failed to restore meeting",
         )
 
-    return MeetingResponse.model_validate(updated)
+    return _serialize_meeting_response(updated, user)
 
 
 @router.post("/join", response_model=JoinMeetingResponse)

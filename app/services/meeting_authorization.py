@@ -30,7 +30,9 @@ class MeetingCapabilities:
         return getattr(self, key)
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        payload = asdict(self)
+        payload["is_participant"] = self.is_participant
+        return payload
 
 
 @dataclass(frozen=True)

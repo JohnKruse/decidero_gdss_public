@@ -238,6 +238,55 @@ def test_dashboard_marks_rostered_participant_as_non_facilitator(
     assert meeting_item["is_facilitator"] is False
 
 
+def test_meeting_payload_exposes_rostered_facilitator_viewer_capabilities(
+    authenticated_client: TestClient,
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Toaster Sombrero: meeting payload exposes backend-derived viewer capability state for the current rostered facilitator."""
+    facilitator_password = "ViewerCaps1!"
+    facilitator = user_manager_with_admin.add_user(
+        first_name="Viewer",
+        last_name="Caps",
+        email="viewer.caps@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="viewer_caps_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(facilitator)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Viewer Capability Meeting",
+            "description": "Expose meeting capability state to rostered facilitator clients",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [facilitator.user_id],
+            "co_facilitator_ids": [facilitator.user_id],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    meeting_response = client.get(f"/api/meetings/{meeting_id}")
+    assert meeting_response.status_code == 200, meeting_response.json()
+    viewer_capabilities = meeting_response.json()["viewer_capabilities"]
+    assert viewer_capabilities["can_view"] is True
+    assert viewer_capabilities["can_manage"] is True
+    assert viewer_capabilities["can_delete"] is False
+    assert viewer_capabilities["is_facilitator"] is True
+    assert viewer_capabilities["is_participant"] is True
+
+
 def test_export_meeting_returns_zip_bundle(
     authenticated_client: TestClient, test_meeting_data: str
 ):
@@ -404,6 +453,11 @@ def test_get_meeting_returns_meeting(
     assert isinstance(result, dict)
     assert result["id"] == meeting_id
     assert "title" in result
+    assert result["viewer_capabilities"]["can_view"] is True
+    assert result["viewer_capabilities"]["can_manage"] is True
+    assert result["viewer_capabilities"]["can_delete"] is True
+    assert result["viewer_capabilities"]["is_facilitator"] is True
+    assert result["viewer_capabilities"]["is_participant"] is False
     admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     admin_user = user_manager_with_admin.get_user_by_email(admin_email)
     assert admin_user is not None
