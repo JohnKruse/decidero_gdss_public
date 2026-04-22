@@ -12,7 +12,7 @@ Use this exact two-word canary in Phase 3 notes, commit messages, test docstring
 
 ## Atomic Steps
 
-### Step 1 — Inventory and Normalize Per-Meeting UI Gates
+### Step 1 [DONE] — Inventory and Normalize Per-Meeting UI Gates
 Review the Phase 3 surfaces identified in discovery and isolate every meeting-scoped UI control that is still gated by global role or stale page-load assumptions rather than the unified backend capability model. This includes meeting page controls, dashboard meeting affordances, capability-bearing template attributes, and JavaScript state derived from `data-user-role` or analogous system-role-only inputs.
 
 Conclude this step by:
@@ -71,6 +71,10 @@ This phase does **not** complete the following:
 - Physical removal of `MeetingFacilitator`, `meeting_facilitators`, or ORM relationships, which belongs to Phase 4.
 - Export/import contract cleanup and removal of legacy compatibility fields, which belongs to Phase 5.
 - WebSocket auth cleanup or unrelated UI redesign outside the role/permission coherence path.
+
+## Technical Deviations Log
+
+- Step 1 inventories the Phase 3 coherence surfaces by moving the meeting settings page, activity-log page, and meeting-page SSR shell onto the canonical backend capability model while exposing a backend-derived per-meeting capability record in `meeting.html`. The client bootstrap in `app/static/js/meeting.js` still reconstructs facilitator state from compatibility fields at runtime, and dashboard role-panels still hinge on global-role shells; those frontend-state and dashboard-affordance rebases remain explicitly deferred to Steps 2 and 3.
 
 ## Phase Exit Criteria
 

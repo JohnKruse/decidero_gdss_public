@@ -4,6 +4,9 @@ from app.tests.conftest import (
     ADMIN_PASSWORD_FOR_TEST,
     ADMIN_LOGIN_FOR_TEST,
 )  # Import admin credentials if needed for login setup
+from app.data.user_manager import UserManager
+from app.models.user import UserRole
+from app.utils.security import get_password_hash
 
 
 # Tests for GET requests to page routes
@@ -77,6 +80,118 @@ def test_create_meeting_page_includes_participant_avatar_rendering(
     assert page.status_code == 200
     assert "normalizeAvatarPath" in page.text
     assert "avatar_icon_path" in page.text
+
+
+def test_meeting_page_exposes_backend_capability_data(
+    authenticated_client: TestClient,
+):
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Capability Inventory Meeting",
+            "description": "Expose per-meeting capability state to the page shell",
+            "scheduled_datetime": "2099-12-31T12:00:00Z",
+            "agenda_items": ["Review"],
+            "participant_contacts": [ADMIN_LOGIN_FOR_TEST],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+
+    page = authenticated_client.get(f"/meeting/{create_response.json()['id']}")
+    assert page.status_code == 200
+    assert 'data-meeting-can-view="true"' in page.text
+    assert 'data-meeting-can-manage="true"' in page.text
+    assert 'data-meeting-can-delete="true"' in page.text
+    assert 'data-meeting-is-facilitator="true"' in page.text
+    assert 'data-meeting-is-participant="false"' in page.text
+
+
+def test_off_roster_facilitator_cannot_access_meeting_page_controls(
+    client: TestClient,
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    facilitator_password = "PageScope1!"
+    facilitator = user_manager_with_admin.add_user(
+        first_name="Page",
+        last_name="Facilitator",
+        email="page.facilitator@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="page_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(facilitator)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Page Gate Meeting",
+            "description": "Verifies page-route gates use meeting capability rather than facilitator rows",
+            "scheduled_datetime": "2099-12-31T12:00:00Z",
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    settings_response = client.get(f"/meeting/{meeting_id}/settings")
+    assert settings_response.status_code == 403
+
+    activity_log_response = client.get(f"/meeting/{meeting_id}/activity-log")
+    assert activity_log_response.status_code == 403
+
+
+def test_rostered_facilitator_can_access_meeting_page_controls(
+    client: TestClient,
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    facilitator_password = "RosterPage1!"
+    facilitator = user_manager_with_admin.add_user(
+        first_name="Rostered",
+        last_name="Pagefac",
+        email="rostered.pagefac@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="rostered_pagefac",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(facilitator)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Rostered Page Gate Meeting",
+            "description": "Verifies rostered facilitators keep page-route control access",
+            "scheduled_datetime": "2099-12-31T12:00:00Z",
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [facilitator.user_id],
+            "co_facilitator_ids": [facilitator.user_id],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    settings_response = client.get(f"/meeting/{meeting_id}/settings")
+    assert settings_response.status_code == 200
+
+    activity_log_response = client.get(f"/meeting/{meeting_id}/activity-log")
+    assert activity_log_response.status_code == 200
 
 
 # Add more tests for other GETtable pages if needed (e.g., /meeting/create, /admin/users)

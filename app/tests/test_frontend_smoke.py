@@ -72,7 +72,7 @@ def test_meeting_settings_button_label():
 
 
 def test_meeting_roster_button_present():
-    """Muffin Tractor: meeting roster controls are gated by meeting-scoped manage authority in the template."""
+    """Toaster Sombrero: meeting roster controls are inventoried against a backend-derived per-meeting capability record."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert 'id="openParticipantAdminButton"' in html
@@ -80,6 +80,11 @@ def test_meeting_roster_button_present():
     assert "{% if can_manage_meeting %}" in html
     assert html.index("{% if can_manage_meeting %}") < html.index('id="openParticipantAdminButton"')
     assert "'facilitator' if can_manage_meeting else 'participant'" in html
+    assert 'data-meeting-can-view="{{ \'true\' if meeting_capabilities.can_view else \'false\' }}"' in html
+    assert 'data-meeting-can-manage="{{ \'true\' if meeting_capabilities.can_manage else \'false\' }}"' in html
+    assert 'data-meeting-can-delete="{{ \'true\' if meeting_capabilities.can_delete else \'false\' }}"' in html
+    assert 'data-meeting-is-facilitator="{{ \'true\' if meeting_capabilities.is_facilitator else \'false\' }}"' in html
+    assert 'data-meeting-is-participant="{{ \'true\' if meeting_capabilities.is_participant else \'false\' }}"' in html
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
     assert "openParticipantAdminButton" in js
