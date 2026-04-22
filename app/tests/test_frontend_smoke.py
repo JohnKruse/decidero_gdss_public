@@ -178,6 +178,13 @@ def test_meeting_js_redirects_on_unauth():
     assert "login_required" in contents
 
 
+def test_dashboard_js_uses_viewer_capabilities_for_meeting_actions():
+    with open("app/static/js/dashboard.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "meeting.viewer_capabilities" in js
+    assert "capabilityRecord.can_manage === true" in js
+
+
 def test_meeting_page_renders_agenda_items(authenticated_client: TestClient):
     """Meeting page should load and agenda API should return created items."""
     meeting_payload = {

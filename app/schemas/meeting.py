@@ -509,6 +509,10 @@ class MeetingListItem(BaseModel):
         description="Whether the current user has canonical meeting facilitator authority."
     )
     is_participant: bool
+    viewer_capabilities: MeetingViewerCapabilities = Field(
+        default_factory=MeetingViewerCapabilities,
+        description="Backend-derived meeting capability record for the current dashboard viewer.",
+    )
     is_public: bool
     participant_count: int = 0
     archive_file: Optional[str] = None

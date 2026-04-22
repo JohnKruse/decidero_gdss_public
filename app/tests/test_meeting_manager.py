@@ -1657,6 +1657,10 @@ def test_dashboard_meetings_scoped_and_classified(
     assert payload["summary"]["total"] == 4
     assert all(item["facilitators"] for item in payload["items"])
     assert all(item["facilitator_names"] for item in payload["items"])
+    assert all("viewer_capabilities" in item for item in payload["items"])
+    assert all(item["viewer_capabilities"]["can_view"] is True for item in payload["items"])
+    assert all(item["viewer_capabilities"]["can_manage"] is False for item in payload["items"])
+    assert all(item["viewer_capabilities"]["can_delete"] is False for item in payload["items"])
     assert all(
         re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", item["facilitator"]["id"])
         for item in payload["items"]
@@ -1671,6 +1675,10 @@ def test_dashboard_meetings_scoped_and_classified(
         role_scope="facilitator",
     )
     assert facilitator_payload["summary"]["total"] == 4
+    assert all(
+        item["viewer_capabilities"]["can_manage"] is True
+        for item in facilitator_payload["items"]
+    )
     assert all(
         any(f["user_id"] == test_facilitator.user_id for f in item["facilitators"])
         for item in facilitator_payload["items"]

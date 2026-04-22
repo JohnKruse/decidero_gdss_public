@@ -1602,6 +1602,7 @@ class MeetingManager:
                     ],
                     "is_facilitator": capabilities["is_facilitator"],
                     "is_participant": capabilities["is_participant"],
+                    "viewer_capabilities": capabilities.to_dict(),
                     "is_public": meeting.is_public,
                     "participant_count": len(getattr(meeting, "participants", [])),
                     "archive_file": (

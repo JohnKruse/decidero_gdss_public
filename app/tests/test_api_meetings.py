@@ -97,6 +97,11 @@ def test_list_meetings_returns_dashboard_payload(
     assert meeting_item["facilitator_names"]
     assert "is_facilitator" in meeting_item
     assert meeting_item["is_facilitator"] is True
+    assert meeting_item["viewer_capabilities"]["can_view"] is True
+    assert meeting_item["viewer_capabilities"]["can_manage"] is True
+    assert meeting_item["viewer_capabilities"]["can_delete"] is True
+    assert meeting_item["viewer_capabilities"]["is_facilitator"] is True
+    assert meeting_item["viewer_capabilities"]["is_participant"] is False
 
 
 def test_list_meetings_supports_status_filter(
@@ -236,6 +241,11 @@ def test_dashboard_marks_rostered_participant_as_non_facilitator(
     )
     assert meeting_item["is_participant"] is True
     assert meeting_item["is_facilitator"] is False
+    assert meeting_item["viewer_capabilities"]["can_view"] is True
+    assert meeting_item["viewer_capabilities"]["can_manage"] is False
+    assert meeting_item["viewer_capabilities"]["can_delete"] is False
+    assert meeting_item["viewer_capabilities"]["is_facilitator"] is False
+    assert meeting_item["viewer_capabilities"]["is_participant"] is True
 
 
 def test_meeting_payload_exposes_rostered_facilitator_viewer_capabilities(

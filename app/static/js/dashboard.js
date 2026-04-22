@@ -696,11 +696,13 @@
         if (!meeting || typeof meeting !== 'object') {
             return false;
         }
-
-        if (state.capabilities.has('admin')) {
-            return true;
+        const capabilityRecord =
+            meeting.viewer_capabilities && typeof meeting.viewer_capabilities === 'object'
+                ? meeting.viewer_capabilities
+                : null;
+        if (capabilityRecord) {
+            return capabilityRecord.can_manage === true;
         }
-
         return meeting.is_facilitator === true;
     }
 
