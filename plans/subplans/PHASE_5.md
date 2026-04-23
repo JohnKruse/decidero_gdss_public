@@ -12,13 +12,26 @@ Use this exact two-word canary in Phase 5 notes, commit messages, test docstring
 
 ## Atomic Steps
 
-### Step 1 — Inventory the Remaining External Contract Surface
+### Step 1 [DONE] — Inventory the Remaining External Contract Surface
 Identify every outward-facing contract element that can still leak the old facilitator model after Phase 4, including meeting payload fields, dashboard summaries, export bundle contents, transfer/import schemas, and any test assertions that still validate legacy facilitator artifacts as if they were part of the intended active API. The output of this step is a complete cleanup ledger for all remaining public-facing contract debt.
 
 Conclude this step by:
 - Implementing the core logic as the complete Phase 5 ledger of remaining API/export/import/test contract elements tied to the old facilitator model.
 - Creating or updating the relevant pytest file, preferring edits to existing API/transfer/meeting pytest modules over creating a new pytest file unless an existing suite cannot reasonably carry the contract-cleanup coverage.
 - Updating docstrings and documentation so the Phase 5 `Pickle Trombone` scope clearly distinguishes active contract cleanup from narrowly-isolated backward-compatibility handling.
+
+Step 1 external contract ledger for `Pickle Trombone`:
+
+| Surface | Current external contract debt | Cleanup target |
+|---|---|---|
+| `app/schemas/meeting.py` | `MeetingFacilitatorSummary`, `facilitator_ids`, `facilitator_user_ids`, `facilitators`, `facilitator_names`, and `is_owner` still shape active meeting/dashboard responses around facilitator terminology. | Step 2 removes active response fields or renames them to collapsed owner/authority terminology. |
+| `app/services/meeting_authorization.py` | `MeetingFacilitatorOutput`, `MeetingFacilitatorOutputs`, and `derive_meeting_facilitator_outputs` still produce facilitator-shaped response metadata even though the data is capability-derived. | Step 2 replaces derived facilitator metadata with collapsed owner/authority presentation metadata. |
+| `app/data/meeting_manager.py` | Dashboard payloads still emit `facilitator_names` and `facilitators`. `create_meeting`, `add_meeting`, and `update_meeting` still accept facilitator-oriented compatibility inputs. | Step 2 removes active dashboard response fields; Step 4 resolves create/update contract naming that remains after import compatibility is isolated. |
+| `app/routers/meetings.py` | `MeetingCreateRequest.co_facilitator_ids`, update `facilitator_ids`, restricted-field language, export `facilitators`, and import reader mapping of legacy `facilitators` into `additional_facilitator_ids` remain visible. | Step 2 removes active API response/update semantics; Step 3 isolates legacy import/export handling so new exports stop writing old structures. |
+| `app/static/js/dashboard.js` and `app/static/js/meeting.js` | Frontend display logic still reads `facilitators`, `facilitator_names`, `facilitator.is_owner`, and `meeting.facilitator`. | Step 2 updates consumers to owner/authority fields once backend responses expose the cleaned contract. |
+| `app/templates/create_meeting.html` | Create-meeting payload still sends `co_facilitator_ids: []` as an active request shape. | Step 4 removes stale create-contract payload language unless Step 2 replaces it earlier. |
+| `app/tests/test_api_meetings.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_api_user_directory.py`, `app/tests/test_pages.py`, and frontend smoke tests | Existing assertions still require facilitator-shaped response fields and names as intended behavior. | Steps 2-4 rewrite tests to assert owner/capability/participant contract fields and retain only isolated legacy import-reader tests. |
+| Export fixture `EXPORT_ZIP_BASE64` in `app/tests/test_api_meetings.py` | Legacy import fixture still includes facilitator-bearing serialized data. | Step 3 keeps this only as a one-way legacy import fixture and verifies new exports do not write facilitator structures. |
 
 ### Step 2 — Remove Legacy Facilitator Semantics from Active API Responses
 Clean the live API surface so active responses no longer expose `facilitator_links`, facilitator-assignment arrays, `is_owner`-style facilitator-row semantics, or equivalent remnants of the old model. Any capability or meeting-authority fields that remain must describe the collapsed model directly and be consumed as such by dependent code and tests.
@@ -71,6 +84,10 @@ This phase does **not** complete the following:
 - Broad end-to-end merge-readiness verification across the entire application surface, which belongs to Phase 6.
 - New authorization model design work; Phase 5 cleans contracts, it does not redefine authority rules.
 - WebSocket auth cleanup or unrelated transfer-system redesign outside the facilitator-contract cleanup path.
+
+## Technical Deviations Log
+
+- Step 1 (`Pickle Trombone`): This step intentionally documents the external contract debt without removing it. Active response and export/import changes begin in Step 2 and Step 3 so the cleanup remains reviewable and the legacy import exception is isolated rather than mixed into the inventory pass.
 
 ## Phase Exit Criteria
 

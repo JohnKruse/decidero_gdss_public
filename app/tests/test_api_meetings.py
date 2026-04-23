@@ -40,9 +40,39 @@ EXPORT_ZIP_BASE64 = (
     "DwAADAAAAAAAAAAAAAAAgAEAAAAAbWVldGluZy5qc29uUEsFBgAAAAABAAEAOgAAAPMCAAAAAA=="
 )
 
+PHASE_5_PLAN_PATH = (
+    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_5.md"
+)
+
 
 def _decode_export_zip() -> bytes:
     return base64.b64decode(EXPORT_ZIP_BASE64)
+
+
+def test_phase5_step1_inventory_tracks_external_facilitator_contract_debt():
+    """Pickle Trombone: Phase 5 starts with a complete ledger of the remaining external facilitator-shaped contract."""
+    plan_text = PHASE_5_PLAN_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 1 [DONE] — Inventory the Remaining External Contract Surface",
+        "Step 1 external contract ledger for `Pickle Trombone`",
+        "app/schemas/meeting.py",
+        "MeetingFacilitatorSummary",
+        "facilitator_user_ids",
+        "app/services/meeting_authorization.py",
+        "derive_meeting_facilitator_outputs",
+        "app/data/meeting_manager.py",
+        "app/routers/meetings.py",
+        "MeetingCreateRequest.co_facilitator_ids",
+        "app/static/js/dashboard.js",
+        "app/static/js/meeting.js",
+        "app/templates/create_meeting.html",
+        "EXPORT_ZIP_BASE64",
+        "Technical Deviations Log",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
 
 
 @pytest.fixture(scope="function")
