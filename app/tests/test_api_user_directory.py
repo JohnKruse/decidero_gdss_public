@@ -169,7 +169,7 @@ def test_directory_marks_off_roster_legacy_facilitator_as_non_facilitator(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
-    """Gravy Parachute: meeting-directory facilitator badges derive from canonical meeting capabilities, not legacy facilitator rows."""
+    """Noodle Catapult: meeting-directory facilitator badges derive from canonical meeting capabilities."""
     off_roster_user_id = _seed_user(
         user_manager_with_admin,
         "dir_legacy_off_roster",

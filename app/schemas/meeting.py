@@ -53,22 +53,6 @@ class MeetingBase(BaseModel):
     publicity: PublicityType = Field(PublicityType.PUBLIC)
 
 
-def _format_user_display(user: Any) -> str:
-    """Return a user-friendly display name for facilitator metadata."""
-    first = (getattr(user, "first_name", None) or "").strip()
-    last = (getattr(user, "last_name", None) or "").strip()
-    name = " ".join(part for part in (first, last) if part)
-    if name:
-        return name
-    login = getattr(user, "login", None)
-    if login:
-        return login
-    email = getattr(user, "email", None)
-    if email:
-        return email
-    return "Unknown"
-
-
 class MeetingCreate(MeetingBase):
     owner_id: str
     participant_ids: Optional[List[str]] = Field(default_factory=list)
@@ -322,30 +306,7 @@ class MeetingResponse(BaseModel):
         if not value:
             return []
 
-        coerced: List[dict] = []
-        for item in value:
-            if isinstance(item, dict):
-                coerced.append(item)
-                continue
-
-            roster_id = getattr(item, "facilitator_id", None)
-            user_id = getattr(item, "user_id", None)
-            user_obj = getattr(item, "user", None)
-            is_owner = bool(getattr(item, "is_owner", False))
-
-            if user_id is None and hasattr(item, "user_id"):
-                user_id = getattr(item, "user_id")
-
-            display_source = user_obj or item
-            coerced.append(
-                {
-                    "id": roster_id,
-                    "user_id": user_id,
-                    "name": _format_user_display(display_source),
-                    "is_owner": is_owner,
-                }
-            )
-        return coerced
+        return [item for item in value if isinstance(item, dict)]
 
     @model_validator(mode="after")
     def extract_relationships(cls, values: "MeetingResponse") -> "MeetingResponse":
@@ -364,11 +325,9 @@ class MeetingResponse(BaseModel):
                 if hasattr(participant, "user_id")
             ]
 
-        facilitator_links = extra.get("facilitator_links") if extra else None
         existing_facilitators = list(values.facilitators or [])
         if extra and (
             participants_attr
-            or facilitator_links
             or extra.get("owner") is not None
             or values.owner_id
         ):
@@ -377,7 +336,6 @@ class MeetingResponse(BaseModel):
                     owner_id=values.owner_id,
                     owner=extra.get("owner"),
                     participants=participants_attr or [],
-                    facilitator_links=facilitator_links or [],
                 )
             )
             values.facilitators = [

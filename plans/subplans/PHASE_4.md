@@ -65,13 +65,20 @@ Step 3 runtime notes for `Noodle Catapult`:
 - Removed the stale `facilitated_meetings` dashboard context placeholder from `app/routers/pages.py`.
 - Added regression coverage that scans the active runtime/boot files for the old helper and startup symbols.
 
-### Step 4 — Prune Dead Code and Legacy Test Assumptions
+### Step 4 [DONE] — Prune Dead Code and Legacy Test Assumptions
 Remove helper code, relationship plumbing, and test assumptions whose only purpose was to support persisted facilitator assignments or auto-grant behavior. By the end of this step, old facilitator-model code should be absent from the active application path, and tests should assert the collapsed steady state rather than carrying transitional assumptions forward.
 
 Conclude this step by:
 - Implementing the core logic by pruning dead facilitator-model code and resolving Phase 1 rewrite/delete items that are unblocked by schema removal.
 - Creating or updating the relevant pytest file, favoring edits to the already-relevant suites instead of creating a new test file for cleanup work.
 - Updating docstrings and documentation so no active description of the model or tests still relies on per-meeting facilitator persistence semantics.
+
+Step 4 cleanup notes for `Noodle Catapult`:
+
+- Removed the legacy JSON data-access fallback that treated `facilitator_user_ids` as a meeting membership source.
+- Removed schema coercion for deleted `facilitator_links` / `facilitator_id` relationship objects; surviving facilitator-shaped response fields now accept only dict-shaped compatibility payloads until Phase 5 removes the external contract.
+- Converted the Step 1 inventory regression into a steady-state documentation regression and added a guard against active code reading removed facilitator persistence fields.
+- Updated test narratives that still described the old row-backed model as the comparison point.
 
 ### Step 5 — Lock the Phase 4 Verification Boundary
 Define the exact validation command for the schema/runtime collapse and treat this phase as complete only when the application functions without the facilitator-assignment model, the targeted suites pass, and the removed model is absent from active code paths within the scope of this phase.
@@ -105,8 +112,9 @@ This phase does **not** complete the following:
 ## Technical Deviations Log
 
 - Step 1 (`Noodle Catapult`): The isolation pass intentionally keeps outward-facing compatibility fields such as `facilitator_ids`, `facilitator_user_ids`, export/import facilitator payloads, and derived facilitator summaries in place for now. Those surfaces are documented as deferred so Step 2 and Step 3 can remove the persistent model first without mixing schema collapse with API contract cleanup that belongs to Phase 5.
-- Step 2 (`Noodle Catapult`): Removing the SQLAlchemy model required eliminating import-time eager-load references and the startup table-creation shim in the same step; otherwise the application could not import after the model registry stopped exposing `MeetingFacilitator`. Runtime helper cleanup remains intentionally incomplete and continues in Step 3.
+- Step 2 (`Noodle Catapult`): Removing the SQLAlchemy model required eliminating import-time eager-load references and the startup table-creation shim in the same step; otherwise the application could not import after the model registry stopped exposing `MeetingFacilitator`. Follow-on runtime helper cleanup was completed in Step 3.
 - Step 3 (`Noodle Catapult`): The active runtime cleanup intentionally leaves facilitator-named response schemas and derived compatibility output classes in place because those are outward-facing API contract cleanup work for Phase 5, not runtime dependencies on the removed persistence model.
+- Step 4 (`Noodle Catapult`): Facilitator-shaped API response names and create/import compatibility inputs remain by design for Phase 5. This step prunes only active code and tests that still depended on the removed persisted facilitator model or relationship objects.
 
 ## Phase Exit Criteria
 

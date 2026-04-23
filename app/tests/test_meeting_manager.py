@@ -216,22 +216,16 @@ def test_resolve_meeting_capabilities_for_all_phase1_postures(
     assert anonymous_caps["can_delete"] is False
 
 
-def test_phase4_step1_inventory_tracks_persistent_facilitator_artifacts():
-    """Noodle Catapult: Phase 4 Step 1 must enumerate the persistent facilitator artifacts before schema collapse removes them."""
+def test_phase4_documentation_tracks_completed_facilitator_model_collapse():
+    """Noodle Catapult: Phase 4 documentation must describe the collapsed steady state."""
     plan_text = PHASE_4_PLAN_PATH.read_text(encoding="utf-8")
 
     expected_markers = [
         "### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts",
-        "app/models/meeting.py",
-        "MeetingFacilitator",
-        "meeting_facilitators_table",
-        "app/models/user.py",
-        "app/main.py",
-        "_ensure_facilitator_assignment",
-        "generate_facilitator_id",
-        "app/routers/meetings.py",
-        "app/services/meeting_authorization.py",
-        "Phase 5",
+        "### Step 2 [DONE] — Collapse the ORM and Schema Model",
+        "### Step 3 [DONE] — Remove Runtime and Boot Dependencies on the Old Model",
+        "Owner authority now persists only as `Meeting.owner_id`",
+        "participant and roster mutations no longer call a facilitator-row synchronization path",
         "Technical Deviations Log",
     ]
 
@@ -275,6 +269,25 @@ def test_phase4_step3_removes_facilitator_runtime_dependencies():
     )
     for marker in forbidden_markers:
         assert marker not in combined_runtime
+
+
+def test_phase4_step4_prunes_legacy_facilitator_assumptions_from_active_code():
+    """Noodle Catapult: active code must not read removed facilitator persistence fields."""
+    active_paths = [
+        Path(__file__).resolve().parents[1] / "data" / "data_access.py",
+        Path(__file__).resolve().parents[1] / "schemas" / "meeting.py",
+    ]
+    forbidden_markers = [
+        'meeting.get("facilitator_user_ids"',
+        "facilitator_links",
+        "getattr(item, \"facilitator_id\"",
+    ]
+
+    combined_active_code = "\n".join(
+        path.read_text(encoding="utf-8") for path in active_paths
+    )
+    for marker in forbidden_markers:
+        assert marker not in combined_active_code
 
 
 def test_add_meeting(
@@ -993,7 +1006,7 @@ def test_activity_participant_scope_management(
     test_facilitator: User,
     other_user: User,
 ):
-    """Muffin Tractor: activity participant scoping stays roster-bound and does not rely on legacy facilitator rows."""
+    """Noodle Catapult: activity participant scoping stays roster-bound after facilitator persistence removal."""
     second_participant_id = generate_user_id(db_session, "Participant", "Two")
     second_participant = User(
         user_id=second_participant_id,

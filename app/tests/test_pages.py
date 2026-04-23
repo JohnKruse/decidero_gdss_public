@@ -127,7 +127,7 @@ def test_off_roster_facilitator_cannot_access_meeting_page_controls(
         "/api/meetings/",
         json={
             "title": "Page Gate Meeting",
-            "description": "Verifies page-route gates use meeting capability rather than facilitator rows",
+            "description": "Verifies page-route gates use canonical meeting capability",
             "scheduled_datetime": "2099-12-31T12:00:00Z",
             "agenda_items": ["Review"],
             "participant_contacts": [],

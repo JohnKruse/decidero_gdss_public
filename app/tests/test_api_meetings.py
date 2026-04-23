@@ -476,11 +476,11 @@ def test_get_meeting_returns_meeting(
     assert len(result["agenda"]) >= 1
 
 
-def test_meeting_outputs_ignore_off_roster_legacy_facilitator_rows(
+def test_meeting_outputs_ignore_off_roster_facilitator_role(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
-    """Gravy Parachute: serialized meeting and dashboard facilitator outputs ignore off-roster legacy facilitator rows."""
+    """Noodle Catapult: serialized meeting and dashboard outputs derive facilitators from owner/roster capability only."""
     off_roster_password = "LegacyFac1!"
     off_roster_user = user_manager_with_admin.add_user(
         first_name="Legacy",
