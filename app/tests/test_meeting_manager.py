@@ -221,11 +221,15 @@ def test_phase4_documentation_tracks_completed_facilitator_model_collapse():
     plan_text = PHASE_4_PLAN_PATH.read_text(encoding="utf-8")
 
     expected_markers = [
+        "# PHASE 4 [COMPLETE] — Data Model Collapse",
         "### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts",
         "### Step 2 [DONE] — Collapse the ORM and Schema Model",
         "### Step 3 [DONE] — Remove Runtime and Boot Dependencies on the Old Model",
+        "### Step 4 [DONE] — Prune Dead Code and Legacy Test Assumptions",
+        "### Step 5 [DONE] — Lock the Phase 4 Verification Boundary",
         "Owner authority now persists only as `Meeting.owner_id`",
         "participant and roster mutations no longer call a facilitator-row synchronization path",
+        "Remaining facilitator-shaped response names are intentionally Phase 5 compatibility work",
         "Technical Deviations Log",
     ]
 

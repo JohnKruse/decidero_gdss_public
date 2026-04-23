@@ -1,4 +1,4 @@
-# PHASE 4 — Data Model Collapse
+# PHASE 4 [COMPLETE] — Data Model Collapse
 
 **Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
 
@@ -80,13 +80,20 @@ Step 4 cleanup notes for `Noodle Catapult`:
 - Converted the Step 1 inventory regression into a steady-state documentation regression and added a guard against active code reading removed facilitator persistence fields.
 - Updated test narratives that still described the old row-backed model as the comparison point.
 
-### Step 5 — Lock the Phase 4 Verification Boundary
+### Step 5 [DONE] — Lock the Phase 4 Verification Boundary
 Define the exact validation command for the schema/runtime collapse and treat this phase as complete only when the application functions without the facilitator-assignment model, the targeted suites pass, and the removed model is absent from active code paths within the scope of this phase.
 
 Conclude this step by:
 - Implementing the core logic as the final Phase 4 verification checklist and completion notes in this file.
 - Creating or updating the relevant pytest file so the data-model-collapse coverage required for Phase 4 is included in the exit command below without unnecessary pytest file proliferation.
 - Updating docstrings and documentation so the verification command, collapse boundary, and Phase 4 canary remain aligned.
+
+Step 5 verification notes for `Noodle Catapult`:
+
+- The final Phase 4 verification boundary is the command in the Phase Exit Criteria section below.
+- Phase 4 is complete when that command finishes at `[100%]` with all runnable tests passing and only the expected guest-join feature skips.
+- The active schema, boot path, runtime helper path, and tests no longer depend on persisted per-meeting facilitator assignment rows.
+- Remaining facilitator-shaped response names are intentionally Phase 5 compatibility work and are not active persistence-model dependencies.
 
 ## Phase 4 Collapse Scope Map
 
@@ -115,6 +122,7 @@ This phase does **not** complete the following:
 - Step 2 (`Noodle Catapult`): Removing the SQLAlchemy model required eliminating import-time eager-load references and the startup table-creation shim in the same step; otherwise the application could not import after the model registry stopped exposing `MeetingFacilitator`. Follow-on runtime helper cleanup was completed in Step 3.
 - Step 3 (`Noodle Catapult`): The active runtime cleanup intentionally leaves facilitator-named response schemas and derived compatibility output classes in place because those are outward-facing API contract cleanup work for Phase 5, not runtime dependencies on the removed persistence model.
 - Step 4 (`Noodle Catapult`): Facilitator-shaped API response names and create/import compatibility inputs remain by design for Phase 5. This step prunes only active code and tests that still depended on the removed persisted facilitator model or relationship objects.
+- Step 5 (`Noodle Catapult`): The final verification run includes two expected guest-join skips because guest access remains feature-flagged; they are not Phase 4 schema/runtime collapse failures.
 
 ## Phase Exit Criteria
 
