@@ -12,13 +12,23 @@ Use this exact two-word canary in Phase 6 notes, commit messages, test docstring
 
 ## Atomic Steps
 
-### Step 1 — Establish the Final Validation Baseline
+### Step 1 [DONE] — Establish the Final Validation Baseline
 Assemble the full verification surface for this project state: automated tests, grep-based residue checks for removed facilitator-model tokens, and the concrete user-facing bug scenarios that must no longer reproduce. The output of this step is the final validation checklist that Phase 6 will close against, not new feature work.
 
 Conclude this step by:
 - Implementing the core logic as the final end-to-end validation checklist and residue-check list for Phase 6.
 - Creating or updating the relevant pytest file, preferring edits to existing broad-surface pytest modules over creating a new pytest file unless an existing suite cannot reasonably house the final regression coverage.
 - Updating docstrings and documentation so the Phase 6 `Lobster Teacup` finish line is explicit and auditable.
+
+Step 1 final validation baseline for `Lobster Teacup`:
+
+| Surface | Step 1 baseline |
+|---|---|
+| Full-suite certification command | `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` remains the terminal Phase 6 exit command and must pass 100%. |
+| Baseline documentation artifact | `docs/PHASE_6_VALIDATION_CHECKLIST.md` records the canary, certification command, residue checks, and discovery scenarios that must remain fixed. |
+| Original failure-mode regression proofs already present in broad suites | `app/tests/test_api_meetings.py::test_demoted_facilitator_loses_control_across_meetings_and_page_controls`, `app/tests/test_api_meetings.py::test_removed_facilitator_loses_control_until_readded`, and `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` establish the concrete role/roster/UI alignment baseline that later Phase 6 steps refine rather than duplicate. |
+| Removed-model residue checks | Grep validation for `MeetingFacilitator`, `meeting_facilitators`, `facilitator_links`, `_ensure_facilitator_assignment`, `_collect_facilitator_assignments`, and `_should_auto_facilitate` must stay green outside intentionally isolated compatibility and historical plan/test references. |
+| Active narrative alignment | `plans/01_MASTER_PLAN.md`, this phase file, and the new validation checklist doc must describe the same ship-readiness boundary under the `Lobster Teacup` canary. |
 
 ### Step 2 — Lock the Original Failure Modes as Final Regression Proof
 Verify, and where necessary encode in existing test coverage, the three core behavioral outcomes from the original discovery: demoting a facilitator to participant removes meeting-scoped powers, removing and re-adding a participant does not resurrect stale facilitator powers, and UI/backend capability alignment remains intact after role or roster changes. These are the mandatory no-regression proofs for ship readiness.
@@ -67,6 +77,10 @@ The following surfaces must be proven ready by the end of this phase:
 ## Phase 6 Non-Goals
 
 This phase does **not** introduce new feature scope. If a new authorization behavior question appears here, it is a scope regression and must be spun out rather than folded into final validation.
+
+## Technical Deviations Log
+
+- Step 1 (`Lobster Teacup`): This step intentionally locks the validation baseline by documenting the required full-suite command, residue-token grep list, and already-existing discovery regression tests instead of introducing redundant new behavioral coverage. The baseline is made auditable via `docs/PHASE_6_VALIDATION_CHECKLIST.md` and an existing broad-suite pytest check so later Phase 6 steps can focus on proof tightening and final merge artifacts rather than rebuilding the inventory.
 
 ## Phase Exit Criteria
 

@@ -43,6 +43,12 @@ EXPORT_ZIP_BASE64 = (
 PHASE_5_PLAN_PATH = (
     Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_5.md"
 )
+PHASE_6_PLAN_PATH = (
+    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_6.md"
+)
+PHASE_6_CHECKLIST_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "PHASE_6_VALIDATION_CHECKLIST.md"
+)
 
 
 def _decode_export_zip() -> bytes:
@@ -73,6 +79,45 @@ def test_phase5_step1_inventory_tracks_external_facilitator_contract_debt():
 
     for marker in expected_markers:
         assert marker in plan_text
+
+
+def test_phase6_step1_validation_baseline_is_auditable():
+    """Lobster Teacup: Phase 6 Step 1 records the final validation baseline, residue checklist, and discovery regression anchors."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_plan_markers = [
+        "### Step 1 [DONE] — Establish the Final Validation Baseline",
+        "Step 1 final validation baseline for `Lobster Teacup`:",
+        "docs/PHASE_6_VALIDATION_CHECKLIST.md",
+        "test_demoted_facilitator_loses_control_across_meetings_and_page_controls",
+        "test_removed_facilitator_loses_control_until_readded",
+        "test_meeting_roster_button_present",
+        "MeetingFacilitator",
+        "meeting_facilitators",
+        "facilitator_links",
+        "Technical Deviations Log",
+    ]
+    expected_checklist_markers = [
+        "# Phase 6 Validation Checklist",
+        "`Lobster Teacup`",
+        "PYTHONPATH=. ./venv/bin/pytest app/tests/ -v",
+        "test_demoted_facilitator_loses_control_across_meetings_and_page_controls",
+        "test_removed_facilitator_loses_control_until_readded",
+        "test_meeting_roster_button_present",
+        "MeetingFacilitator",
+        "meeting_facilitators",
+        "facilitator_links",
+        "_ensure_facilitator_assignment",
+        "_collect_facilitator_assignments",
+        "_should_auto_facilitate",
+    ]
+
+    for marker in expected_plan_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
 
 
 @pytest.fixture(scope="function")
