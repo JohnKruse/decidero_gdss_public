@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.models.meeting import Meeting, MeetingFacilitator, AgendaActivity
+from app.models.meeting import Meeting, AgendaActivity
 
 USER_ID_PREFIX = "USR"
 USER_ID_SEQUENCE_WIDTH = 3
@@ -137,36 +137,20 @@ def generate_meeting_id(db: Session, created_at: Optional[datetime] = None) -> s
     return f"{date_prefix}-{suffix}"
 
 
-def _next_facilitator_sequence(db: Session, prefix: str) -> int:
-    like_pattern = f"{prefix}-%"
-    latest: Optional[str] = (
-        db.query(MeetingFacilitator.facilitator_id)
-        .filter(MeetingFacilitator.facilitator_id.like(like_pattern))
-        .order_by(MeetingFacilitator.facilitator_id.desc())
-        .limit(1)
-        .scalar()
-    )
-    if not latest:
-        return 1
-    try:
-        return int(latest.split("-")[-1]) + 1
-    except (ValueError, IndexError):
-        return 1
-
-
 def generate_facilitator_id(
     db: Session,
     first_name: Optional[str],
     last_name: Optional[str],
 ) -> str:
     """
-    Construct a facilitator roster identifier following FAC-LLLLLLF-NNN.
-    The sequence is global per stem/initial combination to maintain readability.
+    Compatibility helper retained until Phase 5 removes facilitator-facing API fields.
+    Persisted facilitator rows no longer exist, so callers must not treat the
+    returned value as a database-backed identifier.
     """
     stem = _clean_stem(last_name)[:FACILITATOR_ID_STEM_LENGTH]
     initial = _clean_initial(first_name)
     prefix = f"{FACILITATOR_ID_PREFIX}-{stem}{initial}"
-    sequence = _next_facilitator_sequence(db, prefix)
+    sequence = 1
     return f"{prefix}-{sequence:0{FACILITATOR_ID_SEQUENCE_WIDTH}d}"
 
 

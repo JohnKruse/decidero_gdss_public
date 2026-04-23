@@ -27,14 +27,6 @@ def _ensure_user_access(
     user: User,
     allowed_participant_ids: Optional[Set[str]] = None,
 ) -> tuple[bool, bool]:
-    facilitator_ids = {
-        link.user_id
-        for link in getattr(meeting, "facilitator_links", []) or []
-        if getattr(link, "user_id", None)
-    }
-    if getattr(meeting, "owner_id", None):
-        facilitator_ids.add(meeting.owner_id)
-
     participant_ids = {
         getattr(participant, "user_id", None)
         for participant in getattr(meeting, "participants", [])
@@ -42,7 +34,11 @@ def _ensure_user_access(
 
     role_value = getattr(user, "role", UserRole.PARTICIPANT.value)
     is_admin = role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
-    is_facilitator = is_admin or user.user_id in facilitator_ids
+    is_owner = user.user_id == getattr(meeting, "owner_id", None)
+    is_roster_facilitator = (
+        role_value == UserRole.FACILITATOR.value and user.user_id in participant_ids
+    )
+    is_facilitator = is_admin or is_owner or is_roster_facilitator
     is_participant = is_facilitator or is_admin or user.user_id in participant_ids
 
     if not is_participant:

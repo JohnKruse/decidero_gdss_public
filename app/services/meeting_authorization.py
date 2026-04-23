@@ -192,13 +192,6 @@ def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutput
     canonical capability model, not from facilitator rows.
     """
 
-    facilitator_links = list(getattr(meeting, "facilitator_links", []) or [])
-    links_by_user_id = {
-        getattr(link, "user_id", None): link
-        for link in facilitator_links
-        if getattr(link, "user_id", None)
-    }
-
     identities: list[tuple[Optional[str], Optional[str], str, bool]] = []
     seen_user_ids: set[str] = set()
 
@@ -216,18 +209,13 @@ def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutput
 
     owner = getattr(meeting, "owner", None)
     owner_id = getattr(meeting, "owner_id", None)
-    owner_link = links_by_user_id.get(owner_id)
     add_identity(
         owner_id,
         role_value=(
-            _normalize_role_value(owner)
-            if owner is not None
-            else _normalize_role_value(getattr(owner_link, "user", None))
+            _normalize_role_value(owner) if owner is not None else UserRole.FACILITATOR.value
         ),
         name=_format_user_display(
-            owner
-            or getattr(owner_link, "user", None)
-            or type("MeetingOwnerIdentity", (), {"login": owner_id})()
+            owner or type("MeetingOwnerIdentity", (), {"login": owner_id})()
         ),
         is_owner=True,
     )
@@ -253,17 +241,13 @@ def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutput
         if not capabilities.is_facilitator:
             continue
 
-        link = links_by_user_id.get(user_id)
-        facilitator_id = getattr(link, "facilitator_id", None)
         summary = MeetingFacilitatorOutput(
-            id=facilitator_id,
+            id=None,
             user_id=user_id,
             name=name,
             is_owner=is_owner,
         )
         facilitators.append(summary)
-        if facilitator_id:
-            facilitator_ids.append(facilitator_id)
         facilitator_user_ids.append(user_id)
         if name and name not in facilitator_names:
             facilitator_names.append(name)

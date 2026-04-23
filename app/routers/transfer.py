@@ -18,7 +18,7 @@ from app.models.categorization import (
     CategorizationFinalAssignment,
 )
 from app.models.idea import Idea
-from app.models.meeting import AgendaActivity, Meeting, MeetingFacilitator
+from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
@@ -588,7 +588,6 @@ async def get_transfer_bundles(
     meeting = (
         db.query(Meeting)
         .options(
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)
@@ -678,7 +677,6 @@ async def update_transfer_draft(
     meeting = (
         db.query(Meeting)
         .options(
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)
@@ -736,7 +734,6 @@ async def commit_transfer(
     meeting = (
         db.query(Meeting)
         .options(
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)

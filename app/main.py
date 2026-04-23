@@ -29,7 +29,6 @@ from app.routers import realtime as realtime_router
 from app.routers import meeting_designer as meeting_designer_router
 from app.routers import settings as settings_router
 from app.auth.auth import auth_middleware  # Updated middleware name
-from app.models.meeting import meeting_facilitators_table
 from app.utils.logging_config import setup_logging
 import os
 from grab_extension import is_grab_enabled
@@ -98,8 +97,6 @@ async def lifespan(app: FastAPI):
     # Load the ML model
     Base.metadata.create_all(bind=engine)
     ensure_sqlite_schema(engine)
-    # Ensure the facilitator join table exists even if the DB predates the relationship
-    meeting_facilitators_table.create(bind=engine, checkfirst=True)
     print("Database initialized. First user to register will become super admin.")
     yield
     # Clean up the ML model and release the resources

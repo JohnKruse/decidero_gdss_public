@@ -3,10 +3,6 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 from enum import Enum
 
-from app.models.meeting import MeetingFacilitator
-
-meeting_facilitators_table = MeetingFacilitator.__table__
-
 
 class UserRole(str, Enum):
     SUPER_ADMIN = "super_admin"
@@ -45,20 +41,6 @@ class User(Base):
         "Meeting",
         back_populates="owner",
         foreign_keys="Meeting.owner_id",
-    )
-
-    facilitator_links = relationship(
-        "MeetingFacilitator",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-
-    # Meetings where this user is assigned as a facilitator (owner or co-facilitator)
-    facilitated_meetings = relationship(
-        "Meeting",
-        secondary=meeting_facilitators_table,
-        viewonly=True,
-        overlaps="facilitator_links,facilitators,owned_meetings",
     )
 
     # Relationship to Meetings this user participates in (defined in Meeting model via participants_table)

@@ -239,6 +239,20 @@ def test_phase4_step1_inventory_tracks_persistent_facilitator_artifacts():
         assert marker in plan_text
 
 
+def test_phase4_step2_removes_persistent_facilitator_orm_model():
+    """Noodle Catapult: the active ORM no longer exposes persisted facilitator assignments."""
+    import app.models as registered_models
+    from app.models.meeting import Meeting
+    from app.models.user import User
+
+    assert not hasattr(registered_models, "MeetingFacilitator")
+    assert not hasattr(Meeting, "facilitator_links")
+    assert not hasattr(Meeting, "facilitators")
+    assert not hasattr(User, "facilitator_links")
+    assert not hasattr(User, "facilitated_meetings")
+    assert "meeting_facilitators" not in Meeting.metadata.tables
+
+
 def test_add_meeting(
     meeting_manager_instance: MeetingManager,
     db_session: Session,
@@ -268,20 +282,13 @@ def test_add_meeting(
     assert created_meeting.meeting_id is not None
     assert created_meeting.title == meeting_data_dict["title"]
     assert created_meeting.owner_id == test_facilitator.user_id
-    roster_user_ids = {link.user_id for link in created_meeting.facilitator_links}
-    assert test_facilitator.user_id in roster_user_ids
-    assert co_facilitator.user_id in roster_user_ids
-    owner_assignment = next(
-        link
-        for link in created_meeting.facilitator_links
-        if link.user_id == test_facilitator.user_id
-    )
-    assert owner_assignment.is_owner is True
-    assert len(created_meeting.participants) == 1
-    assert created_meeting.participants[0].user_id == other_user.user_id
+    participant_user_ids = {
+        participant.user_id for participant in created_meeting.participants
+    }
+    assert participant_user_ids == {other_user.user_id, co_facilitator.user_id}
     assert re.match(r"^MTG\d{8}-[0-9A-Z]{4}$", created_meeting.meeting_id)
-    for link in created_meeting.facilitator_links:
-        assert re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", link.facilitator_id)
+    co_facilitator_caps = resolve_meeting_capabilities(created_meeting, co_facilitator)
+    assert co_facilitator_caps["can_manage"] is True
 
 
 def test_create_meeting_assigns_agenda_activities(
@@ -343,10 +350,7 @@ def test_get_meeting(
     assert fetched_meeting is not None
     assert fetched_meeting.meeting_id == added_meeting.meeting_id
     assert fetched_meeting.title == "Test Meeting Beta"
-    assert any(
-        link.user_id == test_facilitator.user_id
-        for link in fetched_meeting.facilitator_links
-    )
+    assert fetched_meeting.owner_id == test_facilitator.user_id
 
 
 def test_activity_ids_unique_across_meetings(
@@ -436,9 +440,10 @@ def test_update_meeting(
     assert updated_meeting.status == "paused"
     assert len(updated_meeting.participants) == 1
     assert updated_meeting.participants[0].user_id == other_user.user_id
-    roster_ids = {link.user_id for link in updated_meeting.facilitator_links}
-    assert test_facilitator.user_id in roster_ids
-    assert co_facilitator.user_id in roster_ids
+    assert resolve_meeting_capabilities(updated_meeting, test_facilitator)["can_manage"]
+    assert not resolve_meeting_capabilities(updated_meeting, co_facilitator)[
+        "can_manage"
+    ]
 
 
 @pytest.mark.asyncio
@@ -1473,7 +1478,7 @@ async def test_check_participant_collisions_with_multiple_active(
     assert no_conflict == []
 
 
-def test_update_meeting_owner_updates_roster(
+def test_update_meeting_owner_updates_owner_link_only(
     meeting_manager_instance: MeetingManager,
     db_session: Session,
     test_facilitator: User,
@@ -1485,10 +1490,9 @@ def test_update_meeting_owner_updates_roster(
     )
     assert meeting_to_update is not None
     assert meeting_to_update.owner_id == test_facilitator.user_id
-    assert any(
-        link.user_id == test_facilitator.user_id and link.is_owner
-        for link in meeting_to_update.facilitator_links
-    )
+    assert resolve_meeting_capabilities(meeting_to_update, test_facilitator)[
+        "is_owner"
+    ]
 
     updated_meeting = meeting_manager_instance.update_meeting(
         meeting_to_update.meeting_id,
@@ -1497,23 +1501,10 @@ def test_update_meeting_owner_updates_roster(
 
     assert updated_meeting is not None
     assert updated_meeting.owner_id == co_facilitator.user_id
-    assert any(
-        link.user_id == co_facilitator.user_id and link.is_owner
-        for link in updated_meeting.facilitator_links
-    )
-    new_owner_link = next(
-        link
-        for link in updated_meeting.facilitator_links
-        if link.user_id == co_facilitator.user_id
-    )
-    assert re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", new_owner_link.facilitator_id)
-    previous_owner_links = [
-        link
-        for link in updated_meeting.facilitator_links
-        if link.user_id == test_facilitator.user_id
+    assert resolve_meeting_capabilities(updated_meeting, co_facilitator)["is_owner"]
+    assert not resolve_meeting_capabilities(updated_meeting, test_facilitator)[
+        "is_owner"
     ]
-    assert previous_owner_links
-    assert all(link.is_owner is False for link in previous_owner_links)
 
 
 def test_archive_meeting(
@@ -1689,10 +1680,8 @@ def test_dashboard_meetings_scoped_and_classified(
     assert all(item["viewer_capabilities"]["can_view"] is True for item in payload["items"])
     assert all(item["viewer_capabilities"]["can_manage"] is False for item in payload["items"])
     assert all(item["viewer_capabilities"]["can_delete"] is False for item in payload["items"])
-    assert all(
-        re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", item["facilitator"]["id"])
-        for item in payload["items"]
-    )
+    assert all(item["facilitator"]["id"] is None for item in payload["items"])
+    assert all(item["facilitator"]["user_id"] for item in payload["items"])
     assert all(
         any(f["user_id"] == test_facilitator.user_id for f in item["facilitators"])
         for item in payload["items"]

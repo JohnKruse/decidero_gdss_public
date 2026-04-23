@@ -7,7 +7,7 @@ import re
 from sqlalchemy.exc import SQLAlchemyError
 from fastapi import HTTPException, Depends
 
-from ..models.meeting import Meeting, MeetingFacilitator, AgendaActivity
+from ..models.meeting import Meeting, AgendaActivity
 from ..models.idea import Idea
 from ..models.voting import VotingVote
 from ..models.activity_bundle import ActivityBundle
@@ -22,7 +22,6 @@ from ..schemas.meeting import MeetingCreate, AgendaActivityCreate, AgendaActivit
 from ..database import get_db
 from ..utils.identifiers import (
     generate_meeting_id,
-    generate_facilitator_id,
     generate_activity_id,
     generate_tool_config_id,
     derive_activity_prefix,
@@ -989,39 +988,15 @@ class MeetingManager:
                 is_public=is_public_value,  # Derived from schema
             )
 
-            # Ensure the primary facilitator is always included in the facilitator roster
             db_meeting.owner = owner_user
             self.db.add(db_meeting)
             self.db.flush()
 
-            def add_facilitator_assignment(
-                user: User, is_owner: bool
-            ) -> MeetingFacilitator:
-                facilitator_identifier = generate_facilitator_id(
-                    self.db, user.first_name, user.last_name
-                )
-                assignment = MeetingFacilitator(
-                    facilitator_id=facilitator_identifier,
-                    meeting_id=db_meeting.meeting_id,
-                    user_id=user.user_id,
-                    is_owner=is_owner,
-                )
-                assignment.user = user
-                db_meeting.facilitator_links.append(assignment)
-                self.db.flush()
-                return assignment
-
-            add_facilitator_assignment(owner_user, True)
-            for co_facilitator in co_facilitators:
-                if co_facilitator.user_id == owner_user.user_id:
-                    continue
-                add_facilitator_assignment(co_facilitator, False)
-
             # Add participants if provided
-            if participant_ids:
-                participants = (
-                    self.db.query(User).filter(User.user_id.in_(participant_ids)).all()
-                )
+            participant_id_set = set(participant_ids)
+            participant_id_set.update(user.user_id for user in co_facilitators)
+            if participant_id_set:
+                participants = self.db.query(User).filter(User.user_id.in_(participant_id_set)).all()
                 db_meeting.participants.extend(participants)
 
             if agenda_items:
@@ -1077,22 +1052,6 @@ class MeetingManager:
             self.db.add(db_meeting)
             self.db.flush()
 
-            def append_facilitator(user: User, is_owner: bool) -> None:
-                facilitator_identifier = generate_facilitator_id(
-                    self.db, user.first_name, user.last_name
-                )
-                assignment = MeetingFacilitator(
-                    facilitator_id=facilitator_identifier,
-                    meeting_id=db_meeting.meeting_id,
-                    user_id=user.user_id,
-                    is_owner=is_owner,
-                )
-                assignment.user = user
-                db_meeting.facilitator_links.append(assignment)
-                self.db.flush()
-
-            append_facilitator(owner, True)
-
             co_facilitator_ids = co_facilitator_ids or []
             extra_facilitator_ids = {
                 fid
@@ -1111,17 +1070,15 @@ class MeetingManager:
                     self.logger(
                         f"add_meeting: Some co-facilitator IDs not found: {sorted(missing_ids)}"
                     )
-                for co_facilitator in co_facilitators:
-                    if co_facilitator.user_id == owner.user_id:
-                        continue
-                    append_facilitator(co_facilitator, False)
+            else:
+                co_facilitators = []
 
             # Handle participants if IDs are provided
-            if participant_ids:
-                participants = (
-                    self.db.query(User).filter(User.user_id.in_(participant_ids)).all()
-                )
-                if len(participants) != len(participant_ids):
+            participant_id_set = set(participant_ids or [])
+            participant_id_set.update(user.user_id for user in co_facilitators)
+            if participant_id_set:
+                participants = self.db.query(User).filter(User.user_id.in_(participant_id_set)).all()
+                if len(participants) != len(participant_id_set):
                     print("Warning: Some participant IDs were not found.")
                 db_meeting.participants.extend(participants)
 
@@ -1150,9 +1107,6 @@ class MeetingManager:
                 self.db.query(Meeting)
                 .options(
                     joinedload(Meeting.participants),
-                    joinedload(Meeting.facilitator_links).joinedload(
-                        MeetingFacilitator.user
-                    ),
                     joinedload(Meeting.owner),
                     joinedload(Meeting.agenda_activities),
                 )
@@ -1190,35 +1144,7 @@ class MeetingManager:
         }
 
     def _ensure_facilitator_assignment(self, meeting: Meeting, user: User) -> None:
-        if not self._should_auto_facilitate(user):
-            return
-
-        existing_links = {
-            link.user_id: link
-            for link in (getattr(meeting, "facilitator_links", []) or [])
-            if link.user_id
-        }
-        is_owner = user.user_id == getattr(meeting, "owner_id", None)
-        existing = existing_links.get(user.user_id)
-        if existing:
-            if is_owner and not existing.is_owner:
-                existing.is_owner = True
-            return
-
-        facilitator_identifier = generate_facilitator_id(
-            self.db,
-            user.first_name,
-            user.last_name,
-        )
-        assignment = MeetingFacilitator(
-            facilitator_id=facilitator_identifier,
-            meeting_id=meeting.meeting_id,
-            user_id=user.user_id,
-            is_owner=is_owner,
-        )
-        assignment.user = user
-        meeting.facilitator_links.append(assignment)
-        self.db.flush()
+        return None
 
     def list_participants(self, meeting_id: str) -> List[User]:
         meeting = (
@@ -1236,7 +1162,6 @@ class MeetingManager:
             self.db.query(Meeting)
             .options(
                 joinedload(Meeting.participants),
-                joinedload(Meeting.facilitator_links),
             )
             .filter(Meeting.meeting_id == meeting_id)
             .one_or_none()
@@ -1289,7 +1214,6 @@ class MeetingManager:
             self.db.query(Meeting)
             .options(
                 joinedload(Meeting.participants),
-                joinedload(Meeting.facilitator_links),
                 joinedload(Meeting.agenda_activities),
             )
             .filter(Meeting.meeting_id == meeting_id)
@@ -1494,7 +1418,6 @@ class MeetingManager:
 
         query = self.db.query(Meeting).options(
             joinedload(Meeting.owner),
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.participants),
             joinedload(Meeting.agenda_activities),
         )
@@ -1708,7 +1631,7 @@ class MeetingManager:
     def _format_facilitator_name(
         self,
         meeting: Meeting,
-        assignments: Optional[List[MeetingFacilitator]] = None,
+        assignments: Optional[List[Any]] = None,
     ) -> str:
         assignments = assignments or self._collect_facilitator_assignments(meeting)
         owner_assignment = next((link for link in assignments if link.is_owner), None)
@@ -1735,17 +1658,9 @@ class MeetingManager:
 
     def _collect_facilitator_assignments(
         self, meeting: Meeting
-    ) -> List[MeetingFacilitator]:
-        """Return facilitator assignments ordered with the owner first."""
-        links = list(getattr(meeting, "facilitator_links", []) or [])
-        links.sort(
-            key=lambda link: (
-                not getattr(link, "is_owner", False),
-                getattr(link, "created_at", datetime.min.replace(tzinfo=timezone.utc))
-                or datetime.min.replace(tzinfo=timezone.utc),
-            )
-        )
-        return links
+    ) -> List[Any]:
+        """Compatibility shim until Phase 5 removes facilitator-facing fields."""
+        return []
 
     def _build_quick_actions(self, meeting: Meeting) -> Dict[str, Optional[str]]:
         page_path = f"/meeting/{meeting.meeting_id}"
@@ -1933,59 +1848,20 @@ class MeetingManager:
                 )
 
             if facilitator_user_ids_to_set is not None or new_owner_id:
-                if facilitator_user_ids_to_set is not None:
-                    desired_user_ids = set(facilitator_user_ids_to_set or [])
-                else:
-                    desired_user_ids = {
-                        link.user_id
-                        for link in getattr(db_meeting, "facilitator_links", [])
-                        if link.user_id
+                if facilitator_user_ids_to_set:
+                    desired_user_ids = set(facilitator_user_ids_to_set)
+                    found_ids = {
+                        user.user_id
+                        for user in self.db.query(User)
+                        .filter(User.user_id.in_(desired_user_ids))
+                        .all()
                     }
-                desired_user_ids.add(db_meeting.owner_id)
-
-                facilitators = (
-                    self.db.query(User).filter(User.user_id.in_(desired_user_ids)).all()
-                )
-                found_ids = {user.user_id for user in facilitators}
-                missing_ids = desired_user_ids.difference(found_ids)
-                if missing_ids:
-                    raise HTTPException(
-                        status_code=404,
-                        detail=f"Facilitator(s) not found for ID(s): {sorted(missing_ids)}",
-                    )
-
-                existing_links = {
-                    link.user_id: link for link in list(db_meeting.facilitator_links)
-                }
-
-                # Remove assignments no longer desired
-                for user_id, link in list(existing_links.items()):
-                    if user_id not in desired_user_ids:
-                        db_meeting.facilitator_links.remove(link)
-                        self.db.delete(link)
-
-                # Ensure desired facilitators exist and flags are correct
-                for user in facilitators:
-                    link = existing_links.get(user.user_id)
-                    is_owner = user.user_id == db_meeting.owner_id
-                    if link:
-                        link.is_owner = is_owner
-                    else:
-                        facilitator_identifier = generate_facilitator_id(
-                            self.db,
-                            user.first_name,
-                            user.last_name,
+                    missing_ids = desired_user_ids.difference(found_ids)
+                    if missing_ids:
+                        raise HTTPException(
+                            status_code=404,
+                            detail=f"Facilitator(s) not found for ID(s): {sorted(missing_ids)}",
                         )
-                        assignment = MeetingFacilitator(
-                            facilitator_id=facilitator_identifier,
-                            meeting_id=db_meeting.meeting_id,
-                            user_id=user.user_id,
-                            is_owner=is_owner,
-                        )
-                        assignment.user = user
-                        db_meeting.facilitator_links.append(assignment)
-                        self.db.flush()
-
                 update_occurred = True
 
             if update_occurred:

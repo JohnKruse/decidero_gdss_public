@@ -3,7 +3,6 @@
 from .user import User
 from .meeting import (
     Meeting,
-    MeetingFacilitator,
     participants_table,
     ToolConfig,
     Agenda,
@@ -29,7 +28,6 @@ from .meeting_designer_log import MeetingDesignerLog
 __all__ = [
     "User",
     "Meeting",
-    "MeetingFacilitator",
     "participants_table",
     "ToolConfig",
     "Idea",

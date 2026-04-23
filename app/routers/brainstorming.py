@@ -17,7 +17,7 @@ import logging
 from app.auth import get_current_active_user
 from app.database import get_db
 from app.data.idempotency_manager import BrainstormingIdempotencyManager
-from app.models.meeting import Meeting, MeetingFacilitator
+from app.models.meeting import Meeting
 from app.models.user import User, UserRole
 from app.schemas.brainstorming import (
     BrainstormingIdeaCreate,
@@ -233,7 +233,6 @@ async def submit_idea(
         db.query(Meeting)
         .options(
             joinedload(Meeting.participants),
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)
@@ -472,7 +471,6 @@ async def get_ideas(
         db.query(Meeting)
         .options(
             joinedload(Meeting.participants),
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)

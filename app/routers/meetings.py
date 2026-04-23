@@ -287,11 +287,10 @@ def _build_meeting_export_bundle(
     meeting: Meeting,
     meeting_manager: MeetingManager,
 ) -> Dict[str, object]:
-    facilitators = []
-    for link in getattr(meeting, "facilitator_links", []) or []:
-        payload = _build_user_export(link.user)
-        payload["is_owner"] = link.is_owner
-        facilitators.append(payload)
+    owner_export = _build_user_export(getattr(meeting, "owner", None))
+    if owner_export:
+        owner_export["is_owner"] = True
+    facilitators = [owner_export] if owner_export else []
 
     participants = [
         _build_user_export(participant)

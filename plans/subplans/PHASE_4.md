@@ -35,13 +35,20 @@ Step 1 inventory for `Noodle Catapult`:
 | `app/services/meeting_authorization.py` and `app/schemas/meeting.py` | Backend-derived compatibility outputs (`facilitators`, `facilitator_ids`, `facilitator_user_ids`) still emitted for outward-facing contract stability | Phase 5 |
 | Existing pytest modules | Legacy assertions that inspect `facilitator_links`, facilitator IDs, or auto-assignment behavior as persisted-row facts | Step 4 |
 
-### Step 2 — Collapse the ORM and Schema Model
+### Step 2 [DONE] — Collapse the ORM and Schema Model
 Remove `MeetingFacilitator`, the `meeting_facilitators` storage model, related ORM relationships, and any persisted ownership duplication that survives outside `Meeting.owner_id`. After this step, the active data model must express meeting authority only through global role, owner linkage, and roster membership, with no live facilitator-assignment entity left in the application schema.
 
 Conclude this step by:
 - Implementing the core logic by collapsing the ORM/schema model to eliminate persisted per-meeting facilitator assignment.
 - Creating or updating the relevant pytest file, favoring surgical edits to existing suites such as `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, and `app/tests/test_auth.py` instead of creating a new test file.
 - Updating docstrings and documentation so model descriptions, relationship descriptions, and test narratives no longer present facilitator assignments as a live persisted concept.
+
+Step 2 collapse notes for `Noodle Catapult`:
+
+- `MeetingFacilitator` and `meeting_facilitators_table` have been removed from the active SQLAlchemy model registry.
+- `Meeting.facilitator_links`, `Meeting.facilitators`, `User.facilitator_links`, and `User.facilitated_meetings` have been removed from the active ORM mappings.
+- Owner authority now persists only as `Meeting.owner_id`; roster-scoped facilitator authority is derived from `User.role == "facilitator"` plus meeting participant membership.
+- Meeting-manager regression coverage now asserts the absence of the removed ORM model/table and verifies owner/co-facilitator behavior through canonical capabilities instead of persisted facilitator rows.
 
 ### Step 3 — Remove Runtime and Boot Dependencies on the Old Model
 Delete or rewrite runtime helpers, initialization shims, and meeting-management paths that still create, mutate, or expect facilitator-assignment rows to exist. The application must be able to boot, create meetings, manage rosters, and execute meeting workflows without any facilitator-assignment table or startup workaround present.
@@ -91,6 +98,7 @@ This phase does **not** complete the following:
 ## Technical Deviations Log
 
 - Step 1 (`Noodle Catapult`): The isolation pass intentionally keeps outward-facing compatibility fields such as `facilitator_ids`, `facilitator_user_ids`, export/import facilitator payloads, and derived facilitator summaries in place for now. Those surfaces are documented as deferred so Step 2 and Step 3 can remove the persistent model first without mixing schema collapse with API contract cleanup that belongs to Phase 5.
+- Step 2 (`Noodle Catapult`): Removing the SQLAlchemy model required eliminating import-time eager-load references and the startup table-creation shim in the same step; otherwise the application could not import after the model registry stopped exposing `MeetingFacilitator`. Runtime helper cleanup remains intentionally incomplete and continues in Step 3.
 
 ## Phase Exit Criteria
 
