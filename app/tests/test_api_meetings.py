@@ -334,6 +334,7 @@ def test_meeting_payload_exposes_rostered_facilitator_viewer_capabilities(
 def test_export_meeting_returns_zip_bundle(
     authenticated_client: TestClient, test_meeting_data: str
 ):
+    """Pickle Trombone: new meeting exports write owner metadata without legacy facilitator structures."""
     response = authenticated_client.get(f"/api/meetings/{test_meeting_data}/export")
 
     assert response.status_code == 200
@@ -345,6 +346,9 @@ def test_export_meeting_returns_zip_bundle(
     meeting_payload = json.loads(archive.read("meeting.json").decode("utf-8"))
     assert meeting_payload["meeting"]["meeting_id"] == test_meeting_data
     assert meeting_payload["meeting"]["title"] == "Test Meeting for Get"
+    assert "owner" in meeting_payload
+    assert meeting_payload["owner"]["user_id"]
+    assert "facilitators" not in meeting_payload
 
 
 def test_import_meeting_bundle_from_fixture(
@@ -370,6 +374,65 @@ def test_import_meeting_bundle_from_fixture(
         .count()
     )
     assert idea_count == 6
+
+
+def test_import_ignores_legacy_facilitators_as_authority(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Pickle Trombone: legacy import compatibility reads old facilitator-bearing bundles one way without granting active authority."""
+    legacy_password = "LegacyImportFac1!"
+    legacy_facilitator = user_manager_with_admin.add_user(
+        first_name="Legacy",
+        last_name="ImportFac",
+        email="legacy.import.facilitator@example.com",
+        hashed_password=get_password_hash(legacy_password),
+        role=UserRole.FACILITATOR.value,
+        login="legacy_import_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(legacy_facilitator)
+
+    export_payload = {
+        "version": 1,
+        "meeting": {
+            "title": "Legacy Facilitator Import",
+            "description": "Old bundle with facilitator-only user",
+            "is_public": True,
+        },
+        "facilitators": [
+            {
+                "user_id": legacy_facilitator.user_id,
+                "login": legacy_facilitator.login,
+                "email": legacy_facilitator.email,
+                "first_name": legacy_facilitator.first_name,
+                "last_name": legacy_facilitator.last_name,
+                "is_owner": False,
+            }
+        ],
+        "participants": [],
+        "agenda": [],
+        "ideas": [],
+        "votes": [],
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("meeting.json", json.dumps(export_payload))
+
+    response = authenticated_client.post(
+        "/api/meetings/import",
+        content=buffer.getvalue(),
+        headers={"Content-Type": "application/zip"},
+    )
+
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert legacy_facilitator.user_id not in payload["participant_ids"]
+    assert legacy_facilitator.user_id not in payload["authority_user_ids"]
+    assert all(
+        authority["user_id"] != legacy_facilitator.user_id
+        for authority in payload["meeting_authorities"]
+    )
 
 
 def test_create_meeting_returns_new_meeting(

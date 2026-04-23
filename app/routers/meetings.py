@@ -288,9 +288,6 @@ def _build_meeting_export_bundle(
     meeting_manager: MeetingManager,
 ) -> Dict[str, object]:
     owner_export = _build_user_export(getattr(meeting, "owner", None))
-    if owner_export:
-        owner_export["is_owner"] = True
-    facilitators = [owner_export] if owner_export else []
 
     participants = [
         _build_user_export(participant)
@@ -335,7 +332,7 @@ def _build_meeting_export_bundle(
             "start_time": _serialize_datetime(meeting.started_at),
             "end_time": _serialize_datetime(meeting.end_time),
         },
-        "facilitators": facilitators,
+        "owner": owner_export,
         "participants": participants,
         "agenda": agenda,
         "ideas": [
@@ -428,6 +425,17 @@ def _resolve_import_user_id(
         if user:
             return user.user_id
     return None
+
+
+def _read_legacy_import_facilitators(export_payload: Dict[str, object]) -> List[dict]:
+    """
+    Pickle Trombone: tolerate legacy bundles that contain top-level facilitators,
+    but do not map them into the imported roster or active authority model.
+    """
+    entries = export_payload.get("facilitators")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
 
 
 def _resolve_import_title(db, base_title: str) -> str:
@@ -1638,15 +1646,12 @@ async def import_meeting(
         pid for pid in participants if not (pid in seen_participants or seen_participants.add(pid))
     ]
 
-    facilitators = []
-    for entry in export_payload.get("facilitators", []) or []:
-        resolved = _resolve_import_user_id(entry, user_manager)
-        if resolved and resolved != user.user_id:
-            facilitators.append(resolved)
-    seen_facilitators = set()
-    facilitator_ids = [
-        fid for fid in facilitators if not (fid in seen_facilitators or seen_facilitators.add(fid))
-    ]
+    legacy_facilitator_entries = _read_legacy_import_facilitators(export_payload)
+    if legacy_facilitator_entries:
+        logger.info(
+            "Ignoring %d legacy facilitator entries while importing meeting bundle.",
+            len(legacy_facilitator_entries),
+        )
 
     agenda_payloads: List[AgendaActivityCreate] = []
     for entry in export_payload.get("agenda", []) or []:
@@ -1675,7 +1680,7 @@ async def import_meeting(
         publicity=PublicityType.PUBLIC if is_public else PublicityType.PRIVATE,
         owner_id=user.user_id,
         participant_ids=participant_ids,
-        additional_facilitator_ids=facilitator_ids,
+        additional_facilitator_ids=[],
     )
 
     try:

@@ -51,13 +51,21 @@ Step 2 active response cleanup for `Pickle Trombone`:
 | `app/static/js/dashboard.js` and `app/static/js/meeting.js` | Frontend consumers now read `owner`, `meeting_authorities`, and `authority_names`; the meeting overview label now says `Authority`. |
 | `app/tests/test_api_meetings.py` and `app/tests/test_meeting_manager.py` | Active API/dashboard assertions now verify the authority fields and explicitly reject the removed facilitator-shaped response keys. |
 
-### Step 3 — Isolate Legacy Import/Export Compatibility
+### Step 3 [DONE] — Isolate Legacy Import/Export Compatibility
 Rewrite export and transfer-facing contracts so newly produced artifacts no longer encode the old facilitator model while preserving only the minimum one-way compatibility needed to read older serialized meeting data. Legacy compatibility must be explicitly isolated to compatibility handling and must not re-enter the active authorization path or active API contract.
 
 Conclude this step by:
 - Implementing the core logic by separating active export/import contracts from narrowly-scoped legacy compatibility handling.
 - Creating or updating the relevant pytest file, preferring edits to existing suites such as `app/tests/test_transfer_api.py`, `app/tests/test_transfer_transforms.py`, `app/tests/test_transfer_metadata.py`, `app/tests/test_transfer_comment_format_parity.py`, and other already-relevant transfer/export tests instead of adding new pytest modules.
 - Updating docstrings and documentation so export/import expectations clearly state what the system now writes, what legacy data it can still read, and that compatibility handling is one-way.
+
+Step 3 import/export compatibility isolation for `Pickle Trombone`:
+
+| Surface | Step 3 result |
+|---|---|
+| `app/routers/meetings.py` export writer | New meeting export bundles now write `owner` metadata and no longer write the legacy top-level `facilitators` structure. |
+| `app/routers/meetings.py` import reader | Legacy top-level `facilitators` entries are accepted only through `_read_legacy_import_facilitators` and are intentionally ignored for imported roster and authority construction. |
+| `app/tests/test_api_meetings.py` | Export coverage now rejects new `facilitators` output, and legacy import coverage verifies facilitator-only legacy entries do not grant participant membership or active authority. |
 
 ### Step 4 — Purge Legacy Test Assumptions and Contract Language
 Resolve the remaining Phase 1 rewrite/delete ledger items that encoded stale auto-grant behavior, facilitator-row persistence, or old payload shapes as intended behavior. By the end of this step, the test suite and its naming/docstrings must reinforce only the collapsed model and its intentionally isolated compatibility exceptions.
@@ -99,6 +107,7 @@ This phase does **not** complete the following:
 
 - Step 1 (`Pickle Trombone`): This step intentionally documents the external contract debt without removing it. Active response and export/import changes begin in Step 2 and Step 3 so the cleanup remains reviewable and the legacy import exception is isolated rather than mixed into the inventory pass.
 - Step 2 (`Pickle Trombone`): Active API and dashboard response contracts now use owner/authority presentation names. The `MeetingUpdate.facilitator_ids`, create/import `additional_facilitator_ids`/`co_facilitator_ids`, and export/import `facilitators` compatibility surfaces remain intentionally untouched for Step 3 and Step 4 so request-shape and transfer cleanup stay isolated from response cleanup.
+- Step 3 (`Pickle Trombone`): Legacy `facilitators` data is still tolerated when reading older bundles, but it is no longer translated into `additional_facilitator_ids` or any active authority path. Create/update request names remain deferred to Step 4 because this step is limited to export/import compatibility.
 
 ## Phase Exit Criteria
 
