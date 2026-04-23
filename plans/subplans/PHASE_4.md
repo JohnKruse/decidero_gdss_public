@@ -50,13 +50,20 @@ Step 2 collapse notes for `Noodle Catapult`:
 - Owner authority now persists only as `Meeting.owner_id`; roster-scoped facilitator authority is derived from `User.role == "facilitator"` plus meeting participant membership.
 - Meeting-manager regression coverage now asserts the absence of the removed ORM model/table and verifies owner/co-facilitator behavior through canonical capabilities instead of persisted facilitator rows.
 
-### Step 3 — Remove Runtime and Boot Dependencies on the Old Model
+### Step 3 [DONE] — Remove Runtime and Boot Dependencies on the Old Model
 Delete or rewrite runtime helpers, initialization shims, and meeting-management paths that still create, mutate, or expect facilitator-assignment rows to exist. The application must be able to boot, create meetings, manage rosters, and execute meeting workflows without any facilitator-assignment table or startup workaround present.
 
 Conclude this step by:
 - Implementing the core logic by removing runtime and startup dependencies on the old facilitator persistence model.
 - Creating or updating the relevant pytest file, preferring edits to existing meeting/API/router suites such as `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_brainstorming_api.py`, `app/tests/test_voting_api.py`, `app/tests/test_rank_order_voting_api.py`, `app/tests/test_categorization_api.py`, and `app/tests/test_transfer_api.py` instead of adding new pytest modules.
 - Updating docstrings and documentation so runtime behavior and startup expectations describe the collapsed model accurately.
+
+Step 3 runtime notes for `Noodle Catapult`:
+
+- Removed the no-op facilitator-assignment helpers from `MeetingManager`; participant and roster mutations no longer call a facilitator-row synchronization path.
+- Removed the obsolete `generate_facilitator_id` compatibility helper from `app/utils/identifiers.py`; active runtime code no longer generates row-backed facilitator identifiers.
+- Removed the stale `facilitated_meetings` dashboard context placeholder from `app/routers/pages.py`.
+- Added regression coverage that scans the active runtime/boot files for the old helper and startup symbols.
 
 ### Step 4 — Prune Dead Code and Legacy Test Assumptions
 Remove helper code, relationship plumbing, and test assumptions whose only purpose was to support persisted facilitator assignments or auto-grant behavior. By the end of this step, old facilitator-model code should be absent from the active application path, and tests should assert the collapsed steady state rather than carrying transitional assumptions forward.
@@ -99,6 +106,7 @@ This phase does **not** complete the following:
 
 - Step 1 (`Noodle Catapult`): The isolation pass intentionally keeps outward-facing compatibility fields such as `facilitator_ids`, `facilitator_user_ids`, export/import facilitator payloads, and derived facilitator summaries in place for now. Those surfaces are documented as deferred so Step 2 and Step 3 can remove the persistent model first without mixing schema collapse with API contract cleanup that belongs to Phase 5.
 - Step 2 (`Noodle Catapult`): Removing the SQLAlchemy model required eliminating import-time eager-load references and the startup table-creation shim in the same step; otherwise the application could not import after the model registry stopped exposing `MeetingFacilitator`. Runtime helper cleanup remains intentionally incomplete and continues in Step 3.
+- Step 3 (`Noodle Catapult`): The active runtime cleanup intentionally leaves facilitator-named response schemas and derived compatibility output classes in place because those are outward-facing API contract cleanup work for Phase 5, not runtime dependencies on the removed persistence model.
 
 ## Phase Exit Criteria
 

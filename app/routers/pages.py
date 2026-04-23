@@ -160,12 +160,6 @@ async def dashboard(
             context["facilitator_count"] = "Error"
             context["participant_count"] = "Error"
 
-    if current_user.role in {UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN}:
-        # Fetch facilitator-specific data (e.g., meetings they facilitate)
-        # context["facilitated_meetings"] = meeting_manager.get_meetings_by_facilitator(db, current_user.user_id) # Example
-        context["facilitated_meetings"] = []  # Placeholder
-        pass  # Add facilitator data fetching later
-
     # Fetch participant-specific data (e.g., meetings they are part of)
     # context["participant_meetings"] = meeting_manager.get_meetings_by_participant(db, current_user.user_id) # Example
     context["participant_meetings"] = []  # Placeholder

@@ -1135,17 +1135,6 @@ class MeetingManager:
             self.db.refresh(meeting)
         return meeting
 
-    # --- Participants administration ----------------------------------------
-    def _should_auto_facilitate(self, user: User) -> bool:
-        return user.role in {
-            UserRole.FACILITATOR,
-            UserRole.ADMIN,
-            UserRole.SUPER_ADMIN,
-        }
-
-    def _ensure_facilitator_assignment(self, meeting: Meeting, user: User) -> None:
-        return None
-
     def list_participants(self, meeting_id: str) -> List[User]:
         meeting = (
             self.db.query(Meeting)
@@ -1171,7 +1160,6 @@ class MeetingManager:
         existing_ids = {u.user_id for u in (meeting.participants or [])}
         if user.user_id not in existing_ids:
             meeting.participants.append(user)
-            self._ensure_facilitator_assignment(meeting, user)
             self.db.flush()
             self.db.commit()
             self.db.refresh(meeting)
@@ -1248,7 +1236,6 @@ class MeetingManager:
                     duplicate_ids.append(user.user_id)
                     continue
                 meeting.participants.append(user)
-                self._ensure_facilitator_assignment(meeting, user)
                 existing_ids.add(user.user_id)
                 added_ids.append(user.user_id)
 
@@ -1628,39 +1615,12 @@ class MeetingManager:
         counts["total_unread"] = sum(counts.values())
         return counts
 
-    def _format_facilitator_name(
-        self,
-        meeting: Meeting,
-        assignments: Optional[List[Any]] = None,
-    ) -> str:
-        assignments = assignments or self._collect_facilitator_assignments(meeting)
-        owner_assignment = next((link for link in assignments if link.is_owner), None)
-        if owner_assignment and owner_assignment.user:
-            return self._format_user_name(owner_assignment.user)
-
-        owner = getattr(meeting, "owner", None)
-        if owner is not None:
-            return self._format_user_name(owner)
-
-        if assignments:
-            first = assignments[0]
-            if first.user:
-                return self._format_user_name(first.user)
-
-        return "Unknown"
-
     def _format_user_name(self, user: User) -> str:
         parts = [user.first_name or "", user.last_name or ""]
         name = " ".join(part for part in parts if part).strip()
         if not name:
             return user.login or user.email or "Unknown"
         return name
-
-    def _collect_facilitator_assignments(
-        self, meeting: Meeting
-    ) -> List[Any]:
-        """Compatibility shim until Phase 5 removes facilitator-facing fields."""
-        return []
 
     def _build_quick_actions(self, meeting: Meeting) -> Dict[str, Optional[str]]:
         page_path = f"/meeting/{meeting.meeting_id}"
@@ -1698,8 +1658,6 @@ class MeetingManager:
                 .all()
             )
             meeting.participants = participants
-            for participant in participants:
-                self._ensure_facilitator_assignment(meeting, participant)
 
         agenda_payload = list(agenda_items or [])
         self._apply_agenda_items(meeting, agenda_payload)

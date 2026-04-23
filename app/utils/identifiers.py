@@ -14,10 +14,6 @@ USER_ID_STEM_LENGTH = 6
 MEETING_ID_PREFIX = "MTG"
 MEETING_ID_SUFFIX_WIDTH = 4
 
-FACILITATOR_ID_PREFIX = "FAC"
-FACILITATOR_ID_SEQUENCE_WIDTH = 3
-FACILITATOR_ID_STEM_LENGTH = 6
-
 ACTIVITY_SEQUENCE_WIDTH = 4
 TOOL_CONFIG_SEQUENCE_WIDTH = 2
 
@@ -135,23 +131,6 @@ def generate_meeting_id(db: Session, created_at: Optional[datetime] = None) -> s
     sequence = _next_meeting_sequence(db, date_prefix)
     suffix = _format_base36(sequence).upper().rjust(MEETING_ID_SUFFIX_WIDTH, "0")
     return f"{date_prefix}-{suffix}"
-
-
-def generate_facilitator_id(
-    db: Session,
-    first_name: Optional[str],
-    last_name: Optional[str],
-) -> str:
-    """
-    Compatibility helper retained until Phase 5 removes facilitator-facing API fields.
-    Persisted facilitator rows no longer exist, so callers must not treat the
-    returned value as a database-backed identifier.
-    """
-    stem = _clean_stem(last_name)[:FACILITATOR_ID_STEM_LENGTH]
-    initial = _clean_initial(first_name)
-    prefix = f"{FACILITATOR_ID_PREFIX}-{stem}{initial}"
-    sequence = 1
-    return f"{prefix}-{sequence:0{FACILITATOR_ID_SEQUENCE_WIDTH}d}"
 
 
 def derive_activity_prefix(tool_type: str) -> str:

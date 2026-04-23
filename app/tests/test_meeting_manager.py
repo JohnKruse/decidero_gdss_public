@@ -253,6 +253,30 @@ def test_phase4_step2_removes_persistent_facilitator_orm_model():
     assert "meeting_facilitators" not in Meeting.metadata.tables
 
 
+def test_phase4_step3_removes_facilitator_runtime_dependencies():
+    """Noodle Catapult: runtime and boot code no longer manage facilitator rows."""
+    runtime_paths = [
+        Path(__file__).resolve().parents[1] / "data" / "meeting_manager.py",
+        Path(__file__).resolve().parents[1] / "main.py",
+        Path(__file__).resolve().parents[1] / "utils" / "identifiers.py",
+        Path(__file__).resolve().parents[1] / "routers" / "pages.py",
+    ]
+    forbidden_markers = [
+        "meeting_facilitators_table",
+        "generate_facilitator_id",
+        "_ensure_facilitator_assignment",
+        "_should_auto_facilitate",
+        "_collect_facilitator_assignments",
+        "facilitated_meetings",
+    ]
+
+    combined_runtime = "\n".join(
+        path.read_text(encoding="utf-8") for path in runtime_paths
+    )
+    for marker in forbidden_markers:
+        assert marker not in combined_runtime
+
+
 def test_add_meeting(
     meeting_manager_instance: MeetingManager,
     db_session: Session,
