@@ -1526,7 +1526,7 @@ def test_update_meeting_owner_updates_owner_link_only(
     co_facilitator: User,
 ):
     meeting_to_update = meeting_manager_instance.add_meeting(
-        {"title": "Primary Swap", "description": "Swap facilitator"},
+        {"title": "Primary Swap", "description": "Swap owner authority"},
         test_facilitator.user_id,
     )
     assert meeting_to_update is not None

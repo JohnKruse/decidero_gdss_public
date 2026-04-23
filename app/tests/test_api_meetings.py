@@ -1066,7 +1066,7 @@ def test_facilitator_controls_start_stop_tool(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
-    """Muffin Tractor: meeting-scoped facilitation authority includes activity-control operations, even while this test still uses transition-era setup fields."""
+    """Muffin Tractor: meeting-scoped management authority includes activity-control operations."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -1086,11 +1086,11 @@ def test_facilitator_controls_start_stop_tool(
 
     meeting_request = {
         "title": "Realtime Workshop",
-        "description": "Testing facilitator controls",
+        "description": "Testing meeting control authority",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=2)).isoformat(),
         "agenda_items": ["Kickoff"],
         "participant_contacts": [admin_user.login],
-        "co_facilitator_ids": [cofac_user.user_id],
+        "participant_ids": [cofac_user.user_id],
     }
     meeting_response = authenticated_client.post("/api/meetings/", json=meeting_request)
     assert meeting_response.status_code == 200, meeting_response.json()
@@ -1133,7 +1133,7 @@ def test_removed_facilitator_loses_control_until_readded(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Toaster Sombrero: roster changes hide or restore meeting controls in the UI exactly when backend meeting control authority is revoked or returned."""
+    """Toaster Sombrero: roster changes hide or restore meeting controls in the UI exactly when backend meeting authority is revoked or returned."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -1154,7 +1154,7 @@ def test_removed_facilitator_loses_control_until_readded(
     meeting_manager = MeetingManager(db_session)
     meeting_payload = MeetingCreate(
         title="Roster Access Boundary",
-        description="Exercise remove and re-add facilitator behavior",
+        description="Exercise remove and re-add meeting authority behavior",
         start_time=datetime.now(UTC) + timedelta(hours=2),
         duration_minutes=45,
         publicity=PublicityType.PUBLIC,
@@ -1244,7 +1244,7 @@ def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Toaster Sombrero: demotion to participant removes both visible management controls and backend meeting control authority across meetings."""
+    """Toaster Sombrero: demotion to participant removes both visible management controls and backend meeting authority across meetings."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )

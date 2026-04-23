@@ -67,13 +67,22 @@ Step 3 import/export compatibility isolation for `Pickle Trombone`:
 | `app/routers/meetings.py` import reader | Legacy top-level `facilitators` entries are accepted only through `_read_legacy_import_facilitators` and are intentionally ignored for imported roster and authority construction. |
 | `app/tests/test_api_meetings.py` | Export coverage now rejects new `facilitators` output, and legacy import coverage verifies facilitator-only legacy entries do not grant participant membership or active authority. |
 
-### Step 4 — Purge Legacy Test Assumptions and Contract Language
+### Step 4 [DONE] — Purge Legacy Test Assumptions and Contract Language
 Resolve the remaining Phase 1 rewrite/delete ledger items that encoded stale auto-grant behavior, facilitator-row persistence, or old payload shapes as intended behavior. By the end of this step, the test suite and its naming/docstrings must reinforce only the collapsed model and its intentionally isolated compatibility exceptions.
 
 Conclude this step by:
 - Implementing the core logic by purging stale contract assumptions from tests and any supporting code comments or references.
 - Creating or updating the relevant pytest file, favoring edits to the existing affected suites instead of creating a new test file for cleanup work.
 - Updating docstrings and documentation so no active test or repository narrative still treats the old facilitator contract as intended behavior.
+
+Step 4 contract-language cleanup for `Pickle Trombone`:
+
+| Surface | Step 4 result |
+|---|---|
+| `app/templates/create_meeting.html` | Removed the stale `co_facilitator_ids: []` create payload field so the create form no longer writes facilitator-shaped request language as an active contract. |
+| `app/templates/meeting.html` | Participant-management guidance now describes roster membership versus meeting management authority without referring to meeting facilitators as an active concept. |
+| `app/tests/test_api_meetings.py` | Updated control and roster-regression docstrings plus setup payloads so the tests describe meeting authority rather than legacy facilitator contract language. |
+| `app/tests/test_meeting_manager.py` | Updated stale test meeting copy so ownership transfer coverage talks about owner authority rather than facilitator semantics. |
 
 ### Step 5 — Lock the Phase 5 Verification Boundary
 Define the exact validation command for outward-facing contract cleanup and treat this phase as complete only when active contracts are free of old facilitator semantics, legacy import compatibility is isolated, and the selected suites pass with the collapsed model represented consistently across APIs, exports, imports, and tests.
@@ -108,6 +117,7 @@ This phase does **not** complete the following:
 - Step 1 (`Pickle Trombone`): This step intentionally documents the external contract debt without removing it. Active response and export/import changes begin in Step 2 and Step 3 so the cleanup remains reviewable and the legacy import exception is isolated rather than mixed into the inventory pass.
 - Step 2 (`Pickle Trombone`): Active API and dashboard response contracts now use owner/authority presentation names. The `MeetingUpdate.facilitator_ids`, create/import `additional_facilitator_ids`/`co_facilitator_ids`, and export/import `facilitators` compatibility surfaces remain intentionally untouched for Step 3 and Step 4 so request-shape and transfer cleanup stay isolated from response cleanup.
 - Step 3 (`Pickle Trombone`): Legacy `facilitators` data is still tolerated when reading older bundles, but it is no longer translated into `additional_facilitator_ids` or any active authority path. Create/update request names remain deferred to Step 4 because this step is limited to export/import compatibility.
+- Step 4 (`Pickle Trombone`): Request-shape cleanup in this step removes the create-page `co_facilitator_ids` payload, but the backend compatibility fields `MeetingUpdate.facilitator_ids`, `MeetingCreatePayload.co_facilitator_ids`, and `MeetingCreate.additional_facilitator_ids` remain temporarily accepted so existing tests and compatibility readers can be cleaned incrementally without conflating this step with API removal work.
 
 ## Phase Exit Criteria
 
