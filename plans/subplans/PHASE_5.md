@@ -33,13 +33,23 @@ Step 1 external contract ledger for `Pickle Trombone`:
 | `app/tests/test_api_meetings.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_api_user_directory.py`, `app/tests/test_pages.py`, and frontend smoke tests | Existing assertions still require facilitator-shaped response fields and names as intended behavior. | Steps 2-4 rewrite tests to assert owner/capability/participant contract fields and retain only isolated legacy import-reader tests. |
 | Export fixture `EXPORT_ZIP_BASE64` in `app/tests/test_api_meetings.py` | Legacy import fixture still includes facilitator-bearing serialized data. | Step 3 keeps this only as a one-way legacy import fixture and verifies new exports do not write facilitator structures. |
 
-### Step 2 — Remove Legacy Facilitator Semantics from Active API Responses
+### Step 2 [DONE] — Remove Legacy Facilitator Semantics from Active API Responses
 Clean the live API surface so active responses no longer expose `facilitator_links`, facilitator-assignment arrays, `is_owner`-style facilitator-row semantics, or equivalent remnants of the old model. Any capability or meeting-authority fields that remain must describe the collapsed model directly and be consumed as such by dependent code and tests.
 
 Conclude this step by:
 - Implementing the core logic by removing old facilitator semantics from active API response contracts.
 - Creating or updating the relevant pytest file, favoring surgical edits to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_meeting_manager.py`, and related API-facing tests instead of creating a new test file.
 - Updating docstrings and documentation so active API contracts and test descriptions describe only the collapsed authority model.
+
+Step 2 active response cleanup for `Pickle Trombone`:
+
+| Surface | Step 2 result |
+|---|---|
+| `app/services/meeting_authorization.py` | Replaced facilitator-shaped presentation helpers with `derive_meeting_authority_outputs`, `MeetingAuthorityOutput`, and `MeetingAuthorityOutputs`. These derive owner and meeting-authority metadata from the collapsed capability model without emitting facilitator assignment rows. |
+| `app/schemas/meeting.py` | Replaced active `MeetingResponse` and dashboard list fields `facilitator_user_ids`, `facilitators`, `facilitator_names`, and `facilitator` with `authority_user_ids`, `meeting_authorities`, `authority_names`, and `owner`. |
+| `app/data/meeting_manager.py` | Dashboard payload construction now emits owner and meeting-authority fields instead of facilitator-shaped summary arrays. |
+| `app/static/js/dashboard.js` and `app/static/js/meeting.js` | Frontend consumers now read `owner`, `meeting_authorities`, and `authority_names`; the meeting overview label now says `Authority`. |
+| `app/tests/test_api_meetings.py` and `app/tests/test_meeting_manager.py` | Active API/dashboard assertions now verify the authority fields and explicitly reject the removed facilitator-shaped response keys. |
 
 ### Step 3 — Isolate Legacy Import/Export Compatibility
 Rewrite export and transfer-facing contracts so newly produced artifacts no longer encode the old facilitator model while preserving only the minimum one-way compatibility needed to read older serialized meeting data. Legacy compatibility must be explicitly isolated to compatibility handling and must not re-enter the active authorization path or active API contract.
@@ -88,6 +98,7 @@ This phase does **not** complete the following:
 ## Technical Deviations Log
 
 - Step 1 (`Pickle Trombone`): This step intentionally documents the external contract debt without removing it. Active response and export/import changes begin in Step 2 and Step 3 so the cleanup remains reviewable and the legacy import exception is isolated rather than mixed into the inventory pass.
+- Step 2 (`Pickle Trombone`): Active API and dashboard response contracts now use owner/authority presentation names. The `MeetingUpdate.facilitator_ids`, create/import `additional_facilitator_ids`/`co_facilitator_ids`, and export/import `facilitators` compatibility surfaces remain intentionally untouched for Step 3 and Step 4 so request-shape and transfer cleanup stay isolated from response cleanup.
 
 ## Phase Exit Criteria
 

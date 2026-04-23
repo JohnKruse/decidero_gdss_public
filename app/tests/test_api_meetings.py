@@ -122,9 +122,13 @@ def test_list_meetings_returns_dashboard_payload(
     meeting_item = next(item for item in payload["items"] if item["id"] == test_meeting_data)
     assert {"enter", "details"}.issubset(meeting_item["quick_actions"].keys())
     assert "notifications" in meeting_item
-    assert "facilitator_names" in meeting_item
-    assert isinstance(meeting_item["facilitator_names"], list)
-    assert meeting_item["facilitator_names"]
+    assert "owner" in meeting_item
+    assert meeting_item["owner"]["name"]
+    assert "authority_names" in meeting_item
+    assert isinstance(meeting_item["authority_names"], list)
+    assert meeting_item["authority_names"]
+    assert "facilitator_names" not in meeting_item
+    assert "facilitators" not in meeting_item
     assert "is_facilitator" in meeting_item
     assert meeting_item["is_facilitator"] is True
     assert meeting_item["viewer_capabilities"]["can_view"] is True
@@ -394,8 +398,10 @@ def test_create_meeting_returns_new_meeting(
     assert result["title"] == meeting_data["title"]
     assert result["description"] == meeting_data["description"]
     assert "id" in result
-    assert result.get("facilitator_user_ids")
-    assert result.get("facilitators")
+    assert result.get("authority_user_ids")
+    assert result.get("meeting_authorities")
+    assert "facilitator_user_ids" not in result
+    assert "facilitators" not in result
     assert "agenda" in result
     assert len(result["agenda"]) == len(meeting_data["agenda_items"])
     assert all(item["tool_type"] == "brainstorming" for item in result["agenda"])
@@ -501,7 +507,8 @@ def test_get_meeting_returns_meeting(
     admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     admin_user = user_manager_with_admin.get_user_by_email(admin_email)
     assert admin_user is not None
-    assert admin_user.user_id in result.get("facilitator_user_ids", [])
+    assert admin_user.user_id in result.get("authority_user_ids", [])
+    assert "facilitator_user_ids" not in result
     assert "agenda" in result
     assert len(result["agenda"]) >= 1
 
@@ -510,7 +517,7 @@ def test_meeting_outputs_ignore_off_roster_facilitator_role(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
-    """Noodle Catapult: serialized meeting and dashboard outputs derive facilitators from owner/roster capability only."""
+    """Pickle Trombone: active meeting and dashboard outputs expose authority metadata, not facilitator assignment fields."""
     off_roster_password = "LegacyFac1!"
     off_roster_user = user_manager_with_admin.add_user(
         first_name="Legacy",
@@ -545,12 +552,14 @@ def test_meeting_outputs_ignore_off_roster_facilitator_role(
     meeting_response = authenticated_client.get(f"/api/meetings/{meeting_id}")
     assert meeting_response.status_code == 200, meeting_response.json()
     meeting_payload = meeting_response.json()
-    assert off_roster_user.user_id not in meeting_payload["facilitator_user_ids"]
-    assert "Legacy Facilitator" not in meeting_payload["facilitator_names"]
+    assert off_roster_user.user_id not in meeting_payload["authority_user_ids"]
+    assert "Legacy Facilitator" not in meeting_payload["authority_names"]
     assert all(
-        facilitator["user_id"] != off_roster_user.user_id
-        for facilitator in meeting_payload["facilitators"]
+        authority["user_id"] != off_roster_user.user_id
+        for authority in meeting_payload["meeting_authorities"]
     )
+    for removed_key in ("facilitator_user_ids", "facilitator_names", "facilitators"):
+        assert removed_key not in meeting_payload
 
     dashboard_response = authenticated_client.get("/api/meetings/")
     assert dashboard_response.status_code == 200, dashboard_response.json()
@@ -558,9 +567,11 @@ def test_meeting_outputs_ignore_off_roster_facilitator_role(
         item for item in dashboard_response.json()["items"] if item["id"] == meeting_id
     )
     assert off_roster_user.user_id not in [
-        facilitator["user_id"] for facilitator in meeting_item["facilitators"]
+        authority["user_id"] for authority in meeting_item["meeting_authorities"]
     ]
-    assert "Legacy Facilitator" not in meeting_item["facilitator_names"]
+    assert "Legacy Facilitator" not in meeting_item["authority_names"]
+    for removed_key in ("facilitator", "facilitator_names", "facilitators"):
+        assert removed_key not in meeting_item
 
 
 def test_get_active_meetings_returns_active_meetings(

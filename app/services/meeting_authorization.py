@@ -36,33 +36,29 @@ class MeetingCapabilities:
 
 
 @dataclass(frozen=True)
-class MeetingFacilitatorOutput:
-    """Canonical facilitator-facing meeting metadata derived from capabilities."""
+class MeetingAuthorityOutput:
+    """Meeting authority presentation metadata derived from collapsed capabilities."""
 
-    id: Optional[str]
     user_id: Optional[str]
     name: str
-    is_owner: bool = False
+    authority: str
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 @dataclass(frozen=True)
-class MeetingFacilitatorOutputs:
-    facilitators: list[MeetingFacilitatorOutput]
-    facilitator_ids: list[str]
-    facilitator_user_ids: list[str]
-    facilitator_names: list[str]
+class MeetingAuthorityOutputs:
+    owner: MeetingAuthorityOutput
+    meeting_authorities: list[MeetingAuthorityOutput]
+    authority_user_ids: list[str]
+    authority_names: list[str]
 
     def owner_summary(self) -> dict[str, Any]:
-        owner = next((item for item in self.facilitators if item.is_owner), None)
-        if owner is None:
-            return {"id": None, "user_id": None, "name": "Unknown"}
         return {
-            "id": owner.id,
-            "user_id": owner.user_id,
-            "name": owner.name,
+            "user_id": self.owner.user_id,
+            "name": self.owner.name,
+            "authority": self.owner.authority,
         }
 
 
@@ -186,10 +182,10 @@ def resolve_meeting_capabilities(
     )
 
 
-def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutputs:
+def derive_meeting_authority_outputs(meeting: Any) -> MeetingAuthorityOutputs:
     """
-    Gravy Parachute: derive surviving facilitator-facing meeting metadata from the
-    canonical capability model, not from facilitator rows.
+    Pickle Trombone: derive active meeting authority metadata from owner,
+    roster, and system role capability checks without facilitator assignment rows.
     """
 
     identities: list[tuple[Optional[str], Optional[str], str, bool]] = []
@@ -227,10 +223,10 @@ def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutput
             name=_format_user_display(participant),
         )
 
-    facilitators: list[MeetingFacilitatorOutput] = []
-    facilitator_ids: list[str] = []
-    facilitator_user_ids: list[str] = []
-    facilitator_names: list[str] = []
+    owner_output: Optional[MeetingAuthorityOutput] = None
+    meeting_authorities: list[MeetingAuthorityOutput] = []
+    authority_user_ids: list[str] = []
+    authority_names: list[str] = []
 
     for user_id, role_value, name, is_owner in identities:
         capabilities = resolve_meeting_capabilities_for_identity(
@@ -241,20 +237,30 @@ def derive_meeting_facilitator_outputs(meeting: Any) -> MeetingFacilitatorOutput
         if not capabilities.is_facilitator:
             continue
 
-        summary = MeetingFacilitatorOutput(
-            id=None,
+        summary = MeetingAuthorityOutput(
             user_id=user_id,
             name=name,
-            is_owner=is_owner,
+            authority="owner" if is_owner else "system_role",
         )
-        facilitators.append(summary)
-        facilitator_user_ids.append(user_id)
-        if name and name not in facilitator_names:
-            facilitator_names.append(name)
+        if is_owner:
+            owner_output = summary
+        meeting_authorities.append(summary)
+        authority_user_ids.append(user_id)
+        if name and name not in authority_names:
+            authority_names.append(name)
 
-    return MeetingFacilitatorOutputs(
-        facilitators=facilitators,
-        facilitator_ids=facilitator_ids,
-        facilitator_user_ids=facilitator_user_ids,
-        facilitator_names=facilitator_names,
+    if owner_output is None:
+        owner_output = MeetingAuthorityOutput(
+            user_id=owner_id,
+            name=_format_user_display(
+                owner or type("MeetingOwnerIdentity", (), {"login": owner_id})()
+            ),
+            authority="owner",
+        )
+
+    return MeetingAuthorityOutputs(
+        owner=owner_output,
+        meeting_authorities=meeting_authorities,
+        authority_user_ids=authority_user_ids,
+        authority_names=authority_names,
     )

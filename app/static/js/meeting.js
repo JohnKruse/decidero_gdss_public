@@ -2245,13 +2245,13 @@
             if (ui.meetingOverview.description) {
                 ui.meetingOverview.description.textContent = meetingDescription;
             }
-            const facilitatorNames =
-                (state.meeting?.facilitator_names && state.meeting.facilitator_names.filter(Boolean)) ||
-                (state.meeting?.facilitators && state.meeting.facilitators.map((facilitator) => facilitator?.name).filter(Boolean)) ||
+            const authorityNames =
+                (state.meeting?.authority_names && state.meeting.authority_names.filter(Boolean)) ||
+                (state.meeting?.meeting_authorities && state.meeting.meeting_authorities.map((authority) => authority?.name).filter(Boolean)) ||
                 [];
             if (ui.meetingOverview.facilitator) {
-                ui.meetingOverview.facilitator.textContent = facilitatorNames.length
-                    ? facilitatorNames.join(", ")
+                ui.meetingOverview.facilitator.textContent = authorityNames.length
+                    ? authorityNames.join(", ")
                     : "—";
             }
 

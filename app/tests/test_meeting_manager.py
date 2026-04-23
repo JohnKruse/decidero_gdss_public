@@ -1715,18 +1715,19 @@ def test_dashboard_meetings_scoped_and_classified(
     payload = meeting_manager_instance.get_dashboard_meetings(user=other_user)
 
     assert payload["summary"]["total"] == 4
-    assert all(item["facilitators"] for item in payload["items"])
-    assert all(item["facilitator_names"] for item in payload["items"])
+    assert all(item["meeting_authorities"] for item in payload["items"])
+    assert all(item["authority_names"] for item in payload["items"])
     assert all("viewer_capabilities" in item for item in payload["items"])
     assert all(item["viewer_capabilities"]["can_view"] is True for item in payload["items"])
     assert all(item["viewer_capabilities"]["can_manage"] is False for item in payload["items"])
     assert all(item["viewer_capabilities"]["can_delete"] is False for item in payload["items"])
-    assert all(item["facilitator"]["id"] is None for item in payload["items"])
-    assert all(item["facilitator"]["user_id"] for item in payload["items"])
+    assert all(item["owner"]["user_id"] for item in payload["items"])
     assert all(
-        any(f["user_id"] == test_facilitator.user_id for f in item["facilitators"])
+        any(a["user_id"] == test_facilitator.user_id for a in item["meeting_authorities"])
         for item in payload["items"]
     )
+    assert all("facilitators" not in item for item in payload["items"])
+    assert all("facilitator_names" not in item for item in payload["items"])
 
     facilitator_payload = meeting_manager_instance.get_dashboard_meetings(
         user=test_facilitator,
@@ -1738,7 +1739,7 @@ def test_dashboard_meetings_scoped_and_classified(
         for item in facilitator_payload["items"]
     )
     assert all(
-        any(f["user_id"] == test_facilitator.user_id for f in item["facilitators"])
+        any(a["user_id"] == test_facilitator.user_id for a in item["meeting_authorities"])
         for item in facilitator_payload["items"]
     )
     statuses = {item["title"]: item["status"] for item in payload["items"]}

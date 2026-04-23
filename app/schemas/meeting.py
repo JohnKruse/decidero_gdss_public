@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Literal
 from types import SimpleNamespace
 
-from app.services.meeting_authorization import derive_meeting_facilitator_outputs
+from app.services.meeting_authorization import derive_meeting_authority_outputs
 
 
 class MeetingStatus(str, Enum):
@@ -204,11 +204,10 @@ class AgendaReorderPayload(BaseModel):
         return cleaned
 
 
-class MeetingFacilitatorSummary(BaseModel):
-    id: Optional[str]
+class MeetingAuthoritySummary(BaseModel):
     user_id: Optional[str] = None
     name: str
-    is_owner: bool = False
+    authority: Literal["owner", "system_role"] = "system_role"
 
 
 class MeetingViewerCapabilities(BaseModel):
@@ -232,15 +231,19 @@ class MeetingResponse(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     participant_ids: List[str] = Field(default_factory=list)
-    facilitator_ids: List[str] = Field(default_factory=list)
-    facilitator_user_ids: List[str] = Field(
+    authority_user_ids: List[str] = Field(
         default_factory=list,
-        description="Canonical meeting facilitator user IDs derived from owner and roster capabilities.",
+        description="Meeting authority user IDs derived from owner, roster, and system roles.",
     )
-    facilitators: List["MeetingFacilitatorSummary"] = Field(default_factory=list)
-    facilitator_names: List[str] = Field(
+    owner: MeetingAuthoritySummary = Field(
+        default_factory=lambda: MeetingAuthoritySummary(
+            user_id=None, name="Unknown", authority="owner"
+        )
+    )
+    meeting_authorities: List["MeetingAuthoritySummary"] = Field(default_factory=list)
+    authority_names: List[str] = Field(
         default_factory=list,
-        description="Display names for canonical meeting facilitators only.",
+        description="Display names for meeting-authority users only.",
     )
     viewer_capabilities: MeetingViewerCapabilities = Field(
         default_factory=MeetingViewerCapabilities,
@@ -273,7 +276,7 @@ class MeetingResponse(BaseModel):
 
         participants = getattr(data, "participants", None)
         extracted = extract_ids(participants)
-        canonical_outputs = derive_meeting_facilitator_outputs(data)
+        authority_outputs = derive_meeting_authority_outputs(data)
         agenda_attr = getattr(data, "agenda_activities", None)
         return {
             "meeting_id": getattr(data, "meeting_id", None),
@@ -288,21 +291,21 @@ class MeetingResponse(BaseModel):
             "created_at": getattr(data, "created_at", None),
             "updated_at": getattr(data, "updated_at", None),
             "participant_ids": extracted,
-            "facilitator_ids": list(canonical_outputs.facilitator_ids),
-            "facilitator_user_ids": list(canonical_outputs.facilitator_user_ids),
-            "facilitators": [
-                summary.to_dict() for summary in canonical_outputs.facilitators
+            "owner": authority_outputs.owner_summary(),
+            "authority_user_ids": list(authority_outputs.authority_user_ids),
+            "meeting_authorities": [
+                summary.to_dict() for summary in authority_outputs.meeting_authorities
             ],
-            "facilitator_names": list(canonical_outputs.facilitator_names),
+            "authority_names": list(authority_outputs.authority_names),
             "agenda": [
                 AgendaActivityResponse.model_validate(item)
                 for item in (agenda_attr or [])
             ],
         }
 
-    @field_validator("facilitators", mode="before")
+    @field_validator("meeting_authorities", mode="before")
     @classmethod
-    def _coerce_facilitators(cls, value: Any) -> List[dict]:
+    def _coerce_meeting_authorities(cls, value: Any) -> List[dict]:
         if not value:
             return []
 
@@ -325,50 +328,50 @@ class MeetingResponse(BaseModel):
                 if hasattr(participant, "user_id")
             ]
 
-        existing_facilitators = list(values.facilitators or [])
+        existing_authorities = list(values.meeting_authorities or [])
         if extra and (
             participants_attr
             or extra.get("owner") is not None
             or values.owner_id
         ):
-            canonical_outputs = derive_meeting_facilitator_outputs(
+            authority_outputs = derive_meeting_authority_outputs(
                 SimpleNamespace(
                     owner_id=values.owner_id,
                     owner=extra.get("owner"),
                     participants=participants_attr or [],
                 )
             )
-            values.facilitators = [
-                MeetingFacilitatorSummary(**summary.to_dict())
-                for summary in canonical_outputs.facilitators
+            values.owner = MeetingAuthoritySummary(**authority_outputs.owner_summary())
+            values.meeting_authorities = [
+                MeetingAuthoritySummary(**summary.to_dict())
+                for summary in authority_outputs.meeting_authorities
             ]
-            values.facilitator_ids = list(canonical_outputs.facilitator_ids)
-            values.facilitator_user_ids = list(canonical_outputs.facilitator_user_ids)
-            values.facilitator_names = list(canonical_outputs.facilitator_names)
-        elif existing_facilitators:
-            converted: List[MeetingFacilitatorSummary] = []
-            seen_roster_ids: List[str] = []
+            values.authority_user_ids = list(authority_outputs.authority_user_ids)
+            values.authority_names = list(authority_outputs.authority_names)
+        elif existing_authorities:
+            converted: List[MeetingAuthoritySummary] = []
             seen_user_ids: List[str] = []
             seen_names: List[str] = []
+            owner_summary: Optional[MeetingAuthoritySummary] = None
 
-            for raw in existing_facilitators:
+            for raw in existing_authorities:
                 summary = (
-                    MeetingFacilitatorSummary(**raw) if isinstance(raw, dict) else raw
+                    MeetingAuthoritySummary(**raw) if isinstance(raw, dict) else raw
                 )
-                summary.is_owner = summary.user_id == values.owner_id
                 converted.append(summary)
+                if summary.authority == "owner":
+                    owner_summary = summary
 
-                if summary.id and summary.id not in seen_roster_ids:
-                    seen_roster_ids.append(summary.id)
                 if summary.user_id and summary.user_id not in seen_user_ids:
                     seen_user_ids.append(summary.user_id)
                 if summary.name and summary.name not in seen_names:
                     seen_names.append(summary.name)
 
-            values.facilitators = converted
-            values.facilitator_ids = seen_roster_ids
-            values.facilitator_user_ids = seen_user_ids
-            values.facilitator_names = seen_names
+            values.meeting_authorities = converted
+            if owner_summary is not None:
+                values.owner = owner_summary
+            values.authority_user_ids = seen_user_ids
+            values.authority_names = seen_names
         agenda_attr = getattr(values, "agenda_activities", None)
         if not agenda_attr and extra:
             agenda_attr = extra.get("agenda_activities")
@@ -460,11 +463,11 @@ class MeetingListItem(BaseModel):
     end_time: Optional[datetime] = None
     created_at: Optional[datetime] = None
     description_snippet: str
-    facilitator: MeetingFacilitatorSummary
-    facilitators: List[MeetingFacilitatorSummary] = Field(default_factory=list)
-    facilitator_names: List[str] = Field(default_factory=list)
+    owner: MeetingAuthoritySummary
+    meeting_authorities: List[MeetingAuthoritySummary] = Field(default_factory=list)
+    authority_names: List[str] = Field(default_factory=list)
     is_facilitator: bool = Field(
-        description="Whether the current user has canonical meeting facilitator authority."
+        description="Whether the current user has collapsed meeting management authority."
     )
     is_participant: bool
     viewer_capabilities: MeetingViewerCapabilities = Field(

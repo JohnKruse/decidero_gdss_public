@@ -28,7 +28,7 @@ from ..utils.identifiers import (
 )
 from ..services.activity_catalog import get_activity_definition, get_activity_catalog
 from ..services.meeting_authorization import (
-    derive_meeting_facilitator_outputs,
+    derive_meeting_authority_outputs,
     resolve_meeting_capabilities,
 )
 from ..config.loader import get_activity_participant_exclusivity
@@ -1488,7 +1488,7 @@ class MeetingManager:
 
             status_counts[computed_status] += 1
 
-            facilitator_outputs = derive_meeting_facilitator_outputs(meeting)
+            authority_outputs = derive_meeting_authority_outputs(meeting)
 
             items.append(
                 {
@@ -1504,11 +1504,11 @@ class MeetingManager:
                     "description_snippet": self._build_description_snippet(
                         meeting.description
                     ),
-                    "facilitator": facilitator_outputs.owner_summary(),
-                    "facilitator_names": facilitator_outputs.facilitator_names,
-                    "facilitators": [
+                    "owner": authority_outputs.owner_summary(),
+                    "authority_names": authority_outputs.authority_names,
+                    "meeting_authorities": [
                         summary.to_dict()
-                        for summary in facilitator_outputs.facilitators
+                        for summary in authority_outputs.meeting_authorities
                     ],
                     "is_facilitator": capabilities["is_facilitator"],
                     "is_participant": capabilities["is_participant"],

@@ -506,52 +506,44 @@
             return 'TBD';
         }
 
-        const roster = Array.isArray(meeting.facilitators) ? meeting.facilitators : [];
-        const owner = roster.find((facilitator) => facilitator?.is_owner);
+        if (meeting.owner?.name) {
+            return meeting.owner.name;
+        }
+
+        const authorities = Array.isArray(meeting.meeting_authorities) ? meeting.meeting_authorities : [];
+        const owner = authorities.find((authority) => authority?.authority === 'owner');
         if (owner?.name) {
             return owner.name;
         }
 
-        if (meeting.facilitator?.name) {
-            return meeting.facilitator.name;
-        }
-
-        const namesFromList = Array.isArray(meeting.facilitator_names)
-            ? meeting.facilitator_names.filter(Boolean)
-            : [];
-
-        if (namesFromList.length > 0) {
-            return namesFromList[0];
-        }
-
-        const rosterNames = roster
-            .map((facilitator) => facilitator?.name)
+        const authorityNames = authorities
+            .map((authority) => authority?.name)
             .filter((name) => typeof name === 'string' && name.trim().length > 0);
 
-        if (rosterNames.length > 0) {
-            return rosterNames[0];
+        if (authorityNames.length > 0) {
+            return authorityNames[0];
         }
 
         return 'TBD';
     }
 
-    function getCoFacilitatorNames(meeting, ownerName) {
+    function getAdditionalAuthorityNames(meeting, ownerName) {
         if (!meeting || typeof meeting !== 'object') {
             return [];
         }
 
-        const roster = Array.isArray(meeting.facilitators) ? meeting.facilitators : [];
-        const coFacilitators = roster
-            .filter((facilitator) => facilitator && !facilitator.is_owner)
-            .map((facilitator) => facilitator?.name)
+        const authorities = Array.isArray(meeting.meeting_authorities) ? meeting.meeting_authorities : [];
+        const additionalAuthorities = authorities
+            .filter((authority) => authority && authority.authority !== 'owner')
+            .map((authority) => authority?.name)
             .filter((name) => typeof name === 'string' && name.trim().length > 0);
 
-        if (coFacilitators.length > 0) {
-            return coFacilitators;
+        if (additionalAuthorities.length > 0) {
+            return additionalAuthorities;
         }
 
-        const namesFromList = Array.isArray(meeting.facilitator_names)
-            ? meeting.facilitator_names.filter(Boolean)
+        const namesFromList = Array.isArray(meeting.authority_names)
+            ? meeting.authority_names.filter(Boolean)
             : [];
         const normalizedOwner = ownerName ? ownerName.trim().toLowerCase() : '';
 
@@ -623,10 +615,10 @@
         ownerLine.textContent = ownerName || 'TBD';
         facilitatorCell.appendChild(ownerLine);
 
-        const coFacilitators = getCoFacilitatorNames(meeting, ownerName);
+        const additionalAuthorities = getAdditionalAuthorityNames(meeting, ownerName);
         const ownerLabel = ownerName || 'TBD';
-        if (coFacilitators.length > 0) {
-            const tooltip = `Owner: ${ownerLabel}\nFacilitators: ${coFacilitators.join(', ')}`;
+        if (additionalAuthorities.length > 0) {
+            const tooltip = `Owner: ${ownerLabel}\nAdditional authority: ${additionalAuthorities.join(', ')}`;
             facilitatorCell.title = tooltip;
             ownerLine.title = tooltip;
         } else {
