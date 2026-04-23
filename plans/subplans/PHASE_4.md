@@ -12,13 +12,28 @@ Use this exact two-word canary in Phase 4 notes, commit messages, test docstring
 
 ## Atomic Steps
 
-### Step 1 — Identify and Isolate Persistent Facilitator Artifacts
+### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts
 Map the remaining schema, ORM, startup, and runtime references that still treat per-meeting facilitator assignment as a persisted model concern. This includes `MeetingFacilitator`, `meeting_facilitators` storage, ORM relationships on `Meeting` and `User`, any startup shim that creates or expects the table, and any helper whose sole purpose is managing facilitator assignments as stored rows.
 
 Conclude this step by:
 - Implementing the core logic as the complete removal map for persistent facilitator artifacts targeted in this phase.
 - Creating or updating the relevant pytest file, preferring edits to existing model/meeting/API pytest modules over creating a new pytest file unless an existing suite cannot reasonably carry the coverage.
 - Updating docstrings and documentation so the Phase 4 `Noodle Catapult` scope clearly states which persistent facilitator constructs are being eliminated now versus which outward-facing compatibility concerns are deferred to Phase 5.
+
+Step 1 inventory for `Noodle Catapult`:
+
+| File / surface | Persistent facilitator artifact isolated in Step 1 | Removal phase target |
+|---|---|---|
+| `app/models/meeting.py` | `MeetingFacilitator`, `meeting_facilitators_table`, `Meeting.facilitator_links`, `Meeting.facilitators` | Step 2 |
+| `app/models/user.py` | `MeetingFacilitator` import bridge, `meeting_facilitators_table`, `User.facilitator_links`, `User.facilitated_meetings` | Step 2 |
+| `app/models/__init__.py` | Re-export of `MeetingFacilitator` as an active model symbol | Step 2 |
+| `app/main.py` | Startup shim calling `meeting_facilitators_table.create(..., checkfirst=True)` | Step 3 |
+| `app/data/meeting_manager.py` | Meeting creation/update helpers that create, mutate, eager-load, or sort facilitator assignment rows, including `_ensure_facilitator_assignment` and `_collect_facilitator_assignments` | Step 3 |
+| `app/utils/identifiers.py` | `generate_facilitator_id` and its sequence helpers keyed to `MeetingFacilitator` rows | Step 3 |
+| `app/routers/brainstorming.py`, `app/routers/categorization.py`, `app/routers/transfer.py`, `app/routers/voting.py` | Router imports and eager-load paths that still depend on `MeetingFacilitator` / `facilitator_links` | Step 3 |
+| `app/routers/meetings.py` | Export/import compatibility bundle still reading `meeting.facilitator_links`; request payloads still accept facilitator-oriented compatibility fields | Step 4 / Phase 5 |
+| `app/services/meeting_authorization.py` and `app/schemas/meeting.py` | Backend-derived compatibility outputs (`facilitators`, `facilitator_ids`, `facilitator_user_ids`) still emitted for outward-facing contract stability | Phase 5 |
+| Existing pytest modules | Legacy assertions that inspect `facilitator_links`, facilitator IDs, or auto-assignment behavior as persisted-row facts | Step 4 |
 
 ### Step 2 — Collapse the ORM and Schema Model
 Remove `MeetingFacilitator`, the `meeting_facilitators` storage model, related ORM relationships, and any persisted ownership duplication that survives outside `Meeting.owner_id`. After this step, the active data model must express meeting authority only through global role, owner linkage, and roster membership, with no live facilitator-assignment entity left in the application schema.
@@ -72,6 +87,10 @@ This phase does **not** complete the following:
 - Export/import compatibility handling and outward-facing contract cleanup, which belongs to Phase 5.
 - Additional UI/interface alignment work beyond what earlier phases already established.
 - WebSocket auth cleanup or unrelated authorization redesign outside the facilitator-model removal path.
+
+## Technical Deviations Log
+
+- Step 1 (`Noodle Catapult`): The isolation pass intentionally keeps outward-facing compatibility fields such as `facilitator_ids`, `facilitator_user_ids`, export/import facilitator payloads, and derived facilitator summaries in place for now. Those surfaces are documented as deferred so Step 2 and Step 3 can remove the persistent model first without mixing schema collapse with API contract cleanup that belongs to Phase 5.
 
 ## Phase Exit Criteria
 

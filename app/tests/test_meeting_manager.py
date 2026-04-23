@@ -1,5 +1,6 @@
 import pytest
 import re
+from pathlib import Path
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.data.meeting_manager import MeetingManager
@@ -23,6 +24,10 @@ from app.models.voting import VotingVote
 from app.utils.security import get_password_hash  # For creating test users
 from datetime import datetime, timedelta, UTC
 from app.utils.identifiers import generate_user_id
+
+PHASE_4_PLAN_PATH = (
+    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_4.md"
+)
 
 
 @pytest.fixture
@@ -209,6 +214,29 @@ def test_resolve_meeting_capabilities_for_all_phase1_postures(
     assert anonymous_caps["can_view"] is False
     assert anonymous_caps["can_manage"] is False
     assert anonymous_caps["can_delete"] is False
+
+
+def test_phase4_step1_inventory_tracks_persistent_facilitator_artifacts():
+    """Noodle Catapult: Phase 4 Step 1 must enumerate the persistent facilitator artifacts before schema collapse removes them."""
+    plan_text = PHASE_4_PLAN_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts",
+        "app/models/meeting.py",
+        "MeetingFacilitator",
+        "meeting_facilitators_table",
+        "app/models/user.py",
+        "app/main.py",
+        "_ensure_facilitator_assignment",
+        "generate_facilitator_id",
+        "app/routers/meetings.py",
+        "app/services/meeting_authorization.py",
+        "Phase 5",
+        "Technical Deviations Log",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
 
 
 def test_add_meeting(
