@@ -1029,7 +1029,7 @@ def test_removed_facilitator_loses_control_until_readded(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Muffin Tractor: removing a facilitator from the roster strips meeting-scoped control until roster membership returns."""
+    """Toaster Sombrero: roster changes hide or restore meeting controls in the UI exactly when backend meeting control authority is revoked or returned."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -1083,6 +1083,20 @@ def test_removed_facilitator_loses_control_until_readded(
         json=control_payload,
     )
     assert initial_control.status_code == 200, initial_control.json()
+    initial_page = client.get(f"/meeting/{meeting.meeting_id}")
+    assert initial_page.status_code == 200, initial_page.text
+    assert "Meeting Roster" in initial_page.text
+    assert "Meeting Settings" in initial_page.text
+    assert 'data-view-mode="facilitator"' in initial_page.text
+
+    initial_dashboard = client.get("/api/meetings/")
+    assert initial_dashboard.status_code == 200, initial_dashboard.json()
+    initial_item = next(
+        item
+        for item in initial_dashboard.json()["items"]
+        if item["id"] == meeting.meeting_id
+    )
+    assert initial_item["viewer_capabilities"]["can_manage"] is True
 
     meeting_manager.remove_participant(meeting.meeting_id, facilitator_user.user_id)
     after_removal = client.post(
@@ -1090,6 +1104,14 @@ def test_removed_facilitator_loses_control_until_readded(
         json=control_payload,
     )
     assert after_removal.status_code == 403, after_removal.json()
+    removed_page = client.get(f"/meeting/{meeting.meeting_id}")
+    assert removed_page.status_code == 403, removed_page.text
+
+    removed_dashboard = client.get("/api/meetings/")
+    assert removed_dashboard.status_code == 200, removed_dashboard.json()
+    assert all(
+        item["id"] != meeting.meeting_id for item in removed_dashboard.json()["items"]
+    )
 
     meeting_manager.add_participant(meeting.meeting_id, facilitator_user)
     after_readd = client.post(
@@ -1097,6 +1119,20 @@ def test_removed_facilitator_loses_control_until_readded(
         json=control_payload,
     )
     assert after_readd.status_code == 200, after_readd.json()
+    readded_page = client.get(f"/meeting/{meeting.meeting_id}")
+    assert readded_page.status_code == 200, readded_page.text
+    assert "Meeting Roster" in readded_page.text
+    assert "Meeting Settings" in readded_page.text
+    assert 'data-view-mode="facilitator"' in readded_page.text
+
+    readded_dashboard = client.get("/api/meetings/")
+    assert readded_dashboard.status_code == 200, readded_dashboard.json()
+    readded_item = next(
+        item
+        for item in readded_dashboard.json()["items"]
+        if item["id"] == meeting.meeting_id
+    )
+    assert readded_item["viewer_capabilities"]["can_manage"] is True
 
 
 def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
@@ -1104,7 +1140,7 @@ def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Muffin Tractor: demotion to participant removes meeting-scoped control across meetings and hides management controls in the UI."""
+    """Toaster Sombrero: demotion to participant removes both visible management controls and backend meeting control authority across meetings."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -1167,6 +1203,19 @@ def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
     assert "Meeting Roster" not in meeting_page.text
     assert "Meeting Settings" not in meeting_page.text
     assert 'data-view-mode="participant"' in meeting_page.text
+
+    dashboard_response = client.get("/api/meetings/")
+    assert dashboard_response.status_code == 200, dashboard_response.json()
+    for meeting_id, _activity_id in meeting_ids:
+        item = next(
+            item
+            for item in dashboard_response.json()["items"]
+            if item["id"] == meeting_id
+        )
+        assert item["viewer_capabilities"]["can_manage"] is False
+        assert item["viewer_capabilities"]["can_delete"] is False
+        assert item["viewer_capabilities"]["is_facilitator"] is False
+        assert item["viewer_capabilities"]["is_participant"] is True
 
     for meeting_id, activity_id in meeting_ids:
         control_attempt = client.post(

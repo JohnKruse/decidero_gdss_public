@@ -36,7 +36,7 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, preferring targeted edits to existing suites such as `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, and `app/tests/test_frontend_smoke.py` instead of adding new pytest modules.
 - Updating docstrings and documentation so any capability field consumed by the frontend is documented as a derived interface contract from the unified backend model.
 
-### Step 4 — Lock UI and Backend Symmetry Through Regression Coverage
+### Step 4 [DONE] — Lock UI and Backend Symmetry Through Regression Coverage
 Convert the originally reported incoherence into durable regression coverage that proves the interface and the backend stay synchronized after role changes and roster changes. This phase must specifically prevent cases where controls are hidden but backend access still succeeds, or controls are shown but the backend denies the action.
 
 Conclude this step by:
@@ -77,6 +77,7 @@ This phase does **not** complete the following:
 - Step 1 inventories the Phase 3 coherence surfaces by moving the meeting settings page, activity-log page, and meeting-page SSR shell onto the canonical backend capability model while exposing a backend-derived per-meeting capability record in `meeting.html`. The client bootstrap in `app/static/js/meeting.js` still reconstructs facilitator state from compatibility fields at runtime, and dashboard role-panels still hinge on global-role shells; those frontend-state and dashboard-affordance rebases remain explicitly deferred to Steps 2 and 3.
 - Step 2 rebases the meeting page bootstrap and refresh path onto a backend-derived `viewer_capabilities` record in the meeting API payload, so page view mode and facilitator controls no longer depend on compatibility facilitator IDs or raw system role. Dashboard meeting affordances and other frontend consumers outside the meeting page still need the same capability-semantic cleanup, which remains explicitly deferred to Step 3.
 - Step 3 aligns dashboard meeting affordances and frontend-facing list payload semantics around the same backend-derived capability record used by the meeting page, so Settings, Archive, and similar dashboard actions now key off explicit per-meeting authority rather than role shortcuts. The remaining risk is end-to-end symmetry proof after role and roster changes across both SSR and API paths, which remains explicitly deferred to Step 4 regression coverage.
+- Step 4 locks the demotion and roster-removal regressions so the same role/roster change now flips both visible meeting-management controls and backend control access together. The remaining work for this phase is the final verification-boundary lock in Step 5; no broader frontend redesign or compatibility-field removal is attempted here.
 
 ## Phase Exit Criteria
 
