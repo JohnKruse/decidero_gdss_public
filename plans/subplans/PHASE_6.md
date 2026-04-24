@@ -1,4 +1,4 @@
-# PHASE 6 — End-to-End Validation and Merge Readiness
+# PHASE 6 [COMPLETE] — End-to-End Validation and Merge Readiness
 
 **Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
 
@@ -80,13 +80,22 @@ Step 4 merge-readiness record for `Lobster Teacup`:
 | Compatibility boundary | The record preserves only isolated compatibility request inputs: `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids`; these do not recreate persisted facilitator state or response-contract authority. |
 | Active-code residue proof | The Step 3 grep/audit result is carried forward as merge evidence: no removed-model tokens remain in active non-test `app/` code, and historical references are limited to plans, tests, and compatibility documentation. |
 
-### Step 5 — Lock the Final Exit Boundary
+### Step 5 [DONE] — Lock the Final Exit Boundary
 Define the exact final terminal command that must pass 100% to clear the entire effort and treat this phase as complete only when the full-suite result, residue checks, and merge-readiness artifacts all support shipment of the collapsed model.
 
 Conclude this step by:
 - Implementing the core logic as the final Phase 6 exit checklist and completion criteria in this file.
 - Creating or updating the relevant pytest file so any remaining end-to-end regression coverage is included in the exit command below without unnecessary pytest file proliferation.
 - Updating docstrings and documentation so the final command, expected success state, and Phase 6 canary remain aligned.
+
+Step 5 final exit boundary for `Lobster Teacup`:
+
+| Exit evidence | Final boundary |
+|---|---|
+| Terminal command | `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` is the only command that clears Phase 6 and the broader role/permission collapse effort. |
+| Required result | The command must reach `[100%]` with zero failures. Feature-gated guest-join tests may report `SKIPPED` when the guest entry flag is disabled, but skipped guest-flag coverage is not a failure of the collapsed authorization model. |
+| Documentation state | `docs/PHASE_6_VALIDATION_CHECKLIST.md` and this phase file both record the final verification command, original failure-mode proof, residue result, merge-readiness notes, and final exit boundary under the `Lobster Teacup` canary. |
+| Completion state | Phase 6 is marked `[COMPLETE]` only after Step 5 is marked `[DONE]`, the documentation assertion coverage is updated, and the full-suite command passes 100%. |
 
 ## Phase 6 Final Readiness Scope Map
 
@@ -110,6 +119,7 @@ This phase does **not** introduce new feature scope. If a new authorization beha
 - Step 2 (`Lobster Teacup`): The original failure modes were already behaviorally covered by broad API and frontend smoke tests, so this step tightens their Phase 6 canary docstrings and adds an auditable Step 2 regression-proof record rather than duplicating the same role-change and roster-change scenarios in a new test file.
 - Step 3 (`Lobster Teacup`): The scan found no removed-model tokens in active non-test `app/` code. It intentionally does not remove the remaining facilitator-named compatibility request fields because Phase 5 documented them as isolated request-shape compatibility, not active persisted model state or response contract semantics.
 - Step 4 (`Lobster Teacup`): Merge-readiness is recorded as documentation and an existing-suite documentation assertion rather than new product code. The verification command is intentionally not narrowed for this step; the same full-suite command remains the baseline evidence for Step 4 and the terminal Phase 6 exit gate.
+- Step 5 (`Lobster Teacup`): The final exit boundary is documented as the same full-suite command used throughout Phase 6, and Phase 6 is marked `[COMPLETE]` only after the documentation guard and full-suite command both pass. The final certification run reaches `[100%]` with `553 passed, 2 skipped`; the two guest-join feature-flag skips are expected non-failures.
 
 ## Phase Exit Criteria
 

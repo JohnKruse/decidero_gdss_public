@@ -84,3 +84,12 @@ Phase 6 Step 4 prepares the branch-readiness artifact under the `Lobster Teacup`
 - User-visible fixes: demotion authority revocation, remove-and-readd stale-authority prevention, and UI/backend capability symmetry are locked by the regression proof anchors listed above.
 - Compatibility boundary: `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids` remain isolated request-shape compatibility inputs only; they are not persisted facilitator-model state, active response fields, or independent authority sources.
 - Removed-model residue proof: the Step 3 audit found no removed-model tokens in active non-test `app/` code, with historical references limited to plans, tests, and compatibility documentation.
+
+## Final Exit Boundary
+
+Phase 6 Step 5 locks the terminal exit boundary under the `Lobster Teacup` canary:
+
+- Terminal command: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v`
+- Required result: the command must reach `[100%]` with zero failures. Guest-join feature-flag tests may report `SKIPPED` when the guest entry flag is disabled.
+- Documentation state: this checklist and `plans/subplans/PHASE_6.md` must both record the final command, failure-mode proof, residue result, merge-readiness notes, and final completion boundary.
+- Completion state: Phase 6 may be marked `[COMPLETE]` only after Step 5 is `[DONE]`, documentation assertion coverage is updated, and the full-suite command passes 100%.

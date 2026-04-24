@@ -251,6 +251,40 @@ def test_phase6_step4_merge_readiness_record_is_auditable():
         assert marker in checklist_text
 
 
+def test_phase6_step5_final_exit_boundary_is_auditable():
+    """Lobster Teacup: Phase 6 Step 5 locks the final full-suite exit boundary."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_plan_markers = [
+        "# PHASE 6 [COMPLETE] — End-to-End Validation and Merge Readiness",
+        "### Step 5 [DONE] — Lock the Final Exit Boundary",
+        "Step 5 final exit boundary for `Lobster Teacup`:",
+        "Terminal command",
+        "PYTHONPATH=. ./venv/bin/pytest app/tests/ -v",
+        "Required result",
+        "must reach `[100%]` with zero failures",
+        "Documentation state",
+        "Completion state",
+        "Phase 6 is marked `[COMPLETE]` only after Step 5 is marked `[DONE]`",
+        "553 passed, 2 skipped",
+    ]
+    expected_checklist_markers = [
+        "## Final Exit Boundary",
+        "Phase 6 Step 5 locks the terminal exit boundary under the `Lobster Teacup` canary:",
+        "Terminal command: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v`",
+        "Required result: the command must reach `[100%]` with zero failures.",
+        "Documentation state:",
+        "Completion state: Phase 6 may be marked `[COMPLETE]` only after Step 5 is `[DONE]`",
+    ]
+
+    for marker in expected_plan_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
 @pytest.fixture(scope="function")
 def test_meeting_data(
     authenticated_client: TestClient, user_manager_with_admin: UserManager
