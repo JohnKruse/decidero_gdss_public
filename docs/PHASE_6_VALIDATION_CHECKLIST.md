@@ -30,6 +30,20 @@ These checks together cover:
 - removing and re-adding a participant does not resurrect stale authority while off-roster,
 - and visible meeting controls remain aligned with backend-derived per-meeting capabilities.
 
+## Final Regression Proof
+
+Phase 6 Step 2 locks the original failure modes under the `Lobster Teacup` canary by treating the following outcomes as mandatory regression proof:
+
+- demotion authority revocation: a user demoted from facilitator to participant keeps meeting view access only as a rostered participant, loses meeting-management dashboard capability flags, loses visible management controls, and receives backend denial for meeting control actions across affected meetings,
+- remove-and-readd stale-authority prevention: removing a facilitator-role user from a roster removes meeting visibility and backend control access, and re-adding that user restores authority only because current system role plus current roster membership now satisfy the collapsed model,
+- UI/backend capability symmetry: meeting roster/settings controls are rendered from the same backend-derived per-meeting capability record that backs API authorization and dashboard capability fields.
+
+The active proof points are:
+
+- `app/tests/test_api_meetings.py::test_demoted_facilitator_loses_control_across_meetings_and_page_controls`
+- `app/tests/test_api_meetings.py::test_removed_facilitator_loses_control_until_readded`
+- `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present`
+
 ## Residue Check List
 
 Before closing Phase 6, verify that the following removed-model markers are absent from active code paths:

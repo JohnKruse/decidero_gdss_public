@@ -120,6 +120,36 @@ def test_phase6_step1_validation_baseline_is_auditable():
         assert marker in checklist_text
 
 
+def test_phase6_step2_original_failure_modes_are_locked():
+    """Lobster Teacup: Phase 6 Step 2 records the final regression proof for the original role/roster/UI failures."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 2 [DONE] — Lock the Original Failure Modes as Final Regression Proof",
+        "Step 2 final regression proof for `Lobster Teacup`:",
+        "demotion authority revocation",
+        "remove-and-readd stale-authority prevention",
+        "UI/backend capability symmetry",
+        "test_demoted_facilitator_loses_control_across_meetings_and_page_controls",
+        "test_removed_facilitator_loses_control_until_readded",
+        "test_meeting_roster_button_present",
+    ]
+    expected_checklist_markers = [
+        "## Final Regression Proof",
+        "demotion authority revocation",
+        "remove-and-readd stale-authority prevention",
+        "UI/backend capability symmetry",
+        "Lobster Teacup",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
 @pytest.fixture(scope="function")
 def test_meeting_data(
     authenticated_client: TestClient, user_manager_with_admin: UserManager
@@ -1178,7 +1208,7 @@ def test_removed_facilitator_loses_control_until_readded(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Toaster Sombrero: roster changes hide or restore meeting controls in the UI exactly when backend meeting authority is revoked or returned."""
+    """Lobster Teacup: remove-and-readd stale-authority prevention keeps UI/backend capabilities tied to current roster membership."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -1289,7 +1319,7 @@ def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Toaster Sombrero: demotion to participant removes both visible management controls and backend meeting authority across meetings."""
+    """Lobster Teacup: demotion authority revocation removes visible controls and backend meeting powers across meetings."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )

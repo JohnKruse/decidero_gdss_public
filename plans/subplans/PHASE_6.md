@@ -30,13 +30,21 @@ Step 1 final validation baseline for `Lobster Teacup`:
 | Removed-model residue checks | Grep validation for `MeetingFacilitator`, `meeting_facilitators`, `facilitator_links`, `_ensure_facilitator_assignment`, `_collect_facilitator_assignments`, and `_should_auto_facilitate` must stay green outside intentionally isolated compatibility and historical plan/test references. |
 | Active narrative alignment | `plans/01_MASTER_PLAN.md`, this phase file, and the new validation checklist doc must describe the same ship-readiness boundary under the `Lobster Teacup` canary. |
 
-### Step 2 — Lock the Original Failure Modes as Final Regression Proof
+### Step 2 [DONE] — Lock the Original Failure Modes as Final Regression Proof
 Verify, and where necessary encode in existing test coverage, the three core behavioral outcomes from the original discovery: demoting a facilitator to participant removes meeting-scoped powers, removing and re-adding a participant does not resurrect stale facilitator powers, and UI/backend capability alignment remains intact after role or roster changes. These are the mandatory no-regression proofs for ship readiness.
 
 Conclude this step by:
 - Implementing the core logic as the final regression proof for the original failure modes.
 - Creating or updating the relevant pytest file, favoring edits to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_frontend_smoke.py`, `app/tests/test_pages.py`, and related already-relevant tests instead of creating a new test file.
 - Updating docstrings and documentation so the repository clearly records these scenarios as fixed and protected.
+
+Step 2 final regression proof for `Lobster Teacup`:
+
+| Original failure mode | Locked proof |
+|---|---|
+| demotion authority revocation | `app/tests/test_api_meetings.py::test_demoted_facilitator_loses_control_across_meetings_and_page_controls` proves a demoted user keeps only rostered participant view access, loses dashboard management/delete/facilitator capability flags, loses visible meeting-management controls, and receives backend denial for meeting control actions across affected meetings. |
+| remove-and-readd stale-authority prevention | `app/tests/test_api_meetings.py::test_removed_facilitator_loses_control_until_readded` proves removal from the roster removes meeting visibility and backend control access, while re-add restores authority only through the current collapsed inputs of system facilitator role plus current roster membership. |
+| UI/backend capability symmetry | `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` proves the meeting roster control is rendered behind backend-derived `can_manage_meeting` and matching per-meeting capability data attributes instead of a standalone role shortcut. |
 
 ### Step 3 — Verify Full-Surface Consistency and Residue Removal
 Run the final consistency pass across the codebase and contracts to ensure the removed facilitator model does not still appear in active code, active contracts, or stale test expectations except where intentionally isolated for backward compatibility. This step also confirms that all phase canaries, contract decisions, and cleanup boundaries remain internally coherent in the written project record.
@@ -81,6 +89,7 @@ This phase does **not** introduce new feature scope. If a new authorization beha
 ## Technical Deviations Log
 
 - Step 1 (`Lobster Teacup`): This step intentionally locks the validation baseline by documenting the required full-suite command, residue-token grep list, and already-existing discovery regression tests instead of introducing redundant new behavioral coverage. The baseline is made auditable via `docs/PHASE_6_VALIDATION_CHECKLIST.md` and an existing broad-suite pytest check so later Phase 6 steps can focus on proof tightening and final merge artifacts rather than rebuilding the inventory.
+- Step 2 (`Lobster Teacup`): The original failure modes were already behaviorally covered by broad API and frontend smoke tests, so this step tightens their Phase 6 canary docstrings and adds an auditable Step 2 regression-proof record rather than duplicating the same role-change and roster-change scenarios in a new test file.
 
 ## Phase Exit Criteria
 

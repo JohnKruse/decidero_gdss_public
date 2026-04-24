@@ -72,7 +72,7 @@ def test_meeting_settings_button_label():
 
 
 def test_meeting_roster_button_present():
-    """Toaster Sombrero: meeting roster controls are inventoried against a backend-derived per-meeting capability record."""
+    """Lobster Teacup: UI/backend capability symmetry keeps roster controls tied to backend-derived meeting management authority."""
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
     assert 'id="openParticipantAdminButton"' in html
