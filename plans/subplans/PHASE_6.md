@@ -46,7 +46,7 @@ Step 2 final regression proof for `Lobster Teacup`:
 | remove-and-readd stale-authority prevention | `app/tests/test_api_meetings.py::test_removed_facilitator_loses_control_until_readded` proves removal from the roster removes meeting visibility and backend control access, while re-add restores authority only through the current collapsed inputs of system facilitator role plus current roster membership. |
 | UI/backend capability symmetry | `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` proves the meeting roster control is rendered behind backend-derived `can_manage_meeting` and matching per-meeting capability data attributes instead of a standalone role shortcut. |
 
-### Step 3 — Verify Full-Surface Consistency and Residue Removal
+### Step 3 [DONE] — Verify Full-Surface Consistency and Residue Removal
 Run the final consistency pass across the codebase and contracts to ensure the removed facilitator model does not still appear in active code, active contracts, or stale test expectations except where intentionally isolated for backward compatibility. This step also confirms that all phase canaries, contract decisions, and cleanup boundaries remain internally coherent in the written project record.
 
 Conclude this step by:
@@ -54,13 +54,31 @@ Conclude this step by:
 - Creating or updating the relevant pytest file, preferring edits to existing suites that still need final cleanup coverage instead of creating a new pytest file.
 - Updating docstrings and documentation so no active narrative conflicts with the shipped collapsed model or its explicitly isolated compatibility exceptions.
 
-### Step 4 — Prepare Merge-Readiness Artifacts
+Step 3 consistency and residue result for `Lobster Teacup`:
+
+| Surface | Step 3 result |
+|---|---|
+| Active non-test `app/` code | No removed-model tokens remain. The audited forbidden set is `MeetingFacilitator`, `meeting_facilitators`, `facilitator_links`, `_ensure_facilitator_assignment`, `_collect_facilitator_assignments`, and `_should_auto_facilitate`. |
+| Test coverage | Existing cleanup assertions and the new Step 3 audit test may mention removed tokens only to prove their absence from active ORM, runtime helper, response-contract, or documentation surfaces. |
+| Historical plan and discovery records | Completed phase plans and discovery notes retain removed-token names as audit history, not as active contract language. |
+| Compatibility request fields | `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids` remain isolated compatibility request inputs. They do not recreate persisted facilitator-model state, response payload fields, or independent authorization sources. |
+
+### Step 4 [DONE] — Prepare Merge-Readiness Artifacts
 Produce the final branch-readiness record: verification status, test pass baseline, summary of user-visible fixes, summary of compatibility boundaries, and any grep/stat checks that prove the removed model is actually gone from the active code path. This step is about making the diff reviewable and the final state easy to audit.
 
 Conclude this step by:
 - Implementing the core logic as the final merge-readiness notes and completion artifacts for the branch.
 - Creating or updating the relevant pytest file, using existing broad-surface suites if any final assertion or marker adjustments are still needed rather than creating a new test file.
 - Updating docstrings and documentation so the merge record, validation narrative, and Phase 6 canary are aligned.
+
+Step 4 merge-readiness record for `Lobster Teacup`:
+
+| Review surface | Merge-readiness artifact |
+|---|---|
+| Verification status and baseline | The branch-readiness record in `docs/PHASE_6_VALIDATION_CHECKLIST.md` names `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` as the required full-suite baseline for this step and the final exit gate. |
+| User-visible fixes | The record ties merge readiness to the locked proofs for demotion authority revocation, remove-and-readd stale-authority prevention, and UI/backend capability symmetry. |
+| Compatibility boundary | The record preserves only isolated compatibility request inputs: `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids`; these do not recreate persisted facilitator state or response-contract authority. |
+| Active-code residue proof | The Step 3 grep/audit result is carried forward as merge evidence: no removed-model tokens remain in active non-test `app/` code, and historical references are limited to plans, tests, and compatibility documentation. |
 
 ### Step 5 — Lock the Final Exit Boundary
 Define the exact final terminal command that must pass 100% to clear the entire effort and treat this phase as complete only when the full-suite result, residue checks, and merge-readiness artifacts all support shipment of the collapsed model.
@@ -90,6 +108,8 @@ This phase does **not** introduce new feature scope. If a new authorization beha
 
 - Step 1 (`Lobster Teacup`): This step intentionally locks the validation baseline by documenting the required full-suite command, residue-token grep list, and already-existing discovery regression tests instead of introducing redundant new behavioral coverage. The baseline is made auditable via `docs/PHASE_6_VALIDATION_CHECKLIST.md` and an existing broad-suite pytest check so later Phase 6 steps can focus on proof tightening and final merge artifacts rather than rebuilding the inventory.
 - Step 2 (`Lobster Teacup`): The original failure modes were already behaviorally covered by broad API and frontend smoke tests, so this step tightens their Phase 6 canary docstrings and adds an auditable Step 2 regression-proof record rather than duplicating the same role-change and roster-change scenarios in a new test file.
+- Step 3 (`Lobster Teacup`): The scan found no removed-model tokens in active non-test `app/` code. It intentionally does not remove the remaining facilitator-named compatibility request fields because Phase 5 documented them as isolated request-shape compatibility, not active persisted model state or response contract semantics.
+- Step 4 (`Lobster Teacup`): Merge-readiness is recorded as documentation and an existing-suite documentation assertion rather than new product code. The verification command is intentionally not narrowed for this step; the same full-suite command remains the baseline evidence for Step 4 and the terminal Phase 6 exit gate.
 
 ## Phase Exit Criteria
 

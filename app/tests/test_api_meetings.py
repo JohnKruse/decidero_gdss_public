@@ -49,6 +49,7 @@ PHASE_6_PLAN_PATH = (
 PHASE_6_CHECKLIST_PATH = (
     Path(__file__).resolve().parents[2] / "docs" / "PHASE_6_VALIDATION_CHECKLIST.md"
 )
+APP_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _decode_export_zip() -> bytes:
@@ -144,6 +145,106 @@ def test_phase6_step2_original_failure_modes_are_locked():
     ]
 
     for marker in expected_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
+def test_phase6_step3_removed_model_residue_absent_from_active_app_code():
+    """Lobster Teacup: Phase 6 Step 3 proves removed facilitator-model tokens are absent from non-test app code."""
+    forbidden_markers = [
+        "MeetingFacilitator",
+        "meeting_facilitators",
+        "facilitator_links",
+        "_ensure_facilitator_assignment",
+        "_collect_facilitator_assignments",
+        "_should_auto_facilitate",
+    ]
+    active_files = [
+        path
+        for path in APP_ROOT.rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and "tests" not in path.parts
+        and path.suffix in {".py", ".js", ".html", ".yaml", ".yml", ".json", ".css"}
+    ]
+
+    residue = {
+        str(path.relative_to(APP_ROOT.parent)): [
+            marker for marker in forbidden_markers if marker in path.read_text(encoding="utf-8")
+        ]
+        for path in active_files
+    }
+    residue = {path: markers for path, markers in residue.items() if markers}
+
+    assert residue == {}
+
+
+def test_phase6_step3_consistency_record_is_auditable():
+    """Lobster Teacup: Phase 6 Step 3 records the active-code residue result and compatibility boundary."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 3 [DONE] — Verify Full-Surface Consistency and Residue Removal",
+        "Step 3 consistency and residue result for `Lobster Teacup`:",
+        "Active non-test `app/` code",
+        "No removed-model tokens remain.",
+        "Compatibility request fields",
+        "MeetingCreate.additional_facilitator_ids",
+        "MeetingUpdate.facilitator_ids",
+        "MeetingCreateRequest.co_facilitator_ids",
+        "Historical plan and discovery records",
+    ]
+    expected_checklist_markers = [
+        "## Consistency and Residue Result",
+        "Active non-test `app/` code",
+        "No removed-model tokens remain.",
+        "Compatibility request fields",
+        "MeetingCreate.additional_facilitator_ids",
+        "MeetingUpdate.facilitator_ids",
+        "MeetingCreateRequest.co_facilitator_ids",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
+def test_phase6_step4_merge_readiness_record_is_auditable():
+    """Lobster Teacup: Phase 6 Step 4 records branch-readiness evidence for review."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_plan_markers = [
+        "### Step 4 [DONE] — Prepare Merge-Readiness Artifacts",
+        "Step 4 merge-readiness record for `Lobster Teacup`:",
+        "Verification status and baseline",
+        "PYTHONPATH=. ./venv/bin/pytest app/tests/ -v",
+        "User-visible fixes",
+        "demotion authority revocation",
+        "remove-and-readd stale-authority prevention",
+        "UI/backend capability symmetry",
+        "Compatibility boundary",
+        "MeetingCreate.additional_facilitator_ids",
+        "MeetingUpdate.facilitator_ids",
+        "MeetingCreateRequest.co_facilitator_ids",
+        "Active-code residue proof",
+    ]
+    expected_checklist_markers = [
+        "## Merge-Readiness Notes",
+        "Phase 6 Step 4 prepares the branch-readiness artifact under the `Lobster Teacup` canary:",
+        "Verification status and test pass baseline",
+        "User-visible fixes",
+        "Compatibility boundary",
+        "Removed-model residue proof",
+        "historical references limited to plans, tests, and compatibility documentation",
+    ]
+
+    for marker in expected_plan_markers:
         assert marker in plan_text
 
     for marker in expected_checklist_markers:

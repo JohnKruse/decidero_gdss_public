@@ -57,6 +57,15 @@ Before closing Phase 6, verify that the following removed-model markers are abse
 
 Compatibility handling and historical references may remain only when they are clearly isolated to legacy import support, tests that assert cleanup boundaries, or plan records documenting completed work.
 
+## Consistency and Residue Result
+
+Phase 6 Step 3 verifies the full-surface consistency boundary under the `Lobster Teacup` canary:
+
+- Active non-test `app/` code: No removed-model tokens remain.
+- Test coverage: cleanup assertions may name removed tokens only to prove absence from the active ORM, runtime helpers, response contracts, or documentation records.
+- Historical plan and discovery records: completed phase records may retain removed-token names as audit history.
+- Compatibility request fields: `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids` remain accepted as isolated compatibility request inputs, not as persisted facilitator-model state, active response contract fields, or independent authority sources.
+
 ## Ship-Readiness Record
 
 Phase 6 `Lobster Teacup` is auditable only if all of the following stay aligned:
@@ -66,3 +75,12 @@ Phase 6 `Lobster Teacup` is auditable only if all of the following stay aligned:
 - `plans/01_MASTER_PLAN.md`,
 - the full-suite pytest result,
 - and the final merge-readiness notes produced later in Phase 6.
+
+## Merge-Readiness Notes
+
+Phase 6 Step 4 prepares the branch-readiness artifact under the `Lobster Teacup` canary:
+
+- Verification status and test pass baseline: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` is the required full-suite baseline for this step and remains the final Phase 6 exit command.
+- User-visible fixes: demotion authority revocation, remove-and-readd stale-authority prevention, and UI/backend capability symmetry are locked by the regression proof anchors listed above.
+- Compatibility boundary: `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids` remain isolated request-shape compatibility inputs only; they are not persisted facilitator-model state, active response fields, or independent authority sources.
+- Removed-model residue proof: the Step 3 audit found no removed-model tokens in active non-test `app/` code, with historical references limited to plans, tests, and compatibility documentation.
