@@ -330,7 +330,8 @@ def test_list_meetings_returns_dashboard_payload(
     assert payload["filters"]["role_scope"] == "participant"
     assert any(item["id"] == test_meeting_data for item in payload["items"])
     meeting_item = next(item for item in payload["items"] if item["id"] == test_meeting_data)
-    assert {"enter", "details"}.issubset(meeting_item["quick_actions"].keys())
+    assert {"enter", "details", "roster"}.issubset(meeting_item["quick_actions"].keys())
+    assert meeting_item["quick_actions"]["roster"].endswith("?roster=1")
     assert "notifications" in meeting_item
     assert "owner" in meeting_item
     assert meeting_item["owner"]["name"]

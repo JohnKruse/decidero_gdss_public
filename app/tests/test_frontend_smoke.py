@@ -176,6 +176,15 @@ def test_dashboard_js_uses_viewer_capabilities_for_meeting_actions():
         js = handle.read()
     assert "meeting.viewer_capabilities" in js
     assert "capabilityRecord.can_manage === true" in js
+    assert "Meeting Roster" in js
+    assert "meeting.quick_actions?.roster" in js
+
+
+def test_meeting_page_supports_roster_deep_link():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert 'get("roster") === "1"' in js
+    assert "openParticipantAdminModal();" in js
 
 
 def test_meeting_page_renders_agenda_items(authenticated_client: TestClient):

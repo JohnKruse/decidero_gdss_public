@@ -650,6 +650,9 @@
             actionGroup.appendChild(
                 createActionButton('Settings', meeting.quick_actions?.details, 'meeting-action-btn secondary')
             );
+            actionGroup.appendChild(
+                createActionButton('Meeting Roster', meeting.quick_actions?.roster, 'meeting-action-btn secondary')
+            );
         }
         if (isArchivedMeeting(meeting)) {
             if (canManageMeeting(meeting)) {

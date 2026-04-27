@@ -1628,6 +1628,7 @@ class MeetingManager:
             "enter": page_path,
             "view_results": f"/api/meetings/{meeting.meeting_id}/export",
             "details": f"{page_path}/settings",
+            "roster": f"{page_path}?roster=1",
         }
         return actions
 

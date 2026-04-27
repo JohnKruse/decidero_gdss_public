@@ -7691,6 +7691,9 @@
                     openParticipantAdminModal();
                 });
             }
+            if (new URLSearchParams(window.location.search || "").get("roster") === "1") {
+                openParticipantAdminModal();
+            }
             setStatus("Connecting…", "pending");
             connectRealtime();
             startMeetingRefresh();

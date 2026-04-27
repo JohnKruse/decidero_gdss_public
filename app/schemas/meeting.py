@@ -441,6 +441,7 @@ class MeetingControlResponse(BaseModel):
 class MeetingQuickActions(BaseModel):
     enter: str
     details: str
+    roster: Optional[str] = None
     view_results: Optional[str] = None
 
 
