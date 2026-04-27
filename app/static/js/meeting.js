@@ -405,9 +405,6 @@
             donorTitle: document.getElementById("transferDonorTitle"),
             includeComments: document.getElementById("transferIncludeComments"),
             targetToolType: document.getElementById("transferTargetToolType"),
-            targetMode: document.getElementById("transferTargetMode"),
-            targetExistingActivity: document.getElementById("transferTargetExistingActivity"),
-            transferEligibilityHint: document.getElementById("transferEligibilityHint"),
             transformProfile: document.getElementById("transferTransformProfile"),
             addIdea: document.getElementById("transferAddIdea"),
             ideasList: document.getElementById("transferIdeasList"),
@@ -889,9 +886,6 @@
             active: false,
             loadAttempted: false,
             loadSucceeded: false,
-            // Target mode: "new" creates an activity, "existing" transfers into a pre-existing one
-            targetMode: "new",
-            targetActivityId: null,
         };
 
 
@@ -3011,14 +3005,8 @@
             if (transfer.includeComments) {
                 transfer.includeComments.disabled = disabled;
             }
-            if (transfer.targetMode) {
-                transfer.targetMode.disabled = disabled;
-            }
             if (transfer.targetToolType) {
                 transfer.targetToolType.disabled = disabled;
-            }
-            if (transfer.targetExistingActivity) {
-                transfer.targetExistingActivity.disabled = disabled;
             }
             if (transfer.transformProfile) {
                 transfer.transformProfile.disabled = disabled;
@@ -3241,107 +3229,11 @@
             });
         }
 
-        /**
-         * Update commit CTA label to reflect transfer mode and selected existing target.
-         * Called on mode switch, existing-target selection, and transfer panel reset.
-         */
         function updateTransferCommitButtonText() {
             if (!transfer.commit) {
                 return;
             }
-            if (transferState.targetMode === "existing" && transferState.targetActivityId) {
-                const targetId = String(transferState.targetActivityId);
-                const mapped = state.agendaMap?.get(targetId);
-                const fallback = (state.agenda || []).find((item) => {
-                    const itemId = String(item?.activity_id || item?.activityId || item?.id || "");
-                    return itemId === targetId;
-                });
-                const item = mapped || fallback || null;
-                const title = item?.title || targetId;
-                transfer.commit.textContent = `Transfer to ${title}`;
-            } else {
-                transfer.commit.textContent = "Create Next Activity";
-            }
-        }
-
-        /**
-         * Populate existing-activity targets from agenda and disable ineligible options.
-         * Called when transfer mode changes to "existing" and when transfer panel opens.
-         */
-        function buildTransferExistingActivityOptions() {
-            if (!transfer.targetExistingActivity) {
-                return;
-            }
-            // Galactic Hamster: populate and label existing-target eligibility options.
-            transfer.targetExistingActivity.innerHTML = "";
-            const placeholder = document.createElement("option");
-            placeholder.value = "";
-            placeholder.textContent = "Select target activity";
-            placeholder.disabled = true;
-            placeholder.selected = true;
-            transfer.targetExistingActivity.appendChild(placeholder);
-
-            (state.agenda || []).forEach((item) => {
-                const activityId = item?.activity_id || item?.activityId || item?.id;
-                if (!activityId || activityId === transferState.donorActivityId) {
-                    return;
-                }
-                const option = document.createElement("option");
-                option.value = activityId;
-
-                const label = item?.title || activityId;
-                const typeLabel = String(item?.tool_type || item?.toolType || "").replace(/_/g, " ");
-                option.textContent = `${label} (${typeLabel})`;
-
-                const eligible = Boolean(item?.transfer_target_eligible);
-                if (!eligible) {
-                    option.disabled = true;
-                    let reason = "Ineligible";
-                    if (item?.started_at) {
-                        reason = "Already started";
-                    } else if (item?.has_data) {
-                        reason = "Has participant data";
-                    } else if (item?.has_votes) {
-                        reason = "Has votes";
-                    } else if (item?.has_submitted_ballots) {
-                        reason = "Has submitted ballots";
-                    }
-                    option.textContent += ` - ${reason}`;
-                    option.title = reason;
-                }
-
-                transfer.targetExistingActivity.appendChild(option);
-            });
-        }
-
-        // Galactic Hamster: toggle between "new" and "existing" transfer target modes.
-        function onTransferModeChange() {
-            const mode = transfer.targetMode?.value || "new";
-            transferState.targetMode = mode;
-            transferState.targetActivityId = null;
-
-            const isExisting = mode === "existing";
-            if (transfer.targetToolType) {
-                transfer.targetToolType.hidden = isExisting;
-            }
-            if (transfer.targetExistingActivity) {
-                transfer.targetExistingActivity.hidden = !isExisting;
-                if (isExisting) {
-                    buildTransferExistingActivityOptions();
-                } else {
-                    transfer.targetExistingActivity.value = "";
-                }
-            }
-            if (transfer.transformProfile && isExisting) {
-                transfer.transformProfile.hidden = true;
-            } else if (transfer.transformProfile && !isExisting) {
-                const options = getTransferProfileOptions(transferState.donorToolType);
-                transfer.transformProfile.hidden = options.length <= 1;
-            }
-            if (transfer.transferEligibilityHint) {
-                transfer.transferEligibilityHint.hidden = !isExisting;
-            }
-            updateTransferCommitButtonText();
+            transfer.commit.textContent = "Create Next Activity";
         }
 
         function getTransferProfileOptions(toolType) {
@@ -3629,24 +3521,12 @@
             transferState.committing = false;
             transferState.loadAttempted = false;
             transferState.loadSucceeded = false;
-            transferState.targetMode = "new";
-            transferState.targetActivityId = null;
             if (transferState.autosaveTimer) {
                 clearTimeout(transferState.autosaveTimer);
                 transferState.autosaveTimer = null;
             }
             if (transfer.includeComments) {
                 transfer.includeComments.checked = true;
-            }
-            if (transfer.targetMode) {
-                transfer.targetMode.value = "new";
-            }
-            if (transfer.targetExistingActivity) {
-                transfer.targetExistingActivity.innerHTML = "";
-                transfer.targetExistingActivity.hidden = true;
-            }
-            if (transfer.transferEligibilityHint) {
-                transfer.transferEligibilityHint.hidden = true;
             }
             configureTransferProfileSelector(null, "standard");
             if (transfer.donorTitle) {
@@ -3673,7 +3553,6 @@
             transferState.donorOrderIndex = activity.order_index || null;
             transferState.donorToolType = String(activity.tool_type || activity.toolType || "").toLowerCase();
             configureTransferProfileSelector(transferState.donorToolType, null);
-            onTransferModeChange();
             if (transfer.donorTitle) {
                 transfer.donorTitle.textContent = activity.title || "Selected activity";
             }
@@ -3862,29 +3741,15 @@
             if (!transferState.donorActivityId || transferState.committing) {
                 return;
             }
-            const isExistingMode = transferState.targetMode === "existing";
             transferState.committing = true;
             setTransferButtonsState();
             setTransferError("");
-            setTransferStatus(
-                isExistingMode ? "Transferring ideas..." : "Creating next activity...",
-                "info",
-            );
+            setTransferStatus("Creating next activity...", "info");
             try {
-                // Galactic Hamster: dual-mode commit - "new" creates, "existing" transfers into.
-                if (isExistingMode) {
-                    if (!transferState.targetActivityId) {
-                        throw new Error("Select an existing activity to transfer into.");
-                    }
-                } else {
-                    const targetTool = transfer.targetToolType?.value;
-                    if (!targetTool) {
-                        throw new Error("Select a next activity type.");
-                    }
+                const targetTool = transfer.targetToolType?.value;
+                if (!targetTool) {
+                    throw new Error("Select a next activity type.");
                 }
-                const targetPayload = isExistingMode
-                    ? { activity_id: transferState.targetActivityId }
-                    : { tool_type: transfer.targetToolType.value };
                 const response = await fetch(
                     `/api/meetings/${encodeURIComponent(context.meetingId)}/transfer/commit`,
                     {
@@ -3896,17 +3761,13 @@
                             include_comments: transfer.includeComments?.checked ?? true,
                             items: buildTransferPayloadItems(),
                             metadata: transferState.metadata,
-                            target_activity: targetPayload,
+                            target_activity: { tool_type: targetTool },
                         }),
                     },
                 );
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    throw new Error(
-                        data.detail || (isExistingMode
-                            ? "Unable to transfer ideas."
-                            : "Unable to create next activity."),
-                    );
+                    throw new Error(data.detail || "Unable to create next activity.");
                 }
                 if (Array.isArray(data.agenda)) {
                     renderAgenda(data.agenda);
@@ -3920,24 +3781,17 @@
                         targetId,
                     );
                 }
-                if (isExistingMode) {
-                    setTransferStatus("Ideas transferred successfully.", "success");
-                    closeTransferModal();
+                setTransferStatus("Next activity created.", "success");
+                closeTransferModal();
+                const settingsUrl = `/meeting/${encodeURIComponent(context.meetingId)}/settings`;
+                if (targetId) {
+                    window.location.href = `${settingsUrl}?activity_id=${encodeURIComponent(targetId)}`;
                 } else {
-                    setTransferStatus("Next activity created.", "success");
-                    closeTransferModal();
-                    const settingsUrl = `/meeting/${encodeURIComponent(context.meetingId)}/settings`;
-                    if (targetId) {
-                        window.location.href = `${settingsUrl}?activity_id=${encodeURIComponent(targetId)}`;
-                    } else {
-                        window.location.href = settingsUrl;
-                    }
+                    window.location.href = settingsUrl;
                 }
             } catch (error) {
                 console.error("Transfer commit failed:", error);
-                setTransferError(error.message || (isExistingMode
-                    ? "Unable to transfer ideas."
-                    : "Unable to create next activity."));
+                setTransferError(error.message || "Unable to create next activity.");
                 setTransferStatus("Transfer failed.", "error");
             } finally {
                 transferState.committing = false;
@@ -7183,7 +7037,7 @@
 
             applyViewerCapabilities(resolveViewerCapabilities(meeting));
 
-            if (!state.isParticipant) {
+            if (!state.canViewMeeting) {
                 throw new Error("You are not registered for this meeting.");
             }
 
@@ -7995,15 +7849,6 @@
             if (transfer.targetToolType) {
                 buildTransferTargetOptions();
                 transfer.targetToolType.addEventListener("change", updateTransferCommitButtonText);
-            }
-            if (transfer.targetMode) {
-                transfer.targetMode.addEventListener("change", onTransferModeChange);
-            }
-            if (transfer.targetExistingActivity) {
-                transfer.targetExistingActivity.addEventListener("change", () => {
-                    transferState.targetActivityId = transfer.targetExistingActivity.value || null;
-                    updateTransferCommitButtonText();
-                });
             }
             if (transfer.transformProfile) {
                 transfer.transformProfile.addEventListener("change", async () => {

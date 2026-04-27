@@ -35,23 +35,24 @@ def test_meeting_page_includes_categorization_panel_hooks():
     assert "loadCategorizationState" in js
 
 
-def test_transfer_panel_has_target_mode_elements():
+def test_transfer_panel_uses_new_activity_target_only():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
-    assert "transferTargetMode" in js
-    assert "transferTargetExistingActivity" in js
-    assert 'targetMode: "new"' in js
-    assert "targetActivityId: null" in js
+    assert "transferTargetToolType" in js
+    assert 'target_activity: { tool_type: targetTool }' in js
+    assert "transferTargetMode" not in js
+    assert "transferTargetExistingActivity" not in js
+    assert "isExistingMode" not in js
 
 
-def test_transfer_panel_html_has_mode_selector():
+def test_transfer_panel_html_has_no_mode_selector():
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()
-    assert 'id="transferTargetMode"' in html
-    assert 'id="transferTargetExistingActivity"' in html
-    assert 'id="transferEligibilityHint"' in html
-    assert 'value="new"' in html
-    assert 'value="existing"' in html
+    assert 'id="transferTargetToolType"' in html
+    assert 'id="transferTargetMode"' not in html
+    assert 'id="transferTargetExistingActivity"' not in html
+    assert 'id="transferEligibilityHint"' not in html
+    assert "Use existing activity" not in html
 
 
 def test_agenda_panel_heading_renamed():
@@ -96,6 +97,15 @@ def test_meeting_roster_button_present():
     assert "root.dataset.meetingCanManage" in js
 
 
+def test_meeting_js_allows_admin_access_without_roster_membership():
+    """Admins can manage meetings through can_view/can_manage even when they are not roster participants."""
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+
+    assert "if (!state.canViewMeeting)" in js
+    assert "if (!state.isParticipant) {\n                throw new Error(\"You are not registered for this meeting.\");" not in js
+
+
 def test_activity_modal_simplified():
     """Roster Rodeo / Finish Fiesta — canonical user-brief task 4 check."""
     import re
@@ -132,18 +142,11 @@ def test_activity_modal_simplified():
     assert re.search(r"status\s*===\s*409", js), "meeting.js must branch on HTTP 409 status"
 
 
-def test_transfer_css_has_eligibility_hint_style():
-    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
-        css = handle.read()
-    assert "transfer-eligibility-hint" in css
-
-
-def test_transfer_js_has_mode_change_handler():
+def test_transfer_js_has_commit_button_label_helper():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
-    assert "onTransferModeChange" in js
-    assert "buildTransferExistingActivityOptions" in js
     assert "updateTransferCommitButtonText" in js
+    assert "Create Next Activity" in js
 
 
 def test_render_transfer_ideas_has_null_guard():
@@ -152,23 +155,13 @@ def test_render_transfer_ideas_has_null_guard():
     assert "transferState.items || []" in js
 
 
-def test_transfer_js_has_existing_activity_builder():
+def test_transfer_js_commit_always_creates_new_activity():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
-    assert "buildTransferExistingActivityOptions" in js
-    assert "transfer_target_eligible" in js
-    assert "Already started" in js
-    assert "Has participant data" in js
-    assert "updateTransferCommitButtonText" in js
-
-
-def test_transfer_js_commit_handles_both_modes():
-    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
-        js = handle.read()
-    assert "isExistingMode" in js
-    assert "Select an existing activity to transfer into." in js
-    assert "activity_id: transferState.targetActivityId" in js
-    assert "Ideas transferred successfully." in js
+    assert "Select a next activity type." in js
+    assert "target_activity: { tool_type: targetTool }" in js
+    assert "activity_id: transferState.targetActivityId" not in js
+    assert "Ideas transferred successfully." not in js
     assert "data.target_activity" in js
 
 
