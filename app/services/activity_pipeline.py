@@ -2,7 +2,8 @@
 
 Smug Otter: agenda consultation flows through app/services/agenda_strategy.py.
 `LinearAgendaStrategy` is the Phase 2 reference implementation for today's
-order-index semantics.
+order-index semantics, including safe mid-meeting agenda insertion through the
+strategy seam.
 """
 
 from __future__ import annotations

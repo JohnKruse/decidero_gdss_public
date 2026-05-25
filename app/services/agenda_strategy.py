@@ -2,8 +2,9 @@
 
 The seam keeps agenda interpretation behind a strategy object. Phase 2 defines
 `LinearAgendaStrategy` as the canonical reference implementation for today's
-order-index agenda behavior; later phases can bind an engine-backed strategy
-without changing callers of this interface.
+order-index agenda behavior and admits mid-meeting creation through
+`MeetingManager.add_agenda_activity`; later phases can bind an engine-backed
+strategy without changing callers of this interface.
 """
 
 from __future__ import annotations

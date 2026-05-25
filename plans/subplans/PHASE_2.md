@@ -59,7 +59,7 @@ Conclude this step by:
 Technical deviations logged:
 - None.
 
-### Step 4 — Mid-Meeting Creation Safety and Full-Suite Regression
+### Step 4 — [DONE] Mid-Meeting Creation Safety and Full-Suite Regression
 Establish explicit test coverage that confirms `AgendaActivity` rows can be created safely while a meeting is running, from every legitimate caller path: router-driven (`POST /api/meetings/{id}/agenda`), strategy-driven (calls into the strategy's mid-meeting creation hook from within service code), and manager-direct (the future engine path that will invoke `add_agenda_activity` through the strategy seam). The test must exercise insertion into a non-empty agenda, immediate resequence behavior, ID minting via `_next_activity_identifier` per [00_DISCOVERY.md §3.5](../00_DISCOVERY.md), and the realtime broadcast envelope so connected clients learn about the inserted row through the existing `agenda_update` path. These assertions are the foundation Phase 3 will rely on when it introduces iteration-driven row creation; if any of them are weak now, BP-5 in [00_DISCOVERY.md §16](../00_DISCOVERY.md) becomes a Phase 3 surprise.
 
 After mid-meeting creation safety is pinned, execute the complete pre-existing test suite and confirm zero regressions. Any test that fails under the rewiring must be diagnosed: a test that legitimately encoded a since-changed assumption is updated with the change called out in its docstring; a test that fails because of a behavioral drift in the strategy is a blocker that Step 2 or Step 3 must repair. Phase 2's central success criterion is "no observable behavior change to API clients, realtime clients, or the activity pipeline" — Step 4 is where that criterion is enforced.
@@ -68,6 +68,9 @@ Conclude this step by:
 - Implementing the core logic as the mid-meeting-creation test scaffolding (placed in `app/tests/test_meeting_manager.py` and `app/tests/test_api_meetings.py`) plus any final wiring corrections the full-suite run surfaces, all carrying `Smug Otter` in their docstrings.
 - Creating or updating the relevant pytest file by extending the two suites named above; do not introduce a new test module since the existing modules already own agenda-mutation coverage.
 - Updating docstrings and documentation so the activity-pipeline, the strategy module, the meeting-manager, and `docs/ACTIVITY_CONTRACT_SPEC.md` each record that mid-meeting `AgendaActivity` insertion via the strategy seam is contractually safe under `LinearAgendaStrategy`.
+
+Technical deviations logged:
+- None.
 
 ## Phase Exit Criteria
 

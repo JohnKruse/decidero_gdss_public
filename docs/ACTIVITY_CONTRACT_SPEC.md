@@ -126,3 +126,9 @@ initial agenda snapshots, transfer activity resolution, and
 `MeetingManager.list_agenda` all consult the meeting's bound `AgendaStrategy`.
 Storage-layer resequencing and activity-id lookup mechanics may still touch
 `agenda_activities` directly when they are not interpreting agenda topology.
+
+Phase 2 Step 4 pins mid-meeting creation safety for `LinearAgendaStrategy`.
+Router-driven `POST /api/meetings/{id}/agenda`, strategy-driven
+`create_activity`, and manager-direct `add_agenda_activity` calls all share the
+same identifier minting and resequence path, and router-driven creation emits
+the existing `agenda_update` realtime envelope with the resequenced agenda.

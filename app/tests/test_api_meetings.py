@@ -998,6 +998,91 @@ def test_add_agenda_item_to_meeting(
     assert strategy_spy.call_count == 1
 
 
+def test_running_meeting_agenda_post_resequences_and_broadcasts(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+    mocker,
+):
+    """Smug Otter: router mid-meeting insertion resequences and broadcasts agenda_update."""
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Running Agenda Insert API",
+            description="Router path should safely insert while active.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=45),
+            duration_minutes=45,
+            publicity=PublicityType.PRIVATE,
+            owner_id=admin_user.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=admin_user.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Opening"),
+            AgendaActivityCreate(tool_type="categorization", title="Grouping"),
+        ],
+    )
+    running_activity_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": running_activity_id,
+                    "agendaItemId": running_activity_id,
+                    "currentTool": "brainstorming",
+                    "status": "in_progress",
+                },
+            )
+        )
+        broadcast_mock = mocker.patch(
+            "app.routers.meetings.websocket_manager.broadcast"
+        )
+
+        create_response = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/agenda",
+            json={
+                "tool_type": "voting",
+                "title": "Inserted API Vote",
+                "order_index": 2,
+                "config": {"max_votes": 1},
+            },
+        )
+        assert create_response.status_code == 201, create_response.json()
+        created = create_response.json()
+        assert created["activity_id"].startswith(f"{meeting.meeting_id}-RANKVT-")
+        assert created["order_index"] == 2
+
+        refreshed_agenda = meeting_manager.list_agenda(meeting.meeting_id)
+        assert [activity.order_index for activity in refreshed_agenda] == [1, 2, 3]
+        assert [activity.title for activity in refreshed_agenda] == [
+            "Opening",
+            "Inserted API Vote",
+            "Grouping",
+        ]
+
+        assert broadcast_mock.await_count == 1
+        broadcast_meeting_id, message = broadcast_mock.await_args.args
+        assert broadcast_meeting_id == meeting.meeting_id
+        assert message["type"] == "agenda_update"
+        assert message["meta"]["initiatorId"] == admin_user.user_id
+        assert [item["order_index"] for item in message["payload"]] == [1, 2, 3]
+        assert any(
+            item["activity_id"] == created["activity_id"]
+            for item in message["payload"]
+        )
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
 def test_update_and_delete_agenda_item(
     authenticated_client: TestClient, test_meeting_data: str, mocker
 ):

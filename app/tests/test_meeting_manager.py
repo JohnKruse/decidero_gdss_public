@@ -1,3 +1,4 @@
+import asyncio
 import pytest
 import re
 from pathlib import Path
@@ -9,6 +10,7 @@ from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
 from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.services.agenda_strategy import LinearAgendaStrategy, get_agenda_strategy
+from app.services import meeting_state_manager
 from app.schemas.meeting import (
     MeetingCreate,
     AgendaActivityCreate,
@@ -548,6 +550,85 @@ async def test_linear_agenda_strategy_matches_direct_order_index_walks(
         for activity in listed
     }
     assert list_strategy_spy.call_count == 1
+
+
+def test_mid_meeting_creation_safe_via_manager_and_strategy(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+):
+    """Smug Otter: running meetings admit manager and strategy activity insertion safely."""
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting = meeting_manager_instance.create_meeting(
+        MeetingCreate(
+            title="Mid Meeting Creation Safety",
+            description="Validate running agenda insertion paths",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=60),
+            duration_minutes=60,
+            publicity=PublicityType.PUBLIC,
+            owner_id=test_facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Open"),
+            AgendaActivityCreate(tool_type="categorization", title="Group"),
+        ],
+    )
+    assert meeting is not None
+    running_activity_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": running_activity_id,
+                    "agendaItemId": running_activity_id,
+                    "currentTool": "brainstorming",
+                    "status": "in_progress",
+                },
+            )
+        )
+
+        manager_created = meeting_manager_instance.add_agenda_activity(
+            meeting.meeting_id,
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Inserted by Manager",
+                order_index=2,
+            ),
+        )
+        assert manager_created.activity_id.startswith(f"{meeting.meeting_id}-RANKVT-")
+
+        strategy = get_agenda_strategy(meeting)
+        strategy_created = strategy.create_activity(
+            meeting,
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Inserted by Strategy",
+                order_index=3,
+            ),
+            meeting_manager_instance,
+        )
+        assert strategy_created.activity_id.startswith(f"{meeting.meeting_id}-BRAINS-")
+        assert strategy_created.activity_id != running_activity_id
+
+        refreshed = meeting_manager_instance.get_meeting(meeting.meeting_id)
+        assert refreshed is not None
+        agenda = get_agenda_strategy(refreshed).list_agenda(refreshed)
+        assert [activity.order_index for activity in agenda] == [1, 2, 3, 4]
+        assert [activity.title for activity in agenda] == [
+            "Open",
+            "Inserted by Manager",
+            "Inserted by Strategy",
+            "Group",
+        ]
+        assert len({activity.activity_id for activity in agenda}) == 4
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
 def test_get_meeting(

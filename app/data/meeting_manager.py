@@ -2,7 +2,9 @@
 
 Smug Otter: behavioral agenda reads consult `AgendaStrategy`; direct
 `agenda_activities` manipulation remains limited to storage-layer mutation,
-resequence, and id lookup mechanics.
+resequence, and id lookup mechanics. Mid-meeting `AgendaActivity` insertion is
+safe under `LinearAgendaStrategy` because all creation paths delegate here and
+share the same resequence and identifier minting logic.
 """
 
 from sqlalchemy.orm import Session, joinedload
