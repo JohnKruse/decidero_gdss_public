@@ -1133,16 +1133,7 @@ async def list_meeting_participants(
         )
     _assert_meeting_access(meeting, user, require_facilitator=True)
     participants = meeting_manager.list_participants(meeting_id)
-    return [
-        {
-            "user_id": p.user_id,
-            "login": p.login,
-            "first_name": getattr(p, "first_name", None),
-            "last_name": getattr(p, "last_name", None),
-            "role": getattr(p.role, "value", p.role),
-        }
-        for p in participants
-    ]
+    return _build_participant_summary(participants)
 
 
 @router.post("/{meeting_id}/participants", status_code=status.HTTP_200_OK)
@@ -1179,16 +1170,7 @@ async def add_meeting_participant(
     updated = meeting_manager.add_participant(meeting_id, target_user)
     return {
         "meeting_id": updated.meeting_id,
-        "participants": [
-            {
-                "user_id": p.user_id,
-                "login": p.login,
-                "first_name": getattr(p, "first_name", None),
-                "last_name": getattr(p, "last_name", None),
-                "role": getattr(p.role, "value", p.role),
-            }
-            for p in (updated.participants or [])
-        ],
+        "participants": _build_participant_summary(updated.participants or []),
     }
 
 
@@ -1215,16 +1197,7 @@ async def remove_meeting_participant(
     updated = meeting_manager.remove_participant(meeting_id, user_id)
     return {
         "meeting_id": updated.meeting_id,
-        "participants": [
-            {
-                "user_id": p.user_id,
-                "login": p.login,
-                "first_name": getattr(p, "first_name", None),
-                "last_name": getattr(p, "last_name", None),
-                "role": getattr(p.role, "value", p.role),
-            }
-            for p in (updated.participants or [])
-        ],
+        "participants": _build_participant_summary(updated.participants or []),
     }
 
 

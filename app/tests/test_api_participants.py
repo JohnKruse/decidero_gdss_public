@@ -51,14 +51,24 @@ def test_facilitator_can_add_and_remove_participants(
     )
     assert add_res.status_code == 200, add_res.json()
     payload = add_res.json()
-    uids = {p["user_id"] for p in payload.get("participants", [])}
+    participants_by_id = {
+        p["user_id"]: p for p in payload.get("participants", [])
+    }
+    uids = set(participants_by_id)
     assert new_user.user_id in uids
+    added_participant = participants_by_id[new_user.user_id]
+    assert added_participant["avatar_color"] == new_user.avatar_color
+    assert added_participant["avatar_key"] == new_user.avatar_key
+    assert added_participant["avatar_icon_path"] == new_user.avatar_icon_path
 
     # Verify list endpoint shows assignment
     list_res = authenticated_client.get(f"/api/meetings/{meeting_id}/participants")
     assert list_res.status_code == 200, list_res.json()
     listed = list_res.json()
-    assert any(p["user_id"] == new_user.user_id for p in listed)
+    listed_participant = next(p for p in listed if p["user_id"] == new_user.user_id)
+    assert listed_participant["avatar_color"] == new_user.avatar_color
+    assert listed_participant["avatar_key"] == new_user.avatar_key
+    assert listed_participant["avatar_icon_path"] == new_user.avatar_icon_path
 
     # Remove participant
     del_res = authenticated_client.delete(
