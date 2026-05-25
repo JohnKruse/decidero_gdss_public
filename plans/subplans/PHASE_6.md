@@ -1,140 +1,102 @@
-# PHASE 6 [COMPLETE] — End-to-End Validation and Merge Readiness
+# PHASE 6 — Delphi Instantiation and Evaluation
 
-**Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
+**Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
+**Discovery reference:** [plans/00_DISCOVERY.md](../00_DISCOVERY.md)
+**Elaboration reference:** [plans/02_ORCHESTRATION_ENGINE.md](../02_ORCHESTRATION_ENGINE.md)
 
-**Phase objective:** Prove that the collapsed role/permission model is stable across the full application surface, that the original incoherence is no longer reproducible, and that the branch is ready to merge without unresolved dependency on the removed facilitator model.
+**Phase objective:** Prove that the orchestration engine and its primitives compose into a real collaboration-engineering method by authoring Delphi as a JSON document, running it end-to-end with synthetic participants, and producing a paper-ready validation artifact. Phase 6 is the executable witness for DP9 on the central evaluation case: instantiating Delphi must not require modifying `app/plugins/base.py`, any built-in plugin's lifecycle method, or any built-in plugin's manifest beyond what Phase 1 audited. When this phase clears, the master plan's architectural claim — that collaboration processes can be expressed as declarative, composable JSON artifacts over a minimal grammar — is demonstrated against the method that motivated the design.
 
 ## Phase Canary
 
-**Lobster Teacup**
+**Oracular Quokka**
 
-Use this exact two-word canary in Phase 6 notes, commit messages, test docstrings, and validation artifacts tied to this phase.
+Use this exact two-word canary in Phase 6 notes, commit messages, the `metadata.notes` slot of every orchestration document authored in this phase, fixture and synthetic-participant docstrings, test docstrings, and validation artifacts tied to this phase.
 
 ## Atomic Steps
 
-### Step 1 [DONE] — Establish the Final Validation Baseline
-Assemble the full verification surface for this project state: automated tests, grep-based residue checks for removed facilitator-model tokens, and the concrete user-facing bug scenarios that must no longer reproduce. The output of this step is the final validation checklist that Phase 6 will close against, not new feature work.
+### Step 1 — Author `orchestrations/delphi.json`
+Author a complete Delphi orchestration document at `orchestrations/delphi.json` composed of: a round-one brainstorming step (instantiated through Phase 4's `activity` step kind against the existing brainstorming plugin), followed by an `iterate` block containing a rank-order-voting step whose `transform_input` resolves to Phase 3's `DelphiStatisticalAggregationTransform`, with an `IQRStabilityPredicate` (also from Phase 3) and a `max_rounds` bound of four. The document optionally includes an `ai-decision` step that summarizes qualitative justifications between rounds with `review_required: true`, followed by a `facilitator-decision` step that surfaces the AI's proposed summary alongside a typed continue / stop / re-run option per the master plan; if shipped, this composition is the canonical demonstration of the `ai-decision`/`facilitator-decision` pairing introduced in Phase 4. A second optional `facilitator-decision` step at the close of each round lets a facilitator override the predicate's automatic continue / stop decision; if shipped, it is documented as the human-override pattern that complements the algorithmic convergence signal.
+
+Top-level metadata is fully populated: `name` (e.g., "Classical Delphi"), `version`, `author` (the implementing maintainer), `citation` (Linstone & Turoff, *The Delphi Method*, with publisher and year), and the `metadata` object carrying `thinklets` composed (the underlying plugin's tags, surfaced at the orchestration level), `collaboration_patterns` covered (Evaluate, Build Consensus, optionally Clarify), `deliverables` produced (a converged ranked list with per-item dispersion statistics and per-participant outlier flags), `group_size_range`, and `typical_duration_minutes`. The `metadata.notes` slot carries the `Oracular Quokka` canary.
+
+The document must validate cleanly against Phase 4's `docs/schemas/orchestration.schema.json` and must load through the Phase 4 loader without warnings. If the loader surfaces a validation error, the fix is to either correct the document or, if the document is correct and the schema is too restrictive, surface a defect against Phase 4 — Phase 6 does not loosen Phase 4's schema unilaterally.
 
 Conclude this step by:
-- Implementing the core logic as the final end-to-end validation checklist and residue-check list for Phase 6.
-- Creating or updating the relevant pytest file, preferring edits to existing broad-surface pytest modules over creating a new pytest file unless an existing suite cannot reasonably house the final regression coverage.
-- Updating docstrings and documentation so the Phase 6 `Lobster Teacup` finish line is explicit and auditable.
+- Implementing the core logic as the new `orchestrations/delphi.json` document carrying the `Oracular Quokka` canary in its `metadata.notes` slot.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with assertions that the shipped document validates against the orchestration schema, loads through the Phase 4 loader without warnings, and resolves every named transform and predicate to a real registered Python class; no new pytest module is required, as the engine-integration suite already owns document-load concerns.
+- Updating docstrings and documentation so [docs/ACTIVITY_CONTRACT_SPEC.md](../../docs/ACTIVITY_CONTRACT_SPEC.md) gains a "Reference orchestrations" subsection citing `orchestrations/delphi.json` as the canonical Delphi instantiation, and so the document itself includes a top-of-file comment block summarizing its construction and its source citation.
 
-Step 1 final validation baseline for `Lobster Teacup`:
+### Step 2 — End-to-End Delphi Run with Synthetic Participants
+Author an end-to-end test that runs `orchestrations/delphi.json` against an in-memory meeting populated with a synthetic participant cohort whose responses are deterministic across rounds in a way that exercises the `IQRStabilityPredicate` honestly. Round one is brainstorming — synthetic participants submit a fixed set of ideas drawn from a Phase 6 fixture. Subsequent rounds are rank-order voting, with the synthetic cohort's ranking distribution authored to deliberately exercise three regimes: (a) a high-IQR opening round where the predicate must not fire; (b) one or more intermediate rounds where IQR contracts but not enough to fire; (c) a terminal round where IQR contraction crosses the configured threshold and the predicate fires. The test must run the orchestration through at least two full rounds and must assert:
 
-| Surface | Step 1 baseline |
-|---|---|
-| Full-suite certification command | `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` remains the terminal Phase 6 exit command and must pass 100%. |
-| Baseline documentation artifact | `docs/PHASE_6_VALIDATION_CHECKLIST.md` records the canary, certification command, residue checks, and discovery scenarios that must remain fixed. |
-| Original failure-mode regression proofs already present in broad suites | `app/tests/test_api_meetings.py::test_demoted_facilitator_loses_control_across_meetings_and_page_controls`, `app/tests/test_api_meetings.py::test_removed_facilitator_loses_control_until_readded`, and `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` establish the concrete role/roster/UI alignment baseline that later Phase 6 steps refine rather than duplicate. |
-| Removed-model residue checks | Grep validation for `MeetingFacilitator`, `meeting_facilitators`, `facilitator_links`, `_ensure_facilitator_assignment`, `_collect_facilitator_assignments`, and `_should_auto_facilitate` must stay green outside intentionally isolated compatibility and historical plan/test references. |
-| Active narrative alignment | `plans/01_MASTER_PLAN.md`, this phase file, and the new validation checklist doc must describe the same ship-readiness boundary under the `Lobster Teacup` canary. |
+- The round-2 `input` bundle for the rank-order-voting step contains the round-1 aggregate statistics (per-item median, IQR, dispersion) produced by `DelphiStatisticalAggregationTransform`.
+- Participants whose round-1 ranking falls outside the round-1 IQR are flagged in the per-participant outlier annotations, and the specific participants flagged match the cohort fixture's authored expectations.
+- `IQRStabilityPredicate` does not fire under the IQR conditions defined for regimes (a) and (b), and fires under the condition defined for regime (c).
+- The `max_rounds` bound is enforced when the test is parameterized to a cohort whose IQR never stabilizes; the engine exits at the bound regardless of predicate state, matching the Phase 4 hard-ceiling behavior.
+- Every bundle written through the run validates against Phase 1's `bundle_payload.schema.json`, and every broadcast envelope emitted by the engine matches the shape pinned in Phase 5 Step 1.
+- DP9 holds: the test runs without `app/plugins/base.py` having been modified beyond its Phase 1 state and without any built-in plugin's lifecycle method or manifest having been touched in this phase.
 
-### Step 2 [DONE] — Lock the Original Failure Modes as Final Regression Proof
-Verify, and where necessary encode in existing test coverage, the three core behavioral outcomes from the original discovery: demoting a facilitator to participant removes meeting-scoped powers, removing and re-adding a participant does not resurrect stale facilitator powers, and UI/backend capability alignment remains intact after role or roster changes. These are the mandatory no-regression proofs for ship readiness.
-
-Conclude this step by:
-- Implementing the core logic as the final regression proof for the original failure modes.
-- Creating or updating the relevant pytest file, favoring edits to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_frontend_smoke.py`, `app/tests/test_pages.py`, and related already-relevant tests instead of creating a new test file.
-- Updating docstrings and documentation so the repository clearly records these scenarios as fixed and protected.
-
-Step 2 final regression proof for `Lobster Teacup`:
-
-| Original failure mode | Locked proof |
-|---|---|
-| demotion authority revocation | `app/tests/test_api_meetings.py::test_demoted_facilitator_loses_control_across_meetings_and_page_controls` proves a demoted user keeps only rostered participant view access, loses dashboard management/delete/facilitator capability flags, loses visible meeting-management controls, and receives backend denial for meeting control actions across affected meetings. |
-| remove-and-readd stale-authority prevention | `app/tests/test_api_meetings.py::test_removed_facilitator_loses_control_until_readded` proves removal from the roster removes meeting visibility and backend control access, while re-add restores authority only through the current collapsed inputs of system facilitator role plus current roster membership. |
-| UI/backend capability symmetry | `app/tests/test_frontend_smoke.py::test_meeting_roster_button_present` proves the meeting roster control is rendered behind backend-derived `can_manage_meeting` and matching per-meeting capability data attributes instead of a standalone role shortcut. |
-
-### Step 3 [DONE] — Verify Full-Surface Consistency and Residue Removal
-Run the final consistency pass across the codebase and contracts to ensure the removed facilitator model does not still appear in active code, active contracts, or stale test expectations except where intentionally isolated for backward compatibility. This step also confirms that all phase canaries, contract decisions, and cleanup boundaries remain internally coherent in the written project record.
+If the orchestration document includes the optional `ai-decision` summary step, the test exercises it under the same fixture by stubbing the AI provider (per the Phase 4 patterns) to return a schema-valid summary; the `review_required` composition is exercised through the Phase 5 resumption entry point with a facilitator-driven approval that resumes the engine.
 
 Conclude this step by:
-- Implementing the core logic as the final residue-removal and consistency verification pass.
-- Creating or updating the relevant pytest file, preferring edits to existing suites that still need final cleanup coverage instead of creating a new pytest file.
-- Updating docstrings and documentation so no active narrative conflicts with the shipped collapsed model or its explicitly isolated compatibility exceptions.
+- Implementing the core logic as the new synthetic-cohort fixtures (under `app/tests/fixtures/` or the existing fixture conventions) and the end-to-end test inside `app/tests/test_orchestration_engine.py`, both carrying the `Oracular Quokka` canary in their docstrings.
+- Creating or updating the relevant pytest file is the extension to `app/tests/test_orchestration_engine.py` named above; this is the natural home because it already owns engine-driven E2E coverage from Phase 5 Step 4, and a new module would fracture the engine-integration surface.
+- Updating docstrings and documentation so the spec records the synthetic-cohort fixture's location and its three IQR regimes, and so each fixture file carries a header citing the regime it exercises.
 
-Step 3 consistency and residue result for `Lobster Teacup`:
+### Step 3 — Author `docs/DELPHI_VALIDATION.md`
+Capture the synthetic-evaluation result in `docs/DELPHI_VALIDATION.md` in a form suitable for inclusion in the conference paper. The document must contain: a description of the synthetic-cohort fixture and the three IQR regimes from Step 2, a presentation of the round-by-round aggregate statistics observed under each regime (per-item median, IQR, dispersion), a summary of the predicate-firing decisions and their reasoning, an explicit confirmation that DP9 held during the run with the file paths that *did not* change as evidence, and an analytical discussion of what the run demonstrates and what it does not (notably, that this is an analytical / synthetic validation in the Hevner sense, not a field study — empirical evaluation with real participant groups is future work per the master plan's Scope Boundary). The discussion must avoid claiming methodological coverage the test does not provide; the document is paper-ready precisely because it is honest about its evaluation modality.
 
-| Surface | Step 3 result |
-|---|---|
-| Active non-test `app/` code | No removed-model tokens remain. The audited forbidden set is `MeetingFacilitator`, `meeting_facilitators`, `facilitator_links`, `_ensure_facilitator_assignment`, `_collect_facilitator_assignments`, and `_should_auto_facilitate`. |
-| Test coverage | Existing cleanup assertions and the new Step 3 audit test may mention removed tokens only to prove their absence from active ORM, runtime helper, response-contract, or documentation surfaces. |
-| Historical plan and discovery records | Completed phase plans and discovery notes retain removed-token names as audit history, not as active contract language. |
-| Compatibility request fields | `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids` remain isolated compatibility request inputs. They do not recreate persisted facilitator-model state, response payload fields, or independent authorization sources. |
+The document also names, in a closing subsection, the breaking points whose resolution it indirectly attests to: BP-1 (linear "previous activity") because Delphi requires round-to-round prior-bundle resolution; BP-3 (iteration discriminator on bundles) because Delphi keeps multiple rounds of the same logical step distinct; BP-7 (server-side reliability) because the optional `ai-decision` summary exercises it; BP-5 and BP-10 (realtime + frontend coherence) because the run executes through Phase 5's broadcast and UI surfaces. The document does not re-derive these resolutions — it cites the respective phase tests as the executable witnesses.
 
-### Step 4 [DONE] — Prepare Merge-Readiness Artifacts
-Produce the final branch-readiness record: verification status, test pass baseline, summary of user-visible fixes, summary of compatibility boundaries, and any grep/stat checks that prove the removed model is actually gone from the active code path. This step is about making the diff reviewable and the final state easy to audit.
+The header carries the `Oracular Quokka` canary.
 
 Conclude this step by:
-- Implementing the core logic as the final merge-readiness notes and completion artifacts for the branch.
-- Creating or updating the relevant pytest file, using existing broad-surface suites if any final assertion or marker adjustments are still needed rather than creating a new test file.
-- Updating docstrings and documentation so the merge record, validation narrative, and Phase 6 canary are aligned.
+- Implementing the core logic as the new `docs/DELPHI_VALIDATION.md` document with the structure described above and the canary in its header.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with a small assertion that confirms `docs/DELPHI_VALIDATION.md` exists, carries the canary, and references the Step 2 test by function name; this keeps the writeup and the witness from drifting apart. No new pytest module is required.
+- Updating docstrings and documentation so `docs/INDEX.md` lists `DELPHI_VALIDATION.md` under a "Reference evaluations" or equivalent heading, and so `docs/ACTIVITY_CONTRACT_SPEC.md` cross-references the validation document from its "Reference orchestrations" subsection introduced in Step 1.
 
-Step 4 merge-readiness record for `Lobster Teacup`:
+### Step 4 — Generalization Decision: Estimate-Talk-Estimate or Formal Deferral
+Decide and execute one of the two terminal paths the master plan permits for the generalization-beyond-Delphi success criterion: either ship `orchestrations/estimate_talk_estimate.json` as a second reference orchestration that composes the same Phase 3 / Phase 4 primitives in a different shape (initial individual estimation, group discussion through a brainstorming step, revised estimation through rank-order voting, no formal aggregation transform required — the same `iterate` primitive composes it cleanly), with a parallel-shape end-to-end test asserting that the engine drives the document without modifying any plugin; or formally defer ETE to post-master-plan future work, recording the deferral with reasoning in `docs/DELPHI_VALIDATION.md` and stating explicitly that the engine's generalization claim rests on Delphi alone for this submission cycle.
 
-| Review surface | Merge-readiness artifact |
-|---|---|
-| Verification status and baseline | The branch-readiness record in `docs/PHASE_6_VALIDATION_CHECKLIST.md` names `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` as the required full-suite baseline for this step and the final exit gate. |
-| User-visible fixes | The record ties merge readiness to the locked proofs for demotion authority revocation, remove-and-readd stale-authority prevention, and UI/backend capability symmetry. |
-| Compatibility boundary | The record preserves only isolated compatibility request inputs: `MeetingCreate.additional_facilitator_ids`, `MeetingUpdate.facilitator_ids`, and `MeetingCreateRequest.co_facilitator_ids`; these do not recreate persisted facilitator state or response-contract authority. |
-| Active-code residue proof | The Step 3 grep/audit result is carried forward as merge evidence: no removed-model tokens remain in active non-test `app/` code, and historical references are limited to plans, tests, and compatibility documentation. |
+If the ETE path is chosen, the document is authored at `orchestrations/estimate_talk_estimate.json`, validates against the Phase 4 schema and loader, and exercises the iterate primitive without depending on `DelphiStatisticalAggregationTransform` or `IQRStabilityPredicate` — `IdentityBundleTransform` and `FixedNPredicate` from Phase 3 are the minimum-viable resolution. The accompanying test extension in `app/tests/test_orchestration_engine.py` asserts that the second document loads, runs through two rounds, and produces bundles conformant with Phase 1's bundle schema; the assertion volume is intentionally lighter than Delphi's, since the engine-integration claims have already been established and ETE is here to demonstrate composition rather than to re-validate the substrate.
 
-### Step 5 [DONE] — Lock the Final Exit Boundary
-Define the exact final terminal command that must pass 100% to clear the entire effort and treat this phase as complete only when the full-suite result, residue checks, and merge-readiness artifacts all support shipment of the collapsed model.
+If the deferral path is chosen, the deferral subsection in `docs/DELPHI_VALIDATION.md` explicitly names ETE, NGT, and any other collaboration-engineering method the maintainer considered for inclusion, and explains why Delphi alone is a defensible generalization basis for the conference submission. The deferral is itself a master-plan-permitted outcome and clears the phase as cleanly as the ship path; the master plan's Phase 6 success gate names both terminal paths.
+
+The choice between ship and defer is made on engineering grounds — schedule, fixture-authoring cost, and whether the test extension will surface anything the Delphi run did not. There is no preferred path at the plan layer.
 
 Conclude this step by:
-- Implementing the core logic as the final Phase 6 exit checklist and completion criteria in this file.
-- Creating or updating the relevant pytest file so any remaining end-to-end regression coverage is included in the exit command below without unnecessary pytest file proliferation.
-- Updating docstrings and documentation so the final command, expected success state, and Phase 6 canary remain aligned.
-
-Step 5 final exit boundary for `Lobster Teacup`:
-
-| Exit evidence | Final boundary |
-|---|---|
-| Terminal command | `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` is the only command that clears Phase 6 and the broader role/permission collapse effort. |
-| Required result | The command must reach `[100%]` with zero failures. Feature-gated guest-join tests may report `SKIPPED` when the guest entry flag is disabled, but skipped guest-flag coverage is not a failure of the collapsed authorization model. |
-| Documentation state | `docs/PHASE_6_VALIDATION_CHECKLIST.md` and this phase file both record the final verification command, original failure-mode proof, residue result, merge-readiness notes, and final exit boundary under the `Lobster Teacup` canary. |
-| Completion state | Phase 6 is marked `[COMPLETE]` only after Step 5 is marked `[DONE]`, the documentation assertion coverage is updated, and the full-suite command passes 100%. |
-
-## Phase 6 Final Readiness Scope Map
-
-The following surfaces must be proven ready by the end of this phase:
-
-| Surface | Required Phase 6 outcome |
-|---|---|
-| Full automated test suite | Passes with zero failures |
-| Original user-reported bug scenarios | No longer reproducible |
-| Active codebase references to removed facilitator model | Absent, except intentionally isolated backward-compatibility handling if retained |
-| Documentation and test narratives | Reflect the collapsed model consistently |
-| Branch reviewability | Verification evidence and change narrative are sufficient for merge |
-
-## Phase 6 Non-Goals
-
-This phase does **not** introduce new feature scope. If a new authorization behavior question appears here, it is a scope regression and must be spun out rather than folded into final validation.
-
-## Technical Deviations Log
-
-- Step 1 (`Lobster Teacup`): This step intentionally locks the validation baseline by documenting the required full-suite command, residue-token grep list, and already-existing discovery regression tests instead of introducing redundant new behavioral coverage. The baseline is made auditable via `docs/PHASE_6_VALIDATION_CHECKLIST.md` and an existing broad-suite pytest check so later Phase 6 steps can focus on proof tightening and final merge artifacts rather than rebuilding the inventory.
-- Step 2 (`Lobster Teacup`): The original failure modes were already behaviorally covered by broad API and frontend smoke tests, so this step tightens their Phase 6 canary docstrings and adds an auditable Step 2 regression-proof record rather than duplicating the same role-change and roster-change scenarios in a new test file.
-- Step 3 (`Lobster Teacup`): The scan found no removed-model tokens in active non-test `app/` code. It intentionally does not remove the remaining facilitator-named compatibility request fields because Phase 5 documented them as isolated request-shape compatibility, not active persisted model state or response contract semantics.
-- Step 4 (`Lobster Teacup`): Merge-readiness is recorded as documentation and an existing-suite documentation assertion rather than new product code. The verification command is intentionally not narrowed for this step; the same full-suite command remains the baseline evidence for Step 4 and the terminal Phase 6 exit gate.
-- Step 5 (`Lobster Teacup`): The final exit boundary is documented as the same full-suite command used throughout Phase 6, and Phase 6 is marked `[COMPLETE]` only after the documentation guard and full-suite command both pass. The final certification run reaches `[100%]` with `553 passed, 2 skipped`; the two guest-join feature-flag skips are expected non-failures.
+- Implementing the core logic as either the new `orchestrations/estimate_talk_estimate.json` document plus the accompanying test extension, or the deferral subsection in `docs/DELPHI_VALIDATION.md`; whichever artifact is produced carries the `Oracular Quokka` canary.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with the ETE assertions if the ship path is chosen, or with a small assertion that confirms the deferral subsection exists in `docs/DELPHI_VALIDATION.md` if the deferral path is chosen.
+- Updating docstrings and documentation so the spec's "Reference orchestrations" subsection lists whichever artifact was produced (the second orchestration document on the ship path, or the deferral subsection's location on the deferral path), and so the closing chapter of `docs/DELPHI_VALIDATION.md` reflects the chosen outcome.
 
 ## Phase Exit Criteria
 
-Phase 6 clears only when the following command passes 100%:
+Phase 6 clears only when the following command reaches `[100%]` and finishes without failures:
 
 ```bash
-PYTHONPATH=. ./venv/bin/pytest app/tests/ -v
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_orchestration_engine.py app/tests/test_agenda_validator.py app/tests/test_bundle_transforms.py app/tests/test_convergence_predicates.py app/tests/test_reliability_rehearsal.py app/tests/test_activity_plugins.py app/tests/test_meeting_state.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_transfer_api.py app/tests/test_transfer_metadata.py app/tests/test_frontend_smoke.py app/tests/test_pages.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_ai_provider_config.py -v
 ```
 
 Passing this command means:
-- the entire automated application surface is green,
-- the selected existing pytest modules have absorbed the necessary final regression coverage instead of unnecessary new-test sprawl,
-- the collapsed role/permission model is stable across backend, frontend, persistence, and compatibility surfaces,
-- and the branch is in a technically merge-ready state pending normal review.
 
----
+- `orchestrations/delphi.json` exists, validates against Phase 4's orchestration schema, and loads through the Phase 4 loader without warnings; every named transform and predicate resolves to a registered Python class.
+- The end-to-end Delphi run with synthetic participants passes, exercises the three IQR regimes authored in the fixture, demonstrates that `DelphiStatisticalAggregationTransform` flags the expected outlier participants, demonstrates correct firing and non-firing of `IQRStabilityPredicate`, and enforces the `max_rounds` hard ceiling.
+- Every bundle written during the Delphi run validates against `bundle_payload.schema.json`; every realtime broadcast emitted matches the Phase 5 envelope shape.
+- DP9 holds in practice for the central evaluation case: `app/plugins/base.py` is unchanged from its Phase 1 state, no built-in plugin's lifecycle method has been modified in this phase, and no built-in plugin manifest has been touched beyond Phase 1's audited declarations.
+- `docs/DELPHI_VALIDATION.md` exists, carries the canary, reports the synthetic-cohort results honestly, names the breaking points whose resolution it indirectly attests to, and is cross-referenced from `docs/ACTIVITY_CONTRACT_SPEC.md` and `docs/INDEX.md`.
+- The generalization decision is executed: either `orchestrations/estimate_talk_estimate.json` exists and its lighter-weight test extension passes, or the deferral subsection in `docs/DELPHI_VALIDATION.md` explicitly records the deferral and names the methods considered.
+- No test that previously passed regresses, and no test docstring, document header, fixture, or orchestration `metadata.notes` slot introduced under Phase 6 omits the `Oracular Quokka` canary where the step requirements call for it.
 
-*End of Phase 6 execution file. This phase is the final validation and ship-readiness gate for the role/permission collapse effort.*
+## Master-Plan Closure
+
+When this phase clears, the master plan defined in [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md) is complete. The orchestration engine ships, the substrate is documented and tested across DP1 through DP9, Delphi instantiates without modifying any existing plugin, and the architectural claim is demonstrated against the method that motivated the design. Subsequent work — empirical evaluation with real participant groups, additional reference orchestrations, the `conditional` control-flow primitive's runtime implementation, journal-extension manuscripts, and any UI polish beyond the minimal facilitator-decision surface from Phase 5 — lives outside this master plan and is addressed by separate planning efforts.
+
+## Scope Boundary
+
+This phase covers only the Delphi instantiation and its evaluation. The following items remain explicitly out of scope:
+
+- Empirical evaluation with real participant groups in a field setting — future work for a journal extension.
+- Reference orchestrations beyond Delphi (and optionally Estimate-Talk-Estimate per Step 4) — post-master-plan work.
+- Aesthetic polish, accessibility coverage, or mobile-specific work on any UI surface — post-master-plan work.
+- Runtime implementation of the `conditional` control-flow primitive — defined-but-deferred at the Phase 4 schema layer; out of scope unless separately authorized.
+- Parallel branches, sub-orchestration invocation, variable bindings, expression evaluation, event handlers, timers, and compensation/rollback — out of scope for the entire master plan per its Scope Boundary.

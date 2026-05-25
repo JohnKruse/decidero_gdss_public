@@ -1,143 +1,100 @@
-# PHASE 4 [COMPLETE] — Data Model Collapse
+# PHASE 4 — Engine and Step Kinds
 
-**Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
+**Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
+**Discovery reference:** [plans/00_DISCOVERY.md](../00_DISCOVERY.md)
+**Elaboration reference:** [plans/02_ORCHESTRATION_ENGINE.md](../02_ORCHESTRATION_ENGINE.md)
 
-**Phase objective:** Remove the per-meeting facilitator concept from the persistent data model and runtime object graph so the schema itself matches the collapsed authorization design already enforced by earlier phases.
+**Phase objective:** Turn the substrate produced in Phases 1 through 3 into a runnable orchestration engine. Phase 4 authors the JSON document grammar that describes collaboration processes, the validator that enforces it on load, the `OrchestrationEngineStrategy` that interprets it, and the three step kinds the master plan commits to: `activity`, `facilitator-decision`, and `ai-decision`. The `iterate` control-flow primitive becomes a working composition over Phase 3's `BundleTransform` and `ConvergencePredicate` registries. When this phase clears, a trivial multi-step orchestration runs end-to-end through the engine without modifying any existing built-in plugin — the executable witness for DP9.
 
 ## Phase Canary
 
-**Noodle Catapult**
+**Insolent Metronome**
 
-Use this exact two-word canary in Phase 4 notes, commit messages, test docstrings, and validation artifacts tied to this phase.
+Use this exact two-word canary in Phase 4 notes, commit messages, module docstrings introduced by this phase, schema header lines, orchestration-document fixtures, test docstrings, and validation artifacts tied to this phase.
 
 ## Atomic Steps
 
-### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts
-Map the remaining schema, ORM, startup, and runtime references that still treat per-meeting facilitator assignment as a persisted model concern. This includes `MeetingFacilitator`, `meeting_facilitators` storage, ORM relationships on `Meeting` and `User`, any startup shim that creates or expects the table, and any helper whose sole purpose is managing facilitator assignments as stored rows.
+### Step 1 — Author the Orchestration Document Schema and Loader
+Author `docs/schemas/orchestration.schema.json` covering the closed control-flow grammar (`sequence`, `iterate`) and the open-but-disciplined step-kind vocabulary (`activity`, `facilitator-decision`, `ai-decision`) committed to by the master plan. The schema must also reserve the `conditional` control-flow primitive as a defined-but-deferred shape so a future minor release can ship it without breaking documents authored under this phase; deferral is explicit in the schema description, not a silent omission. Top-level orchestration metadata is required: `name`, `version`, `author`, `citation`, plus a `metadata` object carrying `thinklets`, `collaboration_patterns`, `deliverables`, `group_size_range`, and `typical_duration_minutes` (mirroring the manifest field shapes already validated by Phase 1's `activity_manifest.schema.json`). The schema header must carry the `Insolent Metronome` canary line.
+
+Author a corresponding loader in `app/services/orchestration_loader.py` (name suggestive only; the implementer may pick any colocation that does not violate the existing `app/services/` conventions) that validates every orchestration document on load and emits structured error reporting comparable to `AgendaValidationResult` already produced by [`app/services/agenda_validator.py:41-47`](../../app/services/agenda_validator.py). The loader is the only path through which the engine in Step 2 ingests documents; ad-hoc parsing in tests or routers is not permitted. Round-tripping a fixture document through the loader must produce a typed in-memory representation (small AST or equivalent) that the engine walks step-by-step.
+
+The orchestration document schema does not collide with the existing meeting-designer agenda grammar enforced by `agenda_validator.py` ([plans/00_DISCOVERY.md §11](../00_DISCOVERY.md)); the two coexist, and the loader is responsible only for orchestration documents.
 
 Conclude this step by:
-- Implementing the core logic as the complete removal map for persistent facilitator artifacts targeted in this phase.
-- Creating or updating the relevant pytest file, preferring edits to existing model/meeting/API pytest modules over creating a new pytest file unless an existing suite cannot reasonably carry the coverage.
-- Updating docstrings and documentation so the Phase 4 `Noodle Catapult` scope clearly states which persistent facilitator constructs are being eliminated now versus which outward-facing compatibility concerns are deferred to Phase 5.
+- Implementing the core logic as the new schema file, the loader module, and the typed in-memory representation, with the `Insolent Metronome` canary in the schema header and the loader's module docstring.
+- Creating or updating the relevant pytest file by extending `app/tests/test_agenda_validator.py` if its shape accommodates orchestration-document validation cases; otherwise authoring a focused module (such as `app/tests/test_orchestration_schema.py`) and documenting in the new module's header why the existing validator suite was not a fit. Bias toward the extension path.
+- Updating docstrings and documentation so `docs/ACTIVITY_CONTRACT_SPEC.md` gains a section pointing at the orchestration document grammar, and so the new loader module cross-references both the schema file and the agenda validator (to make the coexistence clear).
 
-Step 1 inventory for `Noodle Catapult`:
+### Step 2 — Implement the `OrchestrationEngineStrategy` Skeleton and the `activity` Step Kind
+Author `OrchestrationEngineStrategy` inside `app/services/agenda_strategy.py` (alongside `LinearAgendaStrategy` from Phase 2). The strategy implements the `AgendaStrategy` interface from Phase 2 — and only that interface — by interpreting a loaded orchestration document via a step-pointer / iteration-counter / bundle-history state machine. Each tick examines the current step, instantiates the next activity if the step kind is `activity` (or pauses, in step kinds added by later steps in this phase), and advances the pointer when the underlying activity closes. The strategy uses Phase 3's prior-activity hook signature (explicit donor reference, not `order_index` adjacency) and the iteration storage model from Phase 3 Step 1 whenever it materializes a new activity row.
 
-| File / surface | Persistent facilitator artifact isolated in Step 1 | Removal phase target |
-|---|---|---|
-| `app/models/meeting.py` | `MeetingFacilitator`, `meeting_facilitators_table`, `Meeting.facilitator_links`, `Meeting.facilitators` | Step 2 |
-| `app/models/user.py` | `MeetingFacilitator` import bridge, `meeting_facilitators_table`, `User.facilitator_links`, `User.facilitated_meetings` | Step 2 |
-| `app/models/__init__.py` | Re-export of `MeetingFacilitator` as an active model symbol | Step 2 |
-| `app/main.py` | Startup shim calling `meeting_facilitators_table.create(..., checkfirst=True)` | Step 3 |
-| `app/data/meeting_manager.py` | Meeting creation/update helpers that create, mutate, eager-load, or sort facilitator assignment rows, including `_ensure_facilitator_assignment` and `_collect_facilitator_assignments` | Step 3 |
-| `app/utils/identifiers.py` | `generate_facilitator_id` and its sequence helpers keyed to `MeetingFacilitator` rows | Step 3 |
-| `app/routers/brainstorming.py`, `app/routers/categorization.py`, `app/routers/transfer.py`, `app/routers/voting.py` | Router imports and eager-load paths that still depend on `MeetingFacilitator` / `facilitator_links` | Step 3 |
-| `app/routers/meetings.py` | Export/import compatibility bundle still reading `meeting.facilitator_links`; request payloads still accept facilitator-oriented compatibility fields | Step 4 / Phase 5 |
-| `app/services/meeting_authorization.py` and `app/schemas/meeting.py` | Backend-derived compatibility outputs (`facilitators`, `facilitator_ids`, `facilitator_user_ids`) still emitted for outward-facing contract stability | Phase 5 |
-| Existing pytest modules | Legacy assertions that inspect `facilitator_links`, facilitator IDs, or auto-assignment behavior as persisted-row facts | Step 4 |
+Ship the `activity` step kind in the same step. Its configuration is `tool_type`, `config` (passed verbatim to the plugin's `validate_config()` per Phase 1's DP6 disposition), an optional named `transform_input` resolved against Phase 3's `BundleTransform` registry, and a display `title`. The `activity` step is the only one that drives existing built-in plugins, and it must do so via the plugin ABC at [`app/plugins/base.py:38-81`](../../app/plugins/base.py) without altering any plugin manifest or lifecycle method beyond what Phase 1 authorized. DP9 holds.
 
-### Step 2 [DONE] — Collapse the ORM and Schema Model
-Remove `MeetingFacilitator`, the `meeting_facilitators` storage model, related ORM relationships, and any persisted ownership duplication that survives outside `Meeting.owner_id`. After this step, the active data model must express meeting authority only through global role, owner linkage, and roster membership, with no live facilitator-assignment entity left in the application schema.
+Demonstrate the skeleton plus the `activity` step kind by running a trivial two-step orchestration end-to-end: a `sequence` containing two `activity` steps (brainstorm → vote), produced from a fixture document, validated by the Step 1 loader, executed by `OrchestrationEngineStrategy` against an in-memory meeting, producing the expected sequence of `input` / `output` bundles with provenance intact and Phase 1's bundle schema continuing to validate every bundle written.
 
 Conclude this step by:
-- Implementing the core logic by collapsing the ORM/schema model to eliminate persisted per-meeting facilitator assignment.
-- Creating or updating the relevant pytest file, favoring surgical edits to existing suites such as `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, and `app/tests/test_auth.py` instead of creating a new test file.
-- Updating docstrings and documentation so model descriptions, relationship descriptions, and test narratives no longer present facilitator assignments as a live persisted concept.
+- Implementing the core logic as the `OrchestrationEngineStrategy` class, the `activity` step kind handler, the supporting state-machine scaffolding, and the brainstorm→vote fixture document carrying the `Insolent Metronome` canary in its `metadata.notes` slot.
+- Creating or updating the relevant pytest file by authoring a focused module `app/tests/test_orchestration_engine.py`; this new module is warranted because no existing suite owns engine concerns — `test_meeting_manager.py` handles linear-agenda data shape, `test_meeting_state.py` handles the in-memory state singleton, and neither is the right home for engine-document interpretation.
+- Updating docstrings and documentation so `app/services/agenda_strategy.py` records both `LinearAgendaStrategy` and `OrchestrationEngineStrategy` as the two reference implementations of the seam, so `docs/ACTIVITY_CONTRACT_SPEC.md` gains an "Engine" section describing the interpreter loop and the `activity` step kind, and so the brainstorm→vote fixture's location is cited from the spec.
 
-Step 2 collapse notes for `Noodle Catapult`:
+### Step 3 — Implement the `iterate` Step Kind
+Add `iterate` to `OrchestrationEngineStrategy`. Configuration: child steps (a sequence executed each round), a max-rounds bound, a named `ConvergencePredicate` (with config) resolved against Phase 3's predicate registry, and a named inter-round `BundleTransform` (with config) resolved against Phase 3's transform registry. Each iteration runs the child steps once, applies the transform to the round's output, evaluates the predicate against accumulated bundle history, and either loops to the next round or exits. The iteration storage model from Phase 3 Step 1 governs how round-N bundles are kept distinct from round-(N-1) bundles; the engine does not invent a parallel mechanism.
 
-- `MeetingFacilitator` and `meeting_facilitators_table` have been removed from the active SQLAlchemy model registry.
-- `Meeting.facilitator_links`, `Meeting.facilitators`, `User.facilitator_links`, and `User.facilitated_meetings` have been removed from the active ORM mappings.
-- Owner authority now persists only as `Meeting.owner_id`; roster-scoped facilitator authority is derived from `User.role == "facilitator"` plus meeting participant membership.
-- Meeting-manager regression coverage now asserts the absence of the removed ORM model/table and verifies owner/co-facilitator behavior through canonical capabilities instead of persisted facilitator rows.
-
-### Step 3 [DONE] — Remove Runtime and Boot Dependencies on the Old Model
-Delete or rewrite runtime helpers, initialization shims, and meeting-management paths that still create, mutate, or expect facilitator-assignment rows to exist. The application must be able to boot, create meetings, manage rosters, and execute meeting workflows without any facilitator-assignment table or startup workaround present.
+Surface the iteration counter through the engine's prior-activity hook so transforms and predicates can address round-specific donors by explicit reference per Phase 3 Step 2. The `max-rounds` bound is enforced as a hard ceiling regardless of predicate state, so a degenerate predicate cannot run the engine forever.
 
 Conclude this step by:
-- Implementing the core logic by removing runtime and startup dependencies on the old facilitator persistence model.
-- Creating or updating the relevant pytest file, preferring edits to existing meeting/API/router suites such as `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_brainstorming_api.py`, `app/tests/test_voting_api.py`, `app/tests/test_rank_order_voting_api.py`, `app/tests/test_categorization_api.py`, and `app/tests/test_transfer_api.py` instead of adding new pytest modules.
-- Updating docstrings and documentation so runtime behavior and startup expectations describe the collapsed model accurately.
+- Implementing the core logic as the `iterate` step kind handler inside `OrchestrationEngineStrategy`, with the canary `Insolent Metronome` in the step-kind dispatcher's comment for `iterate` and in any new fixture documents authored to exercise it.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with iterate-specific coverage: a fixed-rounds run that exits on `FixedNPredicate`, a stability-driven run that exits on `IQRStabilityPredicate`, and a degenerate run that hits `max-rounds` because the predicate never fires.
+- Updating docstrings and documentation so the spec's Engine section gains an `iterate` subsection that cites the two Phase 3 registries and identifies the resolution path from a document name string to a registered Python class.
 
-Step 3 runtime notes for `Noodle Catapult`:
+### Step 4 — Implement the `facilitator-decision` Step Kind
+Add `facilitator-decision` to `OrchestrationEngineStrategy`. Configuration: a `prompt` (the question posed to the facilitator), a typed list of `options` (the discrete responses the facilitator may choose from), and `context_bundle_keys` (which prior bundles to surface alongside the prompt). When the engine ticks onto a `facilitator-decision` step it pauses — the strategy's `next_activity` hook returns no new activity and the engine waits in a paused state that is observable to callers. On resumption (driven by an externally-supplied facilitator response that names one of the typed options), the chosen option is captured as a typed bundle item in the bundle stream and the engine advances. The bundle item must carry provenance that survives Phase 1's `bundle_payload.schema.json`.
 
-- Removed the no-op facilitator-assignment helpers from `MeetingManager`; participant and roster mutations no longer call a facilitator-row synchronization path.
-- Removed the obsolete `generate_facilitator_id` compatibility helper from `app/utils/identifiers.py`; active runtime code no longer generates row-backed facilitator identifiers.
-- Removed the stale `facilitated_meetings` dashboard context placeholder from `app/routers/pages.py`.
-- Added regression coverage that scans the active runtime/boot files for the old helper and startup symbols.
+The UI surface that lets a facilitator actually respond is explicitly out of scope here and belongs to Phase 5; this step exposes the resumption entry point (a service-layer call that accepts a meeting reference, the engine's current step pointer, and the chosen option) and tests the entry point directly. Until Phase 5 ships, the only consumer is the test suite.
 
-### Step 4 [DONE] — Prune Dead Code and Legacy Test Assumptions
-Remove helper code, relationship plumbing, and test assumptions whose only purpose was to support persisted facilitator assignments or auto-grant behavior. By the end of this step, old facilitator-model code should be absent from the active application path, and tests should assert the collapsed steady state rather than carrying transitional assumptions forward.
+If a `facilitator-decision` step is reached but the orchestration document never specified valid options (or all options are exhausted by prior selections in the same step instance), the engine surfaces a structured error rather than silently advancing.
 
 Conclude this step by:
-- Implementing the core logic by pruning dead facilitator-model code and resolving Phase 1 rewrite/delete items that are unblocked by schema removal.
-- Creating or updating the relevant pytest file, favoring edits to the already-relevant suites instead of creating a new test file for cleanup work.
-- Updating docstrings and documentation so no active description of the model or tests still relies on per-meeting facilitator persistence semantics.
+- Implementing the core logic as the `facilitator-decision` step kind handler, the pause-state representation inside the engine's state machine, and the resumption entry-point function, all tagged with the `Insolent Metronome` canary at the dispatch site and in the resumption function's docstring.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with assertions that the engine pauses correctly, that the resumption entry-point captures the chosen option into the bundle stream with valid provenance, and that an invalid option name yields a structured error.
+- Updating docstrings and documentation so the spec's Engine section gains a `facilitator-decision` subsection that explicitly notes Phase 5 owns the UI surface, and so the resumption entry point's docstring cites the integration test as its executable contract.
 
-Step 4 cleanup notes for `Noodle Catapult`:
+### Step 5 — Implement the `ai-decision` Step Kind
+Add `ai-decision` to `OrchestrationEngineStrategy`. Configuration: a `prompt_template`, `context_bundle_keys` (which prior bundles to render into the prompt), an `output_schema` (the JSON Schema the AI response must validate against), and a `review_required` boolean. The engine renders the prompt with the named bundle context, calls the configured AI provider via the existing `app/services/ai_provider.py` (no new provider integration is authored in this phase), parses the response, validates it against the declared `output_schema`, and captures the validated result as a typed bundle item in the bundle stream.
 
-- Removed the legacy JSON data-access fallback that treated `facilitator_user_ids` as a meeting membership source.
-- Removed schema coercion for deleted `facilitator_links` / `facilitator_id` relationship objects; surviving facilitator-shaped response fields now accept only dict-shaped compatibility payloads until Phase 5 removes the external contract.
-- Converted the Step 1 inventory regression into a steady-state documentation regression and added a guard against active code reading removed facilitator persistence fields.
-- Updated test narratives that still described the old row-backed model as the comparison point.
+Schema-validation failures are retried via the server-side reliability execution analogue authored in Phase 3 Step 4 — the orchestration document's effective `reliability_policy` declaration treats "schema validation failure" as a retryable condition and uses an idempotency key derived from the engine's step pointer plus round index. This is the canonical reuse case the Phase 3 reliability path was built for; it must work without modifying that path.
 
-### Step 5 [DONE] — Lock the Phase 4 Verification Boundary
-Define the exact validation command for the schema/runtime collapse and treat this phase as complete only when the application functions without the facilitator-assignment model, the targeted suites pass, and the removed model is absent from active code paths within the scope of this phase.
+When `review_required` is `true`, the validated AI output is held pending the next `facilitator-decision` step's approval — the engine does not advance the pointer beyond the `ai-decision` step until the immediately-following `facilitator-decision` (which the orchestration document is responsible for authoring) resolves. If `review_required` is `true` and no `facilitator-decision` follows in the document, the loader from Step 1 must surface a structured validation error at document-load time rather than at runtime.
 
 Conclude this step by:
-- Implementing the core logic as the final Phase 4 verification checklist and completion notes in this file.
-- Creating or updating the relevant pytest file so the data-model-collapse coverage required for Phase 4 is included in the exit command below without unnecessary pytest file proliferation.
-- Updating docstrings and documentation so the verification command, collapse boundary, and Phase 4 canary remain aligned.
-
-Step 5 verification notes for `Noodle Catapult`:
-
-- The final Phase 4 verification boundary is the command in the Phase Exit Criteria section below.
-- Phase 4 is complete when that command finishes at `[100%]` with all runnable tests passing and only the expected guest-join feature skips.
-- The active schema, boot path, runtime helper path, and tests no longer depend on persisted per-meeting facilitator assignment rows.
-- Remaining facilitator-shaped response names are intentionally Phase 5 compatibility work and are not active persistence-model dependencies.
-
-## Phase 4 Collapse Scope Map
-
-The following persistent-model surfaces must be collapsed during this phase:
-
-| Surface | Required Phase 4 outcome |
-|---|---|
-| `MeetingFacilitator` model | Removed from active application schema |
-| `meeting_facilitators` table/storage definition | Removed from active application schema/runtime expectations |
-| `Meeting.facilitator_links` / `Meeting.facilitators` relationships | Removed |
-| `User.facilitator_links` relationship | Removed |
-| Facilitator-assignment startup shim | Removed |
-| Facilitator-assignment-specific helpers | Removed or rewritten so they no longer depend on persisted facilitator rows |
-
-## Phase 4 Non-Goals
-
-This phase does **not** complete the following:
-
-- Export/import compatibility handling and outward-facing contract cleanup, which belongs to Phase 5.
-- Additional UI/interface alignment work beyond what earlier phases already established.
-- WebSocket auth cleanup or unrelated authorization redesign outside the facilitator-model removal path.
-
-## Technical Deviations Log
-
-- Step 1 (`Noodle Catapult`): The isolation pass intentionally keeps outward-facing compatibility fields such as `facilitator_ids`, `facilitator_user_ids`, export/import facilitator payloads, and derived facilitator summaries in place for now. Those surfaces are documented as deferred so Step 2 and Step 3 can remove the persistent model first without mixing schema collapse with API contract cleanup that belongs to Phase 5.
-- Step 2 (`Noodle Catapult`): Removing the SQLAlchemy model required eliminating import-time eager-load references and the startup table-creation shim in the same step; otherwise the application could not import after the model registry stopped exposing `MeetingFacilitator`. Follow-on runtime helper cleanup was completed in Step 3.
-- Step 3 (`Noodle Catapult`): The active runtime cleanup intentionally leaves facilitator-named response schemas and derived compatibility output classes in place because those are outward-facing API contract cleanup work for Phase 5, not runtime dependencies on the removed persistence model.
-- Step 4 (`Noodle Catapult`): Facilitator-shaped API response names and create/import compatibility inputs remain by design for Phase 5. This step prunes only active code and tests that still depended on the removed persisted facilitator model or relationship objects.
-- Step 5 (`Noodle Catapult`): The final verification run includes two expected guest-join skips because guest access remains feature-flagged; they are not Phase 4 schema/runtime collapse failures.
+- Implementing the core logic as the `ai-decision` step kind handler, the prompt-rendering helper that consumes `context_bundle_keys`, the schema-validation invocation, and the `review_required` composition glue, all tagged with the `Insolent Metronome` canary at the dispatch site.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with assertions that cover the happy path (valid response captured into the bundle stream), the schema-violation retry path (one retryable failure followed by success, demonstrating Phase 3 Step 4 reuse), the budget-exhaustion structured-failure path, and the `review_required` composition (engine holds the result pending the following `facilitator-decision`); also extend the Step 1 loader test coverage to confirm a document with `review_required: true` but no following `facilitator-decision` is rejected at load time.
+- Updating docstrings and documentation so the spec's Engine section gains an `ai-decision` subsection that explicitly cites the Phase 3 reliability path as the retry substrate, names the `review_required` composition pattern as the recommended methodological response to AI unreliability, and cross-references `app/services/ai_provider.py` for the provider integration.
 
 ## Phase Exit Criteria
 
-Phase 4 clears only when the following command passes 100%:
+Phase 4 clears only when the following command reaches `[100%]` and finishes without failures:
 
 ```bash
-PYTHONPATH=. ./venv/bin/pytest app/tests/test_auth.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_transfer_api.py app/tests/test_pages.py app/tests/test_frontend_smoke.py -v
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_orchestration_engine.py app/tests/test_agenda_validator.py app/tests/test_bundle_transforms.py app/tests/test_convergence_predicates.py app/tests/test_reliability_rehearsal.py app/tests/test_activity_plugins.py app/tests/test_meeting_manager.py app/tests/test_meeting_state.py app/tests/test_api_meetings.py app/tests/test_transfer_api.py app/tests/test_transfer_metadata.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_ai_provider_config.py app/tests/test_frontend_smoke.py -v
 ```
 
+(If Step 1's orchestration-document validator coverage is housed in a focused new module such as `app/tests/test_orchestration_schema.py` rather than appended to `test_agenda_validator.py`, append that module to the command before clearing the phase.)
+
 Passing this command means:
-- the active schema and runtime model no longer rely on persisted per-meeting facilitator assignments,
-- the selected existing pytest modules have been updated instead of unnecessarily duplicated,
-- meeting workflows still function after removal of the facilitator-assignment model,
-- and documentation/docstrings describe the collapsed persistent model accurately.
 
----
+- `docs/schemas/orchestration.schema.json` exists, covers `sequence`, `iterate`, `activity`, `facilitator-decision`, and `ai-decision`, reserves `conditional` as deferred, and is enforced on document load by the Step 1 loader with structured error reporting.
+- `OrchestrationEngineStrategy` exists alongside `LinearAgendaStrategy` in `app/services/agenda_strategy.py` and implements the Phase 2 `AgendaStrategy` interface without adding any new public hook beyond what Phases 2 and 3 specified.
+- The `activity`, `iterate`, `facilitator-decision`, and `ai-decision` step kinds are implemented; the trivial brainstorm→vote orchestration runs end-to-end and produces bundles that conform to Phase 1's `bundle_payload.schema.json`; the iterate step uses Phase 3's `BundleTransform` and `ConvergencePredicate` registries; the ai-decision step uses Phase 3's server-side reliability execution analogue.
+- DP9 holds in practice: `app/plugins/base.py` is unchanged, every built-in plugin manifest is unchanged from its Phase 1 audited state, and the trivial demonstration plus every step-kind test passes without touching plugin internals.
+- No test that previously passed regresses, and no test docstring, module docstring, schema header, or fixture introduced under Phase 4 omits the `Insolent Metronome` canary where the step requirements call for it.
 
-*End of Phase 4 execution file. This phase removes the persistent facilitator model and its runtime dependencies; outward-facing compatibility cleanup remains Phase 5 work.*
+## Scope Boundary
+
+This phase covers only the engine, the loader, and the three master-plan-committed step kinds plus the `iterate` control-flow primitive. The following items are explicitly deferred to later phases of [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md):
+
+- The `conditional` control-flow primitive — defined-but-deferred at the schema layer in this phase; runtime implementation is future work and may not ship at all, per the master plan and the `02_ORCHESTRATION_ENGINE.md` stretch-goal designation.
+- The realtime broadcast envelope that informs connected clients when the engine mutates the agenda (creates iteration rounds, advances past a decision); the frontend cache-invalidation work; and the facilitator-decision UI surface that lets a facilitator actually respond from the dashboard — Phase 5.
+- `orchestrations/delphi.json`, the end-to-end Delphi run with synthetic participants, the `IQR-stability`-driven convergence demonstration as a real method instantiation, and `docs/DELPHI_VALIDATION.md` — Phase 6.
+- Empirical evaluation with real participant groups, additional step kinds beyond the three named here, parallel branches, sub-orchestration invocation, variable bindings, expression evaluation, event handlers, timers, and compensation/rollback — out of scope for the entire master plan per its Scope Boundary.

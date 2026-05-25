@@ -1,102 +1,85 @@
-# PHASE 2 [COMPLETE] — Authorization Surface Unification
+# PHASE 2 — Strategy Seam Introduction
 
-**Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
+**Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
+**Discovery reference:** [plans/00_DISCOVERY.md](../00_DISCOVERY.md)
+**Elaboration reference:** [plans/02_ORCHESTRATION_ENGINE.md](../02_ORCHESTRATION_ENGINE.md)
 
-**Phase objective:** Collapse the backend’s fragmented meeting-authorization logic into one canonical capability model so every meeting-scoped enforcement path derives from the same durable facts: system role, meeting ownership, and roster membership.
+**Phase objective:** Introduce the `AgendaStrategy` abstraction between the routers / realtime broadcasts / activity-pipeline and the underlying agenda data, and reproduce all existing linear-agenda behavior behind it without any observable change. This phase converts a load-bearing absence — there is no server-side "advance" function today (see [plans/00_DISCOVERY.md §4.2](../00_DISCOVERY.md)) — into a single well-defined extension point that Phases 3 through 6 will build on. It also guarantees that mid-meeting `AgendaActivity` row creation is safe regardless of which caller initiates it, so the future orchestration engine can mint iteration rounds without violating uniqueness constraints.
 
 ## Phase Canary
 
-**Gravy Parachute**
+**Smug Otter**
 
-Use this exact two-word canary in Phase 2 notes, commit messages, test docstrings, and validation artifacts tied to this phase.
+Use this exact two-word canary in Phase 2 notes, commit messages, module docstrings introduced by this phase, test docstrings, and validation artifacts tied to this phase.
 
 ## Atomic Steps
 
-### Step 1 [DONE] — Define the Canonical Backend Capability Model
-Translate the Phase 1 contract into one backend capability model that explicitly represents the meeting-scoped decisions the application makes: view access, facilitation authority, meeting-config authority, roster-management authority, activity-control authority, activity-roster authority, delete authority, and any backend-facing “is facilitator” derivative needed for current contracts. The model must depend only on `User.role`, `Meeting.owner_id`, and roster membership, even if legacy storage still exists during this phase.
+### Step 1 — Author the `AgendaStrategy` Interface and Binding
+Author `app/services/agenda_strategy.py` containing the `AgendaStrategy` abstract base class. The interface must expose exactly the consultation points the existing codebase needs, framed so a future `OrchestrationEngineStrategy` can answer the same questions over a non-linear topology without altering the interface: a hook that resolves the prior activity for a given activity (replacing the implicit definition baked into [`_find_previous_activity`](../../app/services/activity_pipeline.py) at `app/services/activity_pipeline.py:59-68`), a hook that lists the agenda in the order the strategy considers canonical (which `LinearAgendaStrategy` will define as `order_index`-sorted), a hook that reports whether the agenda is logically complete (currently no such concept exists per [00_DISCOVERY.md §3.6](../00_DISCOVERY.md) — the linear strategy will model completion as "last `order_index` row has closed"), an `on_activity_close` hook so the strategy can record completion events that future engine strategies will need, and a hook that admits mid-meeting activity creation through the manager (so callers do not insert rows behind the strategy's back).
+
+A binding mechanism must select which strategy a given meeting uses. The default for every existing meeting and every new meeting authored in Phase 2 is `LinearAgendaStrategy`; engine-strategy binding is out of scope here. The mechanism may be a per-meeting accessor, a service-locator function keyed off meeting attributes, or any equivalent design, provided that exactly one strategy is bound to a meeting at any time and the binding is deterministic. The interface module must carry the `Smug Otter` canary in its module docstring.
+
+This step authors the interface and the binding shell only; no consumer is rewired yet. The interface should not assume linearity even though the only implementation in this phase is linear.
 
 Conclude this step by:
-- Implementing the core logic as the canonical backend capability model in one authoritative location.
-- Creating or updating the relevant pytest file, preferring edits to existing backend/auth pytest modules over introducing a new pytest file unless an existing module cannot reasonably house the capability-model coverage.
-- Updating docstrings and documentation so the model’s inputs, outputs, and Phase 2 `Gravy Parachute` intent are unambiguous.
+- Implementing the core logic as the new `app/services/agenda_strategy.py` module with the `AgendaStrategy` ABC, the binding mechanism, and a `Smug Otter`-tagged module docstring.
+- Creating or updating the relevant pytest file by extending `app/tests/test_meeting_state.py` with assertions that confirm the binding mechanism produces a strategy for every meeting touched by the existing meeting-state fixtures; do not introduce a new pytest module since `test_meeting_state.py` already houses meeting-scoped state coverage.
+- Updating docstrings and documentation so the new interface module, the activity-pipeline module (`app/services/activity_pipeline.py`), and `docs/ACTIVITY_CONTRACT_SPEC.md` (authored in Phase 1) each cross-reference the strategy seam and identify Phase 2 by its `Smug Otter` canary.
 
-### Step 2 [DONE] — Rewire the Core Meeting Access Gates
-Replace the main meeting-access and meeting-management decision points with the canonical capability model. This includes the canonical meeting access helper, meeting update and activity-control checks, participant-management gates, archive/restore semantics, and any backend path that currently branches directly on facilitator rows or ad hoc owner/facilitator combinations.
+### Step 2 — Implement `LinearAgendaStrategy` with Behavior Parity
+Implement `LinearAgendaStrategy` inside `app/services/agenda_strategy.py` so it reproduces the current linear behavior exclusively through the interface authored in Step 1: prior-activity resolution uses `order_index` adjacency (matching today's `_find_previous_activity` semantics line-for-line), the canonical agenda ordering is `order_index`-sorted, completion is defined as "the highest-`order_index` activity has produced an `output` bundle", and the `on_activity_close` hook is a no-op for the linear case (it records the close for later strategies but performs no progression action, since today's progression is client-driven per [00_DISCOVERY.md §4.2](../00_DISCOVERY.md)). The mid-meeting creation hook delegates straight to `app/data/meeting_manager.py`'s existing `add_agenda_activity`, which already handles `_resequence_agenda` correctly per [00_DISCOVERY.md §3.4](../00_DISCOVERY.md).
 
-Conclude this step by:
-- Implementing the core logic by routing the core meeting gates through the canonical capability model.
-- Creating or updating the relevant pytest file, favoring surgical updates to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_meeting_manager.py`, and `app/tests/test_auth.py` instead of creating a new test file.
-- Updating docstrings and documentation so gate semantics now describe the unified backend authority model rather than legacy facilitator-row behavior.
-
-### Step 3 [DONE] — Rewire Activity and Cross-Router Authorization
-Apply the same capability model to the meeting-scoped activity routers and adjacent backend surfaces identified in discovery, including brainstorming, voting, rank-order voting, categorization, transfer/import-export access, and meeting-context user-directory decisions. The target is behavioral consistency across all router families, not just the main meetings router.
+Author a dedicated parity test that compares, for a representative set of agenda topologies (single activity, two activities, an activity followed by a deleted-then-re-added activity, an activity reordered after creation), the answers produced by `LinearAgendaStrategy` against the answers produced by direct walks of `meeting.agenda_activities` sorted by `order_index`. The parity test is the load-bearing evidence that Step 3's consumer rewiring will not introduce behavioral drift.
 
 Conclude this step by:
-- Implementing the core logic by replacing per-router ad hoc facilitator checks with the canonical capability model wherever the phase scope requires.
-- Creating or updating the relevant pytest file, preferring edits to existing router-specific suites such as `app/tests/test_brainstorming_api.py`, `app/tests/test_voting_api.py`, `app/tests/test_rank_order_voting_api.py`, `app/tests/test_categorization_api.py`, `app/tests/test_transfer_api.py`, and related backend tests instead of adding new pytest modules.
-- Updating docstrings and documentation so router-level authorization descriptions match the same meeting authority language used in the canonical model.
+- Implementing the core logic as the `LinearAgendaStrategy` class inside `app/services/agenda_strategy.py` and routing the binding mechanism's default to it.
+- Creating or updating the relevant pytest file by extending `app/tests/test_meeting_manager.py` with the parity-coverage assertions described above; this module already houses agenda-shape coverage, so no new pytest module is required.
+- Updating docstrings and documentation so `app/services/agenda_strategy.py`, the activity-pipeline module, and `docs/ACTIVITY_CONTRACT_SPEC.md` each describe `LinearAgendaStrategy` as the canonical reference implementation of the seam and identify it under the `Smug Otter` canary.
 
-### Step 4 [DONE] — Normalize Backend-Derived Capability Outputs
-Unify the backend-produced capability signals that other layers consume, especially dashboard meeting capability fields, meeting-context user flags, and any serialized “is facilitator” derivative that remains temporarily necessary before the Phase 3 interface cleanup. At the end of this step, any retained derived flag must be computed from the canonical capability model rather than legacy facilitator rows.
+### Step 3 — Channel All Existing Consumers Through the Strategy
+Refactor every site enumerated in [plans/00_DISCOVERY.md §3.3 and §9](../00_DISCOVERY.md) so it consults the strategy bound to the meeting rather than walking `meeting.agenda_activities` and `order_index` directly. The sites in scope are: the activity-pipeline's `_find_previous_activity` (which becomes a call to the strategy's prior-activity hook); the GET handler at [`app/routers/meetings.py:970`](../../app/routers/meetings.py); the export iteration at [`app/routers/meetings.py:298`](../../app/routers/meetings.py); the realtime broadcast at [`app/routers/realtime.py:52-54`](../../app/routers/realtime.py); the transfer-router resolver at [`app/routers/transfer.py:56-64`](../../app/routers/transfer.py); the meeting-manager's `list_agenda` at [`app/data/meeting_manager.py:349-353`](../../app/data/meeting_manager.py); and any other site grep reveals that walks the relationship or assumes `order_index` total ordering.
 
-Conclude this step by:
-- Implementing the core logic by deriving backend-facing capability outputs exclusively from the canonical model.
-- Creating or updating the relevant pytest file, favoring targeted edits to existing meeting-manager, meetings API, and related backend suites over creating a new pytest file.
-- Updating docstrings and documentation so any surviving derived capability fields are explicitly documented as outputs of the unified model, not separate sources of truth.
+The narrow exception is presentation-only sorts that have no behavioral consequence — for example, a final cosmetic sort applied to a list the strategy already returned in canonical order. Such sorts are acceptable but must be commented in code as presentation-only and must not gate behavior. The `_resequence_agenda` two-pass renumbering at `app/data/meeting_manager.py:265-291` remains in the data layer and is consulted by the strategy's mid-meeting creation hook; it is not rewired through the strategy because its concern is storage-layer uniqueness, not agenda interpretation.
 
-### Step 5 [DONE] — Lock the Backend Verification Boundary
-Define and verify the exact backend-oriented command that certifies this phase. Phase 2 is complete only when the canonical capability model is the sole meeting-scoped backend authority source, all selected backend suites pass, and no router/data enforcement path within scope still depends on per-meeting facilitator rows for authorization.
+The activity-pipeline's `_find_previous_activity` is removed in favor of strategy consultation, but its linear semantics are preserved by `LinearAgendaStrategy` — the load-bearing assumption that breaks under iteration (BP-1 in [00_DISCOVERY.md §16](../00_DISCOVERY.md)) is moved behind the seam, not yet fixed; Phase 3 will replace it.
 
 Conclude this step by:
-- Implementing the core logic as the final Phase 2 verification checklist and completion notes in this file.
-- Creating or updating the relevant pytest file so the backend authorization coverage needed for Phase 2 is included in the exit command below without unnecessary pytest file proliferation.
-- Updating docstrings and documentation so the verification command, intended authority model, and Phase 2 canary remain aligned.
+- Implementing the core logic as the consumer rewiring across `app/services/activity_pipeline.py`, `app/routers/meetings.py`, `app/routers/realtime.py`, `app/routers/transfer.py`, and `app/data/meeting_manager.py`, with each rewired call site marked by a brief `Smug Otter` comment so the seam introduction is auditable.
+- Creating or updating the relevant pytest file by extending `app/tests/test_meeting_manager.py`, `app/tests/test_api_meetings.py`, `app/tests/test_activity_plugins.py`, and `app/tests/test_transfer_api.py` with assertions that the rewired consumers produce identical observable behavior under `LinearAgendaStrategy`; introducing a new pytest module is not warranted because each rewired site already has a pinning suite.
+- Updating docstrings and documentation so each rewired module's docstring records that agenda consultation now flows through `AgendaStrategy`, and so `docs/ACTIVITY_CONTRACT_SPEC.md` cross-references the seam from its DP-relevant sections.
 
-## Phase 2 Backend Scope Map
+### Step 4 — Mid-Meeting Creation Safety and Full-Suite Regression
+Establish explicit test coverage that confirms `AgendaActivity` rows can be created safely while a meeting is running, from every legitimate caller path: router-driven (`POST /api/meetings/{id}/agenda`), strategy-driven (calls into the strategy's mid-meeting creation hook from within service code), and manager-direct (the future engine path that will invoke `add_agenda_activity` through the strategy seam). The test must exercise insertion into a non-empty agenda, immediate resequence behavior, ID minting via `_next_activity_identifier` per [00_DISCOVERY.md §3.5](../00_DISCOVERY.md), and the realtime broadcast envelope so connected clients learn about the inserted row through the existing `agenda_update` path. These assertions are the foundation Phase 3 will rely on when it introduces iteration-driven row creation; if any of them are weak now, BP-5 in [00_DISCOVERY.md §16](../00_DISCOVERY.md) becomes a Phase 3 surprise.
 
-The following backend surfaces must be brought under the canonical capability model during this phase:
+After mid-meeting creation safety is pinned, execute the complete pre-existing test suite and confirm zero regressions. Any test that fails under the rewiring must be diagnosed: a test that legitimately encoded a since-changed assumption is updated with the change called out in its docstring; a test that fails because of a behavioral drift in the strategy is a blocker that Step 2 or Step 3 must repair. Phase 2's central success criterion is "no observable behavior change to API clients, realtime clients, or the activity pipeline" — Step 4 is where that criterion is enforced.
 
-| Surface | Required Phase 2 outcome |
-|---|---|
-| Main meeting access gate | Canonical capability model decides view/facilitation authority |
-| Meeting update / archive / restore / control endpoints | No ad hoc facilitator-row checks remain in enforcement logic |
-| Participant and activity-roster management | Authority derives from canonical model |
-| Brainstorming / voting / rank-order voting / categorization | Meeting-scoped authority decisions are consistent with the canonical model |
-| Transfer / export / meeting-context user-directory behavior | Authorization uses the same canonical model |
-| Dashboard `is_facilitator` and similar backend-derived flags | Derived from canonical model only |
-
-## Phase 2 Non-Goals
-
-This phase does **not** complete the following:
-
-- Frontend template and JavaScript gate cleanup, which belongs to Phase 3.
-- Physical removal of `MeetingFacilitator`, `meeting_facilitators`, or ORM relationships, which belongs to Phase 4.
-- Export/import contract cleanup and legacy serialization cleanup, which belongs to Phase 5.
-
-## Technical Deviations Log
-
-- Step 1 introduces the canonical capability model in `app/services/meeting_authorization.py` and routes the existing meeting resolver plus the meeting-directory manage helper through it, but it does not yet replace all router-local facilitator checks. The remaining cross-router rewiring stays explicitly deferred to Phase 2 Steps 2 through 4.
-- Step 1 keeps a compatibility import path through `app/data/meeting_manager.py` so existing backend callers do not need a broad rename in the same change. The authoritative logic now lives in the dedicated service module even though some call sites still import the resolver indirectly.
-- Step 2 rewires the remaining core meeting gates in `app/routers/meetings.py`, but it intentionally leaves non-core page-route gate cleanup and meeting-context derived flag normalization for later phases. Archive and restore are now treated as delete-authority operations under the canonical model, which is stricter than the earlier generic facilitator gate and aligns those endpoints with the Phase 1 contract.
-- Step 3 rewires the brainstorming, voting, rank-order voting, transfer, and meeting-directory router families onto the canonical capability model, but it does not yet normalize every backend-derived output field those routes serialize. Result-visibility and directory badge semantics now derive from the canonical model while broader payload cleanup remains scheduled for Step 4.
-- Step 4 normalizes meeting response, dashboard, and meeting-directory capability outputs so retained facilitator-facing flags now derive from the canonical model even when legacy facilitator rows still exist in storage. The backend continues to preserve matching legacy facilitator identifiers in serialized summaries when they correspond to canonical facilitators, but row presence alone no longer grants serializer visibility or meeting-context badge status.
-- Step 5 locks the backend verification boundary around the full Phase 2 scope map, including the meeting-directory suite added in Step 4. The final certification run reaches `[100%]` with the guest-join feature-flag tests reported as skipped by design, so the boundary now treats those skips as expected non-failures rather than carving them out with a separate filter.
+Conclude this step by:
+- Implementing the core logic as the mid-meeting-creation test scaffolding (placed in `app/tests/test_meeting_manager.py` and `app/tests/test_api_meetings.py`) plus any final wiring corrections the full-suite run surfaces, all carrying `Smug Otter` in their docstrings.
+- Creating or updating the relevant pytest file by extending the two suites named above; do not introduce a new test module since the existing modules already own agenda-mutation coverage.
+- Updating docstrings and documentation so the activity-pipeline, the strategy module, the meeting-manager, and `docs/ACTIVITY_CONTRACT_SPEC.md` each record that mid-meeting `AgendaActivity` insertion via the strategy seam is contractually safe under `LinearAgendaStrategy`.
 
 ## Phase Exit Criteria
 
 Phase 2 clears only when the following command reaches `[100%]` and finishes without failures:
 
 ```bash
-PYTHONPATH=. ./venv/bin/pytest app/tests/test_auth.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_api_user_directory.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_transfer_api.py -v
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_meeting_state.py app/tests/test_meeting_manager.py app/tests/test_api_meetings.py app/tests/test_activity_plugins.py app/tests/test_transfer_api.py app/tests/test_transfer_metadata.py app/tests/test_transfer_transforms.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_frontend_smoke.py -v
 ```
 
 Passing this command means:
-- the canonical backend capability model is implemented and in active use,
-- the selected existing pytest modules have been updated instead of unnecessarily duplicated,
-- backend authorization is consistent across the meeting and activity router surface in scope for this phase,
-- documentation/docstrings describe one unified backend authority model,
-- and feature-gated guest join tests may report `SKIPPED` when the guest entry flag is disabled, but no authorization-path test in scope may fail.
 
----
+- The `AgendaStrategy` interface exists at `app/services/agenda_strategy.py` and `LinearAgendaStrategy` is bound by default to every meeting touched by the suite.
+- Every consumer enumerated in Step 3 routes through the strategy seam, with the narrow presentation-sort exception documented in code where it is used.
+- The parity test in `app/tests/test_meeting_manager.py` confirms that `LinearAgendaStrategy` produces the same answers as direct `agenda_activities` walks across the representative topologies.
+- The mid-meeting creation tests in `app/tests/test_meeting_manager.py` and `app/tests/test_api_meetings.py` confirm safe insertion under the seam from every legitimate caller.
+- No test that previously passed regresses, and no test docstring or fixture name introduced under Phase 2 omits the `Smug Otter` canary where the step requirements call for it.
 
-*End of Phase 2 execution file. This phase unifies backend authorization logic; it does not yet remove the persistent facilitator schema or clean up frontend gating.*
+## Scope Boundary
+
+This phase covers only the introduction of the agenda strategy seam and the channeling of existing consumers through it. The following items are explicitly deferred to later phases of [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md):
+
+- Replacing the linear "previous activity" assumption with a non-linear resolution (BP-1) and admitting iteration discriminators on `ActivityBundle` (BP-3) — Phase 3.
+- Authoring `BundleTransform` or `ConvergencePredicate` interfaces and the server-side reliability execution analogue (BP-7) — Phase 3.
+- Authoring the orchestration-document schema, `OrchestrationEngineStrategy`, or any step kind beyond what `LinearAgendaStrategy` already represents — Phase 4.
+- Engine-driven realtime broadcast envelopes that go beyond the existing `agenda_update` shape, and any facilitator-decision UI work — Phase 5.
+- `orchestrations/delphi.json`, the end-to-end Delphi test, or `docs/DELPHI_VALIDATION.md` — Phase 6.

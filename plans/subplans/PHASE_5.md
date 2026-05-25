@@ -1,140 +1,85 @@
-# PHASE 5 [COMPLETE] — Compatibility and Contract Cleanup
+# PHASE 5 — Realtime and Frontend Coherence
 
-**Parent plan:** [plans/01_MASTER_PLAN.md](plans/01_MASTER_PLAN.md)
+**Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
+**Discovery reference:** [plans/00_DISCOVERY.md](../00_DISCOVERY.md)
+**Elaboration reference:** [plans/02_ORCHESTRATION_ENGINE.md](../02_ORCHESTRATION_ENGINE.md)
 
-**Phase objective:** Normalize outward-facing contracts so active APIs, exports, imports, serialized meeting payloads, and tests reflect the collapsed authorization model without leaving legacy facilitator semantics in the live contract.
+**Phase objective:** Ensure that engine-driven agenda mutations and engine-driven state transitions reach connected clients with the same fidelity as facilitator-driven ones, and supply the minimal facilitator-facing UI surface that the `facilitator-decision` and `ai-decision review_required` step kinds require to function in practice. Phase 5 resolves the two client-coherence breaking points identified in [plans/00_DISCOVERY.md §16](../00_DISCOVERY.md): the realtime broadcast assumption around a stable linear agenda (BP-5) and the frontend agenda cache that refreshes only on `agenda_update` envelopes (BP-10). When this phase clears, the engine authored in Phase 4 is operable through the existing meeting UI without participants experiencing divergent server-client state and without facilitators needing to refresh the page to respond to a decision.
 
 ## Phase Canary
 
-**Pickle Trombone**
+**Loquacious Pelican**
 
-Use this exact two-word canary in Phase 5 notes, commit messages, test docstrings, and validation artifacts tied to this phase.
+Use this exact two-word canary in Phase 5 notes, commit messages, module docstrings introduced by this phase, UI-template comments, JavaScript module headers, test docstrings, and validation artifacts tied to this phase.
 
 ## Atomic Steps
 
-### Step 1 [DONE] — Inventory the Remaining External Contract Surface
-Identify every outward-facing contract element that can still leak the old facilitator model after Phase 4, including meeting payload fields, dashboard summaries, export bundle contents, transfer/import schemas, and any test assertions that still validate legacy facilitator artifacts as if they were part of the intended active API. The output of this step is a complete cleanup ledger for all remaining public-facing contract debt.
+### Step 1 — Backend Broadcast Envelope for Engine-Driven Mutations
+Every engine-driven change to the agenda — minting an `AgendaActivity` row for a new iteration round (per Phase 3's iteration storage model), advancing the engine's step pointer past a `facilitator-decision` or `ai-decision` resolution, or returning to the prior step inside an `iterate` block — must produce a realtime broadcast envelope identical in shape to the one a facilitator-initiated HTTP call already produces today at [`app/routers/realtime.py:52-55`](../../app/routers/realtime.py) and via the meeting-state patch path at [`app/routers/realtime.py:165-172`](../../app/routers/realtime.py). The engine must not invent a parallel envelope, a new WebSocket message type, or a new state-update verb; clients must learn about engine activity through the same pipes they already listen on.
+
+The implementation work is therefore the inverse of inventing a new surface: it is wiring every engine-side mutation through the existing broadcast helpers. The `OrchestrationEngineStrategy` from Phase 4 emits broadcasts only as a side effect of its existing hooks (`next_activity`, `on_activity_close`) plus the new resumption entry point for `facilitator-decision`; no new public hook is added to the `AgendaStrategy` interface. The narrow exception is the resumption entry point itself, which must broadcast the chosen decision option (so paused clients see the resume reflected immediately) — this broadcast reuses the `agenda_update` envelope plus a meeting-state patch identical in shape to a facilitator-driven `currentActivity` advance.
+
+Connected clients that do nothing must never need to reconnect or poll to learn about engine-driven changes; this is the load-bearing assertion the test extensions will pin.
 
 Conclude this step by:
-- Implementing the core logic as the complete Phase 5 ledger of remaining API/export/import/test contract elements tied to the old facilitator model.
-- Creating or updating the relevant pytest file, preferring edits to existing API/transfer/meeting pytest modules over creating a new pytest file unless an existing suite cannot reasonably carry the contract-cleanup coverage.
-- Updating docstrings and documentation so the Phase 5 `Pickle Trombone` scope clearly distinguishes active contract cleanup from narrowly-isolated backward-compatibility handling.
+- Implementing the core logic as the wiring inside `OrchestrationEngineStrategy` and the surrounding meeting state path that ensures engine-driven mutations emit existing broadcast envelopes, with the `Loquacious Pelican` canary appearing at each emit site as a brief code comment so the wiring is auditable.
+- Creating or updating the relevant pytest file by extending `app/tests/test_meeting_state.py` and `app/tests/test_api_meetings.py` with assertions that confirm an engine-driven mutation produces a broadcast envelope identical in shape to the facilitator-driven equivalent; no new pytest module is warranted, since both modules already own realtime-adjacent coverage.
+- Updating docstrings and documentation so `app/routers/realtime.py`, `app/services/agenda_strategy.py`, and `docs/ACTIVITY_CONTRACT_SPEC.md` each record that engine-driven mutations reuse the existing broadcast envelope and explicitly identify BP-5 as resolved under `Loquacious Pelican`.
 
-Step 1 external contract ledger for `Pickle Trombone`:
+### Step 2 — Frontend Cache Invalidation and Non-Linear Topology Rendering
+Update the meeting-page JavaScript so that `state.agenda` and `state.agendaMap` accept the agenda topology produced by Phase 3's iteration storage model and Phase 4's engine — specifically, multiple activities that share a logical step identity but differ by iteration round, and activity rows minted mid-meeting by the engine. The frontend must continue to reflect engine-driven mutations purely through the existing `agenda_update` listener at the location identified in [plans/00_DISCOVERY.md §14](../00_DISCOVERY.md); it must not need a new WebSocket subscription or a polling path. When the engine mints a round-N activity row, the rendered agenda must surface that row in the right position relative to its round-(N-1) predecessor (rendered as a sibling, labeled by round, or whatever presentation choice the implementer takes, provided the choice is consistent and documented). The `currentActivity` resolution path at [`app/static/js/meeting.js`](../../app/static/js/meeting.js) must continue to identify exactly one active activity row at any time, matching the in-memory `MeetingState.current_activity` field surfaced by the backend.
 
-| Surface | Current external contract debt | Cleanup target |
-|---|---|---|
-| `app/schemas/meeting.py` | `MeetingFacilitatorSummary`, `facilitator_ids`, `facilitator_user_ids`, `facilitators`, `facilitator_names`, and `is_owner` still shape active meeting/dashboard responses around facilitator terminology. | Step 2 removes active response fields or renames them to collapsed owner/authority terminology. |
-| `app/services/meeting_authorization.py` | `MeetingFacilitatorOutput`, `MeetingFacilitatorOutputs`, and `derive_meeting_facilitator_outputs` still produce facilitator-shaped response metadata even though the data is capability-derived. | Step 2 replaces derived facilitator metadata with collapsed owner/authority presentation metadata. |
-| `app/data/meeting_manager.py` | Dashboard payloads still emit `facilitator_names` and `facilitators`. `create_meeting`, `add_meeting`, and `update_meeting` still accept facilitator-oriented compatibility inputs. | Step 2 removes active dashboard response fields; Step 4 resolves create/update contract naming that remains after import compatibility is isolated. |
-| `app/routers/meetings.py` | `MeetingCreateRequest.co_facilitator_ids`, update `facilitator_ids`, restricted-field language, export `facilitators`, and import reader mapping of legacy `facilitators` into `additional_facilitator_ids` remain visible. | Step 2 removes active API response/update semantics; Step 3 isolates legacy import/export handling so new exports stop writing old structures. |
-| `app/static/js/dashboard.js` and `app/static/js/meeting.js` | Frontend display logic still reads `facilitators`, `facilitator_names`, `facilitator.is_owner`, and `meeting.facilitator`. | Step 2 updates consumers to owner/authority fields once backend responses expose the cleaned contract. |
-| `app/templates/create_meeting.html` | Create-meeting payload still sends `co_facilitator_ids: []` as an active request shape. | Step 4 removes stale create-contract payload language unless Step 2 replaces it earlier. |
-| `app/tests/test_api_meetings.py`, `app/tests/test_meeting_manager.py`, `app/tests/test_api_user_directory.py`, `app/tests/test_pages.py`, and frontend smoke tests | Existing assertions still require facilitator-shaped response fields and names as intended behavior. | Steps 2-4 rewrite tests to assert owner/capability/participant contract fields and retain only isolated legacy import-reader tests. |
-| Export fixture `EXPORT_ZIP_BASE64` in `app/tests/test_api_meetings.py` | Legacy import fixture still includes facilitator-bearing serialized data. | Step 3 keeps this only as a one-way legacy import fixture and verifies new exports do not write facilitator structures. |
-
-### Step 2 [DONE] — Remove Legacy Facilitator Semantics from Active API Responses
-Clean the live API surface so active responses no longer expose `facilitator_links`, facilitator-assignment arrays, `is_owner`-style facilitator-row semantics, or equivalent remnants of the old model. Any capability or meeting-authority fields that remain must describe the collapsed model directly and be consumed as such by dependent code and tests.
+Participants who are not facilitators must see no orchestration-specific UI affordances unless the orchestration document explicitly requests it; the participant view continues to behave as it did before the engine existed, with the only observable difference being whichever rendering choice the agenda topology takes for iteration rounds.
 
 Conclude this step by:
-- Implementing the core logic by removing old facilitator semantics from active API response contracts.
-- Creating or updating the relevant pytest file, favoring surgical edits to existing suites such as `app/tests/test_api_meetings.py`, `app/tests/test_api_participants.py`, `app/tests/test_meeting_manager.py`, and related API-facing tests instead of creating a new test file.
-- Updating docstrings and documentation so active API contracts and test descriptions describe only the collapsed authority model.
+- Implementing the core logic as the meeting.js (and any adjacent JavaScript module) changes that accept the engine-driven topology and render iteration rounds in a consistent, documented form, with the `Loquacious Pelican` canary appearing in the header comment of any JavaScript module substantially modified.
+- Creating or updating the relevant pytest file by extending `app/tests/test_frontend_smoke.py` and `app/tests/test_pages.py` with assertions that the rendered agenda accommodates iteration rounds and engine-driven inserts without throwing or producing duplicated entries; no new pytest module is warranted, as both modules already own meeting-page rendering coverage.
+- Updating docstrings and documentation so [docs/FRONTEND_DEV_GUIDE.md](../../docs/FRONTEND_DEV_GUIDE.md) records the agreed rendering convention for iteration rounds, so any HTML template comment relevant to the agenda region cites the convention, and so the spec's Engine section gains a "Frontend coherence" subsection that names BP-10 as resolved.
 
-Step 2 active response cleanup for `Pickle Trombone`:
+### Step 3 — Facilitator-Decision and AI-Decision Review UI Surface
+Author the minimal facilitator-facing UI surface that lets a facilitator respond to a paused `facilitator-decision` step and approve or reject a `review_required` `ai-decision` result. Because the master plan ties these together — `ai-decision review_required` is resolved by the immediately-following `facilitator-decision` step authored in the orchestration document, per Phase 4 — they share a single UI surface rather than two parallel ones.
 
-| Surface | Step 2 result |
-|---|---|
-| `app/services/meeting_authorization.py` | Replaced facilitator-shaped presentation helpers with `derive_meeting_authority_outputs`, `MeetingAuthorityOutput`, and `MeetingAuthorityOutputs`. These derive owner and meeting-authority metadata from the collapsed capability model without emitting facilitator assignment rows. |
-| `app/schemas/meeting.py` | Replaced active `MeetingResponse` and dashboard list fields `facilitator_user_ids`, `facilitators`, `facilitator_names`, and `facilitator` with `authority_user_ids`, `meeting_authorities`, `authority_names`, and `owner`. |
-| `app/data/meeting_manager.py` | Dashboard payload construction now emits owner and meeting-authority fields instead of facilitator-shaped summary arrays. |
-| `app/static/js/dashboard.js` and `app/static/js/meeting.js` | Frontend consumers now read `owner`, `meeting_authorities`, and `authority_names`; the meeting overview label now says `Authority`. |
-| `app/tests/test_api_meetings.py` and `app/tests/test_meeting_manager.py` | Active API/dashboard assertions now verify the authority fields and explicitly reject the removed facilitator-shaped response keys. |
+The minimal viable shape is a modal (or equivalent disclosed region) in the facilitator dashboard that appears when the engine pauses on a `facilitator-decision` step. The modal surfaces the `prompt` declared in the document, the `context_bundle_keys` rendered in a readable form (item content plus provenance per Phase 1's bundle schema), and the typed `options` as discrete affordances. Selecting an option calls the resumption entry point authored in Phase 4 Step 4 and immediately reflects the resumption in the agenda through the Step 1 broadcast envelope. When the preceding step in the document was an `ai-decision` with `review_required: true`, the modal additionally surfaces the AI's proposed result (validated against its `output_schema` per Phase 4 Step 5) so the facilitator's decision is informed by it. Approval and rejection are themselves expressible as typed options on the `facilitator-decision` step — the document author, not the UI, chooses the option labels.
 
-### Step 3 [DONE] — Isolate Legacy Import/Export Compatibility
-Rewrite export and transfer-facing contracts so newly produced artifacts no longer encode the old facilitator model while preserving only the minimum one-way compatibility needed to read older serialized meeting data. Legacy compatibility must be explicitly isolated to compatibility handling and must not re-enter the active authorization path or active API contract.
+The UI does not invent any new wire format. It calls existing endpoints (or one new endpoint that fits the existing router conventions if no existing endpoint accommodates the resumption call) and reacts to the standard broadcast envelopes. Aesthetic polish, animation, accessibility coverage beyond what the rest of the meeting UI already provides, and mobile-specific affordances are out of scope here — those are post-master-plan work.
 
 Conclude this step by:
-- Implementing the core logic by separating active export/import contracts from narrowly-scoped legacy compatibility handling.
-- Creating or updating the relevant pytest file, preferring edits to existing suites such as `app/tests/test_transfer_api.py`, `app/tests/test_transfer_transforms.py`, `app/tests/test_transfer_metadata.py`, `app/tests/test_transfer_comment_format_parity.py`, and other already-relevant transfer/export tests instead of adding new pytest modules.
-- Updating docstrings and documentation so export/import expectations clearly state what the system now writes, what legacy data it can still read, and that compatibility handling is one-way.
+- Implementing the core logic as the new modal/disclosure component in the meeting templates and the JavaScript that drives it, plus any router endpoint required for the resumption call (named to fit existing router conventions), all carrying the `Loquacious Pelican` canary in their headers.
+- Creating or updating the relevant pytest file by extending `app/tests/test_frontend_smoke.py` for the rendering coverage and `app/tests/test_api_meetings.py` for the resumption-endpoint coverage; the `ai-decision review_required` composition is exercised through the same fixtures by routing a Phase 4-authored orchestration document containing an `ai-decision` followed by a `facilitator-decision` through the end-to-end path.
+- Updating docstrings and documentation so `docs/FRONTEND_DEV_GUIDE.md` records the decision-UI component's contract, so `docs/ACTIVITY_CONTRACT_SPEC.md` records the `review_required` user-facing flow alongside its existing engine description, and so the meeting template's region for the new modal carries a comment naming the canary and citing the spec.
 
-Step 3 import/export compatibility isolation for `Pickle Trombone`:
+### Step 4 — End-to-End Coherence Validation
+Execute an end-to-end coherence run that exercises every Phase 5 surface against a real orchestration document: an engine-driven `iterate` block produces a round-2 agenda row whose mint triggers a broadcast that the frontend handles correctly; an embedded `ai-decision` with `review_required: true` produces a proposed result that the decision UI surfaces; the facilitator selects an option through the decision UI; the resumption broadcast advances the agenda; participant-view smoke confirms no orchestration-specific UI leaks to non-facilitators; and the entire flow occurs without any client needing to reconnect or poll. This run is the executable witness for the Phase 5 success gates in [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md), and it is the prerequisite for Phase 6's Delphi instantiation, which assumes that the engine's outputs are observable to a facilitator running an orchestration in practice.
 
-| Surface | Step 3 result |
-|---|---|
-| `app/routers/meetings.py` export writer | New meeting export bundles now write `owner` metadata and no longer write the legacy top-level `facilitators` structure. |
-| `app/routers/meetings.py` import reader | Legacy top-level `facilitators` entries are accepted only through `_read_legacy_import_facilitators` and are intentionally ignored for imported roster and authority construction. |
-| `app/tests/test_api_meetings.py` | Export coverage now rejects new `facilitators` output, and legacy import coverage verifies facilitator-only legacy entries do not grant participant membership or active authority. |
-
-### Step 4 [DONE] — Purge Legacy Test Assumptions and Contract Language
-Resolve the remaining Phase 1 rewrite/delete ledger items that encoded stale auto-grant behavior, facilitator-row persistence, or old payload shapes as intended behavior. By the end of this step, the test suite and its naming/docstrings must reinforce only the collapsed model and its intentionally isolated compatibility exceptions.
+Any drift discovered between the broadcast envelope shape (Step 1), the frontend's handling of it (Step 2), or the decision UI's interaction with the engine (Step 3) is diagnosed and repaired in the originating step rather than papered over here; this step's role is to surface drift, not to absorb it.
 
 Conclude this step by:
-- Implementing the core logic by purging stale contract assumptions from tests and any supporting code comments or references.
-- Creating or updating the relevant pytest file, favoring edits to the existing affected suites instead of creating a new test file for cleanup work.
-- Updating docstrings and documentation so no active test or repository narrative still treats the old facilitator contract as intended behavior.
-
-Step 4 contract-language cleanup for `Pickle Trombone`:
-
-| Surface | Step 4 result |
-|---|---|
-| `app/templates/create_meeting.html` | Removed the stale `co_facilitator_ids: []` create payload field so the create form no longer writes facilitator-shaped request language as an active contract. |
-| `app/templates/meeting.html` | Participant-management guidance now describes roster membership versus meeting management authority without referring to meeting facilitators as an active concept. |
-| `app/tests/test_api_meetings.py` | Updated control and roster-regression docstrings plus setup payloads so the tests describe meeting authority rather than legacy facilitator contract language. |
-| `app/tests/test_meeting_manager.py` | Updated stale test meeting copy so ownership transfer coverage talks about owner authority rather than facilitator semantics. |
-
-### Step 5 [DONE] — Lock the Phase 5 Verification Boundary
-Define the exact validation command for outward-facing contract cleanup and treat this phase as complete only when active contracts are free of old facilitator semantics, legacy import compatibility is isolated, and the selected suites pass with the collapsed model represented consistently across APIs, exports, imports, and tests.
-
-Conclude this step by:
-- Implementing the core logic as the final Phase 5 verification checklist and completion notes in this file.
-- Creating or updating the relevant pytest file so the contract-cleanup coverage required for Phase 5 is included in the exit command below without unnecessary pytest file proliferation.
-- Updating docstrings and documentation so the verification command, compatibility boundary, and Phase 5 canary remain aligned.
-
-## Phase 5 Contract Cleanup Scope Map
-
-The following outward-facing surfaces must be normalized during this phase:
-
-| Surface | Required Phase 5 outcome |
-|---|---|
-| Active meeting/dash/API payloads | No live facilitator-assignment contract artifacts remain |
-| Export bundle output | No new export writes old facilitator structures |
-| Legacy import/transfer readers | Old facilitator-bearing artifacts can be read only through isolated one-way compatibility handling |
-| Test suite contract language | No old facilitator semantics are asserted as intended active behavior |
-| Repository documentation for contracts | Describes collapsed model plus explicit compatibility exception only |
-
-## Phase 5 Non-Goals
-
-This phase does **not** complete the following:
-
-- Broad end-to-end merge-readiness verification across the entire application surface, which belongs to Phase 6.
-- New authorization model design work; Phase 5 cleans contracts, it does not redefine authority rules.
-- WebSocket auth cleanup or unrelated transfer-system redesign outside the facilitator-contract cleanup path.
-
-## Technical Deviations Log
-
-- Step 1 (`Pickle Trombone`): This step intentionally documents the external contract debt without removing it. Active response and export/import changes begin in Step 2 and Step 3 so the cleanup remains reviewable and the legacy import exception is isolated rather than mixed into the inventory pass.
-- Step 2 (`Pickle Trombone`): Active API and dashboard response contracts now use owner/authority presentation names. The `MeetingUpdate.facilitator_ids`, create/import `additional_facilitator_ids`/`co_facilitator_ids`, and export/import `facilitators` compatibility surfaces remain intentionally untouched for Step 3 and Step 4 so request-shape and transfer cleanup stay isolated from response cleanup.
-- Step 3 (`Pickle Trombone`): Legacy `facilitators` data is still tolerated when reading older bundles, but it is no longer translated into `additional_facilitator_ids` or any active authority path. Create/update request names remain deferred to Step 4 because this step is limited to export/import compatibility.
-- Step 4 (`Pickle Trombone`): Request-shape cleanup in this step removes the create-page `co_facilitator_ids` payload, but the backend compatibility fields `MeetingUpdate.facilitator_ids`, `MeetingCreatePayload.co_facilitator_ids`, and `MeetingCreate.additional_facilitator_ids` remain temporarily accepted so existing tests and compatibility readers can be cleaned incrementally without conflating this step with API removal work.
-- Step 5 (`Pickle Trombone`): The final certification run reaches `[100%]` on the Phase 5 boundary command with `137 passed, 2 skipped`; the guest-join feature-flag cases in `app/tests/test_api_meetings.py` continue to report `SKIPPED` by design and are treated as expected non-failures within this contract-cleanup gate rather than requiring a separate filtered command.
+- Implementing the core logic as any final wiring corrections the end-to-end run surfaces, with each correction tagged at its origin site under `Loquacious Pelican`.
+- Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with an end-to-end integration test that drives the engine through a fixture document containing `iterate`, `ai-decision (review_required: true)`, and `facilitator-decision` steps, asserts the broadcast envelopes, exercises the resumption endpoint, and verifies that participant-view and facilitator-view rendering each behave as specified; no new pytest module is needed because `test_orchestration_engine.py` already owns the engine integration concern.
+- Updating docstrings and documentation so the spec's Engine section gains a closing "Phase 5 coherence witness" subsection that cites the end-to-end test as the executable proof, and so the master plan's Phase 5 row in any DP-to-test mapping reflects the test's location.
 
 ## Phase Exit Criteria
 
-Phase 5 clears only when the following command passes 100%:
+Phase 5 clears only when the following command reaches `[100%]` and finishes without failures:
 
 ```bash
-PYTHONPATH=. ./venv/bin/pytest app/tests/test_api_meetings.py app/tests/test_api_participants.py app/tests/test_meeting_manager.py app/tests/test_transfer_api.py app/tests/test_transfer_transforms.py app/tests/test_transfer_metadata.py app/tests/test_transfer_comment_format_parity.py app/tests/test_frontend_smoke.py app/tests/test_pages.py -v
+PYTHONPATH=. ./venv/bin/pytest app/tests/test_orchestration_engine.py app/tests/test_meeting_state.py app/tests/test_api_meetings.py app/tests/test_frontend_smoke.py app/tests/test_pages.py app/tests/test_meeting_manager.py app/tests/test_bundle_transforms.py app/tests/test_convergence_predicates.py app/tests/test_reliability_rehearsal.py app/tests/test_activity_plugins.py app/tests/test_transfer_api.py app/tests/test_transfer_metadata.py app/tests/test_brainstorming_api.py app/tests/test_voting_api.py app/tests/test_rank_order_voting_api.py app/tests/test_categorization_api.py app/tests/test_ai_provider_config.py app/tests/test_agenda_validator.py -v
 ```
 
 Passing this command means:
-- active API and export contracts no longer expose the old facilitator model,
-- any retained legacy compatibility is isolated to one-way import/reader handling,
-- the selected existing pytest modules have been updated instead of unnecessarily duplicated,
-- documentation/docstrings describe the cleaned contract surface accurately,
-- and feature-gated guest join tests may report `SKIPPED` when the guest entry flag is disabled, but no contract-cleanup test in scope may fail.
 
----
+- Engine-driven agenda mutations produce broadcast envelopes identical in shape to facilitator-driven ones; connected clients learn about engine activity without reconnecting or polling.
+- The meeting-page JavaScript correctly renders iteration rounds and engine-driven inserts; the `currentActivity` resolution continues to identify exactly one active row.
+- The facilitator-decision / `ai-decision review_required` UI surface exists in the facilitator dashboard, calls the resumption entry point through existing wire formats, and observably advances the agenda on response.
+- The Step 4 end-to-end integration test drives a document containing `iterate`, `ai-decision (review_required: true)`, and `facilitator-decision` steps through the full engine + broadcast + UI pipeline and passes.
+- No test that previously passed regresses, no participant-view smoke shows orchestration-specific UI affordances leaking to non-facilitators, and no test docstring, JavaScript module header, template comment, or fixture introduced under Phase 5 omits the `Loquacious Pelican` canary where the step requirements call for it.
 
-*End of Phase 5 execution file. This phase cleans active contracts and isolates legacy compatibility; Phase 6 remains responsible for full end-to-end validation and ship readiness.*
+## Scope Boundary
+
+This phase covers only the realtime and frontend coherence required to operate the engine through the existing meeting UI. The following items are explicitly deferred to later phases of [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md):
+
+- `orchestrations/delphi.json`, the synthetic-participant Delphi run, the IQR-stability convergence demonstration as a real method instantiation, and `docs/DELPHI_VALIDATION.md` — Phase 6.
+- A second orchestration document (such as `estimate_talk_estimate.json`) demonstrating engine generalization beyond Delphi — Phase 6.
+- Aesthetic polish, animation, accessibility coverage beyond existing meeting-UI conventions, and mobile-specific affordances on the decision UI surface — post-master-plan work.
+- Runtime implementation of the `conditional` control-flow primitive (defined-but-deferred at the schema layer in Phase 4) — out of scope for the entire master plan unless separately authorized.
+- Empirical evaluation with real participant groups, parallel branches, sub-orchestration invocation with parameter passing, variable bindings, expression evaluation, event handlers, timers, and compensation/rollback — out of scope for the entire master plan per its Scope Boundary.
