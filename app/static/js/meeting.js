@@ -1738,7 +1738,8 @@
                         "No meeting participants are assigned yet. Add participants above to configure this activity.";
                     list.appendChild(empty);
                 } else {
-                    roster.forEach((row) => {
+                    const sortedRoster = [...roster].sort(compareUsersByRoleAndName);
+                    sortedRoster.forEach((row) => {
                         const item = document.createElement("div");
                         item.className = "participant-directory-row";
                         item.tabIndex = 0;
@@ -1807,7 +1808,11 @@
                     empty.textContent = "Select participants to assign.";
                     selectedList.appendChild(empty);
                 } else {
-                    Array.from(effectiveSelection).forEach((userId) => {
+                    const sortedSelected = Array.from(effectiveSelection)
+                        .map((id) => rosterById.get(id) || { user_id: id })
+                        .sort(compareUsersByRoleAndName);
+                    sortedSelected.forEach((selectedRow) => {
+                        const userId = selectedRow.user_id;
                         const row = rosterById.get(userId);
                         const item = document.createElement("div");
                         item.className = "participant-directory-row participant-directory-row--selected";

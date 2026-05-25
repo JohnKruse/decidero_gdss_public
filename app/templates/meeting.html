@@ -91,19 +91,19 @@
                         <div class="overview-subtitle">Pick an activity to see facilitator guidance and configuration.
                         </div>
                     </div>
-                    <button type="button" class="control-btn sm agenda-collapse-toggle" id="agendaCollapseToggle"
-                        aria-expanded="true" aria-controls="agendaSectionBody">
-                        Collapse
-                    </button>
+                    <div class="agenda-header-actions">
+                        {% if can_manage_meeting %}
+                        <button type="button" class="control-btn primary" id="openParticipantAdminButton">Meeting Roster</button>
+                        <button type="button" class="control-btn primary" id="agendaAddActivityButton">Meeting Settings</button>
+                        {% endif %}
+                        <button type="button" class="control-btn sm agenda-collapse-toggle" id="agendaCollapseToggle"
+                            aria-expanded="true" aria-controls="agendaSectionBody">
+                            Collapse
+                        </button>
+                    </div>
                 </div>
                 <div class="section-body" id="agendaSectionBody">
                     <ol class="agenda-timeline" id="meetingAgendaList"></ol>
-                    {% if can_manage_meeting %}
-                    <div class="card-actions">
-                    <button type="button" class="control-btn" id="openParticipantAdminButton">Meeting Roster</button>
-                    <button type="button" class="control-btn" id="agendaAddActivityButton">Meeting Settings</button>
-                    </div>
-                    {% endif %}
                 </div>
             </section>
             {% endgrab %}
