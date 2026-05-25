@@ -3,8 +3,11 @@ import re
 from pathlib import Path
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager
+from app.models.activity_bundle import ActivityBundle
 from app.services.meeting_authorization import resolve_meeting_capabilities
+from app.services.agenda_strategy import LinearAgendaStrategy, get_agenda_strategy
 from app.schemas.meeting import (
     MeetingCreate,
     AgendaActivityCreate,
@@ -110,6 +113,43 @@ def _create_temp_user(
     db_session.commit()
     db_session.refresh(user)
     return user
+
+
+def _assert_linear_agenda_strategy_parity(
+    db_session: Session,
+    meeting: Meeting,
+) -> None:
+    strategy = get_agenda_strategy(meeting)
+    assert isinstance(strategy, LinearAgendaStrategy)
+
+    direct_agenda = sorted(meeting.agenda_activities, key=lambda item: item.order_index)
+    strategy_agenda = strategy.list_agenda(meeting)
+    assert [item.activity_id for item in strategy_agenda] == [
+        item.activity_id for item in direct_agenda
+    ]
+
+    for index, activity in enumerate(direct_agenda):
+        expected_prior = direct_agenda[index - 1] if index else None
+        actual_prior = strategy.resolve_prior_activity(meeting, activity)
+        assert (actual_prior.activity_id if actual_prior else None) == (
+            expected_prior.activity_id if expected_prior else None
+        )
+
+    if not direct_agenda:
+        expected_complete = True
+    else:
+        latest_activity = direct_agenda[-1]
+        expected_complete = (
+            db_session.query(ActivityBundle.id)
+            .filter(
+                ActivityBundle.meeting_id == meeting.meeting_id,
+                ActivityBundle.activity_id == latest_activity.activity_id,
+                ActivityBundle.kind == "output",
+            )
+            .first()
+            is not None
+        )
+    assert strategy.is_complete(meeting) is expected_complete
 
 
 def test_resolve_meeting_capabilities_for_all_phase1_postures(
@@ -386,6 +426,124 @@ def test_create_meeting_assigns_agenda_activities(
         assert activity.tool_config_id.startswith(
             f"TL-{activity.activity_id}"
         )
+
+
+@pytest.mark.asyncio
+async def test_linear_agenda_strategy_matches_direct_order_index_walks(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+    mocker,
+):
+    """Smug Otter: LinearAgendaStrategy is behavior-parity reference logic."""
+    mocker.patch(
+        "app.data.meeting_manager.meeting_state_manager.snapshot",
+        return_value={"currentActivity": None},
+    )
+    bundle_manager = ActivityBundleManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+
+    def create_meeting(title: str, agenda_items: list[AgendaActivityCreate]) -> Meeting:
+        meeting = meeting_manager_instance.create_meeting(
+            MeetingCreate(
+                title=title,
+                description="Strategy parity fixture",
+                start_time=start_time,
+                end_time=start_time + timedelta(minutes=45),
+                duration_minutes=45,
+                publicity=PublicityType.PUBLIC,
+                owner_id=test_facilitator.user_id,
+                participant_ids=[],
+                additional_facilitator_ids=[],
+            ),
+            facilitator_id=test_facilitator.user_id,
+            agenda_items=agenda_items,
+        )
+        assert meeting is not None
+        return meeting
+
+    single = create_meeting(
+        "Single Activity Strategy Parity",
+        [AgendaActivityCreate(tool_type="brainstorming", title="Only")],
+    )
+    _assert_linear_agenda_strategy_parity(db_session, single)
+    bundle_manager.finalize_output_bundle(
+        single.meeting_id,
+        single.agenda_activities[0].activity_id,
+        [{"content": "single output"}],
+    )
+    db_session.refresh(single)
+    _assert_linear_agenda_strategy_parity(db_session, single)
+
+    two_activity = create_meeting(
+        "Two Activity Strategy Parity",
+        [
+            AgendaActivityCreate(tool_type="brainstorming", title="First"),
+            AgendaActivityCreate(tool_type="voting", title="Second"),
+        ],
+    )
+    bundle_manager.finalize_output_bundle(
+        two_activity.meeting_id,
+        two_activity.agenda_activities[0].activity_id,
+        [{"content": "prior only"}],
+    )
+    db_session.refresh(two_activity)
+    _assert_linear_agenda_strategy_parity(db_session, two_activity)
+    bundle_manager.finalize_output_bundle(
+        two_activity.meeting_id,
+        two_activity.agenda_activities[-1].activity_id,
+        [{"content": "final output"}],
+    )
+    db_session.refresh(two_activity)
+    _assert_linear_agenda_strategy_parity(db_session, two_activity)
+
+    delete_readd = create_meeting(
+        "Delete Readd Strategy Parity",
+        [
+            AgendaActivityCreate(tool_type="brainstorming", title="Original"),
+            AgendaActivityCreate(tool_type="voting", title="Delete Me"),
+        ],
+    )
+    deleted_id = delete_readd.agenda_activities[-1].activity_id
+    await meeting_manager_instance.delete_agenda_activity(
+        delete_readd.meeting_id,
+        deleted_id,
+    )
+    replacement = meeting_manager_instance.add_agenda_activity(
+        delete_readd.meeting_id,
+        AgendaActivityCreate(tool_type="categorization", title="Replacement"),
+    )
+    assert replacement.activity_id != deleted_id
+    db_session.refresh(delete_readd)
+    _assert_linear_agenda_strategy_parity(db_session, delete_readd)
+
+    reordered = create_meeting(
+        "Reordered Strategy Parity",
+        [
+            AgendaActivityCreate(tool_type="brainstorming", title="One"),
+            AgendaActivityCreate(tool_type="voting", title="Two"),
+            AgendaActivityCreate(tool_type="categorization", title="Three"),
+        ],
+    )
+    new_order = [
+        reordered.agenda_activities[2].activity_id,
+        reordered.agenda_activities[0].activity_id,
+        reordered.agenda_activities[1].activity_id,
+    ]
+    meeting_manager_instance.reorder_agenda_activities(reordered.meeting_id, new_order)
+    db_session.refresh(reordered)
+    _assert_linear_agenda_strategy_parity(db_session, reordered)
+
+    strategy = get_agenda_strategy(reordered)
+    created = strategy.create_activity(
+        reordered,
+        AgendaActivityCreate(tool_type="brainstorming", title="Strategy Created"),
+        meeting_manager_instance,
+    )
+    assert created.activity_id in {
+        activity.activity_id
+        for activity in meeting_manager_instance.list_agenda(reordered.meeting_id)
+    }
 
 
 def test_get_meeting(

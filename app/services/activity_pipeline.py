@@ -1,8 +1,9 @@
 """Activity bundle input pipeline.
 
 Smug Otter: agenda consultation is being isolated behind
-app/services/agenda_strategy.py. Phase 2 Step 1 introduces the seam; later
-steps rewire this module's linear prior-activity lookup through it.
+app/services/agenda_strategy.py. `LinearAgendaStrategy` is the Phase 2 reference
+implementation for today's order-index semantics; later steps rewire this
+module's linear prior-activity lookup through it.
 """
 
 from __future__ import annotations

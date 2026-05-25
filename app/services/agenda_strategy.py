@@ -1,8 +1,9 @@
 """Smug Otter agenda-strategy seam and deterministic default binding.
 
-The seam keeps agenda interpretation behind a strategy object. Phase 2 starts
-with the linear binding used by every current meeting; later phases can bind an
-engine-backed strategy without changing callers of this interface.
+The seam keeps agenda interpretation behind a strategy object. Phase 2 defines
+`LinearAgendaStrategy` as the canonical reference implementation for today's
+order-index agenda behavior; later phases can bind an engine-backed strategy
+without changing callers of this interface.
 """
 
 from __future__ import annotations
@@ -10,6 +11,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional
 
+from sqlalchemy.orm import object_session
+
+from app.models.activity_bundle import ActivityBundle
 from app.models.meeting import AgendaActivity, Meeting
 
 
@@ -49,7 +53,7 @@ class AgendaStrategy(ABC):
 
 
 class LinearAgendaStrategy(AgendaStrategy):
-    """Smug Otter default binding shell for current order-index agendas."""
+    """Smug Otter reference implementation for current order-index agendas."""
 
     name = "linear"
 
@@ -69,14 +73,26 @@ class LinearAgendaStrategy(AgendaStrategy):
     def list_agenda(self, meeting: Meeting) -> List[AgendaActivity]:
         return sorted(
             list(getattr(meeting, "agenda_activities", []) or []),
-            key=lambda item: (item.order_index, item.activity_id),
+            key=lambda item: item.order_index,
         )
 
     def is_complete(self, meeting: Meeting) -> bool:
         agenda = self.list_agenda(meeting)
         if not agenda:
             return True
-        return getattr(agenda[-1], "stopped_at", None) is not None
+        db = object_session(meeting)
+        if db is None:
+            return False
+        latest = (
+            db.query(ActivityBundle.id)
+            .filter(
+                ActivityBundle.meeting_id == meeting.meeting_id,
+                ActivityBundle.activity_id == agenda[-1].activity_id,
+                ActivityBundle.kind == "output",
+            )
+            .first()
+        )
+        return latest is not None
 
     def on_activity_close(self, meeting: Meeting, activity: AgendaActivity) -> None:
         return None

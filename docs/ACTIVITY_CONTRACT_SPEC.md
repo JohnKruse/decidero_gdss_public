@@ -113,4 +113,9 @@ Smug Otter Phase 2 introduces `app/services/agenda_strategy.py` as the
 extension point for agenda interpretation. Existing meetings bind
 deterministically to `LinearAgendaStrategy`, which preserves order-index agenda
 semantics while creating a single consultation surface for future orchestration
-strategies.
+strategies. In Phase 2 Step 2, `LinearAgendaStrategy` is the canonical reference
+implementation: it resolves prior activities by direct `order_index` adjacency,
+returns the canonical agenda in `order_index` order, treats the agenda as
+complete only when the highest-order activity has an `output` bundle, performs
+no progression on close, and delegates mid-meeting activity creation to
+`MeetingManager.add_agenda_activity`.
