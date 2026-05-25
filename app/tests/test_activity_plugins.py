@@ -97,6 +97,7 @@ def _seed_meeting_with_categorization(db_session):
 
 
 def test_activity_bundle_manager_roundtrip(db_session):
+    """Tangerine Larynx: DP2 preserves bundle items and metadata across input creation."""
     meeting, activity_one, activity_two, _ = _seed_meeting(db_session)
     manager = ActivityBundleManager(db_session)
     output = manager.create_bundle(
@@ -115,14 +116,14 @@ def test_activity_bundle_manager_roundtrip(db_session):
 
 
 def test_builtin_activity_manifests_conform_to_schema():
-    """Tangerine Larynx: built-in manifests conform to the Phase 1 schema."""
+    """Tangerine Larynx: DP1/DP5 built-in manifests conform to the Phase 1 schema."""
     for plugin in load_builtin_plugins():
         payload = validate_activity_manifest(plugin.manifest)
         assert payload["tool_type"] == plugin.manifest.tool_type
 
 
 def test_activity_registry_rejects_invalid_manifest():
-    """Tangerine Larynx: startup registration refuses manifest schema violations."""
+    """Tangerine Larynx: DP1 startup registration refuses manifest schema violations."""
 
     class InvalidManifestPlugin(ActivityPlugin):
         manifest = ActivityPluginManifest(
@@ -149,7 +150,7 @@ def test_activity_registry_rejects_invalid_manifest():
 
 
 def test_bundle_payload_schema_accepts_provenance_and_iteration_extension():
-    """Tangerine Larynx: bundle payload schema covers provenance and Phase 3 iteration."""
+    """Tangerine Larynx: DP2 bundle schema covers provenance and Phase 3 iteration."""
     payload = {
         "items": [
             {
@@ -398,6 +399,7 @@ def test_autosave_seconds_clamped():
 
 
 def test_activity_catalog_includes_core_tools():
+    """Tangerine Larynx: DP4 catalog exposes normalized reliability policy."""
     entries = get_activity_catalog()
     tool_types = {entry["tool_type"] for entry in entries}
     assert {"brainstorming", "voting", "categorization"}.issubset(tool_types)
@@ -422,6 +424,7 @@ def test_activity_catalog_includes_core_tools():
 
 
 def test_reliability_policy_normalisation_applies_safe_defaults():
+    """Tangerine Larynx: DP4 reliability normalization supplies safe defaults."""
     normalised = normalise_reliability_policy(
         {
             "submit_idea": {

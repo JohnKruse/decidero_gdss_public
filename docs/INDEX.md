@@ -36,10 +36,11 @@ If you are adding new pages, UI components, or modifying the navigation, start h
 
 If you are new to activity development, start with the first link below. It explains the mental model in plain language before the technical details.
 
-1. Activity contract and reliability workflow: `docs/ACTIVITY_CONTRACT_GUIDE.md`
-2. Plugin implementation guide: `docs/PLUGIN_DEV_GUIDE.md`
-3. Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`
-4. Transfer metadata contract: `docs/TRANSFER_METADATA.md`
+1. Activity contract specification: `docs/ACTIVITY_CONTRACT_SPEC.md`
+2. Activity implementation guide: `docs/ACTIVITY_CONTRACT_GUIDE.md`
+3. Plugin implementation guide: `docs/PLUGIN_DEV_GUIDE.md`
+4. Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`
+5. Transfer metadata contract: `docs/TRANSFER_METADATA.md`
 
 ## Activity Specs
 

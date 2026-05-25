@@ -16,6 +16,7 @@ from app.tests.fixtures.categorization_contract_fixtures import (
 
 
 def test_validate_facilitator_live_config_fixture():
+    """Tangerine Larynx: DP2 categorization config fixture remains contract-valid."""
     payload = copy.deepcopy(FACILITATOR_LIVE_CONFIG)
     validated = validate_categorization_config(payload)
     assert validated.mode == "FACILITATOR_LIVE"
@@ -23,6 +24,7 @@ def test_validate_facilitator_live_config_fixture():
 
 
 def test_validate_parallel_state_fixture():
+    """Tangerine Larynx: DP2 categorization state fixture remains contract-valid."""
     payload = copy.deepcopy(PARALLEL_STATE)
     validated = validate_categorization_state(payload)
     assert validated.mode == "PARALLEL_BALLOT"
@@ -30,6 +32,7 @@ def test_validate_parallel_state_fixture():
 
 
 def test_validate_final_output_fixture():
+    """Tangerine Larynx: DP2 categorization output fixture remains contract-valid."""
     payload = copy.deepcopy(FINAL_OUTPUT)
     validated = validate_categorization_output(payload)
     assert validated.activity_id.endswith("CATGRY-0001")

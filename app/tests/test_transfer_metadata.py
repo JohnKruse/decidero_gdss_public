@@ -45,7 +45,7 @@ def test_append_transfer_history_uses_created_at_and_increments_per_tool():
 
 
 def test_transfer_metadata_schema_conformance_for_normalized_payload():
-    """Tangerine Larynx: normalized transfer metadata conforms to the Phase 1 schema."""
+    """Tangerine Larynx: DP2 normalized transfer metadata conforms to schema."""
     metadata = ensure_transfer_metadata(
         base={},
         meeting_id="M-XFER",

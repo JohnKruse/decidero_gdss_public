@@ -1,7 +1,9 @@
 """Activity plugin contract primitives.
 
 Tangerine Larynx: the authoritative manifest schema lives at
-docs/schemas/activity_manifest.schema.json.
+docs/schemas/activity_manifest.schema.json. Normative lifecycle and manifest
+rules live in docs/ACTIVITY_CONTRACT_SPEC.md; implementer guidance lives in
+docs/ACTIVITY_CONTRACT_GUIDE.md.
 """
 
 from __future__ import annotations

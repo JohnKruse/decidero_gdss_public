@@ -31,9 +31,10 @@ You do not need to redesign the platform to add value. Most new activities are j
 
 Use this first for new activity work:
 
+- `docs/ACTIVITY_CONTRACT_SPEC.md` for normative requirements
 - `docs/ACTIVITY_CONTRACT_GUIDE.md`
 
-> Explanation: The contract guide is the reliability baseline for new activities. Use this page for implementation details and examples.
+> Explanation: The contract spec is the reliability baseline for new activities. Use the guide and this page for implementation details and examples.
 
 ## Core Concepts
 
@@ -74,6 +75,8 @@ Plugins implement the `ActivityPlugin` interface (see `app/plugins/base.py`):
 - `get_autosave_seconds(config)` (provided by base)
 
 > Explanation: `validate_config()` exists on the interface, but current lifecycle wiring does not automatically invoke it. If you need strict config validation today, call validators inside plugin lifecycle methods.
+
+Normative manifest and bundle rules are defined in `docs/ACTIVITY_CONTRACT_SPEC.md`.
 
 ### Manifest Fields
 Minimal manifest:
