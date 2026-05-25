@@ -1,4 +1,4 @@
-"""Tangerine Larynx: rank-order lifecycle is DP3 idempotent; DP6 validation is plugin-controlled."""
+"""Tangerine Larynx: rank-order lifecycle is DP3 idempotent; see docs/THINKLET_AUDIT.md."""
 
 from __future__ import annotations
 
@@ -76,9 +76,7 @@ class RankOrderVotingPlugin(ActivityPlugin):
             "Complete orderings prevent strategic single-issue voting by requiring "
             "participants to express preferences across all options",
         ],
-        thinklets=[
-            "Borda Vote (rigorous rank aggregation — Borda-count scoring across all rankings)",
-        ],
+        thinklets=[],
         input_requirements=(
             "Requires a set of options (ideas) to rank. Options can be manually "
             "entered or automatically populated from a prior activity (brainstorming, "

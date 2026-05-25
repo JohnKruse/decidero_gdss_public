@@ -52,13 +52,17 @@ Technical deviations logged:
 - DP6 was resolved as the documented passthrough contract: `validate_config()` remains plugin-controlled and is not automatically invoked by framework lifecycle startup. This avoids broad lifecycle/router behavior changes in Phase 1 and is now pinned by `test_validate_config_is_documented_plugin_controlled_passthrough`.
 - DP3 coverage uses direct built-in plugin lifecycle calls rather than HTTP start-control tests so it can isolate plugin-owned state duplication without coupling the contract test to meeting-control routing.
 
-### Step 4 — ThinkLet Faithfulness Audit and FastFocus Resolution
+### Step 4 — [DONE] ThinkLet Faithfulness Audit and FastFocus Resolution
 For each built-in plugin, locate the canonical ThinkLet description in the Briggs, de Vreede, Nunamaker, and Kolfschoten literature and produce `docs/THINKLET_AUDIT.md`: a per-plugin section that names every declared tag in the plugin's manifest, quotes or paraphrases the canonical specification, and records the audit verdict (faithful as-is, faithful with documented caveat, or unjustified). Where the implementation diverges from the canonical specification, the divergence is either tightened in the plugin's behavior (if the divergence is incidental and can be corrected without altering the plugin's public contract per the Phase 1 scope) or the unjustified tag is removed from the manifest. The double-claim of `FastFocus` across VotingPlugin and CategorizationPlugin (flagged in [plans/00_DISCOVERY.md §13.5](../00_DISCOVERY.md)) must be explicitly resolved in this document: either both claims survive with an explanation of how the same ThinkLet legitimately serves two patterns (Evaluate vs. Reduce), or one of the two tags is removed from its manifest. Any manifest mutation performed in this step is the only manifest mutation Phase 1 authorizes, and the SPEC's DP-to-test mapping table is updated so the audit document is the cited evidence for DP5.
 
 Conclude this step by:
 - Implementing the core logic as `docs/THINKLET_AUDIT.md` (carrying `Tangerine Larynx` in its header), plus any manifest tightening or tag removal the audit requires within the built-in plugins.
 - Creating or updating the relevant pytest file by extending `app/tests/test_activity_plugins.py` with assertions that the manifest tags declared by each built-in plugin match the post-audit declarations recorded in `docs/THINKLET_AUDIT.md`, so the audit document and the manifest cannot silently drift apart; no new pytest module is needed.
 - Updating docstrings and documentation so that each built-in plugin's module docstring references the audit document and so that the SPEC's DP5 row in the DP-to-test mapping table cites both the audit document and the new conformance test.
+
+Technical deviations logged:
+- The audit removed VotingPlugin's `FastFocus` tag and RankOrderVotingPlugin's `Borda Vote` tag. `FastFocus` was retained only for CategorizationPlugin with a Reduce-mode caveat; `Borda Vote` was treated as a voting method rather than a substantiated canonical ThinkLet.
+- Source access was limited to publicly indexed literature records, available PDFs, and secondary summaries. The audit records caveats where the implementation captures a narrower platform-specific variant rather than a full facilitator script.
 
 ## Phase Exit Criteria
 

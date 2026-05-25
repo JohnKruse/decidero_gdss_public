@@ -41,6 +41,7 @@ If you are new to activity development, start with the first link below. It expl
 3. Plugin implementation guide: `docs/PLUGIN_DEV_GUIDE.md`
 4. Categorization contract: `docs/CATEGORIZATION_CONTRACT.md`
 5. Transfer metadata contract: `docs/TRANSFER_METADATA.md`
+6. Built-in ThinkLet audit: `docs/THINKLET_AUDIT.md`
 
 ## Activity Specs
 

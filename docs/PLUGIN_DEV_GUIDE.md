@@ -77,6 +77,7 @@ Plugins implement the `ActivityPlugin` interface (see `app/plugins/base.py`):
 > Explanation: `validate_config()` is a plugin-controlled extension point. Current lifecycle wiring does not automatically invoke it before `open_activity`. If you need strict config validation today, call validators inside plugin lifecycle methods or the router/service that owns the config write.
 
 Normative manifest and bundle rules are defined in `docs/ACTIVITY_CONTRACT_SPEC.md`.
+Built-in plugin ThinkLet claims are audited in `docs/THINKLET_AUDIT.md`.
 
 ### Manifest Fields
 Minimal manifest:

@@ -1,4 +1,4 @@
-"""Tangerine Larynx: voting lifecycle is DP3 idempotent; DP6 validation is plugin-controlled."""
+"""Tangerine Larynx: voting lifecycle is DP3 idempotent; see docs/THINKLET_AUDIT.md."""
 
 from __future__ import annotations
 
@@ -61,7 +61,6 @@ class VotingPlugin(ActivityPlugin):
         ],
         thinklets=[
             "StrawPoll (temperature check — quick single-round vote to gauge sentiment)",
-            "FastFocus (multi-vote prioritisation — distribute vote budget across options)",
         ],
         input_requirements=(
             "Requires a set of options to vote on. Options can be manually entered "

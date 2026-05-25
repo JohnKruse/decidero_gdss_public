@@ -62,8 +62,7 @@ without inventing a parallel policy shape.
 
 Manifest `thinklets` are claims about the collaboration pattern embodied by a
 plugin. They must remain visible in the manifest, validated as structured
-metadata, and reconciled against the ThinkLet audit document introduced in
-Phase 1 Step 4.
+metadata, and reconciled against `docs/THINKLET_AUDIT.md`.
 
 ### DP6 - Config Validation Disposition Is Explicit
 
@@ -82,7 +81,7 @@ that owns the relevant configuration write.
 | DP2 | Portable bundle shape with provenance and Phase 3 iteration slot | `app/tests/test_activity_plugins.py::test_bundle_payload_schema_accepts_provenance_and_iteration_extension`; `app/tests/test_activity_plugins.py::test_activity_bundle_manager_roundtrip`; `app/tests/test_transfer_metadata.py::test_transfer_metadata_schema_conformance_for_normalized_payload` |
 | DP3 | Idempotent `open_activity` under restart | `app/tests/test_activity_plugins.py::test_brainstorming_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_rank_order_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_categorization_open_activity_is_idempotent` |
 | DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults` |
-| DP5 | ThinkLet claims are structured and auditable | `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema`; Phase 1 Step 4 will add `docs/THINKLET_AUDIT.md` conformance coverage |
+| DP5 | ThinkLet claims are structured and auditable | `docs/THINKLET_AUDIT.md`; `app/tests/test_activity_plugins.py::test_builtin_manifest_thinklets_match_audit_document`; `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema` |
 | DP6 | Config validation disposition is explicit and tested | `app/tests/test_activity_plugins.py::test_validate_config_is_documented_plugin_controlled_passthrough` |
 
 ## Normative Invariants
@@ -105,4 +104,5 @@ that owns the relevant configuration write.
 - `docs/ACTIVITY_CONTRACT_GUIDE.md` - how to implement this specification.
 - `docs/PLUGIN_DEV_GUIDE.md` - plugin structure, examples, and testing.
 - `docs/TRANSFER_METADATA.md` - transfer metadata prose companion.
+- `docs/THINKLET_AUDIT.md` - audited built-in plugin ThinkLet claims.
 - `docs/CATEGORIZATION_CONTRACT.md` - categorization-specific contract.

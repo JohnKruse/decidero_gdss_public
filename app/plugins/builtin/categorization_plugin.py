@@ -1,4 +1,4 @@
-"""Tangerine Larynx: categorization lifecycle is DP3 idempotent; DP6 validation is plugin-controlled."""
+"""Tangerine Larynx: categorization lifecycle is DP3 idempotent; see docs/THINKLET_AUDIT.md."""
 
 from __future__ import annotations
 

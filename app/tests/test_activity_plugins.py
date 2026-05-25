@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.activity_bundle import ActivityBundle
@@ -30,6 +31,9 @@ from app.services.contract_schemas import (
     validate_bundle_payload,
 )
 from app.services.voting_manager import VotingManager
+
+
+THINKLET_AUDIT_PATH = Path(__file__).resolve().parents[2] / "docs" / "THINKLET_AUDIT.md"
 
 
 def _seed_meeting(db_session):
@@ -470,6 +474,23 @@ def test_validate_config_is_documented_plugin_controlled_passthrough(db_session)
 
     assert plugin.open_called is True
     assert plugin.validate_called is False
+
+
+def test_builtin_manifest_thinklets_match_audit_document():
+    """Tangerine Larynx: DP5 manifests match docs/THINKLET_AUDIT.md declarations."""
+    audit_text = THINKLET_AUDIT_PATH.read_text(encoding="utf-8")
+    declared = {
+        line.removeprefix("- Manifest tag: `").removesuffix("`")
+        for line in audit_text.splitlines()
+        if line.startswith("- Manifest tag: `")
+    }
+    manifest_tags = {
+        tag
+        for plugin in load_builtin_plugins()
+        for tag in list(plugin.manifest.thinklets or [])
+    }
+
+    assert manifest_tags == declared
 
 
 def test_activity_pipeline_creates_input(db_session):
