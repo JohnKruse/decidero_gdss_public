@@ -8,6 +8,7 @@ from app.services.meeting_state import MeetingStateManager, meeting_state_manage
 from app.data.meeting_manager import MeetingManager
 from app.data.user_manager import UserManager
 from app.schemas.meeting import MeetingCreate, AgendaActivityCreate
+from app.services.agenda_strategy import LinearAgendaStrategy, get_agenda_strategy
 from app.utils.security import get_password_hash
 
 
@@ -134,3 +135,45 @@ def test_meeting_state_websocket_flow(db_session, client: TestClient):
             assert state_payload["updatedAt"]
     finally:
         asyncio.run(meeting_state_manager.reset(meeting_id))
+
+
+def test_agenda_strategy_binding_for_meeting_state_fixture(db_session):
+    """Smug Otter: every meeting-state fixture meeting binds a deterministic strategy."""
+    user_manager = UserManager()
+    user_manager.set_db(db_session)
+    owner = user_manager.add_user(
+        first_name="Strategy",
+        last_name="Owner",
+        email="strategyowner@example.com",
+        login="strategyowner",
+        role="facilitator",
+        hashed_password=get_password_hash("OwnerPass1!"),
+    )
+
+    meeting_manager = MeetingManager(db_session)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Strategy Binding Meeting",
+            description="Test meeting for agenda strategy binding",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_minutes=30,
+            owner_id=owner.user_id,
+            participant_ids=[],
+        ),
+        facilitator_id=owner.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Intro"),
+            AgendaActivityCreate(tool_type="voting", title="Vote"),
+        ],
+    )
+
+    strategy = get_agenda_strategy(meeting)
+    agenda = strategy.list_agenda(meeting)
+
+    assert isinstance(strategy, LinearAgendaStrategy)
+    assert strategy.name == "linear"
+    assert [activity.title for activity in agenda] == ["Intro", "Vote"]
+    assert strategy.resolve_prior_activity(meeting, agenda[0]) is None
+    assert strategy.resolve_prior_activity(meeting, agenda[1]).activity_id == agenda[0].activity_id
+    assert strategy.is_complete(meeting) is False

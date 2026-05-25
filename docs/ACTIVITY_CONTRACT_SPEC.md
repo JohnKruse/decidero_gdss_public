@@ -106,3 +106,11 @@ that owns the relevant configuration write.
 - `docs/TRANSFER_METADATA.md` - transfer metadata prose companion.
 - `docs/THINKLET_AUDIT.md` - audited built-in plugin ThinkLet claims.
 - `docs/CATEGORIZATION_CONTRACT.md` - categorization-specific contract.
+
+## Agenda Strategy Seam
+
+Smug Otter Phase 2 introduces `app/services/agenda_strategy.py` as the
+extension point for agenda interpretation. Existing meetings bind
+deterministically to `LinearAgendaStrategy`, which preserves order-index agenda
+semantics while creating a single consultation surface for future orchestration
+strategies.

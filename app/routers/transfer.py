@@ -247,10 +247,14 @@ async def _ensure_not_running(meeting_id: str, activity_id: str) -> None:
     snapshot = await meeting_state_manager.snapshot(meeting_id)
     if not snapshot:
         return
+    current_activity = snapshot.get("currentActivity") or snapshot.get("agendaItemId")
+    current_status = (snapshot.get("status") or "").lower()
     active_entries = snapshot.get("activeActivities") or []
     for entry in active_entries:
         entry_id = entry.get("activityId") or entry.get("activity_id")
         status_value = (entry.get("status") or "").lower()
+        if entry_id == current_activity == activity_id and current_status != "in_progress":
+            continue
         if entry_id == activity_id and status_value == "in_progress":
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
