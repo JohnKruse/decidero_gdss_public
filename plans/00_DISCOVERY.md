@@ -1,252 +1,373 @@
-# Technical Audit: Agenda Panel & Roster UI Separation
+# 00 — DISCOVERY: Role & Permission Terrain Audit
 
-**Objective (context only — no code suggested):** map every module, data flow, and breaking point touched by four planned UI changes:
+**Scope:** Map the existing identity/authorization surface across backend data, backend enforcement, and frontend gating. Identify dependencies, data flows, and breaking points relevant to the target state *"system-wide roles only (super_admin / admin / facilitator / participant) + meeting roster membership — no per-meeting role concept."*
 
-1. Rename Agenda-panel **"Settings"** button → **"Meeting Settings"**.
-2. Add a new **"Meeting Roster"** button in the Agenda panel that ONLY edits the overall meeting roster (i.e. a dedicated entry point, separated from the per-activity flow).
-3. Rename the panel heading **"Agenda"** → **"Meeting Agenda and Participant Roster"**.
-4. Simplify the **Activity Participants** modal:
-   - Remove the "Meeting Participants" / "Activity Roster" tab row.
-   - Remove the "Include Everyone" and "Apply Selection" buttons.
-   - Default an activity to inherit all meeting-roster participants.
-   - Commit every left/right move immediately (no Apply step).
-   - Keep the two "Select All" buttons.
+This document is a **terrain map, not a plan.** It does not prescribe changes. Every claim is anchored to a file:line reference so later planning work can trust the picture.
+
+Branch at time of audit: `fix/role-problems`. HEAD: `e26d1be`.
 
 ---
 
-## 1. Current UI Architecture
+## 1. Glossary — the four concepts currently in play
 
-### 1.1 The single shared modal
+| Concept | Where it lives | Cardinality | Owner of truth |
+|---|---|---|---|
+| **System role** | `User.role` column (string; enum `UserRole` in [app/models/user.py:11](app/models/user.py:11)) | One per user | User admin flow |
+| **Meeting ownership** | `Meeting.owner_id` FK → `User` ([app/models/meeting.py:48](app/models/meeting.py:48)) | One per meeting | Meeting creation |
+| **Meeting facilitator roster** | `meeting_facilitators` table → `MeetingFacilitator` model ([app/models/meeting.py:98](app/models/meeting.py:98)) with `is_owner` flag | N per meeting | Auto-grant + explicit add |
+| **Meeting participant roster** | `participants` association table ([app/models/meeting.py:19](app/models/meeting.py:19)) | N per meeting | Roster UI / bulk update |
 
-There is **one** modal (`#participantAdminModal`) that currently handles BOTH the meeting roster and the per-activity roster. It has two panels switched by a tab row. This is the root cause of the user's "edited in the same place" complaint.
+The **first concept is global**; the remaining three are **per-meeting**. The collapse target removes the "meeting facilitator roster" concept entirely — facilitator capability would be derived from system role + participant-roster membership (plus the owner).
 
-| Element | File:Line | Role |
+---
+
+## 2. Module dependency map (auth terrain)
+
+```
+                 ┌────────────────────────────┐
+                 │  app/models/user.py        │
+                 │  UserRole enum             │
+                 │  User.role                 │
+                 └─────────────┬──────────────┘
+                               │
+        ┌──────────────────────┼─────────────────────┐
+        │                      │                     │
+┌───────▼─────────┐  ┌─────────▼──────────┐  ┌───────▼────────────┐
+│ app/auth/auth.py│  │ app/models/meeting │  │ app/data/          │
+│  JWT + session  │  │  .py               │  │  user_manager.py   │
+│  check_permission│ │  Meeting.owner_id  │  │  update_user_role  │
+│  Permission enum│  │  MeetingFacilitator│  │  (never syncs      │
+│  request.state. │  │  participants_table│  │   facilitator_links)│
+│  user cache     │  └────────┬───────────┘  └────────────────────┘
+└────────┬────────┘           │
+         │                    │
+         │    ┌───────────────▼────────────────────┐
+         │    │ app/data/meeting_manager.py        │
+         │    │  _should_auto_facilitate (system   │
+         │    │    role gate for auto-grant)       │
+         │    │  _ensure_facilitator_assignment    │
+         │    │    (only adds, never revokes)      │
+         │    │  add_participant / remove_         │
+         │    │    participant / bulk_update_      │
+         │    │    participants                    │
+         │    │  _cascade_activity_participant_    │
+         │    │    cleanup (participants only;     │
+         │    │    does not touch facilitator_     │
+         │    │    links)                          │
+         │    │  get_dashboard_meetings (derives   │
+         │    │    is_facilitator from facilitator_│
+         │    │    links)                          │
+         │    └────────────┬───────────────────────┘
+         │                 │
+         └────────┬────────┴────────┬────────────────────┐
+                  │                 │                    │
+        ┌─────────▼──────────┐  ┌──▼───────────────┐  ┌─▼──────────────────┐
+        │ app/routers/       │  │ app/routers/     │  │ app/routers/       │
+        │   meetings.py      │  │   users.py,      │  │   brainstorming.py,│
+        │ _assert_meeting_   │  │   settings.py,   │  │   voting.py,       │
+        │   access (the      │  │   pages.py       │  │   rank_order_      │
+        │   canonical gate)  │  │                  │  │   voting.py,       │
+        │   reads facilitator│  │                  │  │   categorization.py│
+        │   _links           │  │                  │  │   transfer.py      │
+        └─────────┬──────────┘  └──────────────────┘  └────────────────────┘
+                  │
+        ┌─────────▼──────────────────┐
+        │ app/templates/*.html       │
+        │  (render-time gating:      │
+        │   current_user.role,       │
+        │   is_admin booleans,       │
+        │   data-user-role attr)     │
+        └─────────┬──────────────────┘
+                  │
+        ┌─────────▼──────────────────┐
+        │ app/static/js/             │
+        │   meeting.js, dashboard.js │
+        │   (read data-user-role     │
+        │    once at page load →     │
+        │    state.isFacilitator,    │
+        │    state.capabilities)     │
+        └────────────────────────────┘
+```
+
+**Key property:** every arrow pointing into `MeetingFacilitator` / `facilitator_links` is a dependency that must be relocated or removed under the target model. There are ~97 non-test references to `facilitator_links` across 15 files.
+
+---
+
+## 3. Identity model — data at rest
+
+### 3.1 `User` ([app/models/user.py:18](app/models/user.py:18))
+- PK: `user_id` (string, 20)
+- Unique: `email`, `login`, `legacy_user_id`
+- Role: `role` column, `default=PARTICIPANT`, nullable=False ([app/models/user.py:31](app/models/user.py:31))
+- Signup defaults `PARTICIPANT` via [app/data/user_manager.py:218](app/data/user_manager.py:218). `register_user` hardcodes the string `"PARTICIPANT"` ([app/data/user_manager.py:984](app/data/user_manager.py:984)).
+- First admin bootstrap in `ensure_admin_exists` grants `SUPER_ADMIN` if no admin exists, else `ADMIN` ([app/data/user_manager.py:911](app/data/user_manager.py:911)).
+- Relationships: `owned_meetings`, `facilitator_links`, `meetings` (m2m via `participants_table`).
+
+### 3.2 `Meeting` ([app/models/meeting.py:33](app/models/meeting.py:33))
+- PK: `meeting_id`
+- `owner_id`: FK `users.user_id`, nullable=False ([app/models/meeting.py:48](app/models/meeting.py:48))
+- `facilitator_links`: one-to-many → `MeetingFacilitator`, `cascade="all, delete-orphan"`
+- `facilitators`: secondary viewonly convenience relation through `meeting_facilitators_table`
+- `participants`: m2m via `participants_table`
+
+### 3.3 `MeetingFacilitator` ([app/models/meeting.py:98](app/models/meeting.py:98))
+- PK: `facilitator_id`
+- FK `meeting_id` ON DELETE CASCADE
+- FK `user_id` ON DELETE CASCADE
+- `is_owner` boolean (distinguishes meeting owner from co-facilitators)
+- `created_at` timestamp
+- **Unique constraints:**
+  - `uq_meeting_facilitators_facilitator_id` on `facilitator_id` alone (redundant — PK already unique)
+  - `uq_meeting_facilitators_user` on `(meeting_id, user_id)` — prevents duplicate facilitator rows for one user in one meeting
+
+### 3.4 `participants_table` ([app/models/meeting.py:19](app/models/meeting.py:19))
+- Composite PK `(user_id, meeting_id)`
+- `joined_at` timestamp
+- CASCADE on meeting delete
+- No extra columns — pure m2m membership
+
+### 3.5 Migrations
+- **No Alembic / migration framework in the repo.** Schema is created at app startup via SQLAlchemy `create_all` plus an explicit `meeting_facilitators_table.create(..., checkfirst=True)` shim in [app/main.py:101](app/main.py:101). Schema evolution cannot be traced through migration files.
+
+---
+
+## 4. Write paths — how these tables get mutated
+
+| Writer | File:Line | Writes | Trigger |
+|---|---|---|---|
+| `add_participant` | [app/data/meeting_manager.py:1232](app/data/meeting_manager.py:1232) | `participants` + (via helper) `facilitator_links` | Roster add |
+| `remove_participant` | [app/data/meeting_manager.py:1253](app/data/meeting_manager.py:1253) | `participants` — **does NOT touch `facilitator_links`** | Roster remove |
+| `bulk_update_participants` | [app/data/meeting_manager.py:1280](app/data/meeting_manager.py:1280) | `participants` + (adds only) `facilitator_links` | Bulk roster op |
+| `_should_auto_facilitate` | [app/data/meeting_manager.py:1183](app/data/meeting_manager.py:1183) | Pure predicate: `user.role ∈ {FACILITATOR, ADMIN, SUPER_ADMIN}` | Gate for the helper below |
+| `_ensure_facilitator_assignment` | [app/data/meeting_manager.py:1190](app/data/meeting_manager.py:1190) | `facilitator_links` — **add-or-update only, never removes** | Called from `add_participant`, `bulk_update_participants`, `create_meeting`, `add_meeting` |
+| `_cascade_activity_participant_cleanup` | [app/data/meeting_manager.py:1358](app/data/meeting_manager.py:1358) | `agenda_activities.config['participant_ids']` (JSON) | Called from participant removals; **does not clean facilitator_links** |
+| `create_meeting` | [app/data/meeting_manager.py:900](app/data/meeting_manager.py:900) | `meetings`, `meeting_facilitators` (owner + co-facilitators), `participants` | New meeting |
+| `add_meeting` | [app/data/meeting_manager.py:1042](app/data/meeting_manager.py:1042) | Same as above, older API | New meeting |
+| `UserManager.update_user_role` | [app/data/user_manager.py:564](app/data/user_manager.py:564) | `users.role` — **does NOT cascade to any `facilitator_links`** | Admin role-change flow |
+| `UserManager.add_user` / `register_user` | [app/data/user_manager.py:212](app/data/user_manager.py:212), [:966](app/data/user_manager.py:966) | `users`; default `PARTICIPANT` | Signup/admin |
+
+**The three documented staleness-generating writer gaps:**
+1. `remove_participant` removes from `participants` but leaves the `MeetingFacilitator` row intact.
+2. `_ensure_facilitator_assignment` never removes a facilitator row; re-adding a previously-facilitated user short-circuits at the "already exists" check.
+3. `update_user_role` demoting a FACILITATOR to PARTICIPANT leaves every pre-existing `facilitator_links` row for that user intact.
+
+---
+
+## 5. Read paths — every place `facilitator_links` is consulted
+
+### 5.1 Canonical gate
+
+- `_assert_meeting_access` ([app/routers/meetings.py:203](app/routers/meetings.py:203))
+  - Computes `is_facilitator = any(link.user_id == user.user_id for link in meeting.facilitator_links)`
+  - Admits if `is_admin OR is_owner OR is_facilitator OR (is_participant AND not require_facilitator)`
+  - Used by ~15 endpoints (full list in §6)
+
+### 5.2 Other readers
+
+| Reader | File:Line | Purpose |
 |---|---|---|
-| Modal container | [meeting.html:341](app/templates/meeting.html:341) | Shared overlay |
-| Modal title | [meeting.html:345](app/templates/meeting.html:345) | Flips between "Manage Meeting Participants" and "Activity Participants" |
-| Activity metadata row | [meeting.html:346-351](app/templates/meeting.html:346) | Hidden in meeting mode, shown in activity mode |
-| Tab row (to be removed) | [meeting.html:356-364](app/templates/meeting.html:356) | `data-participant-modal-tab="meeting"` / `"activity"` |
-| Meeting roster panel | [meeting.html:365-444](app/templates/meeting.html:365) | `data-participant-admin-panel` |
-| Activity roster panel | [meeting.html:445-504](app/templates/meeting.html:445) | `data-activity-roster-panel`, `hidden` by default |
-| Activity action row (to be removed) | [meeting.html:449-456](app/templates/meeting.html:449) | Include Everyone / Reuse Last / Apply Selection |
-| Activity "Include Everyone" | [meeting.html:450](app/templates/meeting.html:450) | `#activityParticipantIncludeAll` |
-| Activity "Reuse Last" (hidden by default) | [meeting.html:452](app/templates/meeting.html:452) | `#activityParticipantReuse` — see §6.1 open question |
-| Activity "Apply Selection" | [meeting.html:454](app/templates/meeting.html:454) | `#activityParticipantApply` — primary, starts disabled |
-| Activity "Select All" left (keep) | [meeting.html:464](app/templates/meeting.html:464) | `#activityAvailableSelectAllButton` |
-| Activity "Select All" right (keep) | [meeting.html:489](app/templates/meeting.html:489) | `#activitySelectedSelectAllButton` |
-| Activity move → | [meeting.html:478-479](app/templates/meeting.html:478) | `#activityMoveToSelectedButton` |
-| Activity move ← | [meeting.html:480-481](app/templates/meeting.html:480) | `#activityMoveToAvailableButton` |
+| `get_dashboard_meetings` | [app/data/meeting_manager.py:1467](app/data/meeting_manager.py:1467) | Query filter + `is_facilitator` computation ([app/data/meeting_manager.py:1636](app/data/meeting_manager.py:1636)) |
+| `_collect_facilitator_assignments` | [app/data/meeting_manager.py:1773](app/data/meeting_manager.py:1773) | Ordered facilitator list (owner first) |
+| `_user_can_manage_meeting` / user directory | [app/routers/users.py:728](app/routers/users.py:728), [:814](app/routers/users.py:814) | Flags each user with `is_facilitator` for frontend display |
+| Brainstorming `_ensure_user_access` | [app/routers/brainstorming.py:85](app/routers/brainstorming.py:85) | Gate on ideas/comments |
+| Voting `_ensure_user_access` | [app/routers/voting.py:44](app/routers/voting.py:44) | Gate on votes |
+| Rank-order voting `_ensure_user_access` | [app/routers/rank_order_voting.py:48](app/routers/rank_order_voting.py:48) | Gate on rank-votes |
+| Categorization `_access` | [app/routers/categorization.py:70](app/routers/categorization.py:70) | Gate + returns `(is_participant, is_facilitator)` tuple |
+| Transfer `_assert_transfer_access` | [app/routers/transfer.py:48](app/routers/transfer.py:48) | Gate on export/import |
+| Meeting start/stop control | [app/routers/meetings.py:1935](app/routers/meetings.py:1935) | Inline facilitator check for activity control |
+| Meeting update (PUT) | [app/routers/meetings.py:1860](app/routers/meetings.py:1860) | Inline facilitator check + owner-only fields |
+| Meeting delete | [app/routers/meetings.py:2355](app/routers/meetings.py:2355) | **Owner-only** — co-facilitators rejected |
+| Export bundle | [app/routers/meetings.py:273](app/routers/meetings.py:273) | Serializes facilitator_links into export JSON |
+| Settings page `is_admin` | [app/routers/pages.py:353](app/routers/pages.py:353) | Per-meeting settings page gate |
 
-### 1.2 The Agenda panel
+### 5.3 Identity caching
 
-| Element | File:Line |
-|---|---|
-| Section container | [meeting.html:76](app/templates/meeting.html:76) `<section class="content-card meeting-agenda-card">` |
-| Heading to rename (`<h2>Agenda</h2>`) | [meeting.html:80](app/templates/meeting.html:80) |
-| Agenda summary pills | [meeting.html:81-84](app/templates/meeting.html:81) |
-| "Settings" button to rename | [meeting.html:98](app/templates/meeting.html:98) `id="agendaAddActivityButton"` |
-| Card-actions row (host for new Meeting Roster button) | [meeting.html:97-99](app/templates/meeting.html:97) |
-| Facilitator role gate | [meeting.html:96](app/templates/meeting.html:96) `{% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}` |
-
-The Settings button currently navigates the whole page to `/meeting/{id}/settings` (handled at [meeting.js:7994-7998](app/static/js/meeting.js:7994)) — it does NOT open a modal. The server route is [pages.py:353](app/routers/pages.py:353).
-
-### 1.3 Important invariant: there is no explicit "Meeting Roster" entry point today
-
-`ui.openParticipantAdminButton` is wired in JS at [meeting.js:316, 7856-7860](app/static/js/meeting.js:316), but the DOM element `#openParticipantAdminButton` **does not exist in `meeting.html`**. Confirmed by grep — only two places reference the meeting-roster modal title, both inside the modal itself.
-
-**Consequence:** today the only way to reach the meeting-roster editor from the meeting page is to open an activity's "Edit Roster" button and then click the "Meeting Participants" tab. This is exactly the coupling the user wants broken. Task 2 requires adding a real DOM button and the JS listener already exists waiting for it.
-
-### 1.4 Per-activity entry point ("Edit Roster")
-
-Each agenda row renders an "Edit Roster" button dynamically at [meeting.js:6261-6272](app/static/js/meeting.js:6261). Its click handler calls `openActivityParticipantModal(activity_id)` which:
-- Shows the shared modal ([meeting.js:6495](app/static/js/meeting.js:6495))
-- Calls `setParticipantModalMode("activity")` ([meeting.js:6507](app/static/js/meeting.js:6507))
-- Loads the activity assignment via GET
-
-`setParticipantModalMode()` at [meeting.js:6460-6493](app/static/js/meeting.js:6460) is the switch that swaps title, toggles panel visibility, and sets tab `data-active`. Removing the tab row does NOT remove the need for this function — the activity flow still calls it with `"activity"` and the meeting flow with `"meeting"`. The mode flag remains the load-bearing abstraction; only the in-modal tab UI is retired.
+- **JWT** carries only `sub = login` ([app/auth/auth.py:147](app/auth/auth.py:147)). No role claim, no per-meeting state.
+- **Request-scoped cache** of `UserSchema` at `request.state.user` ([app/auth/auth.py:350](app/auth/auth.py:350)). Per-request only; next request refetches.
+- **No per-meeting caching** — facilitator status is recomputed per request.
 
 ---
 
-## 2. JavaScript State & Event Map
+## 6. Backend enforcement surface (capability ↔ gate)
 
-### 2.1 `activityParticipantState`
-
-Defined at [meeting.js:857](app/static/js/meeting.js:857). Fields:
-
-| Field | Meaning |
-|---|---|
-| `currentActivityId` | Which activity's roster is loaded |
-| `selection` | `Set<userId>` — currently selected participants |
-| `availableHighlighted` / `selectedHighlighted` | Transient highlight sets for the arrow-button move |
-| `mode` | `"all"` or `"custom"` — source of truth for "inherit everyone" vs subset |
-| `dirty` | True if local edits pending — gates Apply button |
-| `loading` | True during GET/PUT |
-| `lastCustomSelection` | Cached last-custom selection; feeds the hidden "Reuse Last" button |
-| `lastLoadFailed` | Retry gate |
-
-### 2.2 Handlers that change behavior under task 4
-
-| Handler | Current behavior | Impact |
+| Capability | Current gate | Source of truth |
 |---|---|---|
-| `addActivityParticipantsFromAvailable()` [meeting.js:2053-2069] | Sets `dirty=true`, `mode="custom"`, local-only until Apply | Must call PUT immediately if auto-commit lands |
-| `removeActivityParticipantsFromSelected()` [meeting.js:2070-2085] | Same — local, requires Apply | Same |
-| `selectAllActivityAvailable()` [meeting.js:2031] / `selectAllActivitySelected()` [meeting.js:2048] | Toggle highlight only; the subsequent → / ← is the actual move | Unchanged — user explicitly keeps Select All |
-| `applyActivityParticipantSelection(modeOverride)` [meeting.js:1928-1986] | Issues PUT, syncs state on success | Becomes the core commit primitive, called per move instead of per Apply click |
-| `updateActivityParticipantButtons()` [meeting.js:~1599-1650] | Enables/disables Apply + Include Everyone based on `dirty` and `mode` | Dead code once buttons are gone |
+| View meeting | `_assert_meeting_access(require_facilitator=False)` | facilitator_links ∪ owner ∪ participants ∪ admin |
+| Create meeting | `check_permission(CREATE_MEETING)` | System role (facilitator+) |
+| Update meeting config / properties | `is_admin ∨ is_owner ∨ is_facilitator` | facilitator_links |
+| **Delete meeting** | `is_admin ∨ is_owner` **only** | owner_id — **co-facilitators cannot delete** |
+| Archive / restore | `_assert_meeting_access(require_facilitator=True)` | facilitator_links |
+| Agenda CRUD + reorder | `_assert_meeting_access(require_facilitator=True)` | facilitator_links |
+| Start / stop activity / change tool | Inline `is_admin ∨ is_owner ∨ is_facilitator` | facilitator_links |
+| List / add / remove participants | `_assert_meeting_access(require_facilitator=True)` | facilitator_links |
+| Activity roster set | `_assert_meeting_access(require_facilitator=True)` | facilitator_links |
+| Submit brainstorming idea | `_ensure_user_access` | facilitator_links ∪ activity.config participant_ids |
+| Cast vote / rank-vote | `_ensure_user_access` | facilitator_links ∪ activity.config participant_ids |
+| Categorization operations | `_access` + `_enforce_participant_lock` | facilitator_links + activity lock state |
+| Export / import meeting | `_assert_meeting_access(require_facilitator=True)` / `CREATE_MEETING` | Mixed |
+| Manage users | `check_permission(MANAGE_USERS)` | System role (admin+) |
+| Change user role | `check_permission(MANAGE_ROLES)` | System role (admin+); SUPER_ADMIN immutable |
+| User directory (meeting context) | `_user_can_manage_meeting` | facilitator_links + participants |
+| User directory (system context) | `requester.role ∈ {ADMIN, FACILITATOR}` | System role |
+| Settings read | `_require_facilitator_or_admin` | System role |
+| Settings write (admin keys) | Admin-only whitelist | System role |
+| Settings write (`brainstorming.*`) | Facilitator-allowed | System role |
+| Page routes `/dashboard`, `/settings`, `/meeting/design`, `/activity-library`, `/meeting/create`, `/meeting/{id}/settings`, `/admin/users` | `current_user.role ∈ {…}` checks in [app/routers/pages.py](app/routers/pages.py) | System role |
 
-### 2.3 Tab click listener (to be removed)
+**Permission inheritance** in [app/auth/auth.py:432-452](app/auth/auth.py:432):
+- PARTICIPANT: `VIEW_MEETING`
+- FACILITATOR: + `CREATE_MEETING, UPDATE_MEETING, DELETE_MEETING`
+- ADMIN: + `MANAGE_USERS, MANAGE_ROLES`
+- SUPER_ADMIN: all
 
-[meeting.js:7861-7867](app/static/js/meeting.js:7861) binds clicks on `[data-participant-modal-tab]` to `setParticipantModalMode(tab.dataset.participantModalTab)`. Remove the markup and this listener has nothing to find — but the *function* `setParticipantModalMode` itself must remain, because the per-activity and per-meeting open functions both still call it to configure the modal.
+### 6.1 WebSocket endpoints — unauthenticated
+
+- `WS /meetings/{meeting_id}` ([app/routers/realtime.py:37](app/routers/realtime.py:37))
+- Brainstorming WS ([app/routers/brainstorming.py:50](app/routers/brainstorming.py:50))
+- Categorization `_broadcast_refresh` ([app/routers/categorization.py:152](app/routers/categorization.py:152))
+
+All three **broadcast to every connected client in a meeting with no role filtering and no validation of the self-reported `userId` query param**. Orthogonal to the current bug but worth flagging as a breaking-point during any auth rework.
 
 ---
 
-## 3. Back-End Contract
+## 7. Frontend gating surface
 
-### 3.1 Activity roster endpoints
+### 7.1 Templates branching on role
 
-| Method & Path | File:Line | Payload |
+| File:Line | Condition | Gates |
 |---|---|---|
-| `GET /api/meetings/{mid}/agenda/{aid}/participants` | [meetings.py:1241](app/routers/meetings.py:1241) | Returns `{activity_id, mode, participant_ids, available_participants}` |
-| `PUT /api/meetings/{mid}/agenda/{aid}/participants` | [meetings.py:1282](app/routers/meetings.py:1282) | Accepts `ActivityParticipantUpdatePayload` |
+| [app/templates/_base.html:19](app/templates/_base.html:19) | `data-user-role="{{ current_user.role … }}"` | Global role attribute read by JS |
+| [app/templates/meeting.html:14](app/templates/meeting.html:14) | `data-user-role=…` | Seeds `context.userRole` in meeting.js |
+| [app/templates/meeting.html:15](app/templates/meeting.html:15) | `data-view-mode=facilitator/participant` (system-role branch) | Drives `state.isFacilitator` |
+| [app/templates/meeting.html:59](app/templates/meeting.html:59) | `{% if current_user.role in ['admin','super_admin','facilitator'] %}` | Activity-log link |
+| [app/templates/meeting.html:96-101](app/templates/meeting.html:96) | Same condition | **Meeting Settings + Meeting Roster buttons** (the user-visible bug) |
+| [app/templates/dashboard.html:8](app/templates/dashboard.html:8), [:12](app/templates/dashboard.html:12) | Same condition | Quick Actions panel |
+| [app/templates/dashboard.html:59](app/templates/dashboard.html:59) | `role in ['admin','super_admin']` | MANAGE USERS |
+| [app/templates/dashboard.html:74](app/templates/dashboard.html:74) | Same admin condition | Restart/Shutdown |
+| [app/templates/dashboard.html:110](app/templates/dashboard.html:110) | Same admin condition | Loads `admin_system.js` |
+| [app/templates/dashboard/_panel_admin.html:5](app/templates/dashboard/_panel_admin.html:5) | `data-requires-role="admin"` | Admin panel |
+| [app/templates/dashboard/_panel_facilitator.html:5](app/templates/dashboard/_panel_facilitator.html:5) | `data-requires-role="facilitator"` | Facilitated meetings panel |
+| [app/templates/dashboard/_panel_participant.html:5](app/templates/dashboard/_panel_participant.html:5) | `data-requires-role="participant"` | All-meetings panel |
+| [app/templates/settings.html:30](app/templates/settings.html:30), [:36](app/templates/settings.html:36), [:46](app/templates/settings.html:46), [:56-61](app/templates/settings.html:56) | `{% if not is_admin %}` | AI / defaults / security tabs + banner |
 
-### 3.2 `ActivityParticipantUpdatePayload` — **critical constraint**
+### 7.2 JS consumers
 
-Defined at [meetings.py:113-139](app/routers/meetings.py:113). Validator:
+- [app/static/js/meeting.js:19](app/static/js/meeting.js:19): `context.userRole = dataset.userRole` (once, page-load)
+- [app/static/js/meeting.js:46](app/static/js/meeting.js:46): `isAdminUser` computed from system role
+- [app/static/js/meeting.js:1334](app/static/js/meeting.js:1334): `if (!state.isFacilitator) return` — blocks participant-directory load
+- [app/static/js/meeting.js:1195](app/static/js/meeting.js:1195): reads API-derived `item.is_facilitator` for display pill only (not a gate)
+- [app/static/js/dashboard.js:31](app/static/js/dashboard.js:31): collects all `[data-requires-role]` elements
+- [app/static/js/dashboard.js:129-148](app/static/js/dashboard.js:129): `determineRoleScope` + `buildCapabilities` — builds capability set from system role **once** at page load
+- [app/static/js/dashboard.js:150-169](app/static/js/dashboard.js:150): `updatePanelVisibility` reads the capability set
+- [app/static/js/dashboard.js:704](app/static/js/dashboard.js:704): uses API-derived `meeting.is_facilitator` to route into tables (refreshed on dashboard poll)
 
-- `mode: Literal["all", "custom"]` (default `"custom"`)
-- `participant_ids: Optional[List[str]]`
-- **If `mode == "custom"`, `participant_ids` MUST be a non-empty list** ([meetings.py:131-135](app/routers/meetings.py:131)).
+### 7.3 Page-load caching hotspots (staleness)
 
-**Implication for auto-commit:** if the user removes the LAST person from Selected via the ← button, the UI would need to issue a PUT that the server currently rejects. This is the single biggest behavioral seam in task 4. Options to consider (for the planning stage, not here):
-- Auto-switch to `mode="all"` when the selection empties.
-- Relax the validator to accept `{mode:"custom", participant_ids:[]}`.
-- Block the last ← move client-side.
-
-No choice is made here — this audit only flags the collision.
-
-### 3.3 Meeting roster endpoints (already well-separated at the API layer)
-
-| Method & Path | File:Line |
-|---|---|
-| `GET /api/meetings/{mid}/participants` | [meetings.py:1092](app/routers/meetings.py:1092) |
-| `POST /api/meetings/{mid}/participants` | [meetings.py:1123](app/routers/meetings.py:1123) |
-| `DELETE /api/meetings/{mid}/participants/{uid}` | [meetings.py:1170](app/routers/meetings.py:1170) |
-| `POST /api/meetings/{mid}/participants/bulk` | [meetings.py:1206](app/routers/meetings.py:1206) |
-
-**Conclusion:** the back-end already has a clean separation between meeting-roster and activity-roster endpoints. The coupling the user wants to break is purely in the UI.
-
-### 3.4 Collision detection & real-time broadcast
-
-- PUT activity roster does a conflict check if the activity is running ([meetings.py:1344-1390](app/routers/meetings.py:1344)), returning `409 Conflict` with a list of overlapping participants. Current UI surfaces this via the `#collisionModal` ([meeting.js:8001+]).
-- On success, if activity is live, `_apply_live_roster_patch()` broadcasts the new roster over WebSocket ([meetings.py:639, 1404-1422]). Metadata includes `participantScope` and `participantIds`.
-
-**Auto-commit amplification:** today one Apply click = one PUT = one potential 409 = one broadcast. Under auto-commit every → / ← could trigger the same. Two downstream risks flagged for planning:
-1. A 409 returned *after* the user visually moved a chip will force a revert-UX that doesn't exist today.
-2. WebSocket broadcast cadence rises from "once per facilitator decision" to "once per click." Rooms with many consumers see proportionally more traffic.
+1. `meeting.html:14-15` → `data-user-role` + `data-view-mode` — **never re-read** after load.
+2. `meeting.js:19` → `context.userRole`, `state.isFacilitator` — derived once.
+3. `dashboard.html:19` → `data-user-role` on `layout-container` — consumed by `dashboard.js` once.
+4. All `{% if current_user.role … %}` blocks in templates — render-time only; no SSR re-render on role change.
 
 ---
 
-## 4. Data Model
+## 8. Inconsistency & breaking-point matrix
 
-### 4.1 Where activity rosters live
-
-`AgendaActivity.config` is a JSON column. Per-activity roster state is encoded as:
-
-- `config["participant_ids"]` **absent or removed** → `mode = "all"` (inherit meeting roster).
-- `config["participant_ids"] = [ ... ]` → `mode = "custom"`.
-
-Confirmed at [meeting_manager.py:1387-1441](app/data/meeting_manager.py:1387) (`set_activity_participants`): passing `None` pops the key; passing an iterable sets it. The assignment builder at [meetings.py:191](app/routers/meetings.py:191) reads `"custom" if participant_ids else "all"`.
-
-### 4.2 Default for new activities
-
-Freshly created activities have no `participant_ids` key in `config`, so they already resolve to `mode="all"` at read time. **No data migration is needed** to make "inherit all" the default — it already is, at the persistence layer. The UI's current "Include Everyone" button is a redundant re-assertion of a default the data already implies.
-
-### 4.3 Roster pruning on meeting-participant removal
-
-When a participant is removed from the meeting, [meeting_manager.py:1365-1371](app/data/meeting_manager.py:1365) strips their id from every activity's `config["participant_ids"]` and pops the key if the list empties. This integrity rule is orthogonal to the UI changes but must continue to hold.
-
-### 4.4 Plugin read surface
-
-Plugins (`voting_plugin.py`, `brainstorming_plugin.py`, `categorization_plugin.py`, `rank_order_voting_plugin.py`) do **not** read `participant_ids` directly — confirmed by grep over `app/plugins/`. Scope-aware logic (`participantScope`) is handled upstream in routers, e.g. [voting.py:92,118](app/routers/voting.py:92), [categorization.py:114,134](app/routers/categorization.py:114), [rank_order_voting.py:121,147](app/routers/rank_order_voting.py:121), [brainstorming.py:155](app/routers/brainstorming.py:155). No plugin change required by tasks 1-4.
+| # | Inconsistency | Symptom seen by user | Evidence |
+|---|---|---|---|
+| 1 | `remove_participant` doesn't clear `facilitator_links` | Remove & re-add a facilitator on the roster → row survives → stale facilitator powers | [app/data/meeting_manager.py:1253](app/data/meeting_manager.py:1253) |
+| 2 | `_ensure_facilitator_assignment` is add-only | Cannot "downgrade" a meeting-level facilitator to participant through the roster UI | [app/data/meeting_manager.py:1200](app/data/meeting_manager.py:1200) |
+| 3 | `update_user_role` doesn't touch facilitator_links | Demoting a system facilitator leaves them with stale per-meeting facilitator powers across every meeting they've touched | [app/data/user_manager.py:564](app/data/user_manager.py:564) |
+| 4 | Template Settings/Roster buttons gate on system role, but backend gates on `facilitator_links` | User demoted to participant at system level *still holds* stale facilitator_links → backend admits their actions; but buttons hidden → asymmetric UI/capability split. Exactly matches the reported symptoms. | [app/templates/meeting.html:96](app/templates/meeting.html:96) vs [app/routers/meetings.py:203](app/routers/meetings.py:203) |
+| 5 | Delete-meeting gates on `owner_id` only; every other facilitator capability admits co-facilitators | A co-facilitator can do everything but delete | [app/routers/meetings.py:2355](app/routers/meetings.py:2355) |
+| 6 | User-directory gate differs between meeting-context and system-context | Same UI flows through two different authorization rules | [app/routers/users.py:700-860](app/routers/users.py:700) |
+| 7 | Activity roster has two sources of truth: `activity.config['participant_ids']` vs live `meeting_state_manager` | Activity visibility can disagree with config | [app/routers/brainstorming.py:151-176](app/routers/brainstorming.py:151) |
+| 8 | Categorization has a participant-lock mechanism; brainstorming/voting do not | Participant-blocking behavior inconsistent across activity types | [app/routers/categorization.py:199](app/routers/categorization.py:199) |
+| 9 | WebSocket endpoints do not authenticate or authorize; `userId` is self-reported | Any client can connect to any meeting and receive all broadcasts | [app/routers/realtime.py:46](app/routers/realtime.py:46) |
+| 10 | Redundant `UniqueConstraint` on `meeting_facilitators.facilitator_id` (PK already unique) | Cosmetic; noise for any schema cleanup | [app/models/meeting.py:102](app/models/meeting.py:102) |
+| 11 | `register_user` hardcodes the string `"PARTICIPANT"` instead of `UserRole.PARTICIPANT.value` | Fragile if enum values shift | [app/data/user_manager.py:984](app/data/user_manager.py:984) |
+| 12 | Dashboard response exposes full `facilitator_links` + `participants` arrays plus derived `is_facilitator` / `can_edit` / `can_delete` / `can_archive` | Contract coupling: any collapse of `facilitator_links` requires adjusting the response shape + frontend consumers | [app/data/meeting_manager.py:1636](app/data/meeting_manager.py:1636), [app/static/js/dashboard.js:704](app/static/js/dashboard.js:704) |
 
 ---
 
-## 5. Tests
+## 9. Test coverage terrain
 
-### 5.1 Files in scope
+### 9.1 Tests that pin current behavior (non-exhaustive; names with one-line purpose)
 
-| File | Coverage |
-|---|---|
-| [test_activity_rosters.py](app/tests/test_activity_rosters.py) | Primary: PUT with `mode="custom"`/`"all"`, validation |
-| [test_api_meetings.py](app/tests/test_api_meetings.py) | Meeting-level participant CRUD |
-| [test_api_participants.py](app/tests/test_api_participants.py) | Participant endpoints |
-| [test_meeting_manager.py](app/tests/test_meeting_manager.py) | `set_activity_participants`, pruning |
-| [test_api_user_directory.py](app/tests/test_api_user_directory.py) | Directory search feeding the meeting-roster "Add" form |
-| [test_transfer_api.py](app/tests/test_transfer_api.py), [test_brainstorming_api.py](app/tests/test_brainstorming_api.py), [test_voting_api.py](app/tests/test_voting_api.py), [test_categorization_api.py](app/tests/test_categorization_api.py) | Read `participantScope` indirectly |
-| [test_frontend_smoke.py](app/tests/test_frontend_smoke.py) | Does not reference any of the button labels or tab markup (grep confirmed) |
+| Test file | Function | Pins |
+|---|---|---|
+| [app/tests/test_meeting_manager.py](app/tests/test_meeting_manager.py) | `test_activity_participant_scope_management` | Assumes auto-grant of facilitator_links for FACILITATOR users |
+| [app/tests/test_meeting_manager.py](app/tests/test_meeting_manager.py) | `test_bulk_update_participants_adds_and_removes_users` | Assumes bulk add triggers facilitator auto-grant |
+| [app/tests/test_meeting_manager.py](app/tests/test_meeting_manager.py) | `test_remove_meeting_participant_pops_empty_custom` | Cascade cleanup of activity config on participant removal |
+| [app/tests/test_api_meetings.py](app/tests/test_api_meetings.py) | `test_cofacilitator_update_permissions` | Co-facilitators may update config but not owner/facilitators |
+| [app/tests/test_api_meetings.py](app/tests/test_api_meetings.py) | `test_facilitator_controls_start_stop_tool` | Start/stop gated to facilitators |
+| [app/tests/test_auth.py](app/tests/test_auth.py) | (multiple) | Permission-inheritance ladder |
+| [app/tests/test_activity_rosters.py](app/tests/test_activity_rosters.py) | (multiple) | Custom activity roster scoping |
+| [app/tests/test_categorization_api.py](app/tests/test_categorization_api.py) | `test_participant_cannot_assign_categories` (and siblings) | Facilitator-only categorization ops |
+| [app/tests/test_brainstorming_api.py](app/tests/test_brainstorming_api.py) | `test_participant_in_custom_roster` (and siblings) | Activity participant_ids gating |
+| [app/tests/test_api_participants.py](app/tests/test_api_participants.py) | roster CRUD tests | Facilitator-only roster management |
+| [app/tests/test_api_batch_users.py](app/tests/test_api_batch_users.py) | batch creation | Admin-only |
+| [app/tests/test_pages.py](app/tests/test_pages.py) | `test_settings_page_requires_facilitator` | Settings UI gated to facilitator+ |
+| [app/tests/test_frontend_smoke.py](app/tests/test_frontend_smoke.py) | `test_meeting_roster_button_present` | Meeting Roster button present and gated by `{% if current_user.role in [...] %}` |
+| [app/tests/test_frontend_smoke.py](app/tests/test_frontend_smoke.py) | `test_meeting_settings_button_label` | Meeting Settings button labeled "Meeting Settings" |
 
-### 5.2 Likely-at-risk assertions
+Baseline: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v` → **526 passed, 2 skipped** as of HEAD (recorded in commit `4f3dac3`).
 
-- Any test that posts `{mode: "custom", participant_ids: []}` and expects success — will still fail validation today, and the UI change may force a relaxation (§3.2). Grep shows `test_activity_rosters.py` only posts non-empty custom lists, so currently safe.
-- No test currently asserts the presence of `#activityParticipantApply`, `#activityParticipantIncludeAll`, or the tab buttons.
-- Nothing asserts the string "Agenda", "Settings", or "Edit Roster" as a heading/button label (grep of `test_frontend_smoke.py` returned no matches).
+### 9.2 Missing coverage
 
-**Net:** the test surface is small. Risk is concentrated on **new** tests required for auto-commit semantics (especially the "remove last selected" case) and any Playwright-style smoke test that asserts the new Meeting Roster button exists.
-
----
-
-## 6. Seams & Breaking Points
-
-### 6.1 Open question: Reuse Last
-
-The "Reuse Last" button at [meeting.html:452](app/templates/meeting.html:452) is in the same action row the user asked to remove, but the user's description only explicitly calls out "Include Everyone" and "Apply Selection." It's hidden by default and becomes visible when `lastCustomSelection` exists ([meeting.js:1870]). Whether it survives the cleanup is a scope decision, not a technical blocker. Flagged here; not resolved.
-
-### 6.2 Shared `setParticipantModalMode` stays
-
-Even after the tabs are gone, the meeting-roster open path ([meeting.js:6517-6527]) and the activity-roster open path ([meeting.js:6495-6515]) both call `setParticipantModalMode()`. The function's *caller* set changes (tabs stop calling it), but the function itself remains the contract that configures the modal. Removing it would break both flows.
-
-### 6.3 New button needs a new DOM id
-
-JS already listens for `#openParticipantAdminButton` ([meeting.js:316, 7856-7860]) but no such element exists in any template today. Task 2's new "Meeting Roster" button can either reuse this id (lowest-effort wire-up) or take a new id. Either way, the Agenda panel's action row at [meeting.html:97-99](app/templates/meeting.html:97) is the natural host, and the role gate at line 96 already restricts it to admin/super_admin/facilitator.
-
-### 6.4 Auto-commit collision points
-
-- **Empty-selection PUT rejected** — see §3.2.
-- **409 after optimistic move** — current UX assumes a deliberate Apply; per-click would need a rollback pattern.
-- **Last-write-wins races** — two quick → clicks could overlap PUTs; the back-end is idempotent on full-state replace, but ordering still matters.
-- **WebSocket cadence** — every commit broadcasts; noisy under rapid edits.
-
-### 6.5 Default-semantics drift
-
-The data layer *already* defaults to `mode="all"`. Removing "Include Everyone" makes the UI finally match the storage truth — but it also removes the only visible affordance that *undoes* a custom selection back to "all." Once the button is gone, the only path back to "inherit all" is "remove every person from Selected," which collides with §3.2. This tension is the single most important design decision deferred to the planning stage.
-
-### 6.6 Agenda-panel rename is label-only
-
-The `<h2>Agenda</h2>` at [meeting.html:80](app/templates/meeting.html:80) is referenced by no JS selector, no test, no CSS rule by text (classes are `agenda-header`, `agenda-title-row`). Renaming it is cosmetically safe. If the new label "Meeting Agenda and Participant Roster" suggests the roster should be rendered *inline* in the panel, that is a larger reshape the user has not requested — this audit assumes only the heading text changes.
-
-### 6.7 Uncommitted working-tree changes
-
-`git status` at session start showed modifications to [meeting.js](app/static/js/meeting.js), [create_meeting.html](app/templates/create_meeting.html), [meeting_manager.py](app/data/meeting_manager.py), and assorted router/test files — all carried forward to this branch. Spot-check showed no in-flight edits to the Agenda panel, the participant modal, or the activity-participant handlers. Low collision risk, but a real `git diff` review is warranted before planning edits overlap these regions.
+- No test for `_ensure_facilitator_assignment` as a unit.
+- No test for stale `facilitator_links` after `remove_participant`.
+- No test for `update_user_role` cascade (or lack thereof) to `facilitator_links`.
+- No WebSocket authorization tests.
 
 ---
 
-## 7. Summary Map
+## 10. Files most likely to be touched by the collapse
 
-| Concern | Location |
-|---|---|
-| Agenda heading rename | [meeting.html:80](app/templates/meeting.html:80) |
-| "Settings" button rename | [meeting.html:98](app/templates/meeting.html:98) |
-| New "Meeting Roster" button host row | [meeting.html:97-99](app/templates/meeting.html:97) |
-| Already-wired JS listener awaiting button | [meeting.js:316, 7856-7860](app/static/js/meeting.js:7856) |
-| Modal tab row removal | [meeting.html:356-364](app/templates/meeting.html:356) |
-| Modal tab listener removal | [meeting.js:7861-7867](app/static/js/meeting.js:7861) |
-| Action-row removal (Include Everyone / Apply / ?Reuse Last) | [meeting.html:449-456](app/templates/meeting.html:449) |
-| Select All buttons (keep) | [meeting.html:464, 489](app/templates/meeting.html:464) |
-| Auto-commit entry points | [meeting.js:2053-2085](app/static/js/meeting.js:2053) (move handlers) + [meeting.js:1928-1986](app/static/js/meeting.js:1928) (PUT) |
-| Empty-custom validation blocker | [meetings.py:131-135](app/routers/meetings.py:131) |
-| Collision + live-patch amplification | [meetings.py:1344-1422](app/routers/meetings.py:1344), [meetings.py:639](app/routers/meetings.py:639) |
-| Data-layer default already "all" | [meeting_manager.py:1387-1441](app/data/meeting_manager.py:1387), [meetings.py:191](app/routers/meetings.py:191) |
+**Schema / models**
+- [app/models/meeting.py](app/models/meeting.py) — remove `MeetingFacilitator`, `meeting_facilitators_table`, `facilitator_links`, `facilitators` relations; `is_owner` concept collapses to `owner_id` alone
+- [app/models/user.py](app/models/user.py) — remove `facilitator_links` relationship
+
+**Data layer**
+- [app/data/meeting_manager.py](app/data/meeting_manager.py) — remove `_should_auto_facilitate`, `_ensure_facilitator_assignment`, `_collect_facilitator_assignments`; rewrite `create_meeting`, `add_meeting`, `add_participant`, `bulk_update_participants`, `get_dashboard_meetings`; adjust dashboard response shape
+- [app/data/user_manager.py](app/data/user_manager.py) — `update_user_role` no longer needs cascade (nothing to cascade to)
+- [app/main.py:101](app/main.py:101) — drop `meeting_facilitators_table.create(...)` shim
+
+**Backend enforcement**
+- [app/routers/meetings.py](app/routers/meetings.py) — rewrite `_assert_meeting_access`; remove `facilitator_links` iteration everywhere
+- [app/routers/users.py](app/routers/users.py), [app/routers/brainstorming.py](app/routers/brainstorming.py), [app/routers/voting.py](app/routers/voting.py), [app/routers/rank_order_voting.py](app/routers/rank_order_voting.py), [app/routers/categorization.py](app/routers/categorization.py), [app/routers/transfer.py](app/routers/transfer.py) — each has a `_ensure_user_access` / `_access` / etc. reading `facilitator_links`
+- [app/routers/pages.py](app/routers/pages.py) — page role gates (minor)
+- [app/routers/realtime.py](app/routers/realtime.py) — orthogonal (auth gap), may surface during rework
+- [app/auth/auth.py](app/auth/auth.py) — permission inheritance (probably unchanged; the collapse doesn't touch the system-role ladder)
+
+**Frontend**
+- [app/templates/meeting.html:14-15, 59, 96-101](app/templates/meeting.html) — the visible-bug hotspot
+- [app/templates/_base.html](app/templates/_base.html), [app/templates/dashboard.html](app/templates/dashboard.html), [app/templates/dashboard/_panel_*.html](app/templates/dashboard), [app/templates/settings.html](app/templates/settings.html)
+- [app/static/js/meeting.js](app/static/js/meeting.js), [app/static/js/dashboard.js](app/static/js/dashboard.js)
+
+**Export / serialization**
+- [app/routers/meetings.py:273](app/routers/meetings.py:273) `_build_meeting_export_bundle` writes `facilitators[].is_owner` into export JSON → **backward compatibility consideration** for existing exported files
+
+**Tests**
+- All test files in §9.1 need updates or deletions (auto-grant assumptions disappear).
 
 ---
 
-*End of terrain audit. No code changes or design choices are made here — the planning document will resolve §6.1 (Reuse Last fate), §6.4 (auto-commit race/validation strategy), and §6.5 (how a facilitator returns to "inherit all" after a custom edit).*
+## 11. Open questions the terrain surfaces (not to be answered here)
+
+1. **Delete-meeting asymmetry** — does collapse preserve "only the owner can delete" or fold it into "any system facilitator on the roster can delete"?
+2. **Co-facilitator concept at meeting creation** — the create-meeting form today takes `additional_facilitator_ids`. If per-meeting facilitator role disappears, that field becomes a no-op; is the create UI changing too?
+3. **Exported data backward compatibility** — does existing exported JSON with `facilitators[]` sections still need to import cleanly?
+4. **WebSocket auth gap** — orthogonal to this task, but touching auth layer will make the gap more obvious. In scope or separate issue?
+5. **`is_owner` flag** — currently stored on `MeetingFacilitator`. On collapse, owner-ness is purely `Meeting.owner_id`. Semantics align, but any code branching on the flag needs to switch to the FK compare.
+
+---
+
+## 12. Verification baseline
+
+- Test suite baseline at audit time: `526 passed, 2 skipped, 0 failed` (from commit `4f3dac3` message).
+- `facilitator_links` reference count across non-test code: ~97 occurrences across 15 files.
+- Branch: `fix/role-problems`. Working tree: `plans/` files deleted (uncommitted) as part of a wipe; this discovery file is the first re-population.
+
+---
+
+*End of DISCOVERY. No code suggestions in this file by design. Planning, scoping, and sequencing belong to later documents.*

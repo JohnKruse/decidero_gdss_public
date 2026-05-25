@@ -12,6 +12,7 @@ from app.models.activity_bundle import ActivityBundle
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.rank_order_voting import RankOrderVote
 from app.models.user import User, UserRole
+from app.services.meeting_authorization import resolve_meeting_capabilities
 
 
 @dataclass(frozen=True)
@@ -131,15 +132,7 @@ class RankOrderVotingManager:
 
     @staticmethod
     def _is_facilitator(meeting: Meeting, user: User) -> bool:
-        role_value = getattr(user, "role", UserRole.PARTICIPANT.value)
-        if role_value in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}:
-            return True
-        if getattr(meeting, "owner_id", None) == user.user_id:
-            return True
-        for link in meeting.facilitator_links or []:
-            if getattr(link, "user_id", None) == user.user_id:
-                return True
-        return False
+        return bool(resolve_meeting_capabilities(meeting, user)["can_manage"])
 
     @staticmethod
     def _participant_order_key(

@@ -5,7 +5,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from app.models.user import User
-from app.models.meeting import Meeting, MeetingFacilitator, AgendaActivity
+from app.models.meeting import Meeting, AgendaActivity
 
 USER_ID_PREFIX = "USR"
 USER_ID_SEQUENCE_WIDTH = 3
@@ -13,10 +13,6 @@ USER_ID_STEM_LENGTH = 6
 
 MEETING_ID_PREFIX = "MTG"
 MEETING_ID_SUFFIX_WIDTH = 4
-
-FACILITATOR_ID_PREFIX = "FAC"
-FACILITATOR_ID_SEQUENCE_WIDTH = 3
-FACILITATOR_ID_STEM_LENGTH = 6
 
 ACTIVITY_SEQUENCE_WIDTH = 4
 TOOL_CONFIG_SEQUENCE_WIDTH = 2
@@ -135,39 +131,6 @@ def generate_meeting_id(db: Session, created_at: Optional[datetime] = None) -> s
     sequence = _next_meeting_sequence(db, date_prefix)
     suffix = _format_base36(sequence).upper().rjust(MEETING_ID_SUFFIX_WIDTH, "0")
     return f"{date_prefix}-{suffix}"
-
-
-def _next_facilitator_sequence(db: Session, prefix: str) -> int:
-    like_pattern = f"{prefix}-%"
-    latest: Optional[str] = (
-        db.query(MeetingFacilitator.facilitator_id)
-        .filter(MeetingFacilitator.facilitator_id.like(like_pattern))
-        .order_by(MeetingFacilitator.facilitator_id.desc())
-        .limit(1)
-        .scalar()
-    )
-    if not latest:
-        return 1
-    try:
-        return int(latest.split("-")[-1]) + 1
-    except (ValueError, IndexError):
-        return 1
-
-
-def generate_facilitator_id(
-    db: Session,
-    first_name: Optional[str],
-    last_name: Optional[str],
-) -> str:
-    """
-    Construct a facilitator roster identifier following FAC-LLLLLLF-NNN.
-    The sequence is global per stem/initial combination to maintain readability.
-    """
-    stem = _clean_stem(last_name)[:FACILITATOR_ID_STEM_LENGTH]
-    initial = _clean_initial(first_name)
-    prefix = f"{FACILITATOR_ID_PREFIX}-{stem}{initial}"
-    sequence = _next_facilitator_sequence(db, prefix)
-    return f"{prefix}-{sequence:0{FACILITATOR_ID_SEQUENCE_WIDTH}d}"
 
 
 def derive_activity_prefix(tool_type: str) -> str:

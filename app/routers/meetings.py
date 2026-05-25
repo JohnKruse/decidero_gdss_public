@@ -26,7 +26,11 @@ from app.models.meeting import AgendaActivity, Meeting
 from app.models.idea import Idea
 from app.models.activity_bundle import ActivityBundle
 from app.models.voting import VotingVote
-from app.data.meeting_manager import MeetingManager, get_meeting_manager
+from app.data.meeting_manager import (
+    MeetingManager,
+    get_meeting_manager,
+)
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.auth.auth import (
     get_current_user,
     get_optional_user_model_dependency,
@@ -205,27 +209,36 @@ def _assert_meeting_access(
     user,
     require_facilitator: bool = False,
 ) -> None:
-    facilitator_links = getattr(meeting, "facilitator_links", []) or []
-    participants = getattr(meeting, "participants", []) or []
-
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-    is_participant = any(person.user_id == user.user_id for person in participants)
+    capabilities = resolve_meeting_capabilities(meeting, user)
 
     if require_facilitator:
-        if not (is_admin or is_owner or is_facilitator):
+        if not capabilities["can_manage"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only facilitators can modify the meeting agenda.",
             )
         return
 
-    if not (is_admin or is_owner or is_facilitator or is_participant):
+    if not capabilities["can_view"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to access this meeting",
         )
+
+
+def _assert_meeting_delete_authority(meeting, user) -> None:
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_delete"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not enough permissions to delete this meeting",
+        )
+
+
+def _serialize_meeting_response(meeting: Meeting, user: User) -> MeetingResponse:
+    payload = MeetingResponse.model_validate(meeting).model_dump()
+    payload["viewer_capabilities"] = resolve_meeting_capabilities(meeting, user).to_dict()
+    return MeetingResponse.model_validate(payload)
 
 
 def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
@@ -274,11 +287,7 @@ def _build_meeting_export_bundle(
     meeting: Meeting,
     meeting_manager: MeetingManager,
 ) -> Dict[str, object]:
-    facilitators = []
-    for link in getattr(meeting, "facilitator_links", []) or []:
-        payload = _build_user_export(link.user)
-        payload["is_owner"] = link.is_owner
-        facilitators.append(payload)
+    owner_export = _build_user_export(getattr(meeting, "owner", None))
 
     participants = [
         _build_user_export(participant)
@@ -323,7 +332,7 @@ def _build_meeting_export_bundle(
             "start_time": _serialize_datetime(meeting.started_at),
             "end_time": _serialize_datetime(meeting.end_time),
         },
-        "facilitators": facilitators,
+        "owner": owner_export,
         "participants": participants,
         "agenda": agenda,
         "ideas": [
@@ -416,6 +425,17 @@ def _resolve_import_user_id(
         if user:
             return user.user_id
     return None
+
+
+def _read_legacy_import_facilitators(export_payload: Dict[str, object]) -> List[dict]:
+    """
+    Pickle Trombone: tolerate legacy bundles that contain top-level facilitators,
+    but do not map them into the imported roster or active authority model.
+    """
+    entries = export_payload.get("facilitators")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
 
 
 def _resolve_import_title(db, base_title: str) -> str:
@@ -716,6 +736,7 @@ async def _apply_live_roster_patch(
 @router.get("/active", response_model=List[MeetingResponse])
 async def get_active_meetings(
     current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
     meeting_manager: MeetingManager = Depends(
         get_meeting_manager
     ),  # Inject MeetingManager
@@ -725,9 +746,14 @@ async def get_active_meetings(
     """
     try:
         logger.debug(f"Fetching active meetings for user: {current_user}")
+        user = user_manager.get_user_by_login(current_user)
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+            )
         # Removed await as get_active_meetings is synchronous
         meetings = meeting_manager.get_active_meetings()
-        return [MeetingResponse.model_validate(meeting) for meeting in meetings]
+        return [_serialize_meeting_response(meeting, user) for meeting in meetings]
     except Exception as e:
         logger.error(f"Error fetching active meetings: {str(e)}")
         raise HTTPException(
@@ -808,7 +834,7 @@ async def create_meeting(
             user.user_id,
             agenda_items=agenda_payloads,
         )
-        return MeetingResponse.model_validate(new_meeting)
+        return _serialize_meeting_response(new_meeting, user)
     except Exception as e:
         logger.error(f"Error creating meeting: {str(e)}")
         raise HTTPException(
@@ -838,12 +864,8 @@ async def update_meeting_configuration(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
             )
 
-        facilitator_links = getattr(meeting, "facilitator_links", []) or []
-        is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        is_owner = meeting.owner_id == user.user_id
-        is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-
-        if not (is_admin or is_owner or is_facilitator):
+        capabilities = resolve_meeting_capabilities(meeting, user)
+        if not capabilities["can_edit_meeting"]:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have permission to update this meeting",
@@ -893,7 +915,7 @@ async def update_meeting_configuration(
         ):
             setattr(updated_meeting, "start_time", updated_meeting.started_at)
 
-        return MeetingResponse.model_validate(updated_meeting)
+        return _serialize_meeting_response(updated_meeting, user)
     except HTTPException:
         raise
     except Exception as e:
@@ -1111,16 +1133,7 @@ async def list_meeting_participants(
         )
     _assert_meeting_access(meeting, user, require_facilitator=True)
     participants = meeting_manager.list_participants(meeting_id)
-    return [
-        {
-            "user_id": p.user_id,
-            "login": p.login,
-            "first_name": getattr(p, "first_name", None),
-            "last_name": getattr(p, "last_name", None),
-            "role": getattr(p.role, "value", p.role),
-        }
-        for p in participants
-    ]
+    return _build_participant_summary(participants)
 
 
 @router.post("/{meeting_id}/participants", status_code=status.HTTP_200_OK)
@@ -1157,16 +1170,7 @@ async def add_meeting_participant(
     updated = meeting_manager.add_participant(meeting_id, target_user)
     return {
         "meeting_id": updated.meeting_id,
-        "participants": [
-            {
-                "user_id": p.user_id,
-                "login": p.login,
-                "first_name": getattr(p, "first_name", None),
-                "last_name": getattr(p, "last_name", None),
-                "role": getattr(p.role, "value", p.role),
-            }
-            for p in (updated.participants or [])
-        ],
+        "participants": _build_participant_summary(updated.participants or []),
     }
 
 
@@ -1193,16 +1197,7 @@ async def remove_meeting_participant(
     updated = meeting_manager.remove_participant(meeting_id, user_id)
     return {
         "meeting_id": updated.meeting_id,
-        "participants": [
-            {
-                "user_id": p.user_id,
-                "login": p.login,
-                "first_name": getattr(p, "first_name", None),
-                "last_name": getattr(p, "last_name", None),
-                "role": getattr(p.role, "value", p.role),
-            }
-            for p in (updated.participants or [])
-        ],
+        "participants": _build_participant_summary(updated.participants or []),
     }
 
 
@@ -1624,15 +1619,12 @@ async def import_meeting(
         pid for pid in participants if not (pid in seen_participants or seen_participants.add(pid))
     ]
 
-    facilitators = []
-    for entry in export_payload.get("facilitators", []) or []:
-        resolved = _resolve_import_user_id(entry, user_manager)
-        if resolved and resolved != user.user_id:
-            facilitators.append(resolved)
-    seen_facilitators = set()
-    facilitator_ids = [
-        fid for fid in facilitators if not (fid in seen_facilitators or seen_facilitators.add(fid))
-    ]
+    legacy_facilitator_entries = _read_legacy_import_facilitators(export_payload)
+    if legacy_facilitator_entries:
+        logger.info(
+            "Ignoring %d legacy facilitator entries while importing meeting bundle.",
+            len(legacy_facilitator_entries),
+        )
 
     agenda_payloads: List[AgendaActivityCreate] = []
     for entry in export_payload.get("agenda", []) or []:
@@ -1661,7 +1653,7 @@ async def import_meeting(
         publicity=PublicityType.PUBLIC if is_public else PublicityType.PRIVATE,
         owner_id=user.user_id,
         participant_ids=participant_ids,
-        additional_facilitator_ids=facilitator_ids,
+        additional_facilitator_ids=[],
     )
 
     try:
@@ -1763,7 +1755,7 @@ async def import_meeting(
 
         meeting_manager.db.commit()
         refreshed = meeting_manager.get_meeting(new_meeting.meeting_id) or new_meeting
-        return MeetingResponse.model_validate(refreshed)
+        return _serialize_meeting_response(refreshed, user)
     except HTTPException:
         meeting_manager.db.rollback()
         raise
@@ -1802,17 +1794,7 @@ async def get_meeting(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
             )
 
-        facilitator_links = getattr(meeting, "facilitator_links", []) or []
-        participants = getattr(meeting, "participants", []) or []
-        is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        is_owner = meeting.owner_id == user.user_id
-        is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
-        is_participant = any(person.user_id == user.user_id for person in participants)
-        if not (is_admin or is_owner or is_facilitator or is_participant):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions to view this meeting",
-            )
+        _assert_meeting_access(meeting, user, require_facilitator=False)
 
         _apply_activity_lock_metadata(
             meeting_id,
@@ -1823,7 +1805,7 @@ async def get_meeting(
             meeting_id, meeting_manager, getattr(meeting, "agenda_activities", []) or []
         )
 
-        return MeetingResponse.model_validate(meeting)
+        return _serialize_meeting_response(meeting, user)
     except HTTPException:
         raise
     except Exception as e:
@@ -1881,19 +1863,16 @@ async def update_meeting(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    facilitator_links = getattr(existing_meeting, "facilitator_links", []) or []
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = existing_meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
+    capabilities = resolve_meeting_capabilities(existing_meeting, user)
 
-    if not (is_admin or is_owner or is_facilitator):
+    if not capabilities["can_manage"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions to update this meeting",
         )
 
     update_payload = meeting.model_dump(exclude_unset=True)
-    if is_facilitator and not (is_admin or is_owner):
+    if capabilities["is_facilitator"] and not capabilities["can_delete"]:
         restricted_fields = {"owner_id", "facilitator_ids"}
         attempted = restricted_fields.intersection(update_payload.keys())
         if attempted:
@@ -1908,7 +1887,7 @@ async def update_meeting(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update meeting",
         )
-    return MeetingResponse.model_validate(updated_meeting)
+    return _serialize_meeting_response(updated_meeting, user)
 
 
 @router.post("/{meeting_id}/control", response_model=MeetingControlResponse)
@@ -1932,12 +1911,9 @@ async def control_meeting(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    facilitator_links = getattr(meeting, "facilitator_links", []) or []
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = meeting.owner_id == user.user_id
-    is_facilitator = any(link.user_id == user.user_id for link in facilitator_links)
+    capabilities = resolve_meeting_capabilities(meeting, user)
 
-    if not (is_admin or is_owner or is_facilitator):
+    if not capabilities["can_manage"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only facilitators can control meeting tools.",
@@ -2378,13 +2354,7 @@ async def delete_meeting(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
             )
 
-        is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        is_owner = existing_meeting.owner_id == user.user_id
-        if not (is_admin or is_owner):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Not enough permissions to delete this meeting",
-            )
+        _assert_meeting_delete_authority(existing_meeting, user)
 
         # Implement meeting deletion logic using injected meeting_manager
         success = meeting_manager.delete_meeting_permanently(
@@ -2396,6 +2366,8 @@ async def delete_meeting(
                 detail="Failed to delete meeting",
             )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e)
@@ -2421,7 +2393,7 @@ async def archive_meeting_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    _assert_meeting_access(meeting, user, require_facilitator=True)
+    _assert_meeting_delete_authority(meeting, user)
     archived = meeting_manager.archive_meeting(meeting_id)
     if not archived:
         raise HTTPException(
@@ -2437,7 +2409,7 @@ async def archive_meeting_endpoint(
             exc,
         )
 
-    return MeetingResponse.model_validate(archived)
+    return _serialize_meeting_response(archived, user)
 
 
 @router.post("/{meeting_id}/restore", response_model=MeetingResponse)
@@ -2459,7 +2431,7 @@ async def restore_meeting_endpoint(
             status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found"
         )
 
-    _assert_meeting_access(meeting, user, require_facilitator=True)
+    _assert_meeting_delete_authority(meeting, user)
     updated = meeting_manager.update_meeting(meeting_id, {"status": "completed"})
     if not updated:
         raise HTTPException(
@@ -2467,7 +2439,7 @@ async def restore_meeting_endpoint(
             detail="Failed to restore meeting",
         )
 
-    return MeetingResponse.model_validate(updated)
+    return _serialize_meeting_response(updated, user)
 
 
 @router.post("/join", response_model=JoinMeetingResponse)

@@ -72,6 +72,45 @@ def test_rank_order_summary_visible_to_facilitator_when_inactive(
     assert len(payload["options"]) == 3
 
 
+def test_off_roster_facilitator_cannot_view_rank_order_summary(
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    off_roster_password = "RankOffRoster1!"
+    off_roster_facilitator = user_manager_with_admin.add_user(
+        first_name="Rank",
+        last_name="OffRoster",
+        email="rank.off.roster@example.com",
+        hashed_password=get_password_hash(off_roster_password),
+        role=UserRole.FACILITATOR.value,
+        login="rank_off_roster",
+    )
+    db_session.commit()
+    db_session.refresh(off_roster_facilitator)
+
+    meeting, activity_id = _create_rank_order_meeting(db_session, admin_user)
+
+    login_res = client.post(
+        "/api/auth/token",
+        json={
+            "username": off_roster_facilitator.login,
+            "password": off_roster_password,
+        },
+    )
+    assert login_res.status_code == 200, login_res.json()
+
+    response = client.get(
+        f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+        params={"activity_id": activity_id},
+    )
+    assert response.status_code == 403
+
+
 def test_rank_order_submit_and_aggregate_results_for_facilitator(
     client: TestClient,
     user_manager_with_admin: UserManager,

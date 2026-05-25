@@ -1,8 +1,10 @@
 import pytest
 import re
+from pathlib import Path
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.data.meeting_manager import MeetingManager
+from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.schemas.meeting import (
     MeetingCreate,
     AgendaActivityCreate,
@@ -22,6 +24,10 @@ from app.models.voting import VotingVote
 from app.utils.security import get_password_hash  # For creating test users
 from datetime import datetime, timedelta, UTC
 from app.utils.identifiers import generate_user_id
+
+PHASE_4_PLAN_PATH = (
+    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_4.md"
+)
 
 
 @pytest.fixture
@@ -83,7 +89,13 @@ def other_user(db_session: Session) -> User:
     return user
 
 
-def _create_temp_user(db_session: Session, first: str, last: str, login: str) -> User:
+def _create_temp_user(
+    db_session: Session,
+    first: str,
+    last: str,
+    login: str,
+    role: UserRole = UserRole.PARTICIPANT,
+) -> User:
     user_id = generate_user_id(db_session, first, last)
     user = User(
         user_id=user_id,
@@ -92,12 +104,194 @@ def _create_temp_user(db_session: Session, first: str, last: str, login: str) ->
         hashed_password=get_password_hash("TempPass1!"),
         first_name=first,
         last_name=last,
-        role=UserRole.PARTICIPANT.value,
+        role=role.value,
     )
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)
     return user
+
+
+def test_resolve_meeting_capabilities_for_all_phase1_postures(
+    meeting_manager_instance: MeetingManager,
+    db_session: Session,
+    test_facilitator: User,
+    other_user: User,
+):
+    """Gravy Parachute: the canonical backend capability model derives all meeting authority from role, ownership, and roster membership only."""
+    roster_facilitator = _create_temp_user(
+        db_session,
+        "Roster",
+        "Facilitator",
+        "roster_facilitator",
+        role=UserRole.FACILITATOR,
+    )
+    off_roster_facilitator = _create_temp_user(
+        db_session,
+        "Off",
+        "Roster",
+        "off_roster_facilitator",
+        role=UserRole.FACILITATOR,
+    )
+    admin_user = _create_temp_user(
+        db_session,
+        "Admin",
+        "Power",
+        "admin_power",
+        role=UserRole.ADMIN,
+    )
+    outsider = _create_temp_user(
+        db_session,
+        "Outside",
+        "Viewer",
+        "outside_viewer",
+        role=UserRole.PARTICIPANT,
+    )
+
+    start_time = datetime.now(UTC) + timedelta(hours=1)
+    meeting_payload = MeetingCreate(
+        title="Capability Matrix Meeting",
+        description="Validate the canonical capability model",
+        start_time=start_time,
+        end_time=start_time + timedelta(minutes=45),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=test_facilitator.user_id,
+        participant_ids=[other_user.user_id, roster_facilitator.user_id],
+        additional_facilitator_ids=[],
+    )
+    meeting = meeting_manager_instance.create_meeting(
+        meeting_payload,
+        facilitator_id=test_facilitator.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Kickoff")],
+    )
+    assert meeting is not None
+
+    owner_caps = resolve_meeting_capabilities(meeting, test_facilitator)
+    assert owner_caps["is_owner"] is True
+    assert owner_caps["is_facilitator"] is True
+    assert owner_caps["can_manage"] is True
+    assert owner_caps["can_edit_meeting"] is True
+    assert owner_caps["can_manage_roster"] is True
+    assert owner_caps["can_control_activity"] is True
+    assert owner_caps["can_manage_activity_roster"] is True
+    assert owner_caps["can_delete"] is True
+
+    admin_caps = resolve_meeting_capabilities(meeting, admin_user)
+    assert admin_caps["is_admin"] is True
+    assert admin_caps["is_facilitator"] is True
+    assert admin_caps["can_view"] is True
+    assert admin_caps["can_manage"] is True
+    assert admin_caps["can_delete"] is True
+
+    roster_facilitator_caps = resolve_meeting_capabilities(meeting, roster_facilitator)
+    assert roster_facilitator_caps["has_facilitator_role"] is True
+    assert roster_facilitator_caps["is_roster_participant"] is True
+    assert roster_facilitator_caps["is_facilitator"] is True
+    assert roster_facilitator_caps["can_manage"] is True
+    assert roster_facilitator_caps["can_delete"] is False
+
+    participant_caps = resolve_meeting_capabilities(meeting, other_user)
+    assert participant_caps["is_roster_participant"] is True
+    assert participant_caps["is_facilitator"] is False
+    assert participant_caps["can_view"] is True
+    assert participant_caps["can_manage"] is False
+    assert participant_caps["can_edit_meeting"] is False
+
+    off_roster_caps = resolve_meeting_capabilities(meeting, off_roster_facilitator)
+    assert off_roster_caps["has_facilitator_role"] is True
+    assert off_roster_caps["is_roster_participant"] is False
+    assert off_roster_caps["is_facilitator"] is False
+    assert off_roster_caps["can_view"] is False
+    assert off_roster_caps["can_manage"] is False
+
+    outsider_caps = resolve_meeting_capabilities(meeting, outsider)
+    assert outsider_caps["can_view"] is False
+    assert outsider_caps["can_manage"] is False
+    assert outsider_caps["can_delete"] is False
+
+    anonymous_caps = resolve_meeting_capabilities(meeting, None)
+    assert anonymous_caps["can_view"] is False
+    assert anonymous_caps["can_manage"] is False
+    assert anonymous_caps["can_delete"] is False
+
+
+def test_phase4_documentation_tracks_completed_facilitator_model_collapse():
+    """Noodle Catapult: Phase 4 documentation must describe the collapsed steady state."""
+    plan_text = PHASE_4_PLAN_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "# PHASE 4 [COMPLETE] — Data Model Collapse",
+        "### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts",
+        "### Step 2 [DONE] — Collapse the ORM and Schema Model",
+        "### Step 3 [DONE] — Remove Runtime and Boot Dependencies on the Old Model",
+        "### Step 4 [DONE] — Prune Dead Code and Legacy Test Assumptions",
+        "### Step 5 [DONE] — Lock the Phase 4 Verification Boundary",
+        "Owner authority now persists only as `Meeting.owner_id`",
+        "participant and roster mutations no longer call a facilitator-row synchronization path",
+        "Remaining facilitator-shaped response names are intentionally Phase 5 compatibility work",
+        "Technical Deviations Log",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
+
+
+def test_phase4_step2_removes_persistent_facilitator_orm_model():
+    """Noodle Catapult: the active ORM no longer exposes persisted facilitator assignments."""
+    import app.models as registered_models
+    from app.models.meeting import Meeting
+    from app.models.user import User
+
+    assert not hasattr(registered_models, "MeetingFacilitator")
+    assert not hasattr(Meeting, "facilitator_links")
+    assert not hasattr(Meeting, "facilitators")
+    assert not hasattr(User, "facilitator_links")
+    assert not hasattr(User, "facilitated_meetings")
+    assert "meeting_facilitators" not in Meeting.metadata.tables
+
+
+def test_phase4_step3_removes_facilitator_runtime_dependencies():
+    """Noodle Catapult: runtime and boot code no longer manage facilitator rows."""
+    runtime_paths = [
+        Path(__file__).resolve().parents[1] / "data" / "meeting_manager.py",
+        Path(__file__).resolve().parents[1] / "main.py",
+        Path(__file__).resolve().parents[1] / "utils" / "identifiers.py",
+        Path(__file__).resolve().parents[1] / "routers" / "pages.py",
+    ]
+    forbidden_markers = [
+        "meeting_facilitators_table",
+        "generate_facilitator_id",
+        "_ensure_facilitator_assignment",
+        "_should_auto_facilitate",
+        "_collect_facilitator_assignments",
+        "facilitated_meetings",
+    ]
+
+    combined_runtime = "\n".join(
+        path.read_text(encoding="utf-8") for path in runtime_paths
+    )
+    for marker in forbidden_markers:
+        assert marker not in combined_runtime
+
+
+def test_phase4_step4_prunes_legacy_facilitator_assumptions_from_active_code():
+    """Noodle Catapult: active code must not read removed facilitator persistence fields."""
+    active_paths = [
+        Path(__file__).resolve().parents[1] / "data" / "data_access.py",
+        Path(__file__).resolve().parents[1] / "schemas" / "meeting.py",
+    ]
+    forbidden_markers = [
+        'meeting.get("facilitator_user_ids"',
+        "facilitator_links",
+        "getattr(item, \"facilitator_id\"",
+    ]
+
+    combined_active_code = "\n".join(
+        path.read_text(encoding="utf-8") for path in active_paths
+    )
+    for marker in forbidden_markers:
+        assert marker not in combined_active_code
 
 
 def test_add_meeting(
@@ -129,20 +323,13 @@ def test_add_meeting(
     assert created_meeting.meeting_id is not None
     assert created_meeting.title == meeting_data_dict["title"]
     assert created_meeting.owner_id == test_facilitator.user_id
-    roster_user_ids = {link.user_id for link in created_meeting.facilitator_links}
-    assert test_facilitator.user_id in roster_user_ids
-    assert co_facilitator.user_id in roster_user_ids
-    owner_assignment = next(
-        link
-        for link in created_meeting.facilitator_links
-        if link.user_id == test_facilitator.user_id
-    )
-    assert owner_assignment.is_owner is True
-    assert len(created_meeting.participants) == 1
-    assert created_meeting.participants[0].user_id == other_user.user_id
+    participant_user_ids = {
+        participant.user_id for participant in created_meeting.participants
+    }
+    assert participant_user_ids == {other_user.user_id, co_facilitator.user_id}
     assert re.match(r"^MTG\d{8}-[0-9A-Z]{4}$", created_meeting.meeting_id)
-    for link in created_meeting.facilitator_links:
-        assert re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", link.facilitator_id)
+    co_facilitator_caps = resolve_meeting_capabilities(created_meeting, co_facilitator)
+    assert co_facilitator_caps["can_manage"] is True
 
 
 def test_create_meeting_assigns_agenda_activities(
@@ -204,10 +391,7 @@ def test_get_meeting(
     assert fetched_meeting is not None
     assert fetched_meeting.meeting_id == added_meeting.meeting_id
     assert fetched_meeting.title == "Test Meeting Beta"
-    assert any(
-        link.user_id == test_facilitator.user_id
-        for link in fetched_meeting.facilitator_links
-    )
+    assert fetched_meeting.owner_id == test_facilitator.user_id
 
 
 def test_activity_ids_unique_across_meetings(
@@ -297,9 +481,10 @@ def test_update_meeting(
     assert updated_meeting.status == "paused"
     assert len(updated_meeting.participants) == 1
     assert updated_meeting.participants[0].user_id == other_user.user_id
-    roster_ids = {link.user_id for link in updated_meeting.facilitator_links}
-    assert test_facilitator.user_id in roster_ids
-    assert co_facilitator.user_id in roster_ids
+    assert resolve_meeting_capabilities(updated_meeting, test_facilitator)["can_manage"]
+    assert not resolve_meeting_capabilities(updated_meeting, co_facilitator)[
+        "can_manage"
+    ]
 
 
 @pytest.mark.asyncio
@@ -825,6 +1010,7 @@ def test_activity_participant_scope_management(
     test_facilitator: User,
     other_user: User,
 ):
+    """Noodle Catapult: activity participant scoping stays roster-bound after facilitator persistence removal."""
     second_participant_id = generate_user_id(db_session, "Participant", "Two")
     second_participant = User(
         user_id=second_participant_id,
@@ -1036,6 +1222,7 @@ def test_bulk_update_participants_adds_and_removes_users(
     test_facilitator: User,
     other_user: User,
 ):
+    """Muffin Tractor: bulk roster updates remain valid under the collapsed contract without auto-granting meeting authority."""
     start_time = datetime.now(UTC) + timedelta(hours=1)
     meeting_payload = MeetingCreate(
         title="Bulk Update Meeting",
@@ -1332,22 +1519,21 @@ async def test_check_participant_collisions_with_multiple_active(
     assert no_conflict == []
 
 
-def test_update_meeting_owner_updates_roster(
+def test_update_meeting_owner_updates_owner_link_only(
     meeting_manager_instance: MeetingManager,
     db_session: Session,
     test_facilitator: User,
     co_facilitator: User,
 ):
     meeting_to_update = meeting_manager_instance.add_meeting(
-        {"title": "Primary Swap", "description": "Swap facilitator"},
+        {"title": "Primary Swap", "description": "Swap owner authority"},
         test_facilitator.user_id,
     )
     assert meeting_to_update is not None
     assert meeting_to_update.owner_id == test_facilitator.user_id
-    assert any(
-        link.user_id == test_facilitator.user_id and link.is_owner
-        for link in meeting_to_update.facilitator_links
-    )
+    assert resolve_meeting_capabilities(meeting_to_update, test_facilitator)[
+        "is_owner"
+    ]
 
     updated_meeting = meeting_manager_instance.update_meeting(
         meeting_to_update.meeting_id,
@@ -1356,23 +1542,10 @@ def test_update_meeting_owner_updates_roster(
 
     assert updated_meeting is not None
     assert updated_meeting.owner_id == co_facilitator.user_id
-    assert any(
-        link.user_id == co_facilitator.user_id and link.is_owner
-        for link in updated_meeting.facilitator_links
-    )
-    new_owner_link = next(
-        link
-        for link in updated_meeting.facilitator_links
-        if link.user_id == co_facilitator.user_id
-    )
-    assert re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", new_owner_link.facilitator_id)
-    previous_owner_links = [
-        link
-        for link in updated_meeting.facilitator_links
-        if link.user_id == test_facilitator.user_id
+    assert resolve_meeting_capabilities(updated_meeting, co_facilitator)["is_owner"]
+    assert not resolve_meeting_capabilities(updated_meeting, test_facilitator)[
+        "is_owner"
     ]
-    assert previous_owner_links
-    assert all(link.is_owner is False for link in previous_owner_links)
 
 
 def test_archive_meeting(
@@ -1542,16 +1715,19 @@ def test_dashboard_meetings_scoped_and_classified(
     payload = meeting_manager_instance.get_dashboard_meetings(user=other_user)
 
     assert payload["summary"]["total"] == 4
-    assert all(item["facilitators"] for item in payload["items"])
-    assert all(item["facilitator_names"] for item in payload["items"])
+    assert all(item["meeting_authorities"] for item in payload["items"])
+    assert all(item["authority_names"] for item in payload["items"])
+    assert all("viewer_capabilities" in item for item in payload["items"])
+    assert all(item["viewer_capabilities"]["can_view"] is True for item in payload["items"])
+    assert all(item["viewer_capabilities"]["can_manage"] is False for item in payload["items"])
+    assert all(item["viewer_capabilities"]["can_delete"] is False for item in payload["items"])
+    assert all(item["owner"]["user_id"] for item in payload["items"])
     assert all(
-        re.match(r"^FAC-[A-Z0-9]{7}-\d{3}$", item["facilitator"]["id"])
+        any(a["user_id"] == test_facilitator.user_id for a in item["meeting_authorities"])
         for item in payload["items"]
     )
-    assert all(
-        any(f["user_id"] == test_facilitator.user_id for f in item["facilitators"])
-        for item in payload["items"]
-    )
+    assert all("facilitators" not in item for item in payload["items"])
+    assert all("facilitator_names" not in item for item in payload["items"])
 
     facilitator_payload = meeting_manager_instance.get_dashboard_meetings(
         user=test_facilitator,
@@ -1559,7 +1735,11 @@ def test_dashboard_meetings_scoped_and_classified(
     )
     assert facilitator_payload["summary"]["total"] == 4
     assert all(
-        any(f["user_id"] == test_facilitator.user_id for f in item["facilitators"])
+        item["viewer_capabilities"]["can_manage"] is True
+        for item in facilitator_payload["items"]
+    )
+    assert all(
+        any(a["user_id"] == test_facilitator.user_id for a in item["meeting_authorities"])
         for item in facilitator_payload["items"]
     )
     statuses = {item["title"]: item["status"] for item in payload["items"]}

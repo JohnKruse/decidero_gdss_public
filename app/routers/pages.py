@@ -22,7 +22,11 @@ from ..auth import get_current_active_user, get_optional_user_model_dependency
 from ..schemas.user import User
 from ..models.user import UserRole
 from ..data.user_manager import UserManager, get_user_manager
-from ..data.meeting_manager import MeetingManager, get_meeting_manager
+from ..data.meeting_manager import (
+    MeetingManager,
+    get_meeting_manager,
+)
+from ..services.meeting_authorization import resolve_meeting_capabilities
 from sqlalchemy.orm import Session
 from ..database import get_db
 
@@ -42,6 +46,21 @@ templates.env = templates.env.overlay(extensions=[GrabExtension])
 templates.env.globals["grab_enabled"] = is_grab_enabled
 
 logger = logging.getLogger(__name__)  # Add this
+
+
+def _resolve_meeting_page_capabilities(meeting, current_user: User) -> dict[str, bool]:
+    """
+    Toaster Sombrero: page-route meeting controls must derive from the canonical
+    meeting capability model rather than facilitator-link membership alone.
+    """
+    capabilities = resolve_meeting_capabilities(meeting, current_user)
+    return {
+        "can_view": bool(capabilities["can_view"]),
+        "can_manage": bool(capabilities["can_manage"]),
+        "can_delete": bool(capabilities["can_delete"]),
+        "is_facilitator": bool(capabilities["is_facilitator"]),
+        "is_participant": bool(capabilities["is_participant"]),
+    }
 
 
 def _load_default_user_password() -> str:
@@ -140,12 +159,6 @@ async def dashboard(
             context["admin_count"] = "Error"
             context["facilitator_count"] = "Error"
             context["participant_count"] = "Error"
-
-    if current_user.role in {UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN}:
-        # Fetch facilitator-specific data (e.g., meetings they facilitate)
-        # context["facilitated_meetings"] = meeting_manager.get_meetings_by_facilitator(db, current_user.user_id) # Example
-        context["facilitated_meetings"] = []  # Placeholder
-        pass  # Add facilitator data fetching later
 
     # Fetch participant-specific data (e.g., meetings they are part of)
     # context["participant_meetings"] = meeting_manager.get_meetings_by_participant(db, current_user.user_id) # Example
@@ -370,15 +383,8 @@ async def meeting_settings(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    facilitator_ids = {
-        link.user_id for link in getattr(meeting, "facilitator_links", []) or []
-    }
-    facilitator_ids.add(getattr(meeting, "owner_id", ""))
-
-    is_admin = current_user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_meeting_facilitator = current_user.user_id in facilitator_ids
-
-    if not (is_admin or is_meeting_facilitator):
+    meeting_capabilities = _resolve_meeting_page_capabilities(meeting, current_user)
+    if not meeting_capabilities["can_manage"]:
         raise HTTPException(
             status_code=403,
             detail="Only facilitators and administrators can configure meetings",
@@ -393,6 +399,7 @@ async def meeting_settings(
             "UserRole": UserRole,
             "page_mode": "edit",
             "meeting_id": meeting_id,
+            "meeting_capabilities": meeting_capabilities,
         },
     )
 
@@ -418,15 +425,8 @@ async def meeting_activity_log(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    facilitator_ids = {
-        link.user_id for link in getattr(meeting, "facilitator_links", []) or []
-    }
-    facilitator_ids.add(getattr(meeting, "owner_id", ""))
-
-    is_admin = current_user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_meeting_facilitator = current_user.user_id in facilitator_ids
-
-    if not (is_admin or is_meeting_facilitator):
+    meeting_capabilities = _resolve_meeting_page_capabilities(meeting, current_user)
+    if not meeting_capabilities["can_manage"]:
         raise HTTPException(
             status_code=403,
             detail="Only facilitators and administrators can view the activity log",
@@ -444,6 +444,7 @@ async def meeting_activity_log(
             "role": current_user.role,
             "UserRole": UserRole,
             "activity_log_settings": activity_log_settings,
+            "meeting_capabilities": meeting_capabilities,
         },
     )
 
@@ -470,24 +471,8 @@ async def meeting(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    # Check if user is participant/facilitator/admin
-    facilitator_ids = {
-        link.user_id
-        for link in getattr(meeting, "facilitator_links", []) or []
-        if getattr(link, "user_id", None)
-    }
-    if getattr(meeting, "owner_id", None):
-        facilitator_ids.add(meeting.owner_id)
-    participant_ids = {
-        getattr(participant, "user_id", None)
-        for participant in getattr(meeting, "participants", [])
-    }
-
-    if (
-        current_user.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-        and current_user.user_id not in participant_ids
-        and current_user.user_id not in facilitator_ids
-    ):
+    meeting_capabilities = _resolve_meeting_page_capabilities(meeting, current_user)
+    if not meeting_capabilities["can_view"]:
         raise HTTPException(
             status_code=403, detail="You do not have access to this meeting"
         )
@@ -503,6 +488,8 @@ async def meeting(
             "meeting_id": meeting_id,
             "current_user": current_user,
             "meeting": meeting,
+            "can_manage_meeting": meeting_capabilities["can_manage"],
+            "meeting_capabilities": meeting_capabilities,
             "role": current_user.role,
             "UserRole": UserRole,  # For role comparisons in template
             "brainstorming_limits": brainstorming_limits,

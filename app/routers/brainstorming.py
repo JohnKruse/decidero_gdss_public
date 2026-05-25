@@ -17,7 +17,7 @@ import logging
 from app.auth import get_current_active_user
 from app.database import get_db
 from app.data.idempotency_manager import BrainstormingIdempotencyManager
-from app.models.meeting import Meeting, MeetingFacilitator
+from app.models.meeting import Meeting
 from app.models.user import User, UserRole
 from app.schemas.brainstorming import (
     BrainstormingIdeaCreate,
@@ -27,6 +27,7 @@ from app.data.ideas_manager import IdeasManager
 from app.utils.websocket_manager import websocket_manager
 from app.services import meeting_state_manager
 from app.config.loader import get_brainstorming_limits
+from app.services.meeting_authorization import resolve_meeting_capabilities
 
 brainstorming_router = APIRouter(prefix="/api/meetings/{meeting_id}/brainstorming")
 logger = logging.getLogger(__name__)
@@ -86,23 +87,8 @@ def _assert_user_can_participate(
     user: User,
     allowed_participant_ids: Optional[Set[str]] = None,
 ) -> bool:
-    facilitator_ids = {
-        link.user_id
-        for link in getattr(meeting, "facilitator_links", []) or []
-        if link.user_id
-    }
-    participant_ids = {
-        participant.user_id
-        for participant in getattr(meeting, "participants", []) or []
-        if participant.user_id
-    }
-
-    is_admin = user.role in {UserRole.ADMIN, UserRole.SUPER_ADMIN}
-    is_owner = meeting.owner_id == user.user_id
-    is_facilitator = user.user_id in facilitator_ids
-    is_participant = user.user_id in participant_ids
-
-    if is_admin or is_owner or is_facilitator:
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if capabilities["can_manage"]:
         return True
 
     if allowed_participant_ids is not None:
@@ -113,7 +99,7 @@ def _assert_user_can_participate(
             detail="You are not assigned to this activity.",
         )
 
-    if is_participant:
+    if capabilities["can_view"]:
         return False
 
     raise HTTPException(
@@ -247,7 +233,6 @@ async def submit_idea(
         db.query(Meeting)
         .options(
             joinedload(Meeting.participants),
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)
@@ -486,7 +471,6 @@ async def get_ideas(
         db.query(Meeting)
         .options(
             joinedload(Meeting.participants),
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.agenda_activities),
         )
         .filter(Meeting.meeting_id == meeting_id)

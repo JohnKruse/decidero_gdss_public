@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.auth import get_current_active_user
 from app.database import get_db
 from app.models.categorization import CategorizationBallot
-from app.models.meeting import AgendaActivity, Meeting, MeetingFacilitator
+from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.schemas.categorization import (
     CategorizationAssignmentRequest,
@@ -46,7 +46,6 @@ def _load_meeting(db: Session, meeting_id: str) -> Meeting:
     meeting = (
         db.query(Meeting)
         .options(
-            joinedload(Meeting.facilitator_links).joinedload(MeetingFacilitator.user),
             joinedload(Meeting.participants),
             joinedload(Meeting.agenda_activities),
         )
@@ -68,20 +67,17 @@ def _resolve_activity(meeting: Meeting, activity_id: str) -> AgendaActivity:
 
 
 def _access(meeting: Meeting, user: User) -> tuple[bool, bool]:
-    facilitator_ids = {
-        link.user_id
-        for link in getattr(meeting, "facilitator_links", []) or []
-        if getattr(link, "user_id", None)
-    }
-    if getattr(meeting, "owner_id", None):
-        facilitator_ids.add(meeting.owner_id)
     participant_ids = {
         person.user_id for person in getattr(meeting, "participants", []) or []
     }
 
     role = getattr(user, "role", UserRole.PARTICIPANT.value)
     is_admin = role in {UserRole.ADMIN.value, UserRole.SUPER_ADMIN.value}
-    is_facilitator = is_admin or user.user_id in facilitator_ids
+    is_owner = user.user_id == getattr(meeting, "owner_id", None)
+    is_roster_facilitator = (
+        role == UserRole.FACILITATOR.value and user.user_id in participant_ids
+    )
+    is_facilitator = is_admin or is_owner or is_roster_facilitator
     is_participant = is_facilitator or is_admin or user.user_id in participant_ids
     if not is_participant:
         raise HTTPException(status_code=403, detail="You do not have access to this meeting.")

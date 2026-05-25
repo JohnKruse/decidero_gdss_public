@@ -39,6 +39,7 @@ def _create_user(
 def test_facilitator_can_add_and_remove_participants(
     authenticated_client: TestClient, user_manager_with_admin: UserManager
 ):
+    """Muffin Tractor: keep this roster CRUD coverage because meeting-scoped managers may add and remove participants."""
     # Arrange: create meeting and a participant user
     meeting_id = _create_meeting(authenticated_client)
     new_user = _create_user(user_manager_with_admin, login="pool_user")
@@ -50,14 +51,24 @@ def test_facilitator_can_add_and_remove_participants(
     )
     assert add_res.status_code == 200, add_res.json()
     payload = add_res.json()
-    uids = {p["user_id"] for p in payload.get("participants", [])}
+    participants_by_id = {
+        p["user_id"]: p for p in payload.get("participants", [])
+    }
+    uids = set(participants_by_id)
     assert new_user.user_id in uids
+    added_participant = participants_by_id[new_user.user_id]
+    assert added_participant["avatar_color"] == new_user.avatar_color
+    assert added_participant["avatar_key"] == new_user.avatar_key
+    assert added_participant["avatar_icon_path"] == new_user.avatar_icon_path
 
     # Verify list endpoint shows assignment
     list_res = authenticated_client.get(f"/api/meetings/{meeting_id}/participants")
     assert list_res.status_code == 200, list_res.json()
     listed = list_res.json()
-    assert any(p["user_id"] == new_user.user_id for p in listed)
+    listed_participant = next(p for p in listed if p["user_id"] == new_user.user_id)
+    assert listed_participant["avatar_color"] == new_user.avatar_color
+    assert listed_participant["avatar_key"] == new_user.avatar_key
+    assert listed_participant["avatar_icon_path"] == new_user.avatar_icon_path
 
     # Remove participant
     del_res = authenticated_client.delete(
@@ -75,6 +86,7 @@ def test_non_facilitator_cannot_manage_participants(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: keep this boundary because roster viewers cannot mutate meeting membership."""
     # Arrange: create meeting and a non-facilitator user, add them as participant
     meeting_id = _create_meeting(authenticated_client)
     participant = _create_user(user_manager_with_admin, login="participant_only")
@@ -107,6 +119,7 @@ def test_facilitator_can_assign_activity_participants(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: keep this activity-scope test because meeting-scoped managers may assign only roster participants."""
     meeting_id = _create_meeting(authenticated_client)
     meeting_res = authenticated_client.get(f"/api/meetings/{meeting_id}")
     assert meeting_res.status_code == 200, meeting_res.json()
@@ -182,6 +195,7 @@ def test_bulk_participant_endpoint_supports_add_and_remove(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: keep this bulk roster update coverage as a meeting-scoped management regression anchor."""
     meeting_id = _create_meeting(authenticated_client)
     roster_one = _create_user(user_manager_with_admin, login="bulk_api_one")
     roster_two = _create_user(user_manager_with_admin, login="bulk_api_two")

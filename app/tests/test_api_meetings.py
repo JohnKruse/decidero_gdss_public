@@ -40,9 +40,249 @@ EXPORT_ZIP_BASE64 = (
     "DwAADAAAAAAAAAAAAAAAgAEAAAAAbWVldGluZy5qc29uUEsFBgAAAAABAAEAOgAAAPMCAAAAAA=="
 )
 
+PHASE_5_PLAN_PATH = (
+    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_5.md"
+)
+PHASE_6_PLAN_PATH = (
+    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_6.md"
+)
+PHASE_6_CHECKLIST_PATH = (
+    Path(__file__).resolve().parents[2] / "docs" / "PHASE_6_VALIDATION_CHECKLIST.md"
+)
+APP_ROOT = Path(__file__).resolve().parents[1]
+
 
 def _decode_export_zip() -> bytes:
     return base64.b64decode(EXPORT_ZIP_BASE64)
+
+
+def test_phase5_step1_inventory_tracks_external_facilitator_contract_debt():
+    """Pickle Trombone: Phase 5 starts with a complete ledger of the remaining external facilitator-shaped contract."""
+    plan_text = PHASE_5_PLAN_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 1 [DONE] — Inventory the Remaining External Contract Surface",
+        "Step 1 external contract ledger for `Pickle Trombone`",
+        "app/schemas/meeting.py",
+        "MeetingFacilitatorSummary",
+        "facilitator_user_ids",
+        "app/services/meeting_authorization.py",
+        "derive_meeting_facilitator_outputs",
+        "app/data/meeting_manager.py",
+        "app/routers/meetings.py",
+        "MeetingCreateRequest.co_facilitator_ids",
+        "app/static/js/dashboard.js",
+        "app/static/js/meeting.js",
+        "app/templates/create_meeting.html",
+        "EXPORT_ZIP_BASE64",
+        "Technical Deviations Log",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
+
+
+def test_phase6_step1_validation_baseline_is_auditable():
+    """Lobster Teacup: Phase 6 Step 1 records the final validation baseline, residue checklist, and discovery regression anchors."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_plan_markers = [
+        "### Step 1 [DONE] — Establish the Final Validation Baseline",
+        "Step 1 final validation baseline for `Lobster Teacup`:",
+        "docs/PHASE_6_VALIDATION_CHECKLIST.md",
+        "test_demoted_facilitator_loses_control_across_meetings_and_page_controls",
+        "test_removed_facilitator_loses_control_until_readded",
+        "test_meeting_roster_button_present",
+        "MeetingFacilitator",
+        "meeting_facilitators",
+        "facilitator_links",
+        "Technical Deviations Log",
+    ]
+    expected_checklist_markers = [
+        "# Phase 6 Validation Checklist",
+        "`Lobster Teacup`",
+        "PYTHONPATH=. ./venv/bin/pytest app/tests/ -v",
+        "test_demoted_facilitator_loses_control_across_meetings_and_page_controls",
+        "test_removed_facilitator_loses_control_until_readded",
+        "test_meeting_roster_button_present",
+        "MeetingFacilitator",
+        "meeting_facilitators",
+        "facilitator_links",
+        "_ensure_facilitator_assignment",
+        "_collect_facilitator_assignments",
+        "_should_auto_facilitate",
+    ]
+
+    for marker in expected_plan_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
+def test_phase6_step2_original_failure_modes_are_locked():
+    """Lobster Teacup: Phase 6 Step 2 records the final regression proof for the original role/roster/UI failures."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 2 [DONE] — Lock the Original Failure Modes as Final Regression Proof",
+        "Step 2 final regression proof for `Lobster Teacup`:",
+        "demotion authority revocation",
+        "remove-and-readd stale-authority prevention",
+        "UI/backend capability symmetry",
+        "test_demoted_facilitator_loses_control_across_meetings_and_page_controls",
+        "test_removed_facilitator_loses_control_until_readded",
+        "test_meeting_roster_button_present",
+    ]
+    expected_checklist_markers = [
+        "## Final Regression Proof",
+        "demotion authority revocation",
+        "remove-and-readd stale-authority prevention",
+        "UI/backend capability symmetry",
+        "Lobster Teacup",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
+def test_phase6_step3_removed_model_residue_absent_from_active_app_code():
+    """Lobster Teacup: Phase 6 Step 3 proves removed facilitator-model tokens are absent from non-test app code."""
+    forbidden_markers = [
+        "MeetingFacilitator",
+        "meeting_facilitators",
+        "facilitator_links",
+        "_ensure_facilitator_assignment",
+        "_collect_facilitator_assignments",
+        "_should_auto_facilitate",
+    ]
+    active_files = [
+        path
+        for path in APP_ROOT.rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and "tests" not in path.parts
+        and path.suffix in {".py", ".js", ".html", ".yaml", ".yml", ".json", ".css"}
+    ]
+
+    residue = {
+        str(path.relative_to(APP_ROOT.parent)): [
+            marker for marker in forbidden_markers if marker in path.read_text(encoding="utf-8")
+        ]
+        for path in active_files
+    }
+    residue = {path: markers for path, markers in residue.items() if markers}
+
+    assert residue == {}
+
+
+def test_phase6_step3_consistency_record_is_auditable():
+    """Lobster Teacup: Phase 6 Step 3 records the active-code residue result and compatibility boundary."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_markers = [
+        "### Step 3 [DONE] — Verify Full-Surface Consistency and Residue Removal",
+        "Step 3 consistency and residue result for `Lobster Teacup`:",
+        "Active non-test `app/` code",
+        "No removed-model tokens remain.",
+        "Compatibility request fields",
+        "MeetingCreate.additional_facilitator_ids",
+        "MeetingUpdate.facilitator_ids",
+        "MeetingCreateRequest.co_facilitator_ids",
+        "Historical plan and discovery records",
+    ]
+    expected_checklist_markers = [
+        "## Consistency and Residue Result",
+        "Active non-test `app/` code",
+        "No removed-model tokens remain.",
+        "Compatibility request fields",
+        "MeetingCreate.additional_facilitator_ids",
+        "MeetingUpdate.facilitator_ids",
+        "MeetingCreateRequest.co_facilitator_ids",
+    ]
+
+    for marker in expected_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
+def test_phase6_step4_merge_readiness_record_is_auditable():
+    """Lobster Teacup: Phase 6 Step 4 records branch-readiness evidence for review."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_plan_markers = [
+        "### Step 4 [DONE] — Prepare Merge-Readiness Artifacts",
+        "Step 4 merge-readiness record for `Lobster Teacup`:",
+        "Verification status and baseline",
+        "PYTHONPATH=. ./venv/bin/pytest app/tests/ -v",
+        "User-visible fixes",
+        "demotion authority revocation",
+        "remove-and-readd stale-authority prevention",
+        "UI/backend capability symmetry",
+        "Compatibility boundary",
+        "MeetingCreate.additional_facilitator_ids",
+        "MeetingUpdate.facilitator_ids",
+        "MeetingCreateRequest.co_facilitator_ids",
+        "Active-code residue proof",
+    ]
+    expected_checklist_markers = [
+        "## Merge-Readiness Notes",
+        "Phase 6 Step 4 prepares the branch-readiness artifact under the `Lobster Teacup` canary:",
+        "Verification status and test pass baseline",
+        "User-visible fixes",
+        "Compatibility boundary",
+        "Removed-model residue proof",
+        "historical references limited to plans, tests, and compatibility documentation",
+    ]
+
+    for marker in expected_plan_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
+
+
+def test_phase6_step5_final_exit_boundary_is_auditable():
+    """Lobster Teacup: Phase 6 Step 5 locks the final full-suite exit boundary."""
+    plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
+    checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
+
+    expected_plan_markers = [
+        "# PHASE 6 [COMPLETE] — End-to-End Validation and Merge Readiness",
+        "### Step 5 [DONE] — Lock the Final Exit Boundary",
+        "Step 5 final exit boundary for `Lobster Teacup`:",
+        "Terminal command",
+        "PYTHONPATH=. ./venv/bin/pytest app/tests/ -v",
+        "Required result",
+        "must reach `[100%]` with zero failures",
+        "Documentation state",
+        "Completion state",
+        "Phase 6 is marked `[COMPLETE]` only after Step 5 is marked `[DONE]`",
+        "553 passed, 2 skipped",
+    ]
+    expected_checklist_markers = [
+        "## Final Exit Boundary",
+        "Phase 6 Step 5 locks the terminal exit boundary under the `Lobster Teacup` canary:",
+        "Terminal command: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v`",
+        "Required result: the command must reach `[100%]` with zero failures.",
+        "Documentation state:",
+        "Completion state: Phase 6 may be marked `[COMPLETE]` only after Step 5 is `[DONE]`",
+    ]
+
+    for marker in expected_plan_markers:
+        assert marker in plan_text
+
+    for marker in expected_checklist_markers:
+        assert marker in checklist_text
 
 
 @pytest.fixture(scope="function")
@@ -78,7 +318,7 @@ def test_meeting_data(
 def test_list_meetings_returns_dashboard_payload(
     authenticated_client: TestClient, test_meeting_data: str
 ):
-    """GET /api/meetings/ should return dashboard metadata with meeting items."""
+    """Muffin Tractor: dashboard inventory exposes meeting capability metadata for the Phase 1 contract."""
 
     response = authenticated_client.get("/api/meetings/")
 
@@ -89,12 +329,24 @@ def test_list_meetings_returns_dashboard_payload(
     assert payload["summary"]["total"] == len(payload["items"])
     assert payload["filters"]["role_scope"] == "participant"
     assert any(item["id"] == test_meeting_data for item in payload["items"])
-    first_item = payload["items"][0]
-    assert {"enter", "details"}.issubset(first_item["quick_actions"].keys())
-    assert "notifications" in first_item
-    assert "facilitator_names" in first_item
-    assert isinstance(first_item["facilitator_names"], list)
-    assert first_item["facilitator_names"]
+    meeting_item = next(item for item in payload["items"] if item["id"] == test_meeting_data)
+    assert {"enter", "details", "roster"}.issubset(meeting_item["quick_actions"].keys())
+    assert meeting_item["quick_actions"]["roster"].endswith("?roster=1")
+    assert "notifications" in meeting_item
+    assert "owner" in meeting_item
+    assert meeting_item["owner"]["name"]
+    assert "authority_names" in meeting_item
+    assert isinstance(meeting_item["authority_names"], list)
+    assert meeting_item["authority_names"]
+    assert "facilitator_names" not in meeting_item
+    assert "facilitators" not in meeting_item
+    assert "is_facilitator" in meeting_item
+    assert meeting_item["is_facilitator"] is True
+    assert meeting_item["viewer_capabilities"]["can_view"] is True
+    assert meeting_item["viewer_capabilities"]["can_manage"] is True
+    assert meeting_item["viewer_capabilities"]["can_delete"] is True
+    assert meeting_item["viewer_capabilities"]["is_facilitator"] is True
+    assert meeting_item["viewer_capabilities"]["is_participant"] is False
 
 
 def test_list_meetings_supports_status_filter(
@@ -166,6 +418,7 @@ def test_participant_cannot_archive_meeting(
     user_manager_with_admin: UserManager,
     test_meeting_data: str,
 ):
+    """Muffin Tractor: roster participants can view meetings but cannot archive or otherwise manage them."""
     participant_password = "ParticipantArchive@123!"
     participant = user_manager_with_admin.add_user(
         first_name="Part",
@@ -188,9 +441,111 @@ def test_participant_cannot_archive_meeting(
     assert archive_response.status_code == 403
 
 
+def test_dashboard_marks_rostered_participant_as_non_facilitator(
+    authenticated_client: TestClient,
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Muffin Tractor: roster-only participants appear on the dashboard without facilitator authority."""
+    participant_password = "ParticipantDashboard@123!"
+    participant = user_manager_with_admin.add_user(
+        first_name="Dash",
+        last_name="Participant",
+        email="participant.dashboard@example.com",
+        hashed_password=get_password_hash(participant_password),
+        role=UserRole.PARTICIPANT.value,
+        login="participant_dashboard",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(participant)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Participant Dashboard Scope",
+            "description": "Verifies participant-facing meeting capability output",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [participant.user_id],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": participant.login, "password": participant_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    dashboard_response = client.get("/api/meetings/")
+    assert dashboard_response.status_code == 200, dashboard_response.json()
+    meeting_item = next(
+        item for item in dashboard_response.json()["items"] if item["id"] == meeting_id
+    )
+    assert meeting_item["is_participant"] is True
+    assert meeting_item["is_facilitator"] is False
+    assert meeting_item["viewer_capabilities"]["can_view"] is True
+    assert meeting_item["viewer_capabilities"]["can_manage"] is False
+    assert meeting_item["viewer_capabilities"]["can_delete"] is False
+    assert meeting_item["viewer_capabilities"]["is_facilitator"] is False
+    assert meeting_item["viewer_capabilities"]["is_participant"] is True
+
+
+def test_meeting_payload_exposes_rostered_facilitator_viewer_capabilities(
+    authenticated_client: TestClient,
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Toaster Sombrero: meeting payload exposes backend-derived viewer capability state for the current rostered facilitator."""
+    facilitator_password = "ViewerCaps1!"
+    facilitator = user_manager_with_admin.add_user(
+        first_name="Viewer",
+        last_name="Caps",
+        email="viewer.caps@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="viewer_caps_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(facilitator)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Viewer Capability Meeting",
+            "description": "Expose meeting capability state to rostered facilitator clients",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [facilitator.user_id],
+            "co_facilitator_ids": [facilitator.user_id],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    meeting_response = client.get(f"/api/meetings/{meeting_id}")
+    assert meeting_response.status_code == 200, meeting_response.json()
+    viewer_capabilities = meeting_response.json()["viewer_capabilities"]
+    assert viewer_capabilities["can_view"] is True
+    assert viewer_capabilities["can_manage"] is True
+    assert viewer_capabilities["can_delete"] is False
+    assert viewer_capabilities["is_facilitator"] is True
+    assert viewer_capabilities["is_participant"] is True
+
+
 def test_export_meeting_returns_zip_bundle(
     authenticated_client: TestClient, test_meeting_data: str
 ):
+    """Pickle Trombone: new meeting exports write owner metadata without legacy facilitator structures."""
     response = authenticated_client.get(f"/api/meetings/{test_meeting_data}/export")
 
     assert response.status_code == 200
@@ -202,6 +557,9 @@ def test_export_meeting_returns_zip_bundle(
     meeting_payload = json.loads(archive.read("meeting.json").decode("utf-8"))
     assert meeting_payload["meeting"]["meeting_id"] == test_meeting_data
     assert meeting_payload["meeting"]["title"] == "Test Meeting for Get"
+    assert "owner" in meeting_payload
+    assert meeting_payload["owner"]["user_id"]
+    assert "facilitators" not in meeting_payload
 
 
 def test_import_meeting_bundle_from_fixture(
@@ -227,6 +585,65 @@ def test_import_meeting_bundle_from_fixture(
         .count()
     )
     assert idea_count == 6
+
+
+def test_import_ignores_legacy_facilitators_as_authority(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Pickle Trombone: legacy import compatibility reads old facilitator-bearing bundles one way without granting active authority."""
+    legacy_password = "LegacyImportFac1!"
+    legacy_facilitator = user_manager_with_admin.add_user(
+        first_name="Legacy",
+        last_name="ImportFac",
+        email="legacy.import.facilitator@example.com",
+        hashed_password=get_password_hash(legacy_password),
+        role=UserRole.FACILITATOR.value,
+        login="legacy_import_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(legacy_facilitator)
+
+    export_payload = {
+        "version": 1,
+        "meeting": {
+            "title": "Legacy Facilitator Import",
+            "description": "Old bundle with facilitator-only user",
+            "is_public": True,
+        },
+        "facilitators": [
+            {
+                "user_id": legacy_facilitator.user_id,
+                "login": legacy_facilitator.login,
+                "email": legacy_facilitator.email,
+                "first_name": legacy_facilitator.first_name,
+                "last_name": legacy_facilitator.last_name,
+                "is_owner": False,
+            }
+        ],
+        "participants": [],
+        "agenda": [],
+        "ideas": [],
+        "votes": [],
+    }
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("meeting.json", json.dumps(export_payload))
+
+    response = authenticated_client.post(
+        "/api/meetings/import",
+        content=buffer.getvalue(),
+        headers={"Content-Type": "application/zip"},
+    )
+
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert legacy_facilitator.user_id not in payload["participant_ids"]
+    assert legacy_facilitator.user_id not in payload["authority_user_ids"]
+    assert all(
+        authority["user_id"] != legacy_facilitator.user_id
+        for authority in payload["meeting_authorities"]
+    )
 
 
 def test_create_meeting_returns_new_meeting(
@@ -255,8 +672,10 @@ def test_create_meeting_returns_new_meeting(
     assert result["title"] == meeting_data["title"]
     assert result["description"] == meeting_data["description"]
     assert "id" in result
-    assert result.get("facilitator_user_ids")
-    assert result.get("facilitators")
+    assert result.get("authority_user_ids")
+    assert result.get("meeting_authorities")
+    assert "facilitator_user_ids" not in result
+    assert "facilitators" not in result
     assert "agenda" in result
     assert len(result["agenda"]) == len(meeting_data["agenda_items"])
     assert all(item["tool_type"] == "brainstorming" for item in result["agenda"])
@@ -354,12 +773,79 @@ def test_get_meeting_returns_meeting(
     assert isinstance(result, dict)
     assert result["id"] == meeting_id
     assert "title" in result
+    assert result["viewer_capabilities"]["can_view"] is True
+    assert result["viewer_capabilities"]["can_manage"] is True
+    assert result["viewer_capabilities"]["can_delete"] is True
+    assert result["viewer_capabilities"]["is_facilitator"] is True
+    assert result["viewer_capabilities"]["is_participant"] is False
     admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     admin_user = user_manager_with_admin.get_user_by_email(admin_email)
     assert admin_user is not None
-    assert admin_user.user_id in result.get("facilitator_user_ids", [])
+    assert admin_user.user_id in result.get("authority_user_ids", [])
+    assert "facilitator_user_ids" not in result
     assert "agenda" in result
     assert len(result["agenda"]) >= 1
+
+
+def test_meeting_outputs_ignore_off_roster_facilitator_role(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Pickle Trombone: active meeting and dashboard outputs expose authority metadata, not facilitator assignment fields."""
+    off_roster_password = "LegacyFac1!"
+    off_roster_user = user_manager_with_admin.add_user(
+        first_name="Legacy",
+        last_name="Facilitator",
+        email="legacy.facilitator@example.com",
+        hashed_password=get_password_hash(off_roster_password),
+        role=UserRole.FACILITATOR.value,
+        login="legacy_off_roster_facilitator",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(off_roster_user)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Canonical Output Meeting",
+            "description": "Step 4 capability output regression",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+        },
+    )
+    assert create_response.status_code == 200, create_response.json()
+    meeting_id = create_response.json()["id"]
+
+    update_response = authenticated_client.put(
+        f"/api/meetings/{meeting_id}",
+        json={"facilitator_ids": [off_roster_user.user_id]},
+    )
+    assert update_response.status_code == 200, update_response.json()
+
+    meeting_response = authenticated_client.get(f"/api/meetings/{meeting_id}")
+    assert meeting_response.status_code == 200, meeting_response.json()
+    meeting_payload = meeting_response.json()
+    assert off_roster_user.user_id not in meeting_payload["authority_user_ids"]
+    assert "Legacy Facilitator" not in meeting_payload["authority_names"]
+    assert all(
+        authority["user_id"] != off_roster_user.user_id
+        for authority in meeting_payload["meeting_authorities"]
+    )
+    for removed_key in ("facilitator_user_ids", "facilitator_names", "facilitators"):
+        assert removed_key not in meeting_payload
+
+    dashboard_response = authenticated_client.get("/api/meetings/")
+    assert dashboard_response.status_code == 200, dashboard_response.json()
+    meeting_item = next(
+        item for item in dashboard_response.json()["items"] if item["id"] == meeting_id
+    )
+    assert off_roster_user.user_id not in [
+        authority["user_id"] for authority in meeting_item["meeting_authorities"]
+    ]
+    assert "Legacy Facilitator" not in meeting_item["authority_names"]
+    for removed_key in ("facilitator", "facilitator_names", "facilitators"):
+        assert removed_key not in meeting_item
 
 
 def test_get_active_meetings_returns_active_meetings(
@@ -697,12 +1183,12 @@ def test_get_meeting_agenda_includes_lock_metadata(
     assert "mode" in categorization_row["locked_config_keys"]
 
 
-def test_cofacilitator_update_permissions(
+def test_rostered_facilitator_update_permissions(
     client: TestClient,
     db_session,
     user_manager_with_admin: UserManager,
 ):
-    """Co-facilitators can update meeting metadata but not ownership or facilitator roster."""
+    """Gravy Parachute: a rostered facilitator inherits core manage gates but not delete-authority gates such as delete, archive, or restore."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -730,8 +1216,8 @@ def test_cofacilitator_update_permissions(
         duration_minutes=60,
         publicity=PublicityType.PUBLIC,
         owner_id=admin_user_id,
-        participant_ids=[],
-        additional_facilitator_ids=[cofac_user_id],
+        participant_ids=[cofac_user_id],
+        additional_facilitator_ids=[],
     )
     meeting = meeting_manager.create_meeting(meeting_payload, admin_user.user_id)
     assert meeting is not None
@@ -764,11 +1250,34 @@ def test_cofacilitator_update_permissions(
     assert updated["description"] == update_payload["description"]
     assert updated["owner_id"] == admin_user_id
 
+    configuration_response = client.put(
+        f"/api/meetings/{meeting.meeting_id}/configuration",
+        json={
+            "title": "Configured by Co-Facilitator",
+            "description": "Updated through the configuration endpoint",
+            "scheduled_datetime": (datetime.now(UTC) + timedelta(days=2)).isoformat(),
+            "agenda_items": ["Review"],
+            "participant_contacts": [],
+            "participant_ids": [cofac_user_id],
+        },
+    )
+    assert configuration_response.status_code == 200, configuration_response.json()
+
+    archive_response = client.post(f"/api/meetings/{meeting.meeting_id}/archive")
+    assert archive_response.status_code == 403, archive_response.json()
+
+    restore_response = client.post(f"/api/meetings/{meeting.meeting_id}/restore")
+    assert restore_response.status_code == 403, restore_response.json()
+
+    delete_response = client.delete(f"/api/meetings/{meeting.meeting_id}")
+    assert delete_response.status_code == 403, delete_response.json()
+
 
 def test_facilitator_controls_start_stop_tool(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,
 ):
+    """Muffin Tractor: meeting-scoped management authority includes activity-control operations."""
     admin_user = user_manager_with_admin.get_user_by_email(
         os.getenv("ADMIN_EMAIL", "admin@decidero.local")
     )
@@ -788,11 +1297,11 @@ def test_facilitator_controls_start_stop_tool(
 
     meeting_request = {
         "title": "Realtime Workshop",
-        "description": "Testing facilitator controls",
+        "description": "Testing meeting control authority",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=2)).isoformat(),
         "agenda_items": ["Kickoff"],
         "participant_contacts": [admin_user.login],
-        "co_facilitator_ids": [cofac_user.user_id],
+        "participant_ids": [cofac_user.user_id],
     }
     meeting_response = authenticated_client.post("/api/meetings/", json=meeting_request)
     assert meeting_response.status_code == 200, meeting_response.json()
@@ -828,6 +1337,207 @@ def test_facilitator_controls_start_stop_tool(
     stop_state = stop_response.json()["state"]
     assert stop_state["currentTool"] is None
     assert stop_state["status"] == "completed"
+
+
+def test_removed_facilitator_loses_control_until_readded(
+    client: TestClient,
+    db_session,
+    user_manager_with_admin: UserManager,
+):
+    """Lobster Teacup: remove-and-readd stale-authority prevention keeps UI/backend capabilities tied to current roster membership."""
+    admin_user = user_manager_with_admin.get_user_by_email(
+        os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    )
+    assert admin_user is not None
+
+    facilitator_password = "RosterFac1!"
+    facilitator_user = user_manager_with_admin.add_user(
+        first_name="Roster",
+        last_name="Facilitator",
+        email="roster.facilitator@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="roster_facilitator",
+    )
+    db_session.commit()
+    db_session.refresh(facilitator_user)
+
+    meeting_manager = MeetingManager(db_session)
+    meeting_payload = MeetingCreate(
+        title="Roster Access Boundary",
+        description="Exercise remove and re-add meeting authority behavior",
+        start_time=datetime.now(UTC) + timedelta(hours=2),
+        duration_minutes=45,
+        publicity=PublicityType.PUBLIC,
+        owner_id=admin_user.user_id,
+        participant_ids=[facilitator_user.user_id],
+        additional_facilitator_ids=[facilitator_user.user_id],
+    )
+    meeting = meeting_manager.create_meeting(
+        meeting_payload,
+        admin_user.user_id,
+        agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Kickoff")],
+    )
+    assert meeting is not None
+    activity_id = meeting.agenda_activities[0].activity_id if meeting.agenda_activities else None
+    assert activity_id is not None
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator_user.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    control_payload = {
+        "action": "start_tool",
+        "tool": "brainstorming",
+        "activityId": activity_id,
+    }
+    initial_control = client.post(
+        f"/api/meetings/{meeting.meeting_id}/control",
+        json=control_payload,
+    )
+    assert initial_control.status_code == 200, initial_control.json()
+    initial_page = client.get(f"/meeting/{meeting.meeting_id}")
+    assert initial_page.status_code == 200, initial_page.text
+    assert "Meeting Roster" in initial_page.text
+    assert "Meeting Settings" in initial_page.text
+    assert 'data-view-mode="facilitator"' in initial_page.text
+
+    initial_dashboard = client.get("/api/meetings/")
+    assert initial_dashboard.status_code == 200, initial_dashboard.json()
+    initial_item = next(
+        item
+        for item in initial_dashboard.json()["items"]
+        if item["id"] == meeting.meeting_id
+    )
+    assert initial_item["viewer_capabilities"]["can_manage"] is True
+
+    meeting_manager.remove_participant(meeting.meeting_id, facilitator_user.user_id)
+    after_removal = client.post(
+        f"/api/meetings/{meeting.meeting_id}/control",
+        json=control_payload,
+    )
+    assert after_removal.status_code == 403, after_removal.json()
+    removed_page = client.get(f"/meeting/{meeting.meeting_id}")
+    assert removed_page.status_code == 403, removed_page.text
+
+    removed_dashboard = client.get("/api/meetings/")
+    assert removed_dashboard.status_code == 200, removed_dashboard.json()
+    assert all(
+        item["id"] != meeting.meeting_id for item in removed_dashboard.json()["items"]
+    )
+
+    meeting_manager.add_participant(meeting.meeting_id, facilitator_user)
+    after_readd = client.post(
+        f"/api/meetings/{meeting.meeting_id}/control",
+        json=control_payload,
+    )
+    assert after_readd.status_code == 200, after_readd.json()
+    readded_page = client.get(f"/meeting/{meeting.meeting_id}")
+    assert readded_page.status_code == 200, readded_page.text
+    assert "Meeting Roster" in readded_page.text
+    assert "Meeting Settings" in readded_page.text
+    assert 'data-view-mode="facilitator"' in readded_page.text
+
+    readded_dashboard = client.get("/api/meetings/")
+    assert readded_dashboard.status_code == 200, readded_dashboard.json()
+    readded_item = next(
+        item
+        for item in readded_dashboard.json()["items"]
+        if item["id"] == meeting.meeting_id
+    )
+    assert readded_item["viewer_capabilities"]["can_manage"] is True
+
+
+def test_demoted_facilitator_loses_control_across_meetings_and_page_controls(
+    client: TestClient,
+    db_session,
+    user_manager_with_admin: UserManager,
+):
+    """Lobster Teacup: demotion authority revocation removes visible controls and backend meeting powers across meetings."""
+    admin_user = user_manager_with_admin.get_user_by_email(
+        os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    )
+    assert admin_user is not None
+
+    facilitator_password = "DemoteFac1!"
+    facilitator_user = user_manager_with_admin.add_user(
+        first_name="Demoted",
+        last_name="Facilitator",
+        email="demoted.facilitator@example.com",
+        hashed_password=get_password_hash(facilitator_password),
+        role=UserRole.FACILITATOR.value,
+        login="demoted_facilitator",
+    )
+    db_session.commit()
+    db_session.refresh(facilitator_user)
+
+    meeting_manager = MeetingManager(db_session)
+    meeting_ids = []
+    for index in range(2):
+        meeting_payload = MeetingCreate(
+            title=f"Demotion Meeting {index + 1}",
+            description="Verify role change propagation",
+            start_time=datetime.now(UTC) + timedelta(hours=2 + index),
+            duration_minutes=30,
+            publicity=PublicityType.PUBLIC,
+            owner_id=admin_user.user_id,
+            participant_ids=[facilitator_user.user_id],
+            additional_facilitator_ids=[facilitator_user.user_id],
+        )
+        meeting = meeting_manager.create_meeting(
+            meeting_payload,
+            admin_user.user_id,
+            agenda_items=[AgendaActivityCreate(tool_type="brainstorming", title="Kickoff")],
+        )
+        assert meeting is not None
+        meeting_ids.append((meeting.meeting_id, meeting.agenda_activities[0].activity_id))
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": facilitator_user.login, "password": facilitator_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    pre_demote_control = client.post(
+        f"/api/meetings/{meeting_ids[0][0]}/control",
+        json={"action": "start_tool", "tool": "brainstorming", "activityId": meeting_ids[0][1]},
+    )
+    assert pre_demote_control.status_code == 200, pre_demote_control.json()
+
+    updated_user = user_manager_with_admin.update_user_role(
+        facilitator_user.login,
+        UserRole.PARTICIPANT.value,
+    )
+    assert updated_user is not None
+    assert updated_user.role == UserRole.PARTICIPANT.value
+
+    meeting_page = client.get(f"/meeting/{meeting_ids[0][0]}")
+    assert meeting_page.status_code == 200, meeting_page.text
+    assert "Meeting Roster" not in meeting_page.text
+    assert "Meeting Settings" not in meeting_page.text
+    assert 'data-view-mode="participant"' in meeting_page.text
+
+    dashboard_response = client.get("/api/meetings/")
+    assert dashboard_response.status_code == 200, dashboard_response.json()
+    for meeting_id, _activity_id in meeting_ids:
+        item = next(
+            item
+            for item in dashboard_response.json()["items"]
+            if item["id"] == meeting_id
+        )
+        assert item["viewer_capabilities"]["can_manage"] is False
+        assert item["viewer_capabilities"]["can_delete"] is False
+        assert item["viewer_capabilities"]["is_facilitator"] is False
+        assert item["viewer_capabilities"]["is_participant"] is True
+
+    for meeting_id, activity_id in meeting_ids:
+        control_attempt = client.post(
+            f"/api/meetings/{meeting_id}/control",
+            json={"action": "start_tool", "tool": "brainstorming", "activityId": activity_id},
+        )
+        assert control_attempt.status_code == 403, control_attempt.json()
 
 
 def test_start_preserves_accumulated_elapsed_time(

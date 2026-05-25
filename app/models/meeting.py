@@ -53,20 +53,6 @@ class Meeting(Base):
         foreign_keys=[owner_id],
     )
 
-    facilitator_links = relationship(
-        "MeetingFacilitator",
-        back_populates="meeting",
-        cascade="all, delete-orphan",
-    )
-
-    facilitators = relationship(
-        "User",
-        secondary="meeting_facilitators",
-        viewonly=True,
-        back_populates="facilitated_meetings",
-        overlaps="facilitator_links,facilitated_meetings,owned_meetings,owner",
-    )
-
     participants = relationship(
         "User",
         secondary=participants_table,
@@ -93,41 +79,6 @@ class Meeting(Base):
     @property
     def agenda(self):
         return list(self.agenda_activities or [])
-
-
-class MeetingFacilitator(Base):
-    __tablename__ = "meeting_facilitators"
-    __table_args__ = (
-        UniqueConstraint(
-            "facilitator_id", name="uq_meeting_facilitators_facilitator_id"
-        ),
-        UniqueConstraint("meeting_id", "user_id", name="uq_meeting_facilitators_user"),
-    )
-
-    facilitator_id = Column(String(20), primary_key=True, index=True)
-    meeting_id = Column(
-        String(20),
-        ForeignKey("meetings.meeting_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    user_id = Column(
-        String(20), ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False
-    )
-    is_owner = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    meeting = relationship(
-        "Meeting",
-        back_populates="facilitator_links",
-        foreign_keys=[meeting_id],
-    )
-    user = relationship(
-        "User", back_populates="facilitator_links", foreign_keys=[user_id]
-    )
-
-
-meeting_facilitators_table = MeetingFacilitator.__table__
 
 
 class ToolConfig(Base):

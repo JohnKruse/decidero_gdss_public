@@ -152,11 +152,10 @@ class MeetingDataAccess:
         return self.store.delete(meeting_id)
 
     def get_user_meetings(self, user_id: str) -> List[Dict[str, Any]]:
-        """Get all meetings for a specific user (as participant or facilitator)."""
+        """Get all meetings for a specific user by owner or participant roster."""
         return [
             meeting
             for meeting in self.store.read_all()
             if user_id in meeting.get("participants", [])
             or meeting.get("owner_id") == user_id
-            or user_id in meeting.get("facilitator_user_ids", [])
         ]

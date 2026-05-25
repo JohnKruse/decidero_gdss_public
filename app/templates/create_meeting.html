@@ -1674,7 +1674,7 @@ endblock %}
                 if (!validateScheduledInput(true)) {
                     throw new Error('Scheduled date must be YYYY-MM-DD with optional HH:MM.');
                 }
-                const payload = { title, description, scheduled_datetime: scheduledDatetime, agenda: agendaPayload, agenda_items: agendaPayload.map((item) => item.title), participant_ids: participantIds, co_facilitator_ids: [] };
+                const payload = { title, description, scheduled_datetime: scheduledDatetime, agenda: agendaPayload, agenda_items: agendaPayload.map((item) => item.title), participant_ids: participantIds };
                 const endpoint = isEditMode ? `/api/meetings/${meetingId}/configuration` : '/api/meetings';
                 const method = isEditMode ? 'PUT' : 'POST';
                 const response = await fetch(endpoint, { method, headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify(payload) });

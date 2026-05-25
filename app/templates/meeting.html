@@ -12,7 +12,12 @@
     data-user-login="{{ current_user.login if current_user else '' }}"
     data-user-id="{{ current_user.user_id if current_user else '' }}"
     data-user-role="{{ ((current_user.role.value if current_user and current_user.role.value is defined else (current_user.role if current_user else 'guest'))) | lower }}"
-    data-view-mode="{{ 'facilitator' if current_user.role in ['admin', 'super_admin', 'facilitator'] else 'participant' }}"
+    data-meeting-can-view="{{ 'true' if meeting_capabilities.can_view else 'false' }}"
+    data-meeting-can-manage="{{ 'true' if meeting_capabilities.can_manage else 'false' }}"
+    data-meeting-can-delete="{{ 'true' if meeting_capabilities.can_delete else 'false' }}"
+    data-meeting-is-facilitator="{{ 'true' if meeting_capabilities.is_facilitator else 'false' }}"
+    data-meeting-is-participant="{{ 'true' if meeting_capabilities.is_participant else 'false' }}"
+    data-view-mode="{{ 'facilitator' if can_manage_meeting else 'participant' }}"
     data-brainstorm-max-length="{{ brainstorming_limits.idea_character_limit | default(500) }}"
     data-brainstorm-max-ideas="{{ brainstorming_limits.max_ideas_per_user | default(0) }}"
     data-meeting-refresh-enabled="{{ 'true' if meeting_refresh.get('enabled', True) else 'false' }}"
@@ -53,10 +58,10 @@
                 </div>
             </div>
             <div class="meeting-overview-meta-item">
-                <span class="meeting-overview-label">Facilitator</span>
+                <span class="meeting-overview-label">Authority</span>
                 <strong id="meetingOverviewFacilitator">—</strong>
             </div>
-            {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
+            {% if can_manage_meeting %}
             <div class="meeting-overview-meta-item">
                 <span class="meeting-overview-label">Activity log</span>
                 <a class="control-btn sm meeting-log-button" href="/meeting/{{ meeting_id }}/activity-log"
@@ -86,19 +91,19 @@
                         <div class="overview-subtitle">Pick an activity to see facilitator guidance and configuration.
                         </div>
                     </div>
-                    <button type="button" class="control-btn sm agenda-collapse-toggle" id="agendaCollapseToggle"
-                        aria-expanded="true" aria-controls="agendaSectionBody">
-                        Collapse
-                    </button>
+                    <div class="agenda-header-actions">
+                        {% if can_manage_meeting %}
+                        <button type="button" class="control-btn primary" id="openParticipantAdminButton">Meeting Roster</button>
+                        <button type="button" class="control-btn primary" id="agendaAddActivityButton">Meeting Settings</button>
+                        {% endif %}
+                        <button type="button" class="control-btn sm agenda-collapse-toggle" id="agendaCollapseToggle"
+                            aria-expanded="true" aria-controls="agendaSectionBody">
+                            Collapse
+                        </button>
+                    </div>
                 </div>
                 <div class="section-body" id="agendaSectionBody">
                     <ol class="agenda-timeline" id="meetingAgendaList"></ol>
-                    {% if current_user.role in ['admin', 'super_admin', 'facilitator'] %}
-                    <div class="card-actions">
-                    <button type="button" class="control-btn" id="openParticipantAdminButton">Meeting Roster</button>
-                    <button type="button" class="control-btn" id="agendaAddActivityButton">Meeting Settings</button>
-                    </div>
-                    {% endif %}
                 </div>
             </section>
             {% endgrab %}
@@ -166,17 +171,6 @@
                     </div>
                     <div class="transfer-actions">
                         <select id="transferTargetToolType" class="form-select transfer-target-select"></select>
-                        <!-- Galactic Hamster: target mode selector for transfer-into-existing -->
-                        <select id="transferTargetMode" class="form-select transfer-target-select">
-                            <option value="new" selected>Create new activity</option>
-                            <option value="existing">Use existing activity</option>
-                        </select>
-                        <select id="transferTargetExistingActivity" class="form-select transfer-target-select" hidden>
-                            <option value="" disabled selected>Select target activity</option>
-                        </select>
-                        <span id="transferEligibilityHint" class="transfer-eligibility-hint" hidden>
-                            Only unused activities are eligible to receive transferred ideas.
-                        </span>
                         <select id="transferTransformProfile" class="form-select transfer-target-select" hidden></select>
                         <label class="transfer-toggle">
                             <input type="checkbox" id="transferIncludeComments" checked>
@@ -358,7 +352,7 @@
                     <div class="participant-admin" data-participant-admin>
                         <h3>Manage Participants</h3>
                         <p class="activity-participant-hint">
-                            Participants are meeting attendees. Adding an admin or facilitator here does not make them a meeting facilitator.
+                            Participants are meeting attendees. Roster membership alone does not grant meeting management authority.
                         </p>
                         <form id="participantAssignForm" class="participant-manage-form">
                             <input type="text" id="participantAssignLogin" class="form-input"

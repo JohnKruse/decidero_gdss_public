@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, UTC
 from fastapi.testclient import TestClient
 
+from app.data.meeting_manager import MeetingManager
 from app.data.user_manager import UserManager
 from app.models.user import UserRole
 from app.utils.security import get_password_hash
@@ -137,6 +138,62 @@ def test_facilitator_can_use_directory_in_draft_mode(
     assert payload["context"]["activity_id"] is None
     assert payload["context"]["activity_mode"] == "all"
     assert isinstance(payload["items"], list)
+
+
+def test_off_roster_facilitator_cannot_manage_meeting_directory(
+    client: TestClient,
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Gravy Parachute: facilitator role alone does not unlock meeting-directory management without roster membership."""
+    facilitator_login = "dir_off_roster_fac"
+    _seed_user(
+        user_manager_with_admin,
+        facilitator_login,
+        role=UserRole.FACILITATOR,
+        password="DraftPass1!",
+    )
+    meeting_payload = _create_meeting(
+        authenticated_client, title="Off Roster Directory Boundary"
+    )
+
+    _login(client, facilitator_login, "DraftPass1!")
+    resp = client.get(
+        "/api/users/directory",
+        params={"meeting_id": meeting_payload["id"], "page_size": 50},
+    )
+    assert resp.status_code == 403
+
+
+def test_directory_marks_off_roster_legacy_facilitator_as_non_facilitator(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    """Noodle Catapult: meeting-directory facilitator badges derive from canonical meeting capabilities."""
+    off_roster_user_id = _seed_user(
+        user_manager_with_admin,
+        "dir_legacy_off_roster",
+        role=UserRole.FACILITATOR,
+        password="DraftPass1!",
+    )
+    meeting_payload = _create_meeting(
+        authenticated_client, title="Directory Legacy Facilitator Output"
+    )
+
+    MeetingManager(user_manager_with_admin.db).update_meeting(
+        meeting_payload["id"],
+        {"facilitator_ids": [off_roster_user_id]},
+    )
+
+    resp = authenticated_client.get(
+        "/api/users/directory",
+        params={"meeting_id": meeting_payload["id"], "page_size": 50},
+    )
+    assert resp.status_code == 200, resp.text
+    items = {item["user_id"]: item for item in resp.json()["items"]}
+    assert off_roster_user_id in items
+    assert items[off_roster_user_id]["is_meeting_participant"] is False
+    assert items[off_roster_user_id]["is_facilitator"] is False
 
 
 def test_participant_cannot_use_directory_draft_mode(

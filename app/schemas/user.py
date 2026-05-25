@@ -230,7 +230,10 @@ class UserDirectoryEntry(BaseModel):
     is_active: bool = True
     is_meeting_participant: bool = False
     is_activity_participant: bool = False
-    is_facilitator: bool = False
+    is_facilitator: bool = Field(
+        default=False,
+        description="Whether this user currently has canonical facilitator authority in the selected meeting context.",
+    )
     disabled_reason: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

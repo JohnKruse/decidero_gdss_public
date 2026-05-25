@@ -552,6 +552,45 @@ def test_voting_blocks_participants_outside_activity_scope(
     assert "assigned" in options_res.json()["detail"].lower()
 
 
+def test_off_roster_facilitator_cannot_view_voting_options(
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    off_roster_password = "VoteOffRoster1!"
+    off_roster_facilitator = user_manager_with_admin.add_user(
+        first_name="Vote",
+        last_name="OffRoster",
+        email="vote.off.roster@example.com",
+        hashed_password=get_password_hash(off_roster_password),
+        role=UserRole.FACILITATOR.value,
+        login="vote_off_roster",
+    )
+    db_session.commit()
+    db_session.refresh(off_roster_facilitator)
+
+    meeting, activity_id = _create_voting_meeting(db_session, admin_user)
+
+    login_res = client.post(
+        "/api/auth/token",
+        json={
+            "username": off_roster_facilitator.login,
+            "password": off_roster_password,
+        },
+    )
+    assert login_res.status_code == 200, login_res.json()
+
+    options_res = client.get(
+        f"/api/meetings/{meeting.meeting_id}/voting/options",
+        params={"activity_id": activity_id},
+    )
+    assert options_res.status_code == 403
+
+
 def test_voting_respects_live_scope_metadata_without_config(
     client: TestClient,
     user_manager_with_admin: UserManager,
