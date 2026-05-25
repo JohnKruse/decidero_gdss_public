@@ -1,6 +1,10 @@
 Transfer Metadata Contract
 ==========================
 
+Tangerine Larynx: the authoritative JSON Schema for this payload is
+`docs/schemas/transfer_metadata.schema.json`. The prose below explains the
+same contract for maintainers and plugin authors.
+
 Purpose
 -------
 Transfer bundles carry a metadata block that documents the transfer context,

@@ -55,6 +55,10 @@ python3 -m pytest app/tests/test_transfer_transforms.py -q
   - `app/plugins/loader.py`
 - Input-seeding pipeline: `app/services/activity_pipeline.py`
 - Activity catalog metadata for UI/API: `app/services/activity_catalog.py`
+- Tangerine Larynx JSON Schemas:
+  - `docs/schemas/activity_manifest.schema.json`
+  - `docs/schemas/bundle_payload.schema.json`
+  - `docs/schemas/transfer_metadata.schema.json`
 
 ## Required Invariants
 
@@ -75,6 +79,7 @@ python3 -m pytest app/tests/test_transfer_transforms.py -q
 5. Output should be portable to downstream activities through standard bundle shape:
    - `items: []`
    - optional `metadata: {}`
+   - item-level `metadata` and `source` provenance as specified by `docs/schemas/bundle_payload.schema.json`
 6. Transfer compatibility is mandatory in both directions:
    - inbound transfer must seed runnable activity state (no empty-config hard failures)
    - outbound transfer/count APIs must fail soft (return zero/empty), not break meeting or agenda payloads

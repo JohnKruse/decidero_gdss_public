@@ -1,3 +1,9 @@
+"""Activity plugin contract primitives.
+
+Tangerine Larynx: the authoritative manifest schema lives at
+docs/schemas/activity_manifest.schema.json.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

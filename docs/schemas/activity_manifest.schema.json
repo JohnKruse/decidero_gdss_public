@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decidero.local/schemas/activity_manifest.schema.json",
+  "title": "Activity Plugin Manifest",
+  "description": "Tangerine Larynx Phase 1 schema for the ActivityPluginManifest contract used by activity plugin registration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tool_type",
+    "label",
+    "description",
+    "default_config",
+    "reliability_policy",
+    "autosave_seconds",
+    "collaboration_patterns",
+    "use_cases",
+    "when_to_use",
+    "when_not_to_use",
+    "group_size_range",
+    "typical_duration_minutes",
+    "bias_mitigation",
+    "thinklets",
+    "input_requirements",
+    "output_characteristics"
+  ],
+  "properties": {
+    "tool_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "default_config": {
+      "type": "object"
+    },
+    "reliability_policy": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "retryable_statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 599
+            }
+          },
+          "max_retries": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "base_delay_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_delay_ms": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "jitter_ratio": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "idempotency_header": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "autosave_seconds": {
+      "type": ["integer", "null"],
+      "minimum": 1
+    },
+    "collaboration_patterns": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "use_cases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "when_to_use": {
+      "type": "string"
+    },
+    "when_not_to_use": {
+      "type": "string"
+    },
+    "group_size_range": {
+      "$ref": "#/$defs/non_negative_range"
+    },
+    "typical_duration_minutes": {
+      "$ref": "#/$defs/non_negative_range"
+    },
+    "bias_mitigation": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "thinklets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "input_requirements": {
+      "type": "string"
+    },
+    "output_characteristics": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "non_negative_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

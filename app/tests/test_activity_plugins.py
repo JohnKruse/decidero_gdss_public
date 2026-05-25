@@ -9,10 +9,18 @@ from app.models.voting import VotingVote
 from app.plugins.builtin.categorization_plugin import CategorizationPlugin
 from app.plugins.builtin.voting_plugin import VotingPlugin
 from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
+from app.plugins.base import ActivityPlugin, ActivityPluginManifest
 from app.plugins.context import ActivityContext
+from app.plugins.loader import load_builtin_plugins
+from app.plugins.registry import ActivityRegistry
 from app.services.activity_pipeline import ActivityPipeline
 from app.services.activity_catalog import get_activity_catalog, normalise_reliability_policy
 from app.services.categorization_manager import CategorizationManager
+from app.services.contract_schemas import (
+    ContractSchemaError,
+    validate_activity_manifest,
+    validate_bundle_payload,
+)
 from app.services.voting_manager import VotingManager
 
 
@@ -104,6 +112,62 @@ def test_activity_bundle_manager_roundtrip(db_session):
     assert input_bundle.kind == "input"
     assert input_bundle.items == output.items
     assert input_bundle.bundle_metadata == output.bundle_metadata
+
+
+def test_builtin_activity_manifests_conform_to_schema():
+    """Tangerine Larynx: built-in manifests conform to the Phase 1 schema."""
+    for plugin in load_builtin_plugins():
+        payload = validate_activity_manifest(plugin.manifest)
+        assert payload["tool_type"] == plugin.manifest.tool_type
+
+
+def test_activity_registry_rejects_invalid_manifest():
+    """Tangerine Larynx: startup registration refuses manifest schema violations."""
+
+    class InvalidManifestPlugin(ActivityPlugin):
+        manifest = ActivityPluginManifest(
+            tool_type="Voting",
+            label="Invalid",
+            description="Invalid mixed-case type.",
+            group_size_range={"min": 1, "max": 2},
+            typical_duration_minutes={"min": 1, "max": 2},
+        )
+
+        def open_activity(self, context, input_bundle=None) -> None:
+            return None
+
+        def close_activity(self, context):
+            return None
+
+    registry = ActivityRegistry()
+    try:
+        registry.register(InvalidManifestPlugin())
+    except ContractSchemaError as exc:
+        assert "tool_type" in str(exc)
+    else:
+        raise AssertionError("invalid manifest registered")
+
+
+def test_bundle_payload_schema_accepts_provenance_and_iteration_extension():
+    """Tangerine Larynx: bundle payload schema covers provenance and Phase 3 iteration."""
+    payload = {
+        "items": [
+            {
+                "id": "idea-1",
+                "content": "Portable idea",
+                "metadata": {"tag": "seed"},
+                "source": {
+                    "meeting_id": "M-SCHEMA",
+                    "activity_id": "M-SCHEMA-BRAIN-0001",
+                    "tool_type": "brainstorming",
+                },
+            }
+        ],
+        "metadata": {"source": "brainstorming"},
+        "iteration": {"logical_step_id": "brainstorm", "round_index": 0},
+    }
+
+    assert validate_bundle_payload(payload)["iteration"]["round_index"] == 0
 
 
 def test_activity_pipeline_creates_input(db_session):

@@ -1,3 +1,10 @@
+"""Activity bundle persistence model.
+
+Tangerine Larynx: portable bundle payloads are specified by
+docs/schemas/bundle_payload.schema.json, including item metadata/source
+provenance and the reserved Phase 3 iteration-discriminator slot.
+"""
+
 from sqlalchemy import Column, DateTime, Integer, JSON, String, func
 
 from ..database import Base

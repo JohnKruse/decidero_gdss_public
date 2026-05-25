@@ -1,3 +1,9 @@
+"""Activity plugin registry with Tangerine Larynx manifest validation.
+
+Plugin manifests are validated against docs/schemas/activity_manifest.schema.json
+before registration so startup fails on contract violations.
+"""
+
 from __future__ import annotations
 
 import os
@@ -6,6 +12,7 @@ from typing import Dict, Iterable, Optional
 
 from app.plugins.base import ActivityPlugin
 from app.plugins.loader import load_builtin_plugins, load_dropin_plugins
+from app.services.contract_schemas import validate_activity_manifest
 
 
 class ActivityRegistry:
@@ -28,6 +35,7 @@ class ActivityRegistry:
         self._loaded = True
 
     def register(self, plugin: ActivityPlugin) -> None:
+        validate_activity_manifest(plugin.manifest)
         tool_type = plugin.manifest.tool_type.strip().lower()
         if tool_type:
             self._plugins[tool_type] = plugin

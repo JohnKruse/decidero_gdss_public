@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decidero.local/schemas/transfer_metadata.schema.json",
+  "title": "Transfer Metadata",
+  "description": "Tangerine Larynx Phase 1 schema for transfer metadata audit trails, round indexing, source provenance, and per-tool blocks.",
+  "type": "object",
+  "required": ["schema_version", "meeting_id", "created_at", "round_index", "source", "history", "tools"],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "meeting_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "round_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "source": {
+      "type": "object",
+      "required": ["activity_id", "tool_type"],
+      "properties": {
+        "activity_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_type": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["tool_type", "created_at", "round_index"],
+        "properties": {
+          "tool_type": {
+            "type": "string",
+            "minLength": 1
+          },
+          "activity_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "minLength": 1
+          },
+          "round_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "details": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": true
+}

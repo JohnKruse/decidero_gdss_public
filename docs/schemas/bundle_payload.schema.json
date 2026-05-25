@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decidero.local/schemas/bundle_payload.schema.json",
+  "title": "Activity Bundle Payload",
+  "description": "Tangerine Larynx Phase 1 schema for portable activity bundle payloads, including item metadata/source provenance and the Phase 3 iteration discriminator extension slot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["items", "metadata"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["metadata", "source"],
+        "properties": {
+          "id": {},
+          "content": {},
+          "submitted_name": {},
+          "parent_id": {},
+          "created_at": {
+            "type": ["string", "null"]
+          },
+          "activity_id": {
+            "type": ["string", "null"]
+          },
+          "user_id": {
+            "type": ["string", "null"]
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "meeting_id": {
+                "type": "string"
+              },
+              "activity_id": {
+                "type": "string"
+              },
+              "tool_type": {
+                "type": "string"
+              },
+              "bundle_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "source": {
+      "type": ["string", "object"]
+    },
+    "iteration": {
+      "description": "Reserved extension slot for Phase 3 iteration discrimination.",
+      "type": "object",
+      "required": ["round_index"],
+      "properties": {
+        "logical_step_id": {
+          "type": "string"
+        },
+        "round_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "donor_activity_id": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
