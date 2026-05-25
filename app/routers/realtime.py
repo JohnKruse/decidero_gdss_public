@@ -1,3 +1,9 @@
+"""Realtime meeting routes.
+
+Smug Otter: initial agenda snapshots consult `AgendaStrategy` so realtime
+clients see the strategy's canonical agenda order.
+"""
+
 import logging
 from datetime import datetime, UTC
 from typing import Dict
@@ -6,6 +12,7 @@ from app.data.meeting_manager import MeetingManager, get_meeting_manager
 from app.services import meeting_state_manager
 from app.utils.websocket_manager import ConnectionInfo, websocket_manager
 from app.models.meeting import AgendaActivity
+from app.services.agenda_strategy import get_agenda_strategy
 from app.services.meeting_state import JSONCompatibleDict
 
 router = APIRouter(prefix="/ws", tags=["realtime"])
@@ -49,9 +56,10 @@ async def meeting_socket(
         await websocket.close(code=1008, reason="Meeting not found")
         return
 
+    # Smug Otter: realtime initial state uses the strategy's canonical agenda.
     formatted_agenda = [
         _format_agenda_activity(a)
-        for a in sorted(meeting.agenda_activities, key=lambda x: x.order_index)
+        for a in get_agenda_strategy(meeting).list_agenda(meeting)
     ]
 
     client_hint = websocket.query_params.get("clientId") or websocket.query_params.get(

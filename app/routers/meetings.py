@@ -1,3 +1,10 @@
+"""Meeting API routes.
+
+Smug Otter: behavioral agenda consultation flows through `AgendaStrategy`;
+remaining direct agenda walks in this module are activity-id lookups or
+storage/import mechanics rather than agenda interpretation.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException, status, Response, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -55,6 +62,7 @@ from app.services import meeting_state_manager
 from app.plugins.context import ActivityContext
 from app.plugins.registry import get_activity_registry
 from app.services.activity_pipeline import ActivityPipeline
+from app.services.agenda_strategy import get_agenda_strategy
 from app.services.transfer_source import get_transfer_count
 from app.plugins.autosave import start_autosave, stop_autosave
 from app.utils.websocket_manager import websocket_manager
@@ -295,7 +303,8 @@ def _build_meeting_export_bundle(
     ]
 
     agenda = []
-    for activity in getattr(meeting, "agenda_activities", []) or []:
+    # Smug Otter: export uses the strategy's canonical agenda order.
+    for activity in get_agenda_strategy(meeting).list_agenda(meeting):
         agenda.append(
             {
                 "activity_id": activity.activity_id,
@@ -967,7 +976,8 @@ async def get_meeting_agenda(
         )
 
     _assert_meeting_access(meeting, user, require_facilitator=False)
-    agenda_items = sorted(meeting.agenda_activities, key=lambda item: item.order_index)
+    # Smug Otter: API agenda reads use the strategy's canonical order.
+    agenda_items = get_agenda_strategy(meeting).list_agenda(meeting)
     _apply_activity_lock_metadata(meeting_id, meeting_manager, agenda_items)
     _apply_transfer_counts(meeting_id, meeting_manager, agenda_items)
     return [AgendaActivityResponse.model_validate(item) for item in agenda_items]

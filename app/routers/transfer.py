@@ -1,3 +1,9 @@
+"""Transfer API routes.
+
+Smug Otter: agenda activity resolution consults `AgendaStrategy` so transfer
+eligibility and commits use the bound strategy's canonical agenda view.
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -30,6 +36,7 @@ from app.schemas.transfer import (
 )
 from app.services import meeting_state_manager
 from app.services.activity_catalog import get_activity_definition
+from app.services.agenda_strategy import get_agenda_strategy
 from app.services.transfer_source import build_transfer_items
 from app.services.transfer_transforms import apply_transfer_transform
 from app.services.voting_manager import VotingManager
@@ -54,10 +61,11 @@ def _assert_facilitator_access(meeting: Meeting, user: User) -> None:
 
 
 def _resolve_activity(meeting: Meeting, activity_id: str):
+    # Smug Otter: resolve against the strategy's canonical agenda view.
     activity = next(
         (
             item
-            for item in getattr(meeting, "agenda_activities", [])
+            for item in get_agenda_strategy(meeting).list_agenda(meeting)
             if item.activity_id == activity_id
         ),
         None,

@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, UTC
 
 from fastapi.testclient import TestClient
 
+import app.routers.transfer as transfer_router_module
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
@@ -267,7 +268,9 @@ def test_transfer_eligible_rejects_started_activity(
     authenticated_client: TestClient,
     user_manager_with_admin,
     db_session,
+    mocker,
 ):
+    """Smug Otter: transfer target resolution preserves behavior through AgendaStrategy."""
     facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
     assert facilitator is not None
 
@@ -324,6 +327,7 @@ def test_transfer_eligible_rejects_started_activity(
         assert bundles_resp.status_code == 200, bundles_resp.json()
         items = bundles_resp.json()["input"]["items"]
 
+        strategy_spy = mocker.spy(transfer_router_module, "get_agenda_strategy")
         commit_resp = authenticated_client.post(
             f"/api/meetings/{meeting.meeting_id}/transfer/commit",
             json={
@@ -336,6 +340,7 @@ def test_transfer_eligible_rejects_started_activity(
         )
         assert commit_resp.status_code == 422, commit_resp.json()
         assert "already been started" in commit_resp.json().get("detail", "")
+        assert strategy_spy.call_count >= 1
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 

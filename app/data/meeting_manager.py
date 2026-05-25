@@ -1,3 +1,10 @@
+"""Meeting persistence and agenda mutation services.
+
+Smug Otter: behavioral agenda reads consult `AgendaStrategy`; direct
+`agenda_activities` manipulation remains limited to storage-layer mutation,
+resequence, and id lookup mechanics.
+"""
+
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 from typing import Dict, Optional, List, Any, Sequence, Iterable, Set, Tuple
@@ -27,6 +34,7 @@ from ..utils.identifiers import (
     derive_activity_prefix,
 )
 from ..services.activity_catalog import get_activity_definition, get_activity_catalog
+from ..services.agenda_strategy import get_agenda_strategy
 from ..services.meeting_authorization import (
     derive_meeting_authority_outputs,
     resolve_meeting_capabilities,
@@ -350,7 +358,8 @@ class MeetingManager:
         meeting = self.get_meeting(meeting_id)
         if not meeting:
             raise HTTPException(status_code=404, detail="Meeting not found")
-        return sorted(meeting.agenda_activities, key=lambda item: item.order_index)
+        # Smug Otter: callers receive the strategy's canonical agenda order.
+        return get_agenda_strategy(meeting).list_agenda(meeting)
 
     def get_activity_data_flags(self, meeting_id: str) -> Dict[str, bool]:
         idea_ids = {
@@ -796,7 +805,8 @@ class MeetingManager:
         self._resequence_agenda(meeting, new_ordered_list)
         self.db.commit()
         self.db.refresh(meeting)  # Refresh meeting to load resequenced agenda
-        return sorted(meeting.agenda_activities, key=lambda item: item.order_index)
+        # Smug Otter: return the strategy's canonical agenda after mutation.
+        return get_agenda_strategy(meeting).list_agenda(meeting)
 
     async def check_participant_collisions(
         self,
@@ -903,7 +913,8 @@ class MeetingManager:
         created = self._apply_agenda_items(meeting, items)
         self.db.commit()
         self.db.refresh(meeting)
-        return sorted(created, key=lambda item: item.order_index)
+        # Smug Otter: return the strategy's canonical agenda after replacement.
+        return get_agenda_strategy(meeting).list_agenda(meeting)
 
     # ------------------------------------------------------------------ #
 

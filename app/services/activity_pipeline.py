@@ -1,9 +1,8 @@
 """Activity bundle input pipeline.
 
-Smug Otter: agenda consultation is being isolated behind
-app/services/agenda_strategy.py. `LinearAgendaStrategy` is the Phase 2 reference
-implementation for today's order-index semantics; later steps rewire this
-module's linear prior-activity lookup through it.
+Smug Otter: agenda consultation flows through app/services/agenda_strategy.py.
+`LinearAgendaStrategy` is the Phase 2 reference implementation for today's
+order-index semantics.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.activity_bundle import ActivityBundle
 from app.models.meeting import AgendaActivity, Meeting
+from app.services.agenda_strategy import get_agenda_strategy
 
 
 class ActivityPipeline:
@@ -46,7 +46,10 @@ class ActivityPipeline:
             else:
                 return existing
 
-        previous = self._find_previous_activity(meeting, activity)
+        # Smug Otter: prior-activity interpretation belongs to AgendaStrategy.
+        previous = get_agenda_strategy(meeting).resolve_prior_activity(
+            meeting, activity
+        )
         if not previous:
             return None
 
@@ -59,18 +62,3 @@ class ActivityPipeline:
         return self.bundle_manager.create_input_bundle_from_output(
             meeting.meeting_id, activity.activity_id, output
         )
-
-    @staticmethod
-    def _find_previous_activity(
-        meeting: Meeting, activity: AgendaActivity
-    ) -> Optional[AgendaActivity]:
-        agenda = sorted(
-            getattr(meeting, "agenda_activities", []) or [],
-            key=lambda item: item.order_index,
-        )
-        previous = None
-        for item in agenda:
-            if item.activity_id == activity.activity_id:
-                return previous
-            previous = item
-        return None

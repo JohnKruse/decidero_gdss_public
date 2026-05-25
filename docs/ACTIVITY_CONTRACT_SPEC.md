@@ -119,3 +119,10 @@ returns the canonical agenda in `order_index` order, treats the agenda as
 complete only when the highest-order activity has an `output` bundle, performs
 no progression on close, and delegates mid-meeting activity creation to
 `MeetingManager.add_agenda_activity`.
+
+Phase 2 Step 3 routes existing behavioral consumers through that seam. The
+activity-pipeline prior lookup, meeting export and agenda API reads, realtime
+initial agenda snapshots, transfer activity resolution, and
+`MeetingManager.list_agenda` all consult the meeting's bound `AgendaStrategy`.
+Storage-layer resequencing and activity-id lookup mechanics may still touch
+`agenda_activities` directly when they are not interpreting agenda topology.

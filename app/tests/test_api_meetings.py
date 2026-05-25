@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, UTC
 import pytest
 from fastapi.testclient import TestClient
 
+import app.routers.meetings as meetings_router
 from app.config.loader import get_guest_join_enabled
 from app.data.user_manager import UserManager
 from app.data.meeting_manager import MeetingManager
@@ -966,9 +967,9 @@ def test_list_agenda_modules(authenticated_client: TestClient):
 
 
 def test_add_agenda_item_to_meeting(
-    authenticated_client: TestClient, test_meeting_data: str
+    authenticated_client: TestClient, test_meeting_data: str, mocker
 ):
-    """Facilitators can append a new agenda item via the agenda API."""
+    """Smug Otter: agenda API reads preserve behavior through AgendaStrategy."""
 
     payload = {
         "tool_type": "voting",
@@ -987,12 +988,14 @@ def test_add_agenda_item_to_meeting(
     assert created["config"]["max_votes"] == 3
     assert created["order_index"] >= 1
 
+    strategy_spy = mocker.spy(meetings_router, "get_agenda_strategy")
     list_response = authenticated_client.get(
         f"/api/meetings/{test_meeting_data}/agenda"
     )
     assert list_response.status_code == 200
     items = list_response.json()
     assert any(item["activity_id"] == created["activity_id"] for item in items)
+    assert strategy_spy.call_count == 1
 
 
 def test_update_and_delete_agenda_item(

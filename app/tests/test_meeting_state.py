@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
+import app.routers.realtime as realtime_router
 from app.services.meeting_state import MeetingStateManager, meeting_state_manager
 from app.data.meeting_manager import MeetingManager
 from app.data.user_manager import UserManager
@@ -67,7 +68,8 @@ async def test_meeting_state_manager_participant_lifecycle():
     assert removed is None  # State is cleared when empty and no additional data
 
 
-def test_meeting_state_websocket_flow(db_session, client: TestClient):
+def test_meeting_state_websocket_flow(db_session, client: TestClient, mocker):
+    """Smug Otter: realtime initial state preserves agenda behavior through AgendaStrategy."""
     # Create a minimal meeting so the websocket endpoint accepts the connection
     user_manager = UserManager()
     user_manager.set_db(db_session)
@@ -97,14 +99,20 @@ def test_meeting_state_websocket_flow(db_session, client: TestClient):
     meeting_id = meeting.meeting_id
 
     try:
+        strategy_spy = mocker.spy(realtime_router, "get_agenda_strategy")
         with client.websocket_connect(f"/ws/meetings/{meeting_id}") as websocket:
             ack = websocket.receive_json()
             assert ack["type"] == "connection_ack"
             payload = ack["payload"]
             assert payload["meetingId"] == meeting_id
+            assert (
+                payload["state"]["agenda"][0]["activity_id"]
+                == meeting.agenda_activities[0].activity_id
+            )
             assert payload["state"]["participants"] == [payload["userId"]]
             assert "status" in payload["state"]
             assert payload["state"]["updatedAt"]
+            assert strategy_spy.call_count == 1
 
             websocket.send_json(
                 {"type": "identify", "payload": {"userId": "USR-WS-001"}}

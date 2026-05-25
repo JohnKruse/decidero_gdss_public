@@ -22,6 +22,7 @@ from app.plugins.base import ActivityPlugin, ActivityPluginManifest
 from app.plugins.context import ActivityContext
 from app.plugins.loader import load_builtin_plugins
 from app.plugins.registry import ActivityRegistry
+import app.services.activity_pipeline as activity_pipeline_module
 from app.services.activity_pipeline import ActivityPipeline
 from app.services.activity_catalog import get_activity_catalog, normalise_reliability_policy
 from app.services.categorization_manager import CategorizationManager
@@ -493,7 +494,8 @@ def test_builtin_manifest_thinklets_match_audit_document():
     assert manifest_tags == declared
 
 
-def test_activity_pipeline_creates_input(db_session):
+def test_activity_pipeline_creates_input(db_session, mocker):
+    """Smug Otter: pipeline input seeding preserves behavior through AgendaStrategy."""
     meeting, activity_one, activity_two, _ = _seed_meeting(db_session)
     manager = ActivityBundleManager(db_session)
     manager.create_bundle(
@@ -503,11 +505,13 @@ def test_activity_pipeline_creates_input(db_session):
         [{"content": "Idea 1"}],
         metadata={"source": "brainstorming"},
     )
+    strategy_spy = mocker.spy(activity_pipeline_module, "get_agenda_strategy")
     pipeline = ActivityPipeline(db_session)
     input_bundle = pipeline.ensure_input_bundle(meeting, activity_two)
     assert input_bundle is not None
     assert input_bundle.kind == "input"
     assert input_bundle.items[0]["content"] == "Idea 1"
+    assert strategy_spy.call_count == 1
 
 
 def test_voting_plugin_seeds_options_from_input(db_session):

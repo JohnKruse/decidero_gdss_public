@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from app.data.activity_bundle_manager import ActivityBundleManager
+import app.data.meeting_manager as meeting_manager_module
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
 from app.services.meeting_authorization import resolve_meeting_capabilities
@@ -540,10 +541,13 @@ async def test_linear_agenda_strategy_matches_direct_order_index_walks(
         AgendaActivityCreate(tool_type="brainstorming", title="Strategy Created"),
         meeting_manager_instance,
     )
+    list_strategy_spy = mocker.spy(meeting_manager_module, "get_agenda_strategy")
+    listed = meeting_manager_instance.list_agenda(reordered.meeting_id)
     assert created.activity_id in {
         activity.activity_id
-        for activity in meeting_manager_instance.list_agenda(reordered.meeting_id)
+        for activity in listed
     }
+    assert list_strategy_spy.call_count == 1
 
 
 def test_get_meeting(
