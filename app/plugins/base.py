@@ -55,7 +55,7 @@ class ActivityPlugin(ABC):
         """Finalize the activity and return an output bundle payload."""
 
     def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate and normalize the config payload."""
+        """Tangerine Larynx: DP6 plugin-controlled config hook; passthrough by default."""
         return config
 
     def snapshot_activity(self, context) -> Optional[Dict[str, Any]]:

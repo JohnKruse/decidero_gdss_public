@@ -37,8 +37,9 @@ Phase 3 without requiring Phase 1 consumers to understand it.
 
 Calling `open_activity(context, input_bundle)` more than once with the same
 input must not duplicate plugin-owned state. This protects browser refreshes,
-activity restarts, and future engine replay. Direct built-in coverage is
-completed in Phase 1 Step 3.
+activity restarts, and future engine replay. Built-in plugins must either make
+`open_activity` a no-op when state is already seeded, or use unique persisted
+keys so reseeding skips existing rows.
 
 ### DP4 - Reliability Policy as Manifest Contract Surface
 
@@ -67,9 +68,11 @@ Phase 1 Step 4.
 ### DP6 - Config Validation Disposition Is Explicit
 
 `ActivityPlugin.validate_config()` must have an explicit framework disposition:
-either the platform invokes it automatically before lifecycle execution, or it
-is documented as a plugin-controlled extension point. Phase 1 Step 3 resolves
-and tests the final disposition.
+it is a plugin-controlled extension point. The base implementation is a
+passthrough, and current framework lifecycle wiring does not invoke it
+automatically before `open_activity`. Plugins that require strict validation
+must call their validators from lifecycle methods or from the router/service
+that owns the relevant configuration write.
 
 ## DP-to-Test Mapping
 
@@ -77,10 +80,10 @@ and tests the final disposition.
 | --- | --- | --- |
 | DP1 | Stable manifest identity and startup validation | `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema`; `app/tests/test_activity_plugins.py::test_activity_registry_rejects_invalid_manifest` |
 | DP2 | Portable bundle shape with provenance and Phase 3 iteration slot | `app/tests/test_activity_plugins.py::test_bundle_payload_schema_accepts_provenance_and_iteration_extension`; `app/tests/test_activity_plugins.py::test_activity_bundle_manager_roundtrip`; `app/tests/test_transfer_metadata.py::test_transfer_metadata_schema_conformance_for_normalized_payload` |
-| DP3 | Idempotent `open_activity` under restart | Phase 1 Step 3 will resolve in `app/tests/test_activity_plugins.py` with built-in plugin idempotency coverage |
+| DP3 | Idempotent `open_activity` under restart | `app/tests/test_activity_plugins.py::test_brainstorming_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_rank_order_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_categorization_open_activity_is_idempotent` |
 | DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults` |
 | DP5 | ThinkLet claims are structured and auditable | `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema`; Phase 1 Step 4 will add `docs/THINKLET_AUDIT.md` conformance coverage |
-| DP6 | Config validation disposition is explicit and tested | Phase 1 Step 3 will resolve in `app/tests/test_activity_plugins.py` after the disposition is chosen |
+| DP6 | Config validation disposition is explicit and tested | `app/tests/test_activity_plugins.py::test_validate_config_is_documented_plugin_controlled_passthrough` |
 
 ## Normative Invariants
 

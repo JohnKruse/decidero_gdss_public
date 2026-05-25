@@ -1,12 +1,20 @@
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.activity_bundle import ActivityBundle
-from app.models.categorization import CategorizationItem
+from app.models.categorization import (
+    CategorizationAssignment,
+    CategorizationBucket,
+    CategorizationItem,
+)
+from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
+from app.models.rank_order_voting import RankOrderVote
 from app.models.user import User, UserRole
 from app.models.voting import VotingVote
 from app.plugins.builtin.categorization_plugin import CategorizationPlugin
+from app.plugins.builtin.rank_order_voting_plugin import RankOrderVotingPlugin
 from app.plugins.builtin.voting_plugin import VotingPlugin
 from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest
@@ -96,6 +104,61 @@ def _seed_meeting_with_categorization(db_session):
     return meeting, brainstorming_activity, categorization_activity, user
 
 
+def _seed_meeting_with_rank_order_voting(db_session):
+    user = User(
+        user_id="u-rank-seed",
+        login="urankseed",
+        hashed_password="hash",
+        role=UserRole.ADMIN.value,
+    )
+    meeting = Meeting(
+        meeting_id="M-RANK-SEED",
+        owner_id=user.user_id,
+        title="Rank-order seed meeting",
+    )
+    brainstorming_activity = AgendaActivity(
+        activity_id="M-RANK-SEED-BRAIN-0001",
+        meeting_id=meeting.meeting_id,
+        tool_type="brainstorming",
+        title="Brainstorm",
+        order_index=1,
+        tool_config_id="tc-rank-1",
+        config={},
+    )
+    rank_activity = AgendaActivity(
+        activity_id="M-RANK-SEED-RANK-0002",
+        meeting_id=meeting.meeting_id,
+        tool_type="rank_order_voting",
+        title="Rank",
+        order_index=2,
+        tool_config_id="tc-rank-2",
+        config={},
+    )
+    meeting.agenda_activities.extend([brainstorming_activity, rank_activity])
+    db_session.add_all([user, meeting, brainstorming_activity, rank_activity])
+    db_session.commit()
+    return meeting, brainstorming_activity, rank_activity, user
+
+
+def _input_items_for_idempotency():
+    return [
+        {
+            "id": "idea-1",
+            "content": "Option A",
+            "submitted_name": "Pat",
+            "metadata": {"tag": "alpha"},
+            "source": {"meeting_id": "M-UPSTREAM", "activity_id": "UPSTREAM-1"},
+        },
+        {
+            "id": "idea-2",
+            "content": "Option B",
+            "submitted_name": "Sam",
+            "metadata": {"tag": "beta"},
+            "source": {"meeting_id": "M-UPSTREAM", "activity_id": "UPSTREAM-1"},
+        },
+    ]
+
+
 def test_activity_bundle_manager_roundtrip(db_session):
     """Tangerine Larynx: DP2 preserves bundle items and metadata across input creation."""
     meeting, activity_one, activity_two, _ = _seed_meeting(db_session)
@@ -169,6 +232,244 @@ def test_bundle_payload_schema_accepts_provenance_and_iteration_extension():
     }
 
     assert validate_bundle_payload(payload)["iteration"]["round_index"] == 0
+
+
+def test_brainstorming_open_activity_is_idempotent(db_session):
+    """Tangerine Larynx: DP3 brainstorming reopen does not duplicate ideas or config."""
+    meeting, activity, _, user = _seed_meeting(db_session)
+    db_session.add(
+        Idea(
+            meeting_id=meeting.meeting_id,
+            activity_id=activity.activity_id,
+            content="Existing idea",
+            submitted_name="Pat",
+            author=user,
+            idea_metadata={"tag": "seed"},
+        )
+    )
+    db_session.commit()
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=user)
+    plugin = BrainstormingPlugin()
+
+    plugin.open_activity(context, None)
+    first_config = deepcopy(activity.config or {})
+    first_ideas = (
+        db_session.query(Idea)
+        .filter(
+            Idea.meeting_id == meeting.meeting_id,
+            Idea.activity_id == activity.activity_id,
+        )
+        .count()
+    )
+
+    plugin.open_activity(context, None)
+    db_session.refresh(activity)
+
+    assert activity.config == first_config
+    assert (
+        db_session.query(Idea)
+        .filter(
+            Idea.meeting_id == meeting.meeting_id,
+            Idea.activity_id == activity.activity_id,
+        )
+        .count()
+        == first_ideas
+    )
+
+
+def test_voting_open_activity_is_idempotent(db_session):
+    """Tangerine Larynx: DP3 voting reopen does not duplicate options or votes."""
+    meeting, _, activity, user = _seed_meeting(db_session)
+    manager = ActivityBundleManager(db_session)
+    input_bundle = manager.create_bundle(
+        meeting.meeting_id,
+        activity.activity_id,
+        "input",
+        _input_items_for_idempotency(),
+        metadata={"source": "brainstorming"},
+    )
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=user)
+    plugin = VotingPlugin()
+
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+    first_options = deepcopy(activity.config.get("options") or [])
+    first_vote_count = (
+        db_session.query(VotingVote)
+        .filter(
+            VotingVote.meeting_id == meeting.meeting_id,
+            VotingVote.activity_id == activity.activity_id,
+        )
+        .count()
+    )
+
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+
+    assert activity.config.get("options") == first_options
+    assert (
+        db_session.query(VotingVote)
+        .filter(
+            VotingVote.meeting_id == meeting.meeting_id,
+            VotingVote.activity_id == activity.activity_id,
+        )
+        .count()
+        == first_vote_count
+    )
+
+
+def test_rank_order_voting_open_activity_is_idempotent(db_session):
+    """Tangerine Larynx: DP3 rank-order reopen does not duplicate ideas or ballots."""
+    meeting, _, activity, user = _seed_meeting_with_rank_order_voting(db_session)
+    manager = ActivityBundleManager(db_session)
+    input_bundle = manager.create_bundle(
+        meeting.meeting_id,
+        activity.activity_id,
+        "input",
+        _input_items_for_idempotency(),
+        metadata={"source": "brainstorming"},
+    )
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=user)
+    plugin = RankOrderVotingPlugin()
+
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+    first_ideas = deepcopy(activity.config.get("ideas") or [])
+    first_vote_count = (
+        db_session.query(RankOrderVote)
+        .filter(
+            RankOrderVote.meeting_id == meeting.meeting_id,
+            RankOrderVote.activity_id == activity.activity_id,
+        )
+        .count()
+    )
+
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+
+    assert activity.config.get("ideas") == first_ideas
+    assert (
+        db_session.query(RankOrderVote)
+        .filter(
+            RankOrderVote.meeting_id == meeting.meeting_id,
+            RankOrderVote.activity_id == activity.activity_id,
+        )
+        .count()
+        == first_vote_count
+    )
+
+
+def test_categorization_open_activity_is_idempotent(db_session):
+    """Tangerine Larynx: DP3 categorization reopen does not duplicate buckets/items."""
+    meeting, _, activity, user = _seed_meeting_with_categorization(db_session)
+    manager = ActivityBundleManager(db_session)
+    input_bundle = manager.create_bundle(
+        meeting.meeting_id,
+        activity.activity_id,
+        "input",
+        _input_items_for_idempotency(),
+        metadata={"source": "brainstorming"},
+    )
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=user)
+    plugin = CategorizationPlugin()
+
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+    first_config = deepcopy(activity.config or {})
+    first_counts = {
+        "buckets": db_session.query(CategorizationBucket)
+        .filter(
+            CategorizationBucket.meeting_id == meeting.meeting_id,
+            CategorizationBucket.activity_id == activity.activity_id,
+        )
+        .count(),
+        "items": db_session.query(CategorizationItem)
+        .filter(
+            CategorizationItem.meeting_id == meeting.meeting_id,
+            CategorizationItem.activity_id == activity.activity_id,
+        )
+        .count(),
+        "assignments": db_session.query(CategorizationAssignment)
+        .filter(
+            CategorizationAssignment.meeting_id == meeting.meeting_id,
+            CategorizationAssignment.activity_id == activity.activity_id,
+        )
+        .count(),
+    }
+
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+
+    assert activity.config == first_config
+    assert (
+        db_session.query(CategorizationBucket)
+        .filter(
+            CategorizationBucket.meeting_id == meeting.meeting_id,
+            CategorizationBucket.activity_id == activity.activity_id,
+        )
+        .count()
+        == first_counts["buckets"]
+    )
+    assert (
+        db_session.query(CategorizationItem)
+        .filter(
+            CategorizationItem.meeting_id == meeting.meeting_id,
+            CategorizationItem.activity_id == activity.activity_id,
+        )
+        .count()
+        == first_counts["items"]
+    )
+    assert (
+        db_session.query(CategorizationAssignment)
+        .filter(
+            CategorizationAssignment.meeting_id == meeting.meeting_id,
+            CategorizationAssignment.activity_id == activity.activity_id,
+        )
+        .count()
+        == first_counts["assignments"]
+    )
+
+
+def test_validate_config_is_documented_plugin_controlled_passthrough(db_session):
+    """Tangerine Larynx: DP6 validate_config is passthrough and not lifecycle-invoked."""
+
+    class TrackingPlugin(ActivityPlugin):
+        manifest = ActivityPluginManifest(
+            tool_type="tracking",
+            label="Tracking",
+            description="Tracking plugin for DP6 disposition.",
+            group_size_range={"min": 1, "max": 2},
+            typical_duration_minutes={"min": 1, "max": 2},
+        )
+
+        def __init__(self) -> None:
+            self.open_called = False
+            self.validate_called = False
+
+        def validate_config(self, config):
+            self.validate_called = True
+            raise AssertionError("framework should not call validate_config automatically")
+
+        def open_activity(self, context, input_bundle=None) -> None:
+            self.open_called = True
+            return None
+
+        def close_activity(self, context):
+            return None
+
+    meeting, _, activity, user = _seed_meeting(db_session)
+    activity.tool_type = "tracking"
+    activity.config = {"invalid": {"shape": True}}
+    db_session.add(activity)
+    db_session.commit()
+    plugin = TrackingPlugin()
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=user)
+
+    assert ActivityPlugin.validate_config(plugin, {"raw": True}) == {"raw": True}
+    plugin.open_activity(context, None)
+
+    assert plugin.open_called is True
+    assert plugin.validate_called is False
 
 
 def test_activity_pipeline_creates_input(db_session):

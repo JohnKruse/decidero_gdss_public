@@ -1,3 +1,5 @@
+"""Tangerine Larynx: brainstorming lifecycle is DP3 idempotent; DP6 validation is plugin-controlled."""
+
 from __future__ import annotations
 
 from typing import Any, Dict, Optional

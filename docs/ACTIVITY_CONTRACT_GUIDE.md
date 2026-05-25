@@ -81,6 +81,12 @@ needs custom retry/backoff settings. The server normalizes the declaration and
 publishes `write_default` in the module catalog; clients apply the policy
 through `runReliableWriteAction`.
 
+## Config Validation
+
+`validate_config()` is a plugin-controlled extension point. The framework does
+not automatically call it before lifecycle execution; plugins that require
+strict validation must call validators from lifecycle or config-write paths.
+
 ## Verify
 
 Run the narrow matrix for new or changed activity-contract work:

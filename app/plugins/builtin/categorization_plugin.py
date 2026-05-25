@@ -1,3 +1,5 @@
+"""Tangerine Larynx: categorization lifecycle is DP3 idempotent; DP6 validation is plugin-controlled."""
+
 from __future__ import annotations
 
 from collections import defaultdict
