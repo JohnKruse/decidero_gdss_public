@@ -75,11 +75,20 @@ automatically before `open_activity`. Plugins that require strict validation
 must call their validators from lifecycle methods or from the router/service
 that owns the relevant configuration write.
 
-### DP7 - Composable Bundle Transforms
+### DP7-DP9 — Orchestration Principles (Authoritative in Master Plan)
+
+DP7 (Collaboration Processes as Declarative, Composable Artifacts),
+DP8 (Closed Control Flow, Open Step Vocabulary), and
+DP9 (Method-Specific Concerns Do Not Belong in Activity Plugins) are
+defined in [plans/02_ORCHESTRATION_ENGINE.md §1.2](../plans/02_ORCHESTRATION_ENGINE.md).
+They govern the orchestration grammar and the engine's relationship to the
+activity-plugin contract; this spec does not redefine them.
+
+### DP10 - Composable Bundle Transforms
 
 To support iterative collaboration (such as Delphi), bundle data is transformed between rounds using named `BundleTransform` implementations, which preserve item-level provenance.
 
-### DP8 - Declarative Convergence Predicates
+### DP11 - Declarative Convergence Predicates
 
 Instead of hardcoded exit conditions, iterative processes evaluate their history using named `ConvergencePredicate` implementations to determine convergence.
 
@@ -93,8 +102,8 @@ Instead of hardcoded exit conditions, iterative processes evaluate their history
 | DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults`; `app/tests/test_reliable_writes.py` |
 | DP5 | ThinkLet claims are structured and auditable | `docs/THINKLET_AUDIT.md`; `app/tests/test_activity_plugins.py::test_builtin_manifest_thinklets_match_audit_document`; `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema` |
 | DP6 | Config validation disposition is explicit and tested | `app/tests/test_activity_plugins.py::test_validate_config_is_documented_plugin_controlled_passthrough` |
-| DP7 | Composable bundle transforms | `app/tests/test_bundle_transforms.py` |
-| DP8 | Composable convergence predicates | `app/tests/test_convergence_predicates.py` |
+| DP10 | Composable bundle transforms | `app/tests/test_bundle_transforms.py` |
+| DP11 | Composable convergence predicates | `app/tests/test_convergence_predicates.py` |
 
 ## Normative Invariants
 

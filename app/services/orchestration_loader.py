@@ -1,7 +1,19 @@
-"""Orchestration document loader and validator for COPPER-HERON / Insolent Metronome.
+"""Orchestration document loader and validator.
 
-This module provides functions to load, validate, and parse process
-orchestration JSON files into typed AST representations.
+Canary: Insolent Metronome
+
+This module loads, validates, and parses process orchestration JSON documents
+into typed AST representations consumed by the orchestration engine.
+
+The authoritative grammar is declared in
+`docs/schemas/orchestration.schema.json`; this loader is the exclusive runtime
+entry point for orchestration documents and is the source of truth where it
+diverges from the JSON Schema file.
+
+Coexistence: orchestration documents and meeting-designer agendas are
+distinct grammars. The meeting-designer agenda validator lives in
+`app/services/agenda_validator.py`; this loader handles only process
+orchestration documents. The two do not overlap.
 """
 
 from __future__ import annotations
@@ -25,11 +37,10 @@ class OrchestrationValidationError(ValueError):
 
 @dataclass
 class OrchestrationFieldError:
-    """Represents a single validation error or warning for a field."""
+    """Represents a single validation error for a field."""
 
     field: str
     message: str
-    level: Literal["error", "warning"] = "error"
 
 
 @dataclass
@@ -256,8 +267,7 @@ def validate_orchestration(data: Any) -> OrchestrationValidationResult:
                     elif stype == "conditional":
                         errors.append(OrchestrationFieldError(
                             field=f"{path}.type",
-                            message="conditional step is reserved and deferred; currently unsupported at runtime",
-                            level="error"
+                            message="conditional step is reserved and deferred; currently unsupported at runtime"
                         ))
 
                     elif stype == "activity":

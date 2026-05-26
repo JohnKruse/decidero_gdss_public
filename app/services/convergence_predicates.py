@@ -26,12 +26,7 @@ class FixedNPredicate(ConvergencePredicate):
     """Fires after a configured number of rounds."""
 
     def evaluate(self, bundle_history: List[Any], predicate_config: Dict[str, Any]) -> bool:
-        max_rounds = (
-            predicate_config.get("max_rounds")
-            or predicate_config.get("n")
-            or predicate_config.get("limit")
-            or 0
-        )
+        max_rounds = predicate_config.get("max_rounds", 0)
         return len(bundle_history) >= max_rounds
 
 
@@ -45,13 +40,7 @@ class IQRStabilityPredicate(ConvergencePredicate):
         if len(bundle_history) < 2:
             return False
 
-        threshold = (
-            predicate_config.get("threshold")
-            if predicate_config.get("threshold") is not None
-            else predicate_config.get("epsilon")
-            if predicate_config.get("epsilon") is not None
-            else 0.0
-        )
+        threshold = predicate_config.get("threshold", 0.0)
 
         def get_median_iqr_for_round(bundle: Any) -> float:
             if isinstance(bundle, dict):
