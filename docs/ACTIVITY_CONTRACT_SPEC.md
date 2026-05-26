@@ -190,3 +190,8 @@ The canonical implementations are:
 - `FixedNPredicate` at [FixedNPredicate](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/convergence_predicates.py): Fires after a set number of rounds.
 - `IQRStabilityPredicate` at [IQRStabilityPredicate](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/convergence_predicates.py): Fires when the change in median IQR across items between two consecutive rounds is less than or equal to a threshold.
 
+### Phase 3 Substrate Composition
+
+The four primitives composed in Phase 3—the iteration storage model, the prior activity resolution seam, named bundle transforms/convergence predicates, and server-side retry logic—are demonstrated to integrate seamlessly. 
+The executable witness for this composition is the test `app/tests/test_activity_plugins.py::test_substrate_integration_smoke`, which runs an end-to-end Delphi iteration loop against simulated participants, validates data persistence and prior activity lookup, processes a statistical transform with outlier detection, applies a reliability retry, and evaluates convergence stability.
+

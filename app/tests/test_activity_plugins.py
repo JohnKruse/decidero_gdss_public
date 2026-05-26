@@ -1053,3 +1053,188 @@ def test_categorization_plugin_close_emits_finalized_output_metadata(db_session)
     assert metadata["final_assignments"]["cat-1"] == target_bucket
     assert metadata["agreement_metrics"] == {}
     assert output_bundle.items[0]["metadata"]["categorization"]["bucket_id"] == target_bucket
+
+
+def test_substrate_integration_smoke(db_session):
+    """Convergent Yak: BP-1, BP-3, and BP-7 substrate integration smoke test.
+
+    Verifies the end-to-end integration of the iteration storage model,
+    prior activity resolution, bundle transforms, convergence predicates,
+    and server-side retry logic.
+    """
+    from app.services.agenda_strategy import PriorActivityReference, get_agenda_strategy
+    from app.services.bundle_transforms import DelphiStatisticalAggregationTransform
+    from app.services.convergence_predicates import IQRStabilityPredicate
+    from app.services.reliable_writes import run_with_retry
+    from app.services.rank_order_voting_manager import RankOrderVotingManager
+
+    # 1. Seed meeting with a rank-order-voting activity
+    meeting, brainstorming_activity, rank_activity, user = _seed_meeting_with_rank_order_voting(db_session)
+
+    # Add second user for voting consensus evaluations
+    user_2 = User(
+        user_id="u-smoke-user-2",
+        login="usmoke2",
+        hashed_password="pw",
+        role=UserRole.PARTICIPANT.value,
+    )
+    db_session.add(user_2)
+    db_session.commit()
+
+    manager = ActivityBundleManager(db_session)
+    plugin = RankOrderVotingPlugin()
+    voting_manager = RankOrderVotingManager(db_session)
+
+    # 2. Open Round 0
+    input_bundle = manager.create_bundle(
+        meeting.meeting_id,
+        rank_activity.activity_id,
+        "input",
+        [
+            {"content": "Option A", "metadata": {"rank_order_voting": {"option_id": "opt_a"}}, "source": {}},
+            {"content": "Option B", "metadata": {"rank_order_voting": {"option_id": "opt_b"}}, "source": {}},
+        ],
+        metadata={"source": "brainstorming"}
+    )
+    context = ActivityContext(db=db_session, meeting=meeting, activity=rank_activity, user=user)
+    plugin.open_activity(context, input_bundle)
+
+    # Submit Round 0 rankings (high variance)
+    db_session.refresh(rank_activity)
+    options = voting_manager._extract_options(rank_activity)
+    option_ids = [opt.option_id for opt in options]
+
+    # User 1: Option A (1), Option B (2)
+    voting_manager.submit_ranking(meeting, rank_activity.activity_id, user, option_ids, is_active_state=False)
+    # User 2: Option B (1), Option A (2)
+    voting_manager.submit_ranking(meeting, rank_activity.activity_id, user_2, list(reversed(option_ids)), is_active_state=False)
+
+    # 3. Close Round 0 to produce the initial output bundle
+    close_res = plugin.close_activity(context)
+    assert close_res is not None
+
+    # Retrieve the bundle created by close_activity and add iteration discriminator
+    round_zero_output = db_session.query(ActivityBundle).filter(
+        ActivityBundle.bundle_id == close_res["bundle_id"]
+    ).one()
+    round_zero_output.logical_step_id = "delphi-loop"
+    round_zero_output.round_index = 0
+    round_zero_output.bundle_metadata = manager._metadata_with_iteration(
+        round_zero_output.bundle_metadata,
+        logical_step_id="delphi-loop",
+        round_index=0
+    )
+    db_session.add(round_zero_output)
+    db_session.commit()
+
+    # 4. Apply Delphi transform & materialize input for Round 1 via reliable retry
+    transform = DelphiStatisticalAggregationTransform()
+
+    failures = [True]  # Simulate one network/database transient failure
+
+    def transform_and_materialize_task(attempt: int, idempotency_key: str):
+        if failures:
+            failures.pop()
+            raise ConnectionError("Transient database disconnect")
+
+        # Apply transform in-place updates
+        transformed = transform.transform(
+            {"items": round_zero_output.items, "metadata": round_zero_output.bundle_metadata},
+            {}
+        )
+        round_zero_output.items = transformed["items"]
+        round_zero_output.bundle_metadata = transformed["metadata"]
+        db_session.add(round_zero_output)
+        db_session.commit()
+
+        # Materialize Round 1 input using the resolved prior activity resolution
+        prior_ref = PriorActivityReference(
+            consumer_activity_id=rank_activity.activity_id,
+            donor_activity_id=rank_activity.activity_id,
+            logical_step_id="delphi-loop",
+            round_index=0
+        )
+        resolution = get_agenda_strategy(meeting).resolve_prior_activity(meeting, prior_ref)
+        assert resolution is not None
+        assert resolution.round_index == 0
+
+        resolved_output = manager.get_latest_bundle(
+            meeting.meeting_id,
+            resolution.activity.activity_id,
+            "output",
+            logical_step_id=resolution.logical_step_id,
+            round_index=resolution.round_index
+        )
+        assert resolved_output is not None
+
+        return manager.create_input_bundle_from_output(
+            meeting.meeting_id,
+            rank_activity.activity_id,
+            resolved_output,
+            round_index=1
+        )
+
+    policy = {
+        "max_retries": 3,
+        "base_delay_ms": 10,
+        "max_delay_ms": 50,
+        "jitter_ratio": 0.0,
+    }
+
+    round_one_input = run_with_retry(
+        transform_and_materialize_task,
+        policy,
+        sleep_func=lambda sec: None
+    )
+
+    assert round_one_input is not None
+    assert round_one_input.round_index == 1
+    assert round_one_input.logical_step_id == "delphi-loop"
+
+    # 5. Open and run Round 1 (achieving consensus)
+    plugin.open_activity(context, round_one_input)
+    db_session.refresh(rank_activity)
+
+    # Submit Round 1 rankings (perfect consensus)
+    # User 1: Option A (1), Option B (2)
+    voting_manager.submit_ranking(meeting, rank_activity.activity_id, user, option_ids, is_active_state=False)
+    # User 2: Option A (1), Option B (2)
+    voting_manager.submit_ranking(meeting, rank_activity.activity_id, user_2, option_ids, is_active_state=False)
+
+    # Close Round 1
+    close_res_2 = plugin.close_activity(context)
+    assert close_res_2 is not None
+
+    round_one_output = db_session.query(ActivityBundle).filter(
+        ActivityBundle.bundle_id == close_res_2["bundle_id"]
+    ).one()
+    round_one_output.logical_step_id = "delphi-loop"
+    round_one_output.round_index = 1
+    round_one_output.bundle_metadata = manager._metadata_with_iteration(
+        round_one_output.bundle_metadata,
+        logical_step_id="delphi-loop",
+        round_index=1
+    )
+    db_session.add(round_one_output)
+    db_session.commit()
+
+    # 6. Apply Delphi transform to Round 1 output to annotate items with IQR=0
+    final_transformed = transform.transform(
+        {"items": round_one_output.items, "metadata": round_one_output.bundle_metadata},
+        {}
+    )
+    round_one_output.items = final_transformed["items"]
+    round_one_output.bundle_metadata = final_transformed["metadata"]
+    db_session.add(round_one_output)
+    db_session.commit()
+
+    # 7. Evaluate IQRStabilityPredicate against the two-round history
+    predicate = IQRStabilityPredicate()
+    bundle_history = [round_zero_output, round_one_output]
+
+    # Change is 0.5 (from 0.5 to 0.0).
+    # With threshold 0.4 -> Should not converge (False)
+    assert not predicate.evaluate(bundle_history, {"threshold": 0.4})
+    # With threshold 0.6 -> Should converge (True)
+    assert predicate.evaluate(bundle_history, {"threshold": 0.6})
+
