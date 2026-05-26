@@ -1,0 +1,33 @@
+{
+  "name": "Brainstorm then Vote",
+  "version": "1.0",
+  "author": "Decidero Engine",
+  "citation": "Phase 4 Step 2 Reference Fixture (Insolent Metronome)",
+  "metadata": {
+    "notes": "Canary: Insolent Metronome",
+    "thinklets": ["FreeBrainstorm", "StrawPoll"],
+    "collaboration_patterns": ["Generate", "Evaluate"],
+    "deliverables": ["Prioritized idea list"],
+    "group_size_range": {"min": 2, "max": 30},
+    "typical_duration_minutes": {"min": 10, "max": 30}
+  },
+  "steps": [
+    {
+      "type": "sequence",
+      "steps": [
+        {
+          "type": "activity",
+          "tool_type": "brainstorming",
+          "title": "Generate Ideas",
+          "config": {}
+        },
+        {
+          "type": "activity",
+          "tool_type": "voting",
+          "title": "Vote on Ideas",
+          "config": {"options": []}
+        }
+      ]
+    }
+  ]
+}

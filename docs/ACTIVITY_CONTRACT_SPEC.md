@@ -104,6 +104,7 @@ Instead of hardcoded exit conditions, iterative processes evaluate their history
 | DP6 | Config validation disposition is explicit and tested | `app/tests/test_activity_plugins.py::test_validate_config_is_documented_plugin_controlled_passthrough` |
 | DP10 | Composable bundle transforms | `app/tests/test_bundle_transforms.py` |
 | DP11 | Composable convergence predicates | `app/tests/test_convergence_predicates.py` |
+| DP9 | Engine does not alter plugin manifests or lifecycle methods | `app/tests/test_orchestration_engine.py::test_engine_brainstorm_vote_end_to_end` |
 
 ## Normative Invariants
 
@@ -248,4 +249,58 @@ options (label + value, or label + payload schema) once the facilitator UI
 is wired in Phase 5. Any such widening must update both the JSON Schema
 file and the loader (see the schema/loader correspondence test in
 `app/tests/test_orchestration_schema.py`).
+
+## Orchestration Engine
+
+### Interpreter Loop
+
+Phase 4 Step 2 (Insolent Metronome) delivers `OrchestrationEngineStrategy` in
+`app/services/agenda_strategy.py`, alongside `LinearAgendaStrategy` as the
+second reference implementation of the `AgendaStrategy` seam. Callers that
+drive an orchestration document construct `OrchestrationEngineStrategy(document)`
+directly; `get_agenda_strategy(meeting)` continues to return `LinearAgendaStrategy`
+for all existing meetings.
+
+The engine maintains a flattened **execution plan** — an ordered list of
+`(logical_step_id, step)` pairs derived from the document's `steps` tree at
+construction time. `SequenceStep` nodes are expanded in-place; leaf steps
+(`ActivityStep`, and future `FacilitatorDecisionStep` / `AIDecisionStep`) become
+plan entries. The step pointer is derived from the database rather than held in
+memory: the number of materialized `AgendaActivity` rows for the meeting
+determines the next step to execute, and the number of distinct activities with
+an `output` bundle determines completion.
+
+Each call to `create_activity` materializes the current plan step as an
+`AgendaActivity` row. `on_activity_close` is a no-op; the pointer advances
+automatically as output bundles are written. `is_complete` returns `True` when
+the completed-activity count equals the plan length.
+
+### `activity` Step Kind
+
+The `activity` step kind carries:
+- `tool_type` — lowercase snake_case, must be registered in the activity catalog.
+- `title` — human-readable activity label passed verbatim to `AgendaActivity.title`.
+- `config` — merged with the plugin's `default_config`; the merged result is
+  passed through `plugin.validate_config()` per DP6 before the row is written.
+- `transform_input` (optional) — reserved for Phase 4 Step 3's `iterate` kind.
+
+No existing plugin manifest or lifecycle method is altered; DP9 holds.
+
+### Prior-Activity Resolution
+
+`OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather
+than `order_index` adjacency. When no explicit `donor_activity_id` is supplied,
+the engine walks the materialized agenda in `order_index` order and returns the
+immediately preceding activity. Explicit donor references pass through with
+their `logical_step_id` and `round_index` intact, as with `LinearAgendaStrategy`.
+
+### Reference Fixture
+
+The two-step brainstorm → vote fixture used as the executable witness for Phase
+4 Step 2 lives at `docs/fixtures/brainstorm_vote.orchestration.json` and carries
+the `Insolent Metronome` canary in its `metadata.notes` slot. The end-to-end
+test at `app/tests/test_orchestration_engine.py::test_engine_brainstorm_vote_end_to_end`
+validates that the loader, engine strategy, both plugins, and Phase 1's bundle
+schema all compose correctly across a live in-memory meeting.
+
 

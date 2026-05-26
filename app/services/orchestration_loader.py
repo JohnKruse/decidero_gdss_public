@@ -61,6 +61,7 @@ class OrchestrationMetadata:
     deliverables: List[str]
     group_size_range: Dict[str, int]
     typical_duration_minutes: Dict[str, int]
+    notes: Optional[str] = None
 
 
 class OrchestrationStep:
@@ -431,7 +432,8 @@ def load_orchestration_data(data: Any) -> OrchestrationDocument:
         collaboration_patterns=metadata_dict["collaboration_patterns"],
         deliverables=metadata_dict["deliverables"],
         group_size_range=metadata_dict["group_size_range"],
-        typical_duration_minutes=metadata_dict["typical_duration_minutes"]
+        typical_duration_minutes=metadata_dict["typical_duration_minutes"],
+        notes=metadata_dict.get("notes"),
     )
 
     steps = [_parse_step(s) for s in data["steps"]]
