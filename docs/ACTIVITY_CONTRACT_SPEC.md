@@ -195,3 +195,18 @@ The canonical implementations are:
 The four primitives composed in Phase 3—the iteration storage model, the prior activity resolution seam, named bundle transforms/convergence predicates, and server-side retry logic—are demonstrated to integrate seamlessly. 
 The executable witness for this composition is the test `app/tests/test_activity_plugins.py::test_substrate_integration_smoke`, which runs an end-to-end Delphi iteration loop against simulated participants, validates data persistence and prior activity lookup, processes a statistical transform with outlier detection, applies a reliability retry, and evaluates convergence stability.
 
+## Process Orchestration Document Grammar and Loader
+
+### Orchestration Document Schema
+
+The orchestration document grammar (governed by the Phase 4 `Insolent Metronome` canary) is formally specified at [orchestration.schema.json](file:///Users/john/Documents/Python/decidero_gdss_public/docs/schemas/orchestration.schema.json). It mandates:
+- Top-level metadata describing the collaboration process.
+- A sequential step list, where each step can represent a closed control-flow block (`sequence`, `iterate`, and reserved `conditional`) or a primitive step kind (`activity`, `facilitator-decision`, `ai-decision`).
+
+### Loader and Parser
+
+The process orchestration document loader at [orchestration_loader.py](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/orchestration_loader.py) is the exclusive entry point for loading process configurations. It performs:
+- Schema validation against all mandatory structure and type rules.
+- Structural checking for review-required AI decision step pairing (requiring an immediately following facilitator approval step).
+- AST construction returning typed in-memory representations (`SequenceStep`, `IterateStep`, `ActivityStep`, etc.) for engine execution.
+

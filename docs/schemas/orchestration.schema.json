@@ -1,0 +1,355 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decidero.local/schemas/orchestration.schema.json",
+  "title": "Process Orchestration Document Schema",
+  "description": "Insolent Metronome Phase 4 schema for the collaboration process orchestration grammar, supporting sequences, iterations, and step-kinds.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version",
+    "author",
+    "citation",
+    "metadata",
+    "steps"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1
+    },
+    "citation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "thinklets",
+        "collaboration_patterns",
+        "deliverables",
+        "group_size_range",
+        "typical_duration_minutes"
+      ],
+      "properties": {
+        "thinklets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "collaboration_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "deliverables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "group_size_range": {
+          "$ref": "#/$defs/non_negative_range"
+        },
+        "typical_duration_minutes": {
+          "$ref": "#/$defs/non_negative_range"
+        }
+      }
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    }
+  },
+  "$defs": {
+    "non_negative_range": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "min",
+        "max"
+      ],
+      "properties": {
+        "min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "sequence",
+            "iterate",
+            "conditional",
+            "activity",
+            "facilitator-decision",
+            "ai-decision"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "sequence"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "steps"
+            ],
+            "properties": {
+              "type": {
+                "const": "sequence"
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/step"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "iterate"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "steps",
+              "max_rounds",
+              "convergence_predicate",
+              "bundle_transform"
+            ],
+            "properties": {
+              "type": {
+                "const": "iterate"
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/step"
+                }
+              },
+              "max_rounds": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "convergence_predicate": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "config"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "config": {
+                    "type": "object"
+                  }
+                }
+              },
+              "bundle_transform": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "config"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "config": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "conditional"
+              }
+            }
+          },
+          "then": {
+            "description": "Reserved and deferred step primitive for future conditional execution. Currently unsupported at runtime.",
+            "additionalProperties": true,
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "const": "conditional"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "activity"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "tool_type",
+              "title"
+            ],
+            "properties": {
+              "type": {
+                "const": "activity"
+              },
+              "tool_type": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "config": {
+                "type": "object"
+              },
+              "transform_input": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "facilitator-decision"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "prompt",
+              "options"
+            ],
+            "properties": {
+              "type": {
+                "const": "facilitator-decision"
+              },
+              "prompt": {
+                "type": "string",
+                "minLength": 1
+              },
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "minItems": 1
+              },
+              "context_bundle_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "ai-decision"
+              }
+            }
+          },
+          "then": {
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "prompt_template",
+              "output_schema",
+              "review_required"
+            ],
+            "properties": {
+              "type": {
+                "const": "ai-decision"
+              },
+              "prompt_template": {
+                "type": "string",
+                "minLength": 1
+              },
+              "output_schema": {
+                "type": "object"
+              },
+              "review_required": {
+                "type": "boolean"
+              },
+              "context_bundle_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
