@@ -415,26 +415,12 @@ def _parse_step(data: Dict[str, Any]) -> OrchestrationStep:
         raise ValueError(f"Unsupported step type: {stype}")
 
 
-def load_orchestration_file(path_or_str: str | Path) -> OrchestrationDocument:
-    """Load, validate, and parse a JSON orchestration file.
+def load_orchestration_data(data: Any) -> OrchestrationDocument:
+    """Validate and parse an in-memory orchestration document.
 
     Raises:
         OrchestrationValidationError: If validation fails.
     """
-    if isinstance(path_or_str, Path):
-        with path_or_str.open(encoding="utf-8") as f:
-            data = json.load(f)
-    elif isinstance(path_or_str, str):
-        # Could be path or raw JSON string
-        try:
-            data = json.loads(path_or_str)
-        except json.JSONDecodeError:
-            path = Path(path_or_str)
-            with path.open(encoding="utf-8") as f:
-                data = json.load(f)
-    else:
-        raise TypeError("path_or_str must be a string or Path object")
-
     result = validate_orchestration(data)
     if not result.valid:
         raise OrchestrationValidationError(result)
@@ -458,3 +444,32 @@ def load_orchestration_file(path_or_str: str | Path) -> OrchestrationDocument:
         metadata=metadata,
         steps=steps
     )
+
+
+def load_orchestration_path(path: str | Path) -> OrchestrationDocument:
+    """Load, validate, and parse a JSON orchestration file from disk.
+
+    Raises:
+        OrchestrationValidationError: If validation fails.
+        FileNotFoundError: If the path does not exist.
+        json.JSONDecodeError: If the file is not valid JSON.
+    """
+    with Path(path).open(encoding="utf-8") as f:
+        data = json.load(f)
+    return load_orchestration_data(data)
+
+
+def load_orchestration_file(path_or_str: str | Path) -> OrchestrationDocument:
+    """Deprecated combined entry point. Prefer load_orchestration_path or
+    load_orchestration_data. Accepts a filesystem path, a Path object, or a
+    raw JSON string; dispatches based on whether the string parses as JSON.
+    """
+    if isinstance(path_or_str, Path):
+        return load_orchestration_path(path_or_str)
+    if isinstance(path_or_str, str):
+        try:
+            data = json.loads(path_or_str)
+        except json.JSONDecodeError:
+            return load_orchestration_path(path_or_str)
+        return load_orchestration_data(data)
+    raise TypeError("path_or_str must be a string or Path object")

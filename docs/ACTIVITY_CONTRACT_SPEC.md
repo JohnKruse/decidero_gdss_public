@@ -219,3 +219,33 @@ The process orchestration document loader at [orchestration_loader.py](file:///U
 - Structural checking for review-required AI decision step pairing (requiring an immediately following facilitator approval step).
 - AST construction returning typed in-memory representations (`SequenceStep`, `IterateStep`, `ActivityStep`, etc.) for engine execution.
 
+### Forward Contracts for Engine Steps (Phase 4 Steps 4-5)
+
+These contracts are recorded now so Phase 4 Steps 4 and 5 land against
+explicit expectations rather than re-deriving them at implementation time.
+
+**ai-decision retry contract.** Phase 4 Step 5 reuses `run_with_retry` from
+[reliable_writes.py](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/reliable_writes.py)
+to retry malformed AI responses. The default `should_retry_result` and
+`should_retry_exception` inspect HTTP-style status fields only and will not
+treat schema-validation failures as retryable on their own. The `ai-decision`
+step kind must therefore wire one of:
+
+1. Raise a typed exception on schema-validation failure whose `status_code`
+   attribute is listed in the effective policy's `retryable_statuses`
+   (default-detected path), or
+2. Pass a custom `should_retry_result` to `run_with_retry` that returns
+   `True` when the parsed AI response does not validate against the
+   declared `output_schema`.
+
+The idempotency key for the retry must be derived deterministically from the
+engine's step pointer plus the current iteration round so retries collapse
+to the same logical write, per Phase 3 Step 4.
+
+**facilitator-decision options shape.** The current schema and loader treat
+`options` as a list of non-empty strings. Phase 4 Step 4 may need typed
+options (label + value, or label + payload schema) once the facilitator UI
+is wired in Phase 5. Any such widening must update both the JSON Schema
+file and the loader (see the schema/loader correspondence test in
+`app/tests/test_orchestration_schema.py`).
+

@@ -1,4 +1,7 @@
-"""Tests for COPPER-HERON-4/Insolent Metronome orchestration document validation and parsing.
+"""Tests for orchestration document validation and parsing.
+
+Canary: Insolent Metronome
+
 
 This focused test module is authored instead of extending test_agenda_validator.py
 because the agenda validator is designed for validation of user-configured
@@ -203,3 +206,145 @@ def test_unregistered_activity_tool_type_fails(monkeypatch) -> None:
     res = validate_orchestration(invalid_doc)
     assert not res.valid
     assert any("tool_type 'unknown_tool' is not registered" in e.message for e in res.errors)
+
+
+# Schema-vs-loader correspondence corpus.
+#
+# Each entry pairs a minimal document fragment with its expected validity
+# under the loader. The corpus mirrors the constraints in
+# docs/schemas/orchestration.schema.json so that drift between the schema
+# file and the hand-rolled loader surfaces as a test failure.
+#
+# Schema and loader agree on:
+#   - `conditional` is excluded from the type enum (schema $comment, loader
+#     hard-rejects with "reserved and deferred"). See QC fix #2.
+#   - `iterate` requires steps, max_rounds, convergence_predicate,
+#     bundle_transform; named registry entries each require name + config.
+#   - `activity` requires tool_type (lowercase snake_case, registered) and
+#     non-empty title.
+#   - `facilitator-decision` requires non-empty prompt and a non-empty
+#     options list of non-empty strings.
+#   - `ai-decision` requires prompt_template, output_schema, review_required.
+#   - ai-decision review_required=true requires an immediately-following
+#     facilitator-decision in the same step list.
+#   - metadata ranges require integer min/max with min <= max.
+
+
+def _minimal_doc(steps):
+    return {
+        "name": "n",
+        "version": "1",
+        "author": "a",
+        "citation": "c",
+        "metadata": {
+            "thinklets": ["t"],
+            "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 2}
+        },
+        "steps": steps
+    }
+
+
+CORRESPONDENCE_CORPUS = [
+    # (label, steps, expected_valid, expected_error_substring_or_None)
+    ("conditional_at_top_rejected",
+     [{"type": "conditional"}],
+     False, "conditional step is reserved"),
+    ("unknown_step_type",
+     [{"type": "loop"}],
+     False, "Invalid step type"),
+    ("iterate_missing_max_rounds",
+     [{"type": "iterate", "steps": [],
+       "convergence_predicate": {"name": "fixed_n", "config": {}},
+       "bundle_transform": {"name": "identity", "config": {}}}],
+     False, "max_rounds"),
+    ("iterate_zero_max_rounds",
+     [{"type": "iterate", "steps": [], "max_rounds": 0,
+       "convergence_predicate": {"name": "fixed_n", "config": {}},
+       "bundle_transform": {"name": "identity", "config": {}}}],
+     False, "positive integer"),
+    ("iterate_predicate_missing_name",
+     [{"type": "iterate", "steps": [], "max_rounds": 1,
+       "convergence_predicate": {"config": {}},
+       "bundle_transform": {"name": "identity", "config": {}}}],
+     False, "convergence_predicate"),
+    ("activity_uppercase_tool_type",
+     [{"type": "activity", "tool_type": "Brainstorming", "title": "x"}],
+     False, "snake_case"),
+    ("activity_missing_title",
+     [{"type": "activity", "tool_type": "brainstorming"}],
+     False, "title"),
+    ("facilitator_decision_empty_options",
+     [{"type": "facilitator-decision", "prompt": "?", "options": []}],
+     False, "non-empty list"),
+    ("ai_decision_review_required_no_pair",
+     [{"type": "ai-decision", "prompt_template": "t",
+       "output_schema": {}, "review_required": True}],
+     False, "immediately followed by a facilitator-decision"),
+    ("ai_decision_review_required_with_pair",
+     [{"type": "ai-decision", "prompt_template": "t",
+       "output_schema": {}, "review_required": True},
+      {"type": "facilitator-decision", "prompt": "ok?",
+       "options": ["yes"]}],
+     True, None),
+    ("metadata_range_min_gt_max",
+     None,  # handled inline below
+     False, "cannot exceed"),
+]
+
+
+def test_schema_loader_correspondence(monkeypatch):
+    """Pin the schema/loader correspondence corpus.
+
+    If a future schema edit changes the acceptable shapes (or the loader
+    diverges), one of these cases will flip and force the author to
+    reconcile both artifacts.
+    """
+    monkeypatch.setattr(
+        "app.services.orchestration_loader.get_enriched_activity_catalog",
+        lambda: [{"tool_type": "brainstorming"}]
+    )
+
+    for label, steps, expected_valid, expected_substr in CORRESPONDENCE_CORPUS:
+        if label == "metadata_range_min_gt_max":
+            doc = _minimal_doc([])
+            doc["metadata"]["group_size_range"] = {"min": 5, "max": 1}
+        else:
+            doc = _minimal_doc(steps)
+
+        res = validate_orchestration(doc)
+        assert res.valid == expected_valid, (
+            f"{label}: expected valid={expected_valid}, got {res.valid}; "
+            f"errors={[e.message for e in res.errors]}"
+        )
+        if expected_substr is not None:
+            assert any(expected_substr in e.message for e in res.errors), (
+                f"{label}: expected error containing {expected_substr!r}, "
+                f"got {[e.message for e in res.errors]}"
+            )
+
+
+def test_load_orchestration_path_and_data_split(tmp_path, monkeypatch):
+    """The split entry points each handle their own input shape."""
+    monkeypatch.setattr(
+        "app.services.orchestration_loader.get_enriched_activity_catalog",
+        lambda: [{"tool_type": "brainstorming"}]
+    )
+    from app.services.orchestration_loader import (
+        load_orchestration_data,
+        load_orchestration_path,
+    )
+
+    doc_dict = _minimal_doc([
+        {"type": "activity", "tool_type": "brainstorming", "title": "x"}
+    ])
+
+    parsed_from_data = load_orchestration_data(doc_dict)
+    assert parsed_from_data.name == "n"
+
+    p = tmp_path / "orch.json"
+    p.write_text(json.dumps(doc_dict), encoding="utf-8")
+    parsed_from_path = load_orchestration_path(p)
+    assert parsed_from_path.name == "n"

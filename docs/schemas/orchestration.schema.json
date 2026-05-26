@@ -104,10 +104,10 @@
       "properties": {
         "type": {
           "type": "string",
+          "$comment": "The 'conditional' step kind is reserved and intentionally absent from this enum. Its shape is documented in the conditional allOf branch below for forward compatibility, but the runtime loader (app/services/orchestration_loader.py) and this schema both reject documents that use it. A future minor release will lift the rejection.",
           "enum": [
             "sequence",
             "iterate",
-            "conditional",
             "activity",
             "facilitator-decision",
             "ai-decision"
