@@ -1238,3 +1238,92 @@ def test_substrate_integration_smoke(db_session):
     # With threshold 0.6 -> Should converge (True)
     assert predicate.evaluate(bundle_history, {"threshold": 0.6})
 
+
+def test_delphi_transform_keys_against_real_rank_order_voting_output(db_session):
+    """Pin the option_id keying contract between RankOrderVotingPlugin and
+    DelphiStatisticalAggregationTransform.
+
+    The transform looks up per-item votes by
+    `item.metadata.rank_order_voting.option_id`. The rank-order-voting
+    plugin's close_activity must populate that key with the same value the
+    `RankOrderVote.option_id` column stores, or the transform silently
+    produces zero-IQR items with no outlier flags. This test runs the real
+    plugin end-to-end and asserts the transform sees the votes.
+    """
+    from app.services.bundle_transforms import DelphiStatisticalAggregationTransform
+    from app.services.rank_order_voting_manager import RankOrderVotingManager
+
+    meeting, _, rank_activity, user = _seed_meeting_with_rank_order_voting(db_session)
+    user_2 = User(
+        user_id="u-keying-2",
+        login="ukeying2",
+        hashed_password="pw",
+        role=UserRole.PARTICIPANT.value,
+    )
+    db_session.add(user_2)
+    db_session.commit()
+
+    manager = ActivityBundleManager(db_session)
+    plugin = RankOrderVotingPlugin()
+    voting_manager = RankOrderVotingManager(db_session)
+
+    input_bundle = manager.create_bundle(
+        meeting.meeting_id,
+        rank_activity.activity_id,
+        "input",
+        [
+            {"content": "Option A", "metadata": {}, "source": {}},
+            {"content": "Option B", "metadata": {}, "source": {}},
+        ],
+        metadata={"source": "brainstorming"},
+    )
+    context = ActivityContext(db=db_session, meeting=meeting, activity=rank_activity, user=user)
+    plugin.open_activity(context, input_bundle)
+
+    db_session.refresh(rank_activity)
+    option_ids = [opt.option_id for opt in voting_manager._extract_options(rank_activity)]
+
+    # Diverging rankings so the per-item IQR is strictly positive when the
+    # transform aggregates correctly (and zero when keying is broken).
+    voting_manager.submit_ranking(
+        meeting, rank_activity.activity_id, user, option_ids, is_active_state=False
+    )
+    voting_manager.submit_ranking(
+        meeting, rank_activity.activity_id, user_2, list(reversed(option_ids)),
+        is_active_state=False,
+    )
+
+    close_res = plugin.close_activity(context)
+    output = db_session.query(ActivityBundle).filter(
+        ActivityBundle.bundle_id == close_res["bundle_id"]
+    ).one()
+
+    # Independently confirm each item carries the option_id the transform
+    # looks up, and that the bundle metadata's votes table is keyed by the
+    # same option_ids — this is the contract under test.
+    for item in output.items:
+        ro_meta = (item.get("metadata") or {}).get("rank_order_voting") or {}
+        assert ro_meta.get("option_id") in option_ids, (
+            f"plugin item missing option_id in metadata.rank_order_voting: {item}"
+        )
+
+    vote_option_ids = {v["option_id"] for v in output.bundle_metadata["votes"]}
+    assert vote_option_ids == set(option_ids), (
+        "bundle metadata.votes keyed by a different option_id space than items"
+    )
+
+    transformed = DelphiStatisticalAggregationTransform().transform(
+        {"items": output.items, "metadata": output.bundle_metadata}, {}
+    )
+
+    # If keying is correct, both items see two divergent votes -> IQR > 0
+    # and an outlier_flags dict with one entry per voter.
+    for item in transformed["items"]:
+        delphi = item["metadata"]["delphi"]
+        assert delphi["iqr"] > 0, (
+            f"transform produced zero IQR for {item.get('content')!r}; "
+            "this means the option_id lookup did not match any votes — "
+            "the plugin and transform are using different key spaces."
+        )
+        assert set(delphi["outlier_flags"].keys()) == {user.user_id, user_2.user_id}
+
