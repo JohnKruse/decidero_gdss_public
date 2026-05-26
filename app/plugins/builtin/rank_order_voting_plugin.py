@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.meeting import AgendaActivity, Meeting
+from app.models.rank_order_voting import RankOrderVote
 from app.models.user import UserRole
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
 from app.services.rank_order_voting_manager import RankOrderVotingManager
@@ -144,11 +145,26 @@ class RankOrderVotingPlugin(ActivityPlugin):
         meeting: Meeting = context.meeting
         activity: AgendaActivity = context.activity
         items = self._build_items(context, include_metrics=True)
+        votes = context.db.query(RankOrderVote).filter(
+            RankOrderVote.meeting_id == meeting.meeting_id,
+            RankOrderVote.activity_id == activity.activity_id
+        ).all()
+        votes_data = [
+            {
+                "user_id": v.user_id,
+                "option_id": v.option_id,
+                "rank_position": v.rank_position
+            }
+            for v in votes
+        ]
         bundle = ActivityBundleManager(context.db).finalize_output_bundle(
             meeting.meeting_id,
             activity.activity_id,
             items,
-            metadata={"source": "rank_order_voting"},
+            metadata={
+                "source": "rank_order_voting",
+                "votes": votes_data
+            },
         )
         return {"bundle_id": bundle.bundle_id, "items": bundle.items}
 

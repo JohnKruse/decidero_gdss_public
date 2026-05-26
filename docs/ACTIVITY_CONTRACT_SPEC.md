@@ -73,16 +73,26 @@ automatically before `open_activity`. Plugins that require strict validation
 must call their validators from lifecycle methods or from the router/service
 that owns the relevant configuration write.
 
+### DP7 - Composable Bundle Transforms
+
+To support iterative collaboration (such as Delphi), bundle data is transformed between rounds using named `BundleTransform` implementations, which preserve item-level provenance.
+
+### DP8 - Declarative Convergence Predicates
+
+Instead of hardcoded exit conditions, iterative processes evaluate their history using named `ConvergencePredicate` implementations to determine convergence.
+
 ## DP-to-Test Mapping
 
 | DP | Invariant | Executable witness |
 | --- | --- | --- |
 | DP1 | Stable manifest identity and startup validation | `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema`; `app/tests/test_activity_plugins.py::test_activity_registry_rejects_invalid_manifest` |
 | DP2 | Portable bundle shape with provenance and Phase 3 iteration slot | `app/tests/test_activity_plugins.py::test_bundle_payload_schema_accepts_provenance_and_iteration_extension`; `app/tests/test_activity_plugins.py::test_activity_bundle_manager_roundtrip`; `app/tests/test_activity_plugins.py::test_activity_bundle_iteration_storage_is_round_discriminated`; `app/tests/test_activity_plugins.py::test_activity_bundle_legacy_latest_path_is_deterministic`; `app/tests/test_transfer_metadata.py::test_transfer_metadata_schema_conformance_for_normalized_payload` |
-| DP3 | Idempotent `open_activity` under restart | `app/tests/test_activity_plugins.py::test_brainstorming_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_rank_order_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_categorization_open_activity_is_idempotent` |
+| DP3 | Idempotent `open_activity` under restart | `app/tests/test_activity_plugins.py::test_brainstorming_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_rank_order_voting_open_activity_is_idempotent`; `app/tests/test_categorization_open_activity_is_idempotent` |
 | DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults` |
 | DP5 | ThinkLet claims are structured and auditable | `docs/THINKLET_AUDIT.md`; `app/tests/test_activity_plugins.py::test_builtin_manifest_thinklets_match_audit_document`; `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema` |
 | DP6 | Config validation disposition is explicit and tested | `app/tests/test_activity_plugins.py::test_validate_config_is_documented_plugin_controlled_passthrough` |
+| DP7 | Composable bundle transforms | `app/tests/test_bundle_transforms.py` |
+| DP8 | Composable convergence predicates | `app/tests/test_convergence_predicates.py` |
 
 ## Normative Invariants
 
@@ -161,3 +171,20 @@ while callers that need a specific round can pass `round_index` and
 `logical_step_id` to `ActivityBundleManager.get_latest_bundle`. Round-N bundles
 therefore never overwrite round-(N-1) bundles, and the complete round history is
 available through `ActivityBundleManager.list_bundles_for_step`.
+
+## Orchestration Substrate
+
+### Bundle Transform Seam
+
+`BundleTransform` is an abstract interface for data transformations between activity iterations.
+The canonical implementations are:
+- `IdentityBundleTransform` at [IdentityBundleTransform](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/bundle_transforms.py): Returns the input bundle unchanged.
+- `DelphiStatisticalAggregationTransform` at [DelphiStatisticalAggregationTransform](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/bundle_transforms.py): Consumes rank-order-voting output bundles (including individual voter rankings in the bundle metadata) and computes item-level median, IQR, standard deviation, and participant outlier flags.
+
+### Convergence Predicate Seam
+
+`ConvergencePredicate` is an abstract interface that evaluates the iteration history to decide if execution should terminate.
+The canonical implementations are:
+- `FixedNPredicate` at [FixedNPredicate](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/convergence_predicates.py): Fires after a set number of rounds.
+- `IQRStabilityPredicate` at [IQRStabilityPredicate](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/convergence_predicates.py): Fires when the change in median IQR across items between two consecutive rounds is less than or equal to a threshold.
+
