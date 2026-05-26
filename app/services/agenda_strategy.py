@@ -259,7 +259,10 @@ class _PlanWalker:
                     continue
                 if isinstance(cur, ConditionalStep):
                     continue  # reserved / deferred — skip silently
-                if isinstance(cur, (FacilitatorDecisionStep, AIDecisionStep)):
+                if isinstance(cur, FacilitatorDecisionStep):
+                    # Insolent Metronome: facilitator-decision pause dispatch.
+                    return (f"engine:{child_path}", cur, 0, None)
+                if isinstance(cur, AIDecisionStep):
                     raise NotImplementedError(
                         f"'{cur.type}' step kind is not yet implemented"
                     )
@@ -355,12 +358,18 @@ class OrchestrationEngineStrategy(AgendaStrategy):
 
     name = "orchestration"
 
+    FACILITATOR_DECISION_TOOL_TYPE = "facilitator_decision"
+
     def __init__(self, document: "OrchestrationDocument") -> None:  # noqa: F821
         self._document = document
-        # (logical_step_id, ActivityStep, round_index, iterate_frame_or_None)
+        # (logical_step_id, step, round_index, iterate_frame_or_None) — step may
+        # be an ActivityStep or FacilitatorDecisionStep.
         self._plan: List[Tuple[str, Any, int, Optional[_IterateFrame]]] = []
         # activity_id -> (logical_step_id, round_index)
         self._activity_iteration: Dict[str, Tuple[str, int]] = {}
+        # Pending facilitator decision: dict with activity_id/step/logical_step_id
+        # while paused, or None when the engine is free to advance.
+        self._pending_decision: Optional[Dict[str, Any]] = None
         self._walker = _PlanWalker(document.steps)
         # Eager prefetch: walk until walker requires DB or document is exhausted.
         self._extend_plan(db=None)
@@ -474,11 +483,20 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         from app.plugins.registry import get_activity_registry
         from app.services.activity_catalog import get_activity_definition
         from app.utils.identifiers import generate_activity_id, generate_tool_config_id
-        from app.services.orchestration_loader import ActivityStep
+        from app.services.orchestration_loader import ActivityStep, FacilitatorDecisionStep
 
         db = object_session(meeting)
         if db is None:
             raise ValueError("Meeting is not attached to a database session.")
+
+        if self._pending_decision is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Orchestration engine is paused on a facilitator-decision step; "
+                    "call resume_with_facilitator_decision() to advance."
+                ),
+            )
 
         step_index = self._materialize_count(meeting, db)
         # Drive walker forward (may evaluate iterate predicates now that we have db)
@@ -490,6 +508,12 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             )
 
         logical_step_id, step, round_index, iterate_frame = self._plan[step_index]
+
+        if isinstance(step, FacilitatorDecisionStep):
+            return self._materialize_facilitator_decision(
+                meeting, db, step_index, logical_step_id, step
+            )
+
         if not isinstance(step, ActivityStep):
             raise NotImplementedError(
                 f"Step at position {step_index} is not an activity step."
@@ -528,6 +552,156 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             self._activity_iteration[activity.activity_id] = (logical_step_id, round_index)
             iterate_frame.round_activity_ids.append(activity.activity_id)
         return activity
+
+    def _materialize_facilitator_decision(
+        self,
+        meeting: Meeting,
+        db: Session,
+        step_index: int,
+        logical_step_id: str,
+        step: Any,
+    ) -> AgendaActivity:
+        """Insolent Metronome: mint the placeholder row and enter pause state.
+
+        Materializes an `AgendaActivity` carrying the decision prompt/options as
+        configuration so callers can render the pause to a facilitator. The
+        engine then refuses to advance until `resume_with_facilitator_decision`
+        is called with one of the configured option names.
+        """
+        from app.utils.identifiers import generate_activity_id, generate_tool_config_id
+
+        tool_type = self.FACILITATOR_DECISION_TOOL_TYPE
+        activity_id = generate_activity_id(db, meeting.meeting_id, tool_type)
+        tool_config_id = generate_tool_config_id(activity_id, meeting.meeting_id)
+
+        config: Dict[str, Any] = {
+            "prompt": step.prompt,
+            "options": list(step.options),
+            "context_bundle_keys": list(step.context_bundle_keys or []),
+        }
+
+        activity = AgendaActivity(
+            activity_id=activity_id,
+            meeting_id=meeting.meeting_id,
+            tool_type=tool_type,
+            title=step.prompt,
+            order_index=step_index + 1,
+            tool_config_id=tool_config_id,
+            config=config,
+        )
+        db.add(activity)
+        db.commit()
+        db.refresh(activity)
+
+        self._pending_decision = {
+            "activity_id": activity.activity_id,
+            "logical_step_id": logical_step_id,
+            "prompt": step.prompt,
+            "options": list(step.options),
+            "context_bundle_keys": list(step.context_bundle_keys or []),
+        }
+        return activity
+
+    def pending_decision(self) -> Optional[Dict[str, Any]]:
+        """Return the pending facilitator-decision descriptor or None.
+
+        While the engine is paused on a facilitator-decision step, this returns
+        a dict carrying the pause `activity_id`, the rendered `prompt`, the
+        configured `options`, and `context_bundle_keys`. Returns None when the
+        engine is free to advance.
+        """
+        if self._pending_decision is None:
+            return None
+        return dict(self._pending_decision)
+
+    def is_paused(self) -> bool:
+        return self._pending_decision is not None
+
+    def resume_with_facilitator_decision(
+        self,
+        meeting: Meeting,
+        chosen_option: str,
+        *,
+        db: Optional[Session] = None,
+        actor_user_id: Optional[str] = None,
+    ) -> ActivityBundle:
+        """Insolent Metronome: resume the engine with the facilitator's choice.
+
+        Validates the chosen option against the step's configured options,
+        writes an output bundle containing the choice as a single typed item
+        (with provenance that satisfies `bundle_payload.schema.json`), and
+        clears the pause state so subsequent `create_activity` calls can
+        advance the plan.
+
+        The executable contract for this entry point is the test module
+        `app/tests/test_orchestration_engine.py` — see the
+        `test_facilitator_decision_*` cases for invariants, failure modes, and
+        the captured-bundle provenance contract.
+        """
+        from app.data.activity_bundle_manager import ActivityBundleManager
+
+        if self._pending_decision is None:
+            raise HTTPException(
+                status_code=400,
+                detail="No facilitator-decision is pending on this engine.",
+            )
+
+        pending = self._pending_decision
+        options: List[str] = list(pending["options"])
+        if not options:
+            raise HTTPException(
+                status_code=400,
+                detail="Facilitator-decision step has no remaining options; engine cannot advance.",
+            )
+        if chosen_option not in options:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Facilitator choice '{chosen_option}' is not one of the configured "
+                    f"options: {options}."
+                ),
+            )
+
+        session = db if db is not None else object_session(meeting)
+        if session is None:
+            raise ValueError("Meeting is not attached to a database session.")
+
+        activity_id = pending["activity_id"]
+        logical_step_id = pending["logical_step_id"]
+
+        bundle_manager = ActivityBundleManager(session)
+        bundle = bundle_manager.finalize_output_bundle(
+            meeting.meeting_id,
+            activity_id,
+            items=[{
+                "content": chosen_option,
+                "metadata": {
+                    "facilitator_decision": {
+                        "prompt": pending["prompt"],
+                        "options": options,
+                        "chosen": chosen_option,
+                        "actor_user_id": actor_user_id,
+                        "logical_step_id": logical_step_id,
+                    }
+                },
+                "source": {
+                    "meeting_id": meeting.meeting_id,
+                    "activity_id": activity_id,
+                    "tool_type": self.FACILITATOR_DECISION_TOOL_TYPE,
+                },
+                "activity_id": activity_id,
+                "user_id": actor_user_id,
+            }],
+            metadata={
+                "source": "facilitator_decision",
+                "logical_step_id": logical_step_id,
+                "options": options,
+                "chosen": chosen_option,
+            },
+        )
+
+        self._pending_decision = None
+        return bundle
 
     @property
     def document(self) -> "OrchestrationDocument":  # noqa: F821

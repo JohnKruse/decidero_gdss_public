@@ -317,6 +317,38 @@ row carries the iteration discriminator. `resolve_prior_activity` surfaces the
 donor's `logical_step_id` and `round_index` on the resolution to satisfy the
 Phase 3 explicit-donor-reference hook signature.
 
+### `facilitator-decision` Step Kind
+
+The `facilitator-decision` step kind (Phase 4 Step 4, canary `Insolent
+Metronome`) pauses the engine until a facilitator selects one of a declared
+list of typed options. Configuration: `prompt` (the question posed), `options`
+(non-empty list of strings), and `context_bundle_keys` (which prior bundles
+the UI should surface alongside the prompt — Phase 5 owns the rendering).
+
+When `OrchestrationEngineStrategy.create_activity` ticks onto a
+`facilitator-decision` step it materializes a placeholder `AgendaActivity`
+with `tool_type="facilitator_decision"` (see
+`OrchestrationEngineStrategy.FACILITATOR_DECISION_TOOL_TYPE`) and sets the
+engine's pause state. Subsequent `create_activity` calls raise an
+`HTTPException(409, ...)` until the pause is cleared. `pending_decision()`
+returns the pause descriptor (or `None`); `is_paused()` is its boolean form.
+
+Resumption goes through `resume_with_facilitator_decision(meeting,
+chosen_option, ...)`. The chosen option is captured as a single typed bundle
+item with provenance that satisfies
+[`bundle_payload.schema.json`](schemas/bundle_payload.schema.json):
+`metadata.facilitator_decision` records the prompt, options, the chosen
+value, and the optional actor user; `source` carries the meeting / activity /
+tool-type triple. Invalid options raise `HTTPException(400, ...)` and leave
+the engine paused so the caller can retry. Calling resume when no decision is
+pending also raises a structured error.
+
+**UI is out of scope here.** Phase 5 owns the dashboard surface that lets a
+facilitator actually respond; Phase 4 Step 4 only ships the service-layer
+resumption entry point. The executable contract for that entry point is the
+`test_facilitator_decision_*` family in
+[`app/tests/test_orchestration_engine.py`](../app/tests/test_orchestration_engine.py).
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather

@@ -536,3 +536,169 @@ def test_iterate_resolve_prior_surfaces_round_index(db_session):
     assert resolution.activity.activity_id == round0_activity.activity_id
     assert resolution.round_index == 0
     assert resolution.logical_step_id is not None
+
+
+# ---------------------------------------------------------------------------
+# facilitator-decision step kind tests (Phase 4 Step 4 — Insolent Metronome)
+# ---------------------------------------------------------------------------
+
+
+def _make_facilitator_decision_document(
+    *,
+    options=("approve", "reject"),
+    prompt="Approve the prior result?",
+    context_bundle_keys=None,
+    trailing_activity=False,
+):
+    """Build a doc with a leading activity, then a facilitator-decision step.
+
+    With `trailing_activity=True` a final activity step is appended so the
+    engine has something to materialize after the decision is resolved.
+    """
+    from app.services.orchestration_loader import load_orchestration_data
+
+    steps = [
+        {"type": "activity", "tool_type": "brainstorming", "title": "Seed"},
+        {
+            "type": "facilitator-decision",
+            "prompt": prompt,
+            "options": list(options),
+            "context_bundle_keys": list(context_bundle_keys or []),
+        },
+    ]
+    if trailing_activity:
+        steps.append(
+            {"type": "activity", "tool_type": "brainstorming", "title": "After-Decision"}
+        )
+
+    return load_orchestration_data({
+        "name": "facilitator-decision-test",
+        "version": "1",
+        "author": "phase4step4",
+        "citation": "Insolent Metronome",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Insolent Metronome facilitator-decision fixture",
+        },
+        "steps": [{"type": "sequence", "steps": steps}],
+    })
+
+
+def test_facilitator_decision_pauses_engine(db_session):
+    """Engine materializes a pause placeholder and refuses to advance until resumed."""
+    from fastapi import HTTPException
+
+    doc = _make_facilitator_decision_document()
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    # Run the leading activity
+    brain_activity = strategy.create_activity(meeting, None, None)
+    assert brain_activity.tool_type == "brainstorming"
+    bm.finalize_output_bundle(meeting.meeting_id, brain_activity.activity_id, [])
+
+    # Now the engine should materialize the facilitator-decision pause row
+    decision_activity = strategy.create_activity(meeting, None, None)
+    assert decision_activity.tool_type == OrchestrationEngineStrategy.FACILITATOR_DECISION_TOOL_TYPE
+    assert decision_activity.title == "Approve the prior result?"
+    assert decision_activity.config["options"] == ["approve", "reject"]
+
+    pending = strategy.pending_decision()
+    assert pending is not None
+    assert pending["activity_id"] == decision_activity.activity_id
+    assert pending["options"] == ["approve", "reject"]
+    assert strategy.is_paused()
+
+    # Next create_activity call must refuse with a structured error
+    with pytest.raises(HTTPException) as excinfo:
+        strategy.create_activity(meeting, None, None)
+    assert excinfo.value.status_code == 409
+    assert "paused" in str(excinfo.value.detail).lower()
+
+
+def test_facilitator_decision_resume_captures_chosen_option(db_session):
+    """Resume writes a schema-valid bundle item carrying the chosen option."""
+    doc = _make_facilitator_decision_document()
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, user = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    brain_activity = strategy.create_activity(meeting, None, None)
+    bm.finalize_output_bundle(meeting.meeting_id, brain_activity.activity_id, [])
+    decision_activity = strategy.create_activity(meeting, None, None)
+
+    bundle = strategy.resume_with_facilitator_decision(
+        meeting, "approve", actor_user_id=user.user_id
+    )
+    assert bundle is not None
+    assert strategy.pending_decision() is None
+    assert not strategy.is_paused()
+
+    # Bundle survives Phase 1's bundle_payload schema
+    validate_bundle_payload({
+        "items": bundle.items,
+        "metadata": bundle.bundle_metadata or {},
+    })
+    assert len(bundle.items) == 1
+    item = bundle.items[0]
+    assert item["content"] == "approve"
+    assert item["metadata"]["facilitator_decision"]["chosen"] == "approve"
+    assert item["source"]["activity_id"] == decision_activity.activity_id
+    assert item["source"]["tool_type"] == OrchestrationEngineStrategy.FACILITATOR_DECISION_TOOL_TYPE
+
+
+def test_facilitator_decision_invalid_option_yields_structured_error(db_session):
+    """Resuming with an unknown option raises a structured HTTPException."""
+    from fastapi import HTTPException
+
+    doc = _make_facilitator_decision_document()
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    brain_activity = strategy.create_activity(meeting, None, None)
+    bm.finalize_output_bundle(meeting.meeting_id, brain_activity.activity_id, [])
+    strategy.create_activity(meeting, None, None)
+
+    with pytest.raises(HTTPException) as excinfo:
+        strategy.resume_with_facilitator_decision(meeting, "definitely_not_an_option")
+    assert excinfo.value.status_code == 400
+    assert "not one of the configured" in str(excinfo.value.detail)
+    # Engine remains paused after the failed resume
+    assert strategy.is_paused()
+
+
+def test_facilitator_decision_engine_advances_after_resume(db_session):
+    """After resume the engine materializes the next plan step normally."""
+    doc = _make_facilitator_decision_document(trailing_activity=True)
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    brain_activity = strategy.create_activity(meeting, None, None)
+    bm.finalize_output_bundle(meeting.meeting_id, brain_activity.activity_id, [])
+    strategy.create_activity(meeting, None, None)  # decision (paused)
+    strategy.resume_with_facilitator_decision(meeting, "reject")
+
+    # Now the engine should mint the trailing activity
+    trailing = strategy.create_activity(meeting, None, None)
+    assert trailing.tool_type == "brainstorming"
+    assert trailing.title == "After-Decision"
+
+
+def test_facilitator_decision_resume_without_pause_errors(db_session):
+    """Calling resume when no decision is pending raises a structured error."""
+    from fastapi import HTTPException
+
+    doc = _make_facilitator_decision_document()
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    with pytest.raises(HTTPException) as excinfo:
+        strategy.resume_with_facilitator_decision(meeting, "approve")
+    assert excinfo.value.status_code == 400
+    assert "no facilitator-decision is pending" in str(excinfo.value.detail).lower()
