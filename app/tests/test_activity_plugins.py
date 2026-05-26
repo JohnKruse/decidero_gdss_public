@@ -25,6 +25,7 @@ from app.plugins.registry import ActivityRegistry
 import app.services.activity_pipeline as activity_pipeline_module
 from app.services.activity_pipeline import ActivityPipeline
 from app.services.activity_catalog import get_activity_catalog, normalise_reliability_policy
+from app.services.agenda_strategy import PriorActivityReference
 from app.services.categorization_manager import CategorizationManager
 from app.services.contract_schemas import (
     ContractSchemaError,
@@ -590,7 +591,7 @@ def test_builtin_manifest_thinklets_match_audit_document():
 
 
 def test_activity_pipeline_creates_input(db_session, mocker):
-    """Smug Otter: pipeline input seeding preserves behavior through AgendaStrategy."""
+    """Convergent Yak: pipeline input seeding uses strategy donor requests."""
     meeting, activity_one, activity_two, _ = _seed_meeting(db_session)
     manager = ActivityBundleManager(db_session)
     manager.create_bundle(
@@ -607,6 +608,51 @@ def test_activity_pipeline_creates_input(db_session, mocker):
     assert input_bundle.kind == "input"
     assert input_bundle.items[0]["content"] == "Idea 1"
     assert strategy_spy.call_count == 1
+
+
+def test_activity_pipeline_materializes_explicit_iteration_donor(db_session):
+    """Convergent Yak: explicit prior references select round-specific bundles."""
+    meeting, activity_one, activity_two, _ = _seed_meeting(db_session)
+    manager = ActivityBundleManager(db_session)
+    manager.create_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        "output",
+        [{"content": "Round zero"}],
+        metadata={"source": "round-zero"},
+        logical_step_id="delphi-rank",
+        round_index=0,
+    )
+    round_one = manager.create_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        "output",
+        [{"content": "Round one"}],
+        metadata={"source": "round-one"},
+        logical_step_id="delphi-rank",
+        round_index=1,
+    )
+
+    pipeline = ActivityPipeline(db_session)
+    input_bundle = pipeline.ensure_input_bundle(
+        meeting,
+        activity_two,
+        PriorActivityReference(
+            consumer_activity_id=activity_two.activity_id,
+            donor_activity_id=activity_one.activity_id,
+            logical_step_id="delphi-rank",
+            round_index=1,
+        ),
+    )
+
+    assert input_bundle is not None
+    assert input_bundle.items == round_one.items
+    assert input_bundle.logical_step_id == "delphi-rank"
+    assert input_bundle.round_index == 1
+    assert input_bundle.bundle_metadata["iteration"] == {
+        "logical_step_id": "delphi-rank",
+        "round_index": 1,
+    }
 
 
 def test_voting_plugin_seeds_options_from_input(db_session):

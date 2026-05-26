@@ -133,6 +133,18 @@ Router-driven `POST /api/meetings/{id}/agenda`, strategy-driven
 same identifier minting and resequence path, and router-driven creation emits
 the existing `agenda_update` realtime envelope with the resequenced agenda.
 
+Convergent Yak Phase 3 resolves BP-1 by changing the prior-activity hook from
+"activity adjacency means previous bundle" to an explicit donor request. Callers
+construct a `PriorActivityReference` with the consumer activity and, when known,
+a donor `activity_id`, `logical_step_id`, `round_index`, or future document
+handle. Strategies answer with a `PriorActivityResolution` that names the donor
+activity and the optional iteration discriminator the bundle lookup must use.
+`activity_pipeline.ensure_input_bundle` consumes that resolution directly, so
+the pipeline no longer owns linear topology semantics. `LinearAgendaStrategy`
+preserves observable Phase 2 behavior by resolving adjacency only when the
+request omits an explicit donor activity; explicit donor requests pass through
+with their round discriminator intact.
+
 ## Iteration Storage Model
 
 Convergent Yak Phase 3 stores iteration state on `ActivityBundle` rows rather

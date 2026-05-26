@@ -9,7 +9,11 @@ import app.data.meeting_manager as meeting_manager_module
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
 from app.services.meeting_authorization import resolve_meeting_capabilities
-from app.services.agenda_strategy import LinearAgendaStrategy, get_agenda_strategy
+from app.services.agenda_strategy import (
+    LinearAgendaStrategy,
+    PriorActivityReference,
+    get_agenda_strategy,
+)
 from app.services import meeting_state_manager
 from app.schemas.meeting import (
     MeetingCreate,
@@ -133,10 +137,28 @@ def _assert_linear_agenda_strategy_parity(
 
     for index, activity in enumerate(direct_agenda):
         expected_prior = direct_agenda[index - 1] if index else None
-        actual_prior = strategy.resolve_prior_activity(meeting, activity)
+        actual_resolution = strategy.resolve_prior_activity(
+            meeting,
+            PriorActivityReference.for_consumer(activity),
+        )
+        actual_prior = actual_resolution.activity if actual_resolution else None
         assert (actual_prior.activity_id if actual_prior else None) == (
             expected_prior.activity_id if expected_prior else None
         )
+        if expected_prior is not None:
+            explicit_resolution = strategy.resolve_prior_activity(
+                meeting,
+                PriorActivityReference(
+                    consumer_activity_id=activity.activity_id,
+                    donor_activity_id=expected_prior.activity_id,
+                    logical_step_id="linear-parity",
+                    round_index=1,
+                ),
+            )
+            assert explicit_resolution is not None
+            assert explicit_resolution.activity.activity_id == expected_prior.activity_id
+            assert explicit_resolution.logical_step_id == "linear-parity"
+            assert explicit_resolution.round_index == 1
 
     if not direct_agenda:
         expected_complete = True
@@ -438,7 +460,7 @@ async def test_linear_agenda_strategy_matches_direct_order_index_walks(
     test_facilitator: User,
     mocker,
 ):
-    """Smug Otter: LinearAgendaStrategy is behavior-parity reference logic."""
+    """Convergent Yak: LinearAgendaStrategy parity survives explicit donor requests."""
     mocker.patch(
         "app.data.meeting_manager.meeting_state_manager.snapshot",
         return_value={"currentActivity": None},

@@ -9,7 +9,11 @@ from app.services.meeting_state import MeetingStateManager, meeting_state_manage
 from app.data.meeting_manager import MeetingManager
 from app.data.user_manager import UserManager
 from app.schemas.meeting import MeetingCreate, AgendaActivityCreate
-from app.services.agenda_strategy import LinearAgendaStrategy, get_agenda_strategy
+from app.services.agenda_strategy import (
+    LinearAgendaStrategy,
+    PriorActivityReference,
+    get_agenda_strategy,
+)
 from app.utils.security import get_password_hash
 
 
@@ -182,6 +186,17 @@ def test_agenda_strategy_binding_for_meeting_state_fixture(db_session):
     assert isinstance(strategy, LinearAgendaStrategy)
     assert strategy.name == "linear"
     assert [activity.title for activity in agenda] == ["Intro", "Vote"]
-    assert strategy.resolve_prior_activity(meeting, agenda[0]) is None
-    assert strategy.resolve_prior_activity(meeting, agenda[1]).activity_id == agenda[0].activity_id
+    assert (
+        strategy.resolve_prior_activity(
+            meeting,
+            PriorActivityReference.for_consumer(agenda[0]),
+        )
+        is None
+    )
+    prior_resolution = strategy.resolve_prior_activity(
+        meeting,
+        PriorActivityReference.for_consumer(agenda[1]),
+    )
+    assert prior_resolution is not None
+    assert prior_resolution.activity.activity_id == agenda[0].activity_id
     assert strategy.is_complete(meeting) is False

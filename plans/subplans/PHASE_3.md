@@ -32,7 +32,7 @@ Technical deviations logged:
 - Chose `ActivityBundle.logical_step_id` plus `ActivityBundle.round_index` as the iteration discriminator instead of round-scoped `AgendaActivity` IDs, leaving `_next_activity_identifier` unchanged because iteration is stored on bundles rather than operator-authored agenda rows.
 - The complete Phase 3 exit command references future test modules from later steps (`test_bundle_transforms.py`, `test_convergence_predicates.py`, reliability coverage), so Step 1 verification used the current executable regression boundary plus the new round-discriminator tests.
 
-### Step 2 — Replace the Linear "Previous Activity" Assumption
+### Step 2 — [DONE] Replace the Linear "Previous Activity" Assumption
 Refactor the prior-activity hook on `AgendaStrategy` so callers identify which prior bundle they want by explicit reference (donor activity_id plus optional iteration discriminator, or a named handle the orchestration document will later supply) rather than by `order_index` adjacency. `LinearAgendaStrategy` continues to honor `order_index` adjacency under the hood for its own implementation of the hook, so linear meetings behave exactly as they do at the end of Phase 2; but the hook's signature is now permissive enough that `OrchestrationEngineStrategy` will be able to point at "the brainstorm step that ran before this iterate block" or "round 2 of the rank-order-voting step" without lying about meaning.
 
 The `_find_previous_activity` semantics that Phase 2 channeled through the seam are split: the call shape used by `activity_pipeline.ensure_input_bundle` becomes an explicit "resolve donor for this consumer" request, and the strategy answers it. The result is that BP-1 from [plans/00_DISCOVERY.md §16](../00_DISCOVERY.md) is no longer a load-bearing linear assumption inside the pipeline — it is a property of the linear strategy, which the engine strategy will not inherit.
@@ -41,6 +41,10 @@ Conclude this step by:
 - Implementing the core logic as the refactored hook signature on `AgendaStrategy`, the updated `LinearAgendaStrategy` implementation that preserves observable behavior, and the updated `activity_pipeline.ensure_input_bundle` call shape, all tagged with `Convergent Yak` comments at the refactor sites.
 - Creating or updating the relevant pytest file by extending `app/tests/test_activity_plugins.py` and `app/tests/test_meeting_manager.py` so the prior-activity parity tests authored in Phase 2 are reframed in terms of the new signature and the iteration storage model from Step 1; do not introduce a new pytest module, as both suites already own the relevant coverage.
 - Updating docstrings and documentation so `app/services/agenda_strategy.py`, `app/services/activity_pipeline.py`, and `docs/ACTIVITY_CONTRACT_SPEC.md` each describe the new prior-activity resolution semantics and cite BP-1 as resolved under `Convergent Yak`.
+
+Technical deviations logged:
+- Updated `app/tests/test_meeting_state.py` in addition to the two required suites because the meeting-state fixture directly asserted the old `resolve_prior_activity(meeting, activity)` call shape.
+- Kept `PriorActivityReference.handle` as a pass-through field only; named-handle interpretation remains Phase 4 orchestration-document work, while Step 2 only makes the interface permissive enough for that future strategy.
 
 ### Step 3 — Author `BundleTransform` and `ConvergencePredicate` Interfaces
 Author two new service modules: `app/services/bundle_transforms.py` containing the `BundleTransform` ABC plus a name-keyed registry, and `app/services/convergence_predicates.py` containing the `ConvergencePredicate` ABC plus a name-keyed registry. Each registry parallels the existing plugin-registry pattern at [`app/plugins/registry.py:11-48`](../../app/plugins/registry.py) so that orchestration documents can later reference transforms and predicates by string name and resolve them deterministically.

@@ -4,6 +4,9 @@ Smug Otter: agenda consultation flows through app/services/agenda_strategy.py.
 `LinearAgendaStrategy` is the Phase 2 reference implementation for today's
 order-index semantics, including safe mid-meeting agenda insertion through the
 strategy seam.
+
+Convergent Yak: input materialization asks the agenda strategy to resolve a
+donor reference for the consumer instead of inferring a previous bundle locally.
 """
 
 from __future__ import annotations
@@ -15,7 +18,7 @@ from sqlalchemy.orm import Session
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.activity_bundle import ActivityBundle
 from app.models.meeting import AgendaActivity, Meeting
-from app.services.agenda_strategy import get_agenda_strategy
+from app.services.agenda_strategy import PriorActivityReference, get_agenda_strategy
 
 
 class ActivityPipeline:
@@ -24,7 +27,10 @@ class ActivityPipeline:
         self.bundle_manager = ActivityBundleManager(db)
 
     def ensure_input_bundle(
-        self, meeting: Meeting, activity: AgendaActivity
+        self,
+        meeting: Meeting,
+        activity: AgendaActivity,
+        prior_reference: Optional[PriorActivityReference] = None,
     ) -> Optional[ActivityBundle]:
         existing = self.bundle_manager.get_latest_bundle(
             meeting.meeting_id, activity.activity_id, "input"
@@ -47,15 +53,19 @@ class ActivityPipeline:
             else:
                 return existing
 
-        # Smug Otter: prior-activity interpretation belongs to AgendaStrategy.
-        previous = get_agenda_strategy(meeting).resolve_prior_activity(
-            meeting, activity
+        # Convergent Yak: prior-bundle interpretation belongs to AgendaStrategy.
+        resolution = get_agenda_strategy(meeting).resolve_prior_activity(
+            meeting, prior_reference or PriorActivityReference.for_consumer(activity)
         )
-        if not previous:
+        if not resolution:
             return None
 
         output = self.bundle_manager.get_latest_bundle(
-            meeting.meeting_id, previous.activity_id, "output"
+            meeting.meeting_id,
+            resolution.activity.activity_id,
+            "output",
+            logical_step_id=resolution.logical_step_id,
+            round_index=resolution.round_index,
         )
         if not output:
             return None
