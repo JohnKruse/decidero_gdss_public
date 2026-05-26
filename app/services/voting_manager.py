@@ -234,15 +234,18 @@ class VotingManager:
         *,
         clear_bundles: bool = True,
     ) -> None:
+        # synchronize_session='fetch' so ORM identity-map entries for deleted
+        # rows are expired and don't ghost-collide with subsequently-created
+        # rows that reuse the same autoincrement id (notably on SQLite).
         self.db.query(VotingVote).filter(
             VotingVote.meeting_id == meeting_id,
             VotingVote.activity_id == activity_id,
-        ).delete(synchronize_session=False)
+        ).delete(synchronize_session="fetch")
         if clear_bundles:
             self.db.query(ActivityBundle).filter(
                 ActivityBundle.meeting_id == meeting_id,
                 ActivityBundle.activity_id == activity_id,
-            ).delete(synchronize_session=False)
+            ).delete(synchronize_session="fetch")
         self.db.commit()
 
     def _resolve_activity(

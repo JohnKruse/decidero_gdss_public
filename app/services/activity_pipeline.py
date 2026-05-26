@@ -43,11 +43,14 @@ class ActivityPipeline:
                 and existing_created
                 and existing_created < activity_created
             ):
+                # synchronize_session='fetch' so the deleted input bundle is
+                # expired from the identity map; otherwise a subsequent insert
+                # that reuses the row's autoincrement id ghost-collides.
                 self.db.query(ActivityBundle).filter(
                     ActivityBundle.meeting_id == meeting.meeting_id,
                     ActivityBundle.activity_id == activity.activity_id,
                     ActivityBundle.kind == "input",
-                ).delete(synchronize_session=False)
+                ).delete(synchronize_session="fetch")
                 self.db.flush()
                 existing = None
             else:

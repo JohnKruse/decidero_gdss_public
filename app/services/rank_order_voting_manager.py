@@ -462,13 +462,18 @@ class RankOrderVotingManager:
         *,
         clear_bundles: bool = True,
     ) -> None:
+        # synchronize_session='fetch' so SQLAlchemy expires the deleted rows
+        # from the identity map. Without it, a deleted ActivityBundle whose
+        # row is later autoincrement-reassigned (common on SQLite) collides
+        # with the ghost entry and triggers an "Identity map already had an
+        # identity" warning on the next flush.
         self.db.query(RankOrderVote).filter(
             RankOrderVote.meeting_id == meeting_id,
             RankOrderVote.activity_id == activity_id,
-        ).delete(synchronize_session=False)
+        ).delete(synchronize_session="fetch")
         if clear_bundles:
             self.db.query(ActivityBundle).filter(
                 ActivityBundle.meeting_id == meeting_id,
                 ActivityBundle.activity_id == activity_id,
-            ).delete(synchronize_session=False)
+            ).delete(synchronize_session="fetch")
         self.db.commit()
