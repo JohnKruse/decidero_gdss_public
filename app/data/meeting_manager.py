@@ -100,6 +100,8 @@ class MeetingManager:
         tool_type: str,
         sequence_cache: Dict[str, int],
     ) -> str:
+        # Convergent Yak: iteration rounds are discriminated on ActivityBundle,
+        # so operator-authored agenda activity ID minting remains unchanged.
         prefix = derive_activity_prefix(tool_type)
         if prefix not in sequence_cache:
             generated = generate_activity_id(self.db, meeting_id, tool_type)

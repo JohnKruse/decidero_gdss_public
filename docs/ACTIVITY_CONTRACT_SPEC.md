@@ -78,7 +78,7 @@ that owns the relevant configuration write.
 | DP | Invariant | Executable witness |
 | --- | --- | --- |
 | DP1 | Stable manifest identity and startup validation | `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema`; `app/tests/test_activity_plugins.py::test_activity_registry_rejects_invalid_manifest` |
-| DP2 | Portable bundle shape with provenance and Phase 3 iteration slot | `app/tests/test_activity_plugins.py::test_bundle_payload_schema_accepts_provenance_and_iteration_extension`; `app/tests/test_activity_plugins.py::test_activity_bundle_manager_roundtrip`; `app/tests/test_transfer_metadata.py::test_transfer_metadata_schema_conformance_for_normalized_payload` |
+| DP2 | Portable bundle shape with provenance and Phase 3 iteration slot | `app/tests/test_activity_plugins.py::test_bundle_payload_schema_accepts_provenance_and_iteration_extension`; `app/tests/test_activity_plugins.py::test_activity_bundle_manager_roundtrip`; `app/tests/test_activity_plugins.py::test_activity_bundle_iteration_storage_is_round_discriminated`; `app/tests/test_activity_plugins.py::test_activity_bundle_legacy_latest_path_is_deterministic`; `app/tests/test_transfer_metadata.py::test_transfer_metadata_schema_conformance_for_normalized_payload` |
 | DP3 | Idempotent `open_activity` under restart | `app/tests/test_activity_plugins.py::test_brainstorming_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_rank_order_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_categorization_open_activity_is_idempotent` |
 | DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults` |
 | DP5 | ThinkLet claims are structured and auditable | `docs/THINKLET_AUDIT.md`; `app/tests/test_activity_plugins.py::test_builtin_manifest_thinklets_match_audit_document`; `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema` |
@@ -132,3 +132,20 @@ Router-driven `POST /api/meetings/{id}/agenda`, strategy-driven
 `create_activity`, and manager-direct `add_agenda_activity` calls all share the
 same identifier minting and resequence path, and router-driven creation emits
 the existing `agenda_update` realtime envelope with the resequenced agenda.
+
+## Iteration Storage Model
+
+Convergent Yak Phase 3 stores iteration state on `ActivityBundle` rows rather
+than minting round-scoped `AgendaActivity` rows. Each bundle has an optional
+`logical_step_id` and a non-negative `round_index` that defaults to `0` for
+all Phase 2 and legacy behavior. Portable payloads mirror the same values in
+the schema-blessed `iteration` object from `bundle_payload.schema.json`.
+
+This model keeps operator-authored agenda IDs and `LinearAgendaStrategy`
+unchanged: iteration is an orchestration concern, not a general agenda concern.
+The existing `(meeting_id, activity_id, kind)` retrieval path remains
+deterministic by returning the highest `round_index` and then the newest row,
+while callers that need a specific round can pass `round_index` and
+`logical_step_id` to `ActivityBundleManager.get_latest_bundle`. Round-N bundles
+therefore never overwrite round-(N-1) bundles, and the complete round history is
+available through `ActivityBundleManager.list_bundles_for_step`.

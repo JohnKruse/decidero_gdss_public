@@ -183,6 +183,101 @@ def test_activity_bundle_manager_roundtrip(db_session):
     assert input_bundle.bundle_metadata == output.bundle_metadata
 
 
+def test_activity_bundle_iteration_storage_is_round_discriminated(db_session):
+    """Convergent Yak: round-N bundles never shadow earlier logical-step rounds."""
+    meeting, activity_one, activity_two, _ = _seed_meeting(db_session)
+    manager = ActivityBundleManager(db_session)
+    round_zero = manager.finalize_output_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        [{"content": "round zero", "metadata": {}, "source": {}}],
+        metadata={"source": "round-zero"},
+        logical_step_id="delphi-rank",
+        round_index=0,
+    )
+    round_one = manager.finalize_output_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        [{"content": "round one", "metadata": {}, "source": {}}],
+        metadata={"source": "round-one"},
+        logical_step_id="delphi-rank",
+        round_index=1,
+    )
+
+    assert round_zero.round_index == 0
+    assert round_one.round_index == 1
+    assert round_zero.bundle_id != round_one.bundle_id
+    assert round_one.bundle_metadata["iteration"] == {
+        "logical_step_id": "delphi-rank",
+        "round_index": 1,
+    }
+
+    latest = manager.get_latest_bundle(
+        meeting.meeting_id, activity_one.activity_id, "output"
+    )
+    assert latest.bundle_id == round_one.bundle_id
+
+    explicit_round_zero = manager.get_latest_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        "output",
+        round_index=0,
+        logical_step_id="delphi-rank",
+    )
+    assert explicit_round_zero.bundle_id == round_zero.bundle_id
+
+    input_bundle = manager.create_input_bundle_from_output(
+        meeting.meeting_id,
+        activity_two.activity_id,
+        round_one,
+    )
+    assert input_bundle.round_index == 1
+    assert input_bundle.logical_step_id == "delphi-rank"
+    assert input_bundle.bundle_metadata["iteration"]["round_index"] == 1
+
+    history = manager.list_bundles_for_step(
+        meeting.meeting_id,
+        "delphi-rank",
+        "output",
+    )
+    assert [bundle.bundle_id for bundle in history] == [
+        round_zero.bundle_id,
+        round_one.bundle_id,
+    ]
+
+
+def test_activity_bundle_legacy_latest_path_is_deterministic(db_session):
+    """Convergent Yak: the legacy activity/kind lookup returns the highest round."""
+    meeting, activity_one, _, _ = _seed_meeting(db_session)
+    manager = ActivityBundleManager(db_session)
+    legacy = manager.create_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        "output",
+        [{"content": "legacy", "metadata": {}, "source": {}}],
+        metadata={"source": "legacy"},
+    )
+    round_two = manager.create_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        "output",
+        [{"content": "round two", "metadata": {}, "source": {}}],
+        metadata={"source": "round-two"},
+        logical_step_id="delphi-rank",
+        round_index=2,
+    )
+
+    assert legacy.round_index == 0
+    assert legacy.logical_step_id is None
+    assert "iteration" not in legacy.bundle_metadata
+    latest = manager.get_latest_bundle(
+        meeting.meeting_id,
+        activity_one.activity_id,
+        "output",
+    )
+    assert latest.bundle_id == round_two.bundle_id
+
+
 def test_builtin_activity_manifests_conform_to_schema():
     """Tangerine Larynx: DP1/DP5 built-in manifests conform to the Phase 1 schema."""
     for plugin in load_builtin_plugins():
