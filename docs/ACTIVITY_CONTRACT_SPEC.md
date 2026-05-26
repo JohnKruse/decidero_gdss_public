@@ -286,6 +286,37 @@ The `activity` step kind carries:
 
 No existing plugin manifest or lifecycle method is altered; DP9 holds.
 
+### `iterate` Step Kind
+
+The `iterate` step kind (Phase 4 Step 3, canary `Insolent Metronome`) loops a
+child sequence of activity steps for up to `max_rounds` rounds. Each round runs
+the child steps once; on round end the engine collects the last child
+activity's output bundle, applies the named `BundleTransform`, appends the
+transformed payload to a per-iterate `bundle_history`, and evaluates the named
+`ConvergencePredicate`. If the predicate fires the loop exits; otherwise the
+loop advances to the next round, bounded by `max_rounds` as a hard ceiling
+enforced regardless of predicate state.
+
+`BundleTransform` and `ConvergencePredicate` are resolved from string names
+declared in the orchestration document against Phase 3's registries at
+[`app/services/bundle_transforms.py`](../app/services/bundle_transforms.py)
+(`get_bundle_transform_registry().get_transform(name)`) and
+[`app/services/convergence_predicates.py`](../app/services/convergence_predicates.py)
+(`get_convergence_predicate_registry().get_predicate(name)`). Unknown names
+fall through to the identity case at the engine layer — round outputs pass
+untransformed and the predicate never fires — so authors should rely on the
+loader to reject unrecognized names at document-load time.
+
+Round-N bundles are kept distinct from round-(N-1) bundles via the Phase 3
+iteration storage model: each activity materialized inside an iterate is
+tagged on the strategy with a stable `logical_step_id` (shared across rounds
+for the same child position) and a `round_index` (0-based). Callers obtain
+these values via `OrchestrationEngineStrategy.iteration_metadata_for(activity_id)`
+and pass them to `ActivityBundleManager.finalize_output_bundle` so the bundle
+row carries the iteration discriminator. `resolve_prior_activity` surfaces the
+donor's `logical_step_id` and `round_index` on the resolution to satisfy the
+Phase 3 explicit-donor-reference hook signature.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather

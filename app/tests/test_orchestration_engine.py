@@ -102,8 +102,8 @@ def test_engine_strategy_plan_from_bare_sequence():
     assert strategy.plan[0][0] == "engine:0.0"
 
 
-def test_engine_strategy_iterate_raises_not_implemented():
-    """Plan construction must raise NotImplementedError for iterate steps."""
+def test_engine_strategy_iterate_initial_plan_covers_round_zero():
+    """At construction, plan is pre-populated with the iterate's round-0 leaves."""
     from app.services.orchestration_loader import (
         OrchestrationDocument,
         OrchestrationMetadata,
@@ -122,13 +122,16 @@ def test_engine_strategy_iterate_raises_not_implemented():
             IterateStep(
                 steps=[ActivityStep(tool_type="brainstorming", title="x", config={})],
                 max_rounds=3,
-                convergence_predicate={"name": "FixedNPredicate", "config": {}},
-                bundle_transform={"name": "IdentityBundleTransform", "config": {}},
+                convergence_predicate={"name": "fixed_n", "config": {"max_rounds": 2}},
+                bundle_transform={"name": "identity", "config": {}},
             )
         ],
     )
-    with pytest.raises(NotImplementedError, match="iterate"):
-        OrchestrationEngineStrategy(doc)
+    strategy = OrchestrationEngineStrategy(doc)
+    # Round 0 leaves are emitted eagerly; further rounds require DB to evaluate
+    # the convergence predicate.
+    assert len(strategy.plan) == 1
+    assert strategy.plan[0][0] == "engine:0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -367,3 +370,169 @@ def test_engine_brainstorm_vote_end_to_end(db_session):
 
     # --- Plan completion ---
     assert strategy.is_complete(meeting)
+
+
+# ---------------------------------------------------------------------------
+# iterate step kind tests (Phase 4 Step 3 — Insolent Metronome)
+# ---------------------------------------------------------------------------
+
+
+def _make_iterate_document(
+    *,
+    max_rounds: int,
+    predicate_name: str,
+    predicate_config: dict,
+    transform_name: str = "identity",
+    transform_config: dict | None = None,
+):
+    """Build a single-iterate orchestration document around one brainstorming child.
+
+    Insolent Metronome: the canary travels in metadata.notes for traceability.
+    """
+    from app.services.orchestration_loader import load_orchestration_data
+
+    return load_orchestration_data({
+        "name": "iterate-test",
+        "version": "1",
+        "author": "phase4step3",
+        "citation": "Insolent Metronome",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Insolent Metronome iterate fixture",
+        },
+        "steps": [{
+            "type": "iterate",
+            "max_rounds": max_rounds,
+            "convergence_predicate": {"name": predicate_name, "config": predicate_config},
+            "bundle_transform": {"name": transform_name, "config": transform_config or {}},
+            "steps": [{"type": "activity", "tool_type": "brainstorming", "title": "round-step"}],
+        }],
+    })
+
+
+def _drive_iterate_to_completion(strategy, meeting, db_session, item_factory):
+    """Mint each round's activity and finalize its output with the supplied items.
+
+    Returns the list of (activity, items) tuples for assertion purposes.
+    """
+    from fastapi import HTTPException
+
+    bm = ActivityBundleManager(db_session)
+    history = []
+    round_counter = 0
+    while True:
+        try:
+            activity = strategy.create_activity(meeting, None, None)
+        except HTTPException:
+            break
+        logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
+        items = item_factory(round_counter)
+        bm.finalize_output_bundle(
+            meeting.meeting_id,
+            activity.activity_id,
+            items,
+            metadata={"source": "iterate-test"},
+            logical_step_id=logical_step_id,
+            round_index=round_index,
+        )
+        history.append((activity, items, round_index))
+        round_counter += 1
+        if round_counter > 20:
+            pytest.fail("iterate ran away — runaway protection tripped at 20 rounds")
+    return history
+
+
+def test_iterate_fixed_n_predicate_exits_at_configured_rounds(db_session):
+    """FixedNPredicate fires once bundle_history reaches max_rounds — engine exits."""
+    doc = _make_iterate_document(
+        max_rounds=10,
+        predicate_name="fixed_n",
+        predicate_config={"max_rounds": 3},
+    )
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    history = _drive_iterate_to_completion(
+        strategy, meeting, db_session, lambda r: [{"content": f"r{r}"}]
+    )
+
+    assert len(history) == 3
+    assert [r for _a, _i, r in history] == [0, 1, 2]
+    # Round-N activities share the same logical_step_id, distinguished by round_index
+    logical_step_ids = {
+        strategy.iteration_metadata_for(a.activity_id)[0] for a, _i, _r in history
+    }
+    assert len(logical_step_ids) == 1
+
+
+def test_iterate_iqr_stability_predicate_exits_when_stable(db_session):
+    """IQRStabilityPredicate fires once two consecutive rounds have stable median IQR."""
+    doc = _make_iterate_document(
+        max_rounds=10,
+        predicate_name="iqr_stability",
+        predicate_config={"threshold": 0.1},
+    )
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    # Build per-round items with stable delphi.iqr so the predicate fires on round 2
+    def factory(round_index):
+        return [
+            {"content": "a", "metadata": {"delphi": {"iqr": 2.0}}},
+            {"content": "b", "metadata": {"delphi": {"iqr": 2.0}}},
+        ]
+
+    history = _drive_iterate_to_completion(strategy, meeting, db_session, factory)
+
+    # Round 0: predicate returns False (history len < 2)
+    # Round 1: predicate returns True (median IQR unchanged) — engine exits
+    assert len(history) == 2
+
+
+def test_iterate_max_rounds_caps_runaway_predicate(db_session):
+    """Degenerate predicate that never fires still terminates at the max_rounds ceiling."""
+    doc = _make_iterate_document(
+        max_rounds=2,
+        predicate_name="fixed_n",
+        predicate_config={"max_rounds": 100},  # never fires within 2 rounds
+    )
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    history = _drive_iterate_to_completion(
+        strategy, meeting, db_session, lambda r: [{"content": f"r{r}"}]
+    )
+
+    assert len(history) == 2
+    assert strategy.is_complete(meeting)
+
+
+def test_iterate_resolve_prior_surfaces_round_index(db_session):
+    """resolve_prior_activity attaches the donor's round_index to the resolution."""
+    doc = _make_iterate_document(
+        max_rounds=10,
+        predicate_name="fixed_n",
+        predicate_config={"max_rounds": 2},
+    )
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    history = _drive_iterate_to_completion(
+        strategy, meeting, db_session, lambda r: [{"content": f"r{r}"}]
+    )
+    assert len(history) == 2
+
+    round1_activity = history[1][0]
+    round0_activity = history[0][0]
+    db_session.refresh(meeting)
+    resolution = strategy.resolve_prior_activity(
+        meeting,
+        PriorActivityReference(consumer_activity_id=round1_activity.activity_id),
+    )
+    assert resolution is not None
+    assert resolution.activity.activity_id == round0_activity.activity_id
+    assert resolution.round_index == 0
+    assert resolution.logical_step_id is not None

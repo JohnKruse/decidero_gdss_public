@@ -20,7 +20,7 @@ hook signature introduced in Phase 3.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -177,58 +177,200 @@ def get_agenda_strategy(meeting: Meeting) -> AgendaStrategy:
     return LinearAgendaStrategy()
 
 
+@dataclass
+class _SequenceFrame:
+    """Insolent Metronome walker frame: a sequence step in progress."""
+
+    steps: List[Any]
+    path: str
+    pointer: int = 0
+
+
+@dataclass
+class _IterateFrame:
+    """Insolent Metronome walker frame: an iterate step in progress.
+
+    Tracks the iteration counter and the bundle history fed to the convergence
+    predicate. `round_activity_ids` collects the activities minted in the
+    current round so the engine can locate the round's output bundle when the
+    round ends.
+    """
+
+    step: Any  # IterateStep
+    path: str
+    pointer: int = 0
+    round_index: int = 0
+    bundle_history: List[Dict[str, Any]] = field(default_factory=list)
+    round_activity_ids: List[str] = field(default_factory=list)
+
+
+class _PlanWalker:
+    """Insolent Metronome state machine that emits plan entries leaf-by-leaf.
+
+    The walker keeps a frame stack and emits one `(logical_step_id, ActivityStep,
+    round_index, iterate_frame)` tuple per call to `advance()`. When the walker
+    must evaluate a convergence predicate to decide whether to start another
+    round, it asks the caller to supply a database session; absent one, it sets
+    `needs_db=True` and returns `None` so the caller can defer eager-walking.
+    """
+
+    def __init__(self, top_steps: List[Any]) -> None:
+        self._stack: List[Any] = [_SequenceFrame(steps=list(top_steps), path="")]
+        self.needs_db: bool = False
+
+    @property
+    def exhausted(self) -> bool:
+        return not self._stack
+
+    def advance(
+        self, db: Optional[Session]
+    ) -> Optional[Tuple[str, Any, int, Optional[_IterateFrame]]]:
+        from app.services.orchestration_loader import (
+            ActivityStep,
+            ConditionalStep,
+            FacilitatorDecisionStep,
+            AIDecisionStep,
+            IterateStep,
+            SequenceStep,
+        )
+        from app.services.bundle_transforms import get_bundle_transform_registry
+        from app.services.convergence_predicates import get_convergence_predicate_registry
+
+        self.needs_db = False
+        while self._stack:
+            frame = self._stack[-1]
+            if isinstance(frame, _SequenceFrame):
+                if frame.pointer >= len(frame.steps):
+                    self._stack.pop()
+                    continue
+                cur = frame.steps[frame.pointer]
+                child_path = (
+                    f"{frame.path}.{frame.pointer}" if frame.path else str(frame.pointer)
+                )
+                frame.pointer += 1
+                if isinstance(cur, ActivityStep):
+                    return (f"engine:{child_path}", cur, 0, None)
+                if isinstance(cur, SequenceStep):
+                    self._stack.append(_SequenceFrame(steps=list(cur.steps), path=child_path))
+                    continue
+                if isinstance(cur, IterateStep):
+                    # Insolent Metronome: dispatch into the iterate state machine.
+                    self._stack.append(_IterateFrame(step=cur, path=child_path))
+                    continue
+                if isinstance(cur, ConditionalStep):
+                    continue  # reserved / deferred — skip silently
+                if isinstance(cur, (FacilitatorDecisionStep, AIDecisionStep)):
+                    raise NotImplementedError(
+                        f"'{cur.type}' step kind is not yet implemented"
+                    )
+                continue
+            elif isinstance(frame, _IterateFrame):
+                if frame.pointer >= len(frame.step.steps):
+                    if db is None:
+                        self.needs_db = True
+                        return None
+                    round_output = self._collect_round_output(frame, db)
+                    transform_spec = frame.step.bundle_transform or {}
+                    transform = get_bundle_transform_registry().get_transform(
+                        transform_spec.get("name", "")
+                    )
+                    transformed = (
+                        transform.transform(round_output or {}, transform_spec.get("config") or {})
+                        if transform is not None
+                        else (round_output or {})
+                    )
+                    frame.bundle_history.append(transformed)
+                    pred_spec = frame.step.convergence_predicate or {}
+                    predicate = get_convergence_predicate_registry().get_predicate(
+                        pred_spec.get("name", "")
+                    )
+                    fired = (
+                        bool(predicate.evaluate(frame.bundle_history, pred_spec.get("config") or {}))
+                        if predicate is not None
+                        else False
+                    )
+                    next_round = frame.round_index + 1
+                    if fired or next_round >= frame.step.max_rounds:
+                        self._stack.pop()
+                        continue
+                    frame.round_index = next_round
+                    frame.pointer = 0
+                    frame.round_activity_ids = []
+                    continue
+                cur = frame.step.steps[frame.pointer]
+                child_path = (
+                    f"{frame.path}.{frame.pointer}" if frame.path else str(frame.pointer)
+                )  # stable across rounds
+                frame.pointer += 1
+                if isinstance(cur, ActivityStep):
+                    return (f"engine:{child_path}", cur, frame.round_index, frame)
+                raise NotImplementedError(
+                    "Nested control flow inside iterate is not supported in Phase 4."
+                )
+        return None
+
+    @staticmethod
+    def _collect_round_output(frame: _IterateFrame, db: Session) -> Dict[str, Any]:
+        if not frame.round_activity_ids:
+            return {"items": [], "metadata": {}}
+        last_activity_id = frame.round_activity_ids[-1]
+        bundle = (
+            db.query(ActivityBundle)
+            .filter(
+                ActivityBundle.activity_id == last_activity_id,
+                ActivityBundle.kind == "output",
+            )
+            .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
+            .first()
+        )
+        if bundle is None:
+            return {"items": [], "metadata": {}}
+        return {
+            "items": list(bundle.items or []),
+            "metadata": dict(bundle.bundle_metadata or {}),
+        }
+
+
 class OrchestrationEngineStrategy(AgendaStrategy):
     """Insolent Metronome step-pointer state machine for orchestration documents.
 
-    Interprets a loaded `OrchestrationDocument` by maintaining a flattened
-    execution plan of leaf steps. `create_activity` materializes the next plan
-    entry as an `AgendaActivity` row; `resolve_prior_activity` uses plan order
-    rather than order-index adjacency to name the donor bundle, preserving the
-    Phase 3 explicit-donor-reference hook signature.
+    Interprets a loaded `OrchestrationDocument` by walking the document AST
+    leaf-by-leaf through a `_PlanWalker`. `create_activity` materializes the
+    next plan entry as an `AgendaActivity` row; `resolve_prior_activity` uses
+    plan order rather than order-index adjacency to name the donor bundle and
+    surfaces the iteration counter (logical_step_id and round_index) on the
+    resolution per the Phase 3 hook signature.
 
-    Phase 4 Step 2 implements the `activity` step kind only. `IterateStep`,
-    `FacilitatorDecisionStep`, and `AIDecisionStep` raise `NotImplementedError`
-    and are delivered in Phase 4 Steps 3-5.
+    Phase 4 Step 3 adds the `iterate` step kind. Each iteration runs the child
+    steps once, applies the named `BundleTransform` to the round output, and
+    evaluates the named `ConvergencePredicate` against the accumulated bundle
+    history (resolved against Phase 3's registries at
+    `app/services/bundle_transforms.py` and
+    `app/services/convergence_predicates.py`). The `max_rounds` bound is a hard
+    ceiling enforced regardless of predicate state.
+
+    `FacilitatorDecisionStep` and `AIDecisionStep` are delivered in Phase 4
+    Steps 4-5.
     """
 
     name = "orchestration"
 
     def __init__(self, document: "OrchestrationDocument") -> None:  # noqa: F821
         self._document = document
-        self._plan: List[Tuple[str, Any]] = self._flatten_plan(document.steps)
+        # (logical_step_id, ActivityStep, round_index, iterate_frame_or_None)
+        self._plan: List[Tuple[str, Any, int, Optional[_IterateFrame]]] = []
+        # activity_id -> (logical_step_id, round_index)
+        self._activity_iteration: Dict[str, Tuple[str, int]] = {}
+        self._walker = _PlanWalker(document.steps)
+        # Eager prefetch: walk until walker requires DB or document is exhausted.
+        self._extend_plan(db=None)
 
-    @staticmethod
-    def _flatten_plan(
-        steps: List[Any],
-        _prefix: str = "",
-    ) -> List[Tuple[str, Any]]:
-        """Flatten the document AST into ordered (logical_step_id, step) leaf pairs."""
-        from app.services.orchestration_loader import (
-            ActivityStep,
-            FacilitatorDecisionStep,
-            AIDecisionStep,
-            IterateStep,
-            SequenceStep,
-        )
-        result: List[Tuple[str, Any]] = []
-        for i, step in enumerate(steps):
-            path = str(i) if not _prefix else f"{_prefix}.{i}"
-            if isinstance(step, SequenceStep):
-                result.extend(
-                    OrchestrationEngineStrategy._flatten_plan(step.steps, path)
-                )
-            elif isinstance(step, ActivityStep):
-                result.append((f"engine:{path}", step))
-            elif isinstance(step, IterateStep):
-                raise NotImplementedError(
-                    "iterate step kind is not yet implemented (Phase 4 Step 3)"
-                )
-            elif isinstance(step, (FacilitatorDecisionStep, AIDecisionStep)):
-                raise NotImplementedError(
-                    f"'{step.type}' step kind is not yet implemented"
-                )
-            # ConditionalStep is reserved/deferred — skip silently
-        return result
+    def _extend_plan(self, db: Optional[Session]) -> None:
+        while True:
+            entry = self._walker.advance(db)
+            if entry is None:
+                return
+            self._plan.append(entry)
 
     def _materialize_count(self, meeting: Meeting, db: Session) -> int:
         """Count AgendaActivity rows already minted for this meeting."""
@@ -260,10 +402,14 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         if reference.donor_activity_id:
             for item in agenda:
                 if item.activity_id == reference.donor_activity_id:
+                    iteration = self._activity_iteration.get(item.activity_id)
                     return PriorActivityResolution(
                         activity=item,
-                        logical_step_id=reference.logical_step_id,
-                        round_index=reference.round_index,
+                        logical_step_id=reference.logical_step_id
+                        or (iteration[0] if iteration else None),
+                        round_index=reference.round_index
+                        if reference.round_index is not None
+                        else (iteration[1] if iteration else None),
                         handle=reference.handle,
                     )
             return None
@@ -274,10 +420,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             if item.activity_id == reference.consumer_activity_id:
                 if previous is None:
                     return None
+                iteration = self._activity_iteration.get(previous.activity_id)
                 return PriorActivityResolution(
                     activity=previous,
-                    logical_step_id=None,
-                    round_index=None,
+                    logical_step_id=iteration[0] if iteration else None,
+                    round_index=iteration[1] if iteration else None,
                     handle=reference.handle,
                 )
             previous = item
@@ -290,12 +437,25 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         )
 
     def is_complete(self, meeting: Meeting) -> bool:
-        if not self._plan:
-            return True
         db = object_session(meeting)
+        if db is not None:
+            self._extend_plan(db)
+        if self._walker.exhausted and not self._plan:
+            return True
         if db is None:
             return False
-        return self._completed_count(meeting, db) >= len(self._plan)
+        return self._walker.exhausted and self._completed_count(meeting, db) >= len(
+            self._plan
+        )
+
+    def iteration_metadata_for(self, activity_id: str) -> Tuple[Optional[str], int]:
+        """Return the (logical_step_id, round_index) recorded for an activity.
+
+        Callers that finalize an activity's output bundle through
+        `ActivityBundleManager` pass these values to honour the Phase 3
+        iteration storage model. Returns (None, 0) for unknown activity ids.
+        """
+        return self._activity_iteration.get(activity_id, (None, 0))
 
     def on_activity_close(self, meeting: Meeting, activity: AgendaActivity) -> None:
         return None
@@ -321,13 +481,15 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             raise ValueError("Meeting is not attached to a database session.")
 
         step_index = self._materialize_count(meeting, db)
+        # Drive walker forward (may evaluate iterate predicates now that we have db)
+        self._extend_plan(db)
         if step_index >= len(self._plan):
             raise HTTPException(
                 status_code=400,
                 detail="Orchestration plan is complete; no further activities to create.",
             )
 
-        logical_step_id, step = self._plan[step_index]
+        logical_step_id, step, round_index, iterate_frame = self._plan[step_index]
         if not isinstance(step, ActivityStep):
             raise NotImplementedError(
                 f"Step at position {step_index} is not an activity step."
@@ -361,6 +523,10 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         db.add(activity)
         db.commit()
         db.refresh(activity)
+
+        if iterate_frame is not None:
+            self._activity_iteration[activity.activity_id] = (logical_step_id, round_index)
+            iterate_frame.round_activity_ids.append(activity.activity_id)
         return activity
 
     @property
@@ -369,4 +535,8 @@ class OrchestrationEngineStrategy(AgendaStrategy):
 
     @property
     def plan(self) -> List[Tuple[str, Any]]:
-        return list(self._plan)
+        """Backward-compatible (logical_step_id, step) tuples for the known plan.
+
+        For iterate-bearing documents this grows as rounds are committed.
+        """
+        return [(logical_step_id, step) for (logical_step_id, step, _r, _f) in self._plan]
