@@ -58,6 +58,8 @@ tool. That makes DP4 reusable by future server-driven step kinds, including
 engine steps that need the same "retry only under declared conditions" behavior
 without inventing a parallel policy shape.
 
+Under Phase 3, this principle is extended to the server: [run_with_retry](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/reliable_writes.py) provides the server-side execution analogue to `runReliableWriteAction`, enforcing the same normalized policies, jittered backoffs, and idempotency guarantees for server-driven actions (such as LLM calls).
+
 ### DP5 - ThinkLet Claims Are Auditable
 
 Manifest `thinklets` are claims about the collaboration pattern embodied by a
@@ -88,7 +90,7 @@ Instead of hardcoded exit conditions, iterative processes evaluate their history
 | DP1 | Stable manifest identity and startup validation | `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema`; `app/tests/test_activity_plugins.py::test_activity_registry_rejects_invalid_manifest` |
 | DP2 | Portable bundle shape with provenance and Phase 3 iteration slot | `app/tests/test_activity_plugins.py::test_bundle_payload_schema_accepts_provenance_and_iteration_extension`; `app/tests/test_activity_plugins.py::test_activity_bundle_manager_roundtrip`; `app/tests/test_activity_plugins.py::test_activity_bundle_iteration_storage_is_round_discriminated`; `app/tests/test_activity_plugins.py::test_activity_bundle_legacy_latest_path_is_deterministic`; `app/tests/test_transfer_metadata.py::test_transfer_metadata_schema_conformance_for_normalized_payload` |
 | DP3 | Idempotent `open_activity` under restart | `app/tests/test_activity_plugins.py::test_brainstorming_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_voting_open_activity_is_idempotent`; `app/tests/test_activity_plugins.py::test_rank_order_voting_open_activity_is_idempotent`; `app/tests/test_categorization_open_activity_is_idempotent` |
-| DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults` |
+| DP4 | Manifest-declared, server-normalized reliability policy | `app/tests/test_activity_plugins.py::test_activity_catalog_includes_core_tools`; `app/tests/test_activity_plugins.py::test_reliability_policy_normalisation_applies_safe_defaults`; `app/tests/test_reliable_writes.py` |
 | DP5 | ThinkLet claims are structured and auditable | `docs/THINKLET_AUDIT.md`; `app/tests/test_activity_plugins.py::test_builtin_manifest_thinklets_match_audit_document`; `app/tests/test_activity_plugins.py::test_builtin_activity_manifests_conform_to_schema` |
 | DP6 | Config validation disposition is explicit and tested | `app/tests/test_activity_plugins.py::test_validate_config_is_documented_plugin_controlled_passthrough` |
 | DP7 | Composable bundle transforms | `app/tests/test_bundle_transforms.py` |

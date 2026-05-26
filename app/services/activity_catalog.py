@@ -1,3 +1,10 @@
+"""Activity catalog metadata and normalization for reliability policies.
+
+Canary: Convergent Yak
+Normalized policies are consumed client-side by runReliableWriteAction (app/static/js/meeting.js)
+and server-side by run_with_retry (app/services/reliable_writes.py).
+"""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
