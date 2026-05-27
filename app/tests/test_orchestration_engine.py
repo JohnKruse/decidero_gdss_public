@@ -862,6 +862,106 @@ def test_ai_decision_review_required_pairs_with_facilitator_decision(db_session)
     assert strategy.is_paused()
 
 
+def test_phase4_composite_document_runs_all_step_kinds(db_session):
+    """Phase 4 closing witness: a single document exercises every step kind.
+
+    Insolent Metronome: activity → iterate(activity, predicate exits at 2 rounds)
+    → ai-decision(review_required=true) → facilitator-decision → activity.
+    Demonstrates that the engine composes the four step kinds without any
+    bespoke seams between them.
+    """
+    from app.services.orchestration_loader import load_orchestration_data
+
+    doc = load_orchestration_data({
+        "name": "phase4-composite",
+        "version": "1",
+        "author": "phase4",
+        "citation": "Insolent Metronome",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Insolent Metronome composite fixture",
+        },
+        "steps": [{"type": "sequence", "steps": [
+            {"type": "activity", "tool_type": "brainstorming", "title": "Seed"},
+            {
+                "type": "iterate",
+                "max_rounds": 5,
+                "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 2}},
+                "bundle_transform": {"name": "identity", "config": {}},
+                "steps": [
+                    {"type": "activity", "tool_type": "brainstorming", "title": "Round"}
+                ],
+            },
+            {
+                "type": "ai-decision",
+                "prompt_template": "Decide.",
+                "output_schema": {
+                    "type": "object",
+                    "required": ["decision"],
+                    "properties": {"decision": {"type": "string"}},
+                },
+                "review_required": True,
+                "context_bundle_keys": [],
+            },
+            {
+                "type": "facilitator-decision",
+                "prompt": "Approve?",
+                "options": ["approve", "reject"],
+                "context_bundle_keys": [],
+            },
+            {"type": "activity", "tool_type": "brainstorming", "title": "Wrap"},
+        ]}],
+    })
+
+    strategy = OrchestrationEngineStrategy(
+        doc, ai_caller=lambda _p, _s: '{"decision": "promote"}'
+    )
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    # 1. Leading activity
+    seed = strategy.create_activity(meeting, None, None)
+    assert seed.tool_type == "brainstorming"
+    bm.finalize_output_bundle(meeting.meeting_id, seed.activity_id, [])
+
+    # 2-3. iterate runs exactly 2 rounds (FixedNPredicate fires after round 2)
+    rounds = []
+    for _ in range(2):
+        act = strategy.create_activity(meeting, None, None)
+        assert act.tool_type == "brainstorming"
+        ls, ri = strategy.iteration_metadata_for(act.activity_id)
+        bm.finalize_output_bundle(
+            meeting.meeting_id, act.activity_id, [],
+            logical_step_id=ls, round_index=ri,
+        )
+        rounds.append((act, ls, ri))
+    # Round indices distinct, logical_step_id shared
+    assert {r[2] for r in rounds} == {0, 1}
+    assert len({r[1] for r in rounds}) == 1
+
+    # 4. ai-decision (synchronous; review_required=true)
+    ai_act = strategy.create_activity(meeting, None, None)
+    assert ai_act.tool_type == OrchestrationEngineStrategy.AI_DECISION_TOOL_TYPE
+    assert not strategy.is_paused()
+
+    # 5. facilitator-decision pauses
+    fd_act = strategy.create_activity(meeting, None, None)
+    assert fd_act.tool_type == OrchestrationEngineStrategy.FACILITATOR_DECISION_TOOL_TYPE
+    assert strategy.is_paused()
+    strategy.resume_with_facilitator_decision(meeting, "approve")
+    assert not strategy.is_paused()
+
+    # 6. trailing activity
+    wrap = strategy.create_activity(meeting, None, None)
+    assert wrap.tool_type == "brainstorming"
+    bm.finalize_output_bundle(meeting.meeting_id, wrap.activity_id, [])
+
+    assert strategy.is_complete(meeting)
+
+
 def test_ai_decision_loader_rejects_review_required_without_following_facilitator():
     """The Step 1 loader surfaces a structured error for review_required=true with no follow-up."""
     from app.services.orchestration_loader import (

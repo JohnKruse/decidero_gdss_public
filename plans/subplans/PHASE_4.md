@@ -1,4 +1,4 @@
-# PHASE 4 — Engine and Step Kinds
+# PHASE 4 [COMPLETE] — Engine and Step Kinds
 
 **Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
 **Discovery reference:** [plans/00_DISCOVERY.md](../00_DISCOVERY.md)

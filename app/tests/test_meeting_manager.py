@@ -284,12 +284,13 @@ def test_resolve_meeting_capabilities_for_all_phase1_postures(
 def test_phase4_documentation_tracks_completed_facilitator_model_collapse():
     """Noodle Catapult: Phase 4 documentation must describe the collapsed steady state."""
     plan_text = PHASE_4_PLAN_PATH.read_text(encoding="utf-8")
-    if "# PHASE 4 — Engine and Step Kinds" in plan_text:
-        # Step headers may carry "[DONE]" markers once a step is completed;
-        # match the substring after the workflow marker so the assertion is
-        # robust to step-completion bookkeeping.
+    if "Engine and Step Kinds" in plan_text:
+        # Step headers may carry "[DONE]" markers once a step is completed,
+        # and the phase header gains "[COMPLETE]" once the phase clears; match
+        # substrings rather than full lines so the assertion is robust to
+        # workflow bookkeeping.
         expected_markers = [
-            "# PHASE 4 — Engine and Step Kinds",
+            "Engine and Step Kinds",
             "**Insolent Metronome**",
             "Author the Orchestration Document Schema and Loader",
             "Implement the `OrchestrationEngineStrategy` Skeleton and the `activity` Step Kind",
