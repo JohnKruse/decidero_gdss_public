@@ -349,6 +349,43 @@ resumption entry point. The executable contract for that entry point is the
 `test_facilitator_decision_*` family in
 [`app/tests/test_orchestration_engine.py`](../app/tests/test_orchestration_engine.py).
 
+### `ai-decision` Step Kind
+
+The `ai-decision` step kind (Phase 4 Step 5, canary `Insolent Metronome`)
+delegates a structured decision to the configured AI provider. Configuration:
+`prompt_template`, `context_bundle_keys` (which prior bundles are rendered
+into the prompt as JSON), an `output_schema` (the minimal JSON-Schema-style
+shape the response must satisfy), and a `review_required` boolean.
+
+The engine renders the prompt by substituting `{key}` placeholders with the
+JSON-encoded latest output bundles named by `context_bundle_keys` (matched
+first against `logical_step_id`, then against `activity_id`), calls the
+injected `ai_caller` (default: a sync wrapper over
+[`app/services/ai_provider.py`](../app/services/ai_provider.py)::`chat_complete`),
+parses the response as JSON, and validates it against `output_schema`. The
+validated payload is captured as a single typed bundle item with
+`metadata.ai_decision` carrying `validated_output`, `review_required`,
+`logical_step_id`, `round_index`, and the idempotency key.
+
+**Schema-validation failures retry via the Phase 3 reliability path** at
+[`app/services/reliable_writes.py::run_with_retry`](../app/services/reliable_writes.py).
+The idempotency key is derived from the engine's step pointer
+(`logical_step_id`) plus `round_index`; a validation failure is reported as a
+retryable result so `run_with_retry` exhausts its retry budget on the same
+key. Budget exhaustion raises `HTTPException(422, ...)` with the final
+schema-validation errors; provider exceptions raise `HTTPException(502,
+...)`. This is the canonical reuse case the Phase 3 reliability path was
+authored for; it works without modifying that path.
+
+**review_required composition.** When `review_required` is `true`, the
+captured bundle carries that flag in its metadata and the orchestration
+document is required (by the Step 1 loader) to author an immediately
+following `facilitator-decision` step. The recommended methodological
+response to AI unreliability is the `review_required → facilitator-decision`
+pattern: the AI proposes; the facilitator disposes. Documents that declare
+`review_required: true` without a following `facilitator-decision` are
+rejected at document-load time, not at runtime.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather

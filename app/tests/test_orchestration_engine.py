@@ -702,3 +702,188 @@ def test_facilitator_decision_resume_without_pause_errors(db_session):
         strategy.resume_with_facilitator_decision(meeting, "approve")
     assert excinfo.value.status_code == 400
     assert "no facilitator-decision is pending" in str(excinfo.value.detail).lower()
+
+
+# ---------------------------------------------------------------------------
+# ai-decision step kind tests (Phase 4 Step 5 — Insolent Metronome)
+# ---------------------------------------------------------------------------
+
+
+def _make_ai_decision_document(
+    *,
+    output_schema=None,
+    review_required=False,
+    follow_with_facilitator=False,
+):
+    """Build a doc with an ai-decision step (optionally followed by a facilitator-decision)."""
+    from app.services.orchestration_loader import load_orchestration_data
+
+    schema = output_schema or {
+        "type": "object",
+        "required": ["decision"],
+        "properties": {"decision": {"type": "string"}},
+    }
+
+    steps = [
+        {
+            "type": "ai-decision",
+            "prompt_template": "What is the right call?",
+            "output_schema": schema,
+            "review_required": bool(review_required),
+            "context_bundle_keys": [],
+        }
+    ]
+    if follow_with_facilitator:
+        steps.append({
+            "type": "facilitator-decision",
+            "prompt": "Approve AI output?",
+            "options": ["approve", "reject"],
+            "context_bundle_keys": [],
+        })
+
+    return load_orchestration_data({
+        "name": "ai-decision-test",
+        "version": "1",
+        "author": "phase4step5",
+        "citation": "Insolent Metronome",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Insolent Metronome ai-decision fixture",
+        },
+        "steps": [{"type": "sequence", "steps": steps}],
+    })
+
+
+def test_ai_decision_happy_path_captures_validated_output(db_session):
+    """AI provider returns a schema-valid response; engine writes it to the bundle stream."""
+    import json as _json
+
+    doc = _make_ai_decision_document()
+    valid_payload = '{"decision": "ship it"}'
+    call_count = {"n": 0}
+
+    def fake_ai_caller(prompt, settings):
+        call_count["n"] += 1
+        return valid_payload
+
+    strategy = OrchestrationEngineStrategy(doc, ai_caller=fake_ai_caller)
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    activity = strategy.create_activity(meeting, None, None)
+    assert activity.tool_type == OrchestrationEngineStrategy.AI_DECISION_TOOL_TYPE
+    assert call_count["n"] == 1
+
+    bundle = bm.get_latest_bundle(meeting.meeting_id, activity.activity_id, "output")
+    assert bundle is not None
+    validate_bundle_payload({
+        "items": bundle.items,
+        "metadata": bundle.bundle_metadata or {},
+    })
+    assert len(bundle.items) == 1
+    item = bundle.items[0]
+    assert _json.loads(item["content"]) == {"decision": "ship it"}
+    ai_meta = item["metadata"]["ai_decision"]
+    assert ai_meta["validated_output"] == {"decision": "ship it"}
+    assert ai_meta["review_required"] is False
+    assert ai_meta["idempotency_key"].endswith(":round0")
+
+
+def test_ai_decision_schema_violation_retries_then_succeeds(db_session):
+    """One retryable schema-validation failure followed by success — demonstrates Phase 3 reuse."""
+    doc = _make_ai_decision_document()
+    responses = ['{"unexpected": true}', '{"decision": "approve"}']
+
+    def fake_ai_caller(prompt, settings):
+        return responses.pop(0)
+
+    strategy = OrchestrationEngineStrategy(
+        doc,
+        ai_caller=fake_ai_caller,
+        ai_retry_policy={"max_retries": 2, "base_delay_ms": 0, "max_delay_ms": 0, "jitter_ratio": 0.0},
+    )
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    activity = strategy.create_activity(meeting, None, None)
+    assert responses == []  # both fed in
+    bundle = bm.get_latest_bundle(meeting.meeting_id, activity.activity_id, "output")
+    assert bundle is not None
+    item_meta = bundle.items[0]["metadata"]["ai_decision"]
+    assert item_meta["validated_output"] == {"decision": "approve"}
+
+
+def test_ai_decision_budget_exhaustion_raises_structured_error(db_session):
+    """If the AI never returns a schema-valid response, the engine surfaces a 422."""
+    from fastapi import HTTPException
+
+    doc = _make_ai_decision_document()
+
+    def always_bad(prompt, settings):
+        return '{"missing_decision_field": true}'
+
+    strategy = OrchestrationEngineStrategy(
+        doc,
+        ai_caller=always_bad,
+        ai_retry_policy={"max_retries": 1, "base_delay_ms": 0, "max_delay_ms": 0, "jitter_ratio": 0.0},
+    )
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    with pytest.raises(HTTPException) as excinfo:
+        strategy.create_activity(meeting, None, None)
+    assert excinfo.value.status_code == 422
+    assert "output_schema" in str(excinfo.value.detail)
+
+
+def test_ai_decision_review_required_pairs_with_facilitator_decision(db_session):
+    """review_required=true: the engine writes the ai-decision then pauses on the following facilitator-decision."""
+    doc = _make_ai_decision_document(review_required=True, follow_with_facilitator=True)
+
+    def fake_ai_caller(prompt, settings):
+        return '{"decision": "promote"}'
+
+    strategy = OrchestrationEngineStrategy(doc, ai_caller=fake_ai_caller)
+    meeting, _ = _seed_engine_meeting(db_session)
+    bm = ActivityBundleManager(db_session)
+
+    ai_activity = strategy.create_activity(meeting, None, None)
+    assert ai_activity.tool_type == OrchestrationEngineStrategy.AI_DECISION_TOOL_TYPE
+    ai_bundle = bm.get_latest_bundle(meeting.meeting_id, ai_activity.activity_id, "output")
+    assert ai_bundle.items[0]["metadata"]["ai_decision"]["review_required"] is True
+    # Engine is NOT paused yet — the ai-decision itself completes synchronously
+    assert not strategy.is_paused()
+
+    # Next create_activity materializes the facilitator-decision and pauses
+    fd_activity = strategy.create_activity(meeting, None, None)
+    assert fd_activity.tool_type == OrchestrationEngineStrategy.FACILITATOR_DECISION_TOOL_TYPE
+    assert strategy.is_paused()
+
+
+def test_ai_decision_loader_rejects_review_required_without_following_facilitator():
+    """The Step 1 loader surfaces a structured error for review_required=true with no follow-up."""
+    from app.services.orchestration_loader import (
+        OrchestrationValidationError,
+        load_orchestration_data,
+    )
+
+    bad_doc = {
+        "name": "n", "version": "1", "author": "a", "citation": "c",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 2},
+        },
+        "steps": [{"type": "ai-decision",
+                   "prompt_template": "p",
+                   "output_schema": {"type": "object"},
+                   "review_required": True,
+                   "context_bundle_keys": []}],
+    }
+    with pytest.raises(OrchestrationValidationError) as excinfo:
+        load_orchestration_data(bad_doc)
+    messages = [e.message for e in excinfo.value.result.errors]
+    assert any("must be immediately followed by a facilitator-decision" in m for m in messages)

@@ -263,9 +263,8 @@ class _PlanWalker:
                     # Insolent Metronome: facilitator-decision pause dispatch.
                     return (f"engine:{child_path}", cur, 0, None)
                 if isinstance(cur, AIDecisionStep):
-                    raise NotImplementedError(
-                        f"'{cur.type}' step kind is not yet implemented"
-                    )
+                    # Insolent Metronome: ai-decision dispatch (Phase 4 Step 5).
+                    return (f"engine:{child_path}", cur, 0, None)
                 continue
             elif isinstance(frame, _IterateFrame):
                 if frame.pointer >= len(frame.step.steps):
@@ -359,17 +358,40 @@ class OrchestrationEngineStrategy(AgendaStrategy):
     name = "orchestration"
 
     FACILITATOR_DECISION_TOOL_TYPE = "facilitator_decision"
+    AI_DECISION_TOOL_TYPE = "ai_decision"
 
-    def __init__(self, document: "OrchestrationDocument") -> None:  # noqa: F821
+    DEFAULT_AI_DECISION_RETRY_POLICY: Dict[str, Any] = {
+        "max_retries": 2,
+        "base_delay_ms": 0,
+        "max_delay_ms": 0,
+        "jitter_ratio": 0.0,
+    }
+
+    def __init__(
+        self,
+        document: "OrchestrationDocument",  # noqa: F821
+        *,
+        ai_caller: Optional[Any] = None,
+        ai_settings: Optional[Dict[str, Any]] = None,
+        ai_retry_policy: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self._document = document
         # (logical_step_id, step, round_index, iterate_frame_or_None) — step may
-        # be an ActivityStep or FacilitatorDecisionStep.
+        # be an ActivityStep, FacilitatorDecisionStep, or AIDecisionStep.
         self._plan: List[Tuple[str, Any, int, Optional[_IterateFrame]]] = []
         # activity_id -> (logical_step_id, round_index)
         self._activity_iteration: Dict[str, Tuple[str, int]] = {}
         # Pending facilitator decision: dict with activity_id/step/logical_step_id
         # while paused, or None when the engine is free to advance.
         self._pending_decision: Optional[Dict[str, Any]] = None
+        # AI-decision injection points. The default `ai_caller` lazily delegates
+        # to `app/services/ai_provider.py::chat_complete` via asyncio.run so
+        # tests can supply a synchronous stub without touching the network.
+        self._ai_caller = ai_caller if ai_caller is not None else _default_ai_caller
+        self._ai_settings: Dict[str, Any] = dict(ai_settings or {})
+        self._ai_retry_policy: Dict[str, Any] = dict(
+            ai_retry_policy or self.DEFAULT_AI_DECISION_RETRY_POLICY
+        )
         self._walker = _PlanWalker(document.steps)
         # Eager prefetch: walk until walker requires DB or document is exhausted.
         self._extend_plan(db=None)
@@ -483,7 +505,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         from app.plugins.registry import get_activity_registry
         from app.services.activity_catalog import get_activity_definition
         from app.utils.identifiers import generate_activity_id, generate_tool_config_id
-        from app.services.orchestration_loader import ActivityStep, FacilitatorDecisionStep
+        from app.services.orchestration_loader import (
+            ActivityStep,
+            AIDecisionStep,
+            FacilitatorDecisionStep,
+        )
 
         db = object_session(meeting)
         if db is None:
@@ -512,6 +538,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         if isinstance(step, FacilitatorDecisionStep):
             return self._materialize_facilitator_decision(
                 meeting, db, step_index, logical_step_id, step
+            )
+
+        if isinstance(step, AIDecisionStep):
+            return self._materialize_ai_decision(
+                meeting, db, step_index, logical_step_id, round_index, step
             )
 
         if not isinstance(step, ActivityStep):
@@ -601,6 +632,189 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "context_bundle_keys": list(step.context_bundle_keys or []),
         }
         return activity
+
+    def _materialize_ai_decision(
+        self,
+        meeting: Meeting,
+        db: Session,
+        step_index: int,
+        logical_step_id: str,
+        round_index: int,
+        step: Any,
+    ) -> AgendaActivity:
+        """Insolent Metronome: ai-decision dispatch with Phase 3 reliability retry.
+
+        Renders the step's `prompt_template` with the named context bundles,
+        calls the injected `ai_caller`, parses the response as JSON, and
+        validates it against the declared `output_schema`. Schema-validation
+        failures are treated as retryable results so Phase 3's
+        `app/services/reliable_writes.py::run_with_retry` retries the call
+        under an idempotency key derived from the engine's step pointer
+        (`logical_step_id`) plus `round_index`. The validated payload is
+        written to the bundle stream as a typed item that satisfies Phase 1's
+        `bundle_payload.schema.json`.
+
+        When `review_required` is True the bundle's metadata records it; the
+        immediately-following `facilitator-decision` step (mandated by the
+        Step 1 loader) is responsible for gating downstream advancement via
+        its own pause/resume cycle.
+        """
+        import json as _json
+        from app.data.activity_bundle_manager import ActivityBundleManager
+        from app.services.reliable_writes import run_with_retry
+        from app.utils.identifiers import generate_activity_id, generate_tool_config_id
+
+        tool_type = self.AI_DECISION_TOOL_TYPE
+        activity_id = generate_activity_id(db, meeting.meeting_id, tool_type)
+        tool_config_id = generate_tool_config_id(activity_id, meeting.meeting_id)
+
+        activity = AgendaActivity(
+            activity_id=activity_id,
+            meeting_id=meeting.meeting_id,
+            tool_type=tool_type,
+            title="AI Decision",
+            order_index=step_index + 1,
+            tool_config_id=tool_config_id,
+            config={
+                "prompt_template": step.prompt_template,
+                "output_schema": step.output_schema,
+                "review_required": bool(step.review_required),
+                "context_bundle_keys": list(step.context_bundle_keys or []),
+            },
+        )
+        db.add(activity)
+        db.commit()
+        db.refresh(activity)
+
+        rendered_prompt = _render_ai_decision_prompt(
+            step.prompt_template,
+            self._resolve_ai_context_bundles(meeting, db, step.context_bundle_keys or []),
+        )
+
+        idempotency_key = f"{logical_step_id}:round{round_index}"
+
+        def _task(_attempt: int, _idem_key: str) -> Dict[str, Any]:
+            raw = self._ai_caller(rendered_prompt, dict(self._ai_settings))
+            try:
+                parsed = _json.loads(raw) if isinstance(raw, str) else raw
+            except _json.JSONDecodeError as exc:
+                return {
+                    "_validation_failed": True,
+                    "errors": [f"JSON parse error: {exc}"],
+                    "raw": raw,
+                }
+            valid, errors = _validate_output_schema(parsed, step.output_schema or {})
+            if not valid:
+                return {"_validation_failed": True, "errors": errors, "parsed": parsed}
+            return {"_validated": True, "parsed": parsed}
+
+        def _should_retry_result(result: Any) -> bool:
+            return isinstance(result, dict) and result.get("_validation_failed", False)
+
+        try:
+            result = run_with_retry(
+                task=_task,
+                policy=dict(self._ai_retry_policy),
+                idempotency_key=idempotency_key,
+                should_retry_result=_should_retry_result,
+                sleep_func=lambda _seconds: None,
+            )
+        except Exception as exc:  # AI provider blew up — surface a structured failure
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    f"AI provider raised in ai-decision step '{logical_step_id}': {exc}"
+                ),
+            ) from exc
+
+        if isinstance(result, dict) and result.get("_validation_failed"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"ai-decision step '{logical_step_id}' exhausted retries; "
+                    f"response failed output_schema validation: "
+                    f"{result.get('errors')}"
+                ),
+            )
+
+        validated = result["parsed"] if isinstance(result, dict) else result
+
+        bundle_manager = ActivityBundleManager(db)
+        content_text = (
+            validated if isinstance(validated, str) else _json.dumps(validated)
+        )
+        bundle_manager.finalize_output_bundle(
+            meeting.meeting_id,
+            activity.activity_id,
+            items=[{
+                "content": content_text,
+                "metadata": {
+                    "ai_decision": {
+                        "validated_output": validated,
+                        "review_required": bool(step.review_required),
+                        "logical_step_id": logical_step_id,
+                        "round_index": round_index,
+                        "idempotency_key": idempotency_key,
+                    }
+                },
+                "source": {
+                    "meeting_id": meeting.meeting_id,
+                    "activity_id": activity.activity_id,
+                    "tool_type": tool_type,
+                },
+                "activity_id": activity.activity_id,
+            }],
+            metadata={
+                "source": "ai_decision",
+                "review_required": bool(step.review_required),
+                "logical_step_id": logical_step_id,
+                "idempotency_key": idempotency_key,
+            },
+        )
+
+        return activity
+
+    @staticmethod
+    def _resolve_ai_context_bundles(
+        meeting: Meeting, db: Session, keys: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Resolve `context_bundle_keys` against the meeting's bundle stream.
+
+        Each key is treated as a `logical_step_id` lookup against the latest
+        `output` bundle carrying that id; if no matching bundle exists, the
+        key is interpreted as an `activity_id` and the latest output bundle
+        for that activity is used. Unresolved keys are silently omitted from
+        the rendered prompt context.
+        """
+        resolved: Dict[str, Dict[str, Any]] = {}
+        for key in keys:
+            bundle = (
+                db.query(ActivityBundle)
+                .filter(
+                    ActivityBundle.meeting_id == meeting.meeting_id,
+                    ActivityBundle.kind == "output",
+                    ActivityBundle.logical_step_id == key,
+                )
+                .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
+                .first()
+            )
+            if bundle is None:
+                bundle = (
+                    db.query(ActivityBundle)
+                    .filter(
+                        ActivityBundle.meeting_id == meeting.meeting_id,
+                        ActivityBundle.kind == "output",
+                        ActivityBundle.activity_id == key,
+                    )
+                    .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
+                    .first()
+                )
+            if bundle is not None:
+                resolved[key] = {
+                    "items": list(bundle.items or []),
+                    "metadata": dict(bundle.bundle_metadata or {}),
+                }
+        return resolved
 
     def pending_decision(self) -> Optional[Dict[str, Any]]:
         """Return the pending facilitator-decision descriptor or None.
@@ -714,3 +928,90 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         For iterate-bearing documents this grows as rounds are committed.
         """
         return [(logical_step_id, step) for (logical_step_id, step, _r, _f) in self._plan]
+
+
+# ---------------------------------------------------------------------------
+# Insolent Metronome: ai-decision helper utilities
+# ---------------------------------------------------------------------------
+
+
+def _default_ai_caller(prompt: str, settings: Dict[str, Any]) -> str:
+    """Default sync wrapper around `app/services/ai_provider.py::chat_complete`.
+
+    Tests inject a synchronous stub so the engine never reaches the network.
+    """
+    import asyncio
+    from app.services.ai_provider import chat_complete
+
+    messages = [{"role": "user", "content": prompt}]
+    system_prompt = settings.get("system_prompt", "") if isinstance(settings, dict) else ""
+    return asyncio.run(chat_complete(settings, messages, system_prompt))
+
+
+def _render_ai_decision_prompt(
+    template: str, context_bundles: Dict[str, Dict[str, Any]]
+) -> str:
+    """Substitute `{key}` placeholders with JSON-encoded context bundles."""
+    import json as _json
+
+    rendered = template
+    for key, bundle in context_bundles.items():
+        placeholder = "{" + key + "}"
+        if placeholder in rendered:
+            rendered = rendered.replace(placeholder, _json.dumps(bundle))
+    return rendered
+
+
+_JSON_SCHEMA_TYPE_MAP = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "boolean": bool,
+    "null": type(None),
+}
+
+
+def _validate_output_schema(data: Any, schema: Dict[str, Any]) -> Tuple[bool, List[str]]:
+    """Minimal JSON-Schema-style validator for ai-decision output_schema.
+
+    Supports the subset the engine and its tests rely on: top-level `type`
+    checks, `required` field presence, recursive `properties` validation, and
+    `items` validation for arrays. Numeric types are validated against `int`
+    or `float` and explicitly reject `bool` for `integer`/`number`. Returns
+    `(valid, errors)` so the caller can include a structured failure detail.
+    """
+    errors: List[str] = []
+    if not isinstance(schema, dict) or not schema:
+        return True, errors
+    expected = schema.get("type")
+    if expected:
+        if expected == "integer":
+            if isinstance(data, bool) or not isinstance(data, int):
+                errors.append(f"expected integer, got {type(data).__name__}")
+                return False, errors
+        elif expected == "number":
+            if isinstance(data, bool) or not isinstance(data, (int, float)):
+                errors.append(f"expected number, got {type(data).__name__}")
+                return False, errors
+        else:
+            py_type = _JSON_SCHEMA_TYPE_MAP.get(expected)
+            if py_type is not None and not isinstance(data, py_type):
+                errors.append(f"expected {expected}, got {type(data).__name__}")
+                return False, errors
+    if expected == "object" and isinstance(data, dict):
+        for required_field in schema.get("required") or []:
+            if required_field not in data:
+                errors.append(f"missing required field '{required_field}'")
+        for field_name, sub_schema in (schema.get("properties") or {}).items():
+            if field_name in data and isinstance(sub_schema, dict):
+                ok, sub_errors = _validate_output_schema(data[field_name], sub_schema)
+                if not ok:
+                    errors.extend(f"{field_name}.{e}" for e in sub_errors)
+    if expected == "array" and isinstance(data, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for idx, item in enumerate(data):
+                ok, sub_errors = _validate_output_schema(item, item_schema)
+                if not ok:
+                    errors.extend(f"[{idx}].{e}" for e in sub_errors)
+    return not errors, errors
