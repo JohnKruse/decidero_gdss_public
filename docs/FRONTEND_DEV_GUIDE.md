@@ -392,3 +392,23 @@ The badge is a presentation hint only. It does not decide whether an ad hoc
 facilitator-inserted activity contributes to orchestration bundle history,
 convergence, or provenance; those richer hybrid semantics are intentionally
 post-HICSS product work.
+
+### Facilitator decision review surface
+
+Phase 5 Step 3 (Loquacious Pelican) adds a facilitator-only decision panel to
+`meeting.html`. The panel appears when the selected/current agenda row has
+`tool_type="facilitator_decision"` and the viewer can manage the meeting.
+
+The JavaScript flow is:
+
+1. `updateActivityPanels` detects the active facilitator-decision row.
+2. `loadFacilitatorDecisionDetail` calls
+   `/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{activity_id}`.
+3. The panel renders the prompt, typed options, and any immediately-preceding
+   `ai_decision` proposal returned by the endpoint.
+4. Choosing an option posts to
+   `/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{activity_id}/responses`.
+
+The panel reuses existing meeting state and agenda websocket envelopes; do not
+add a separate orchestration socket or client-side polling loop for decision
+review.

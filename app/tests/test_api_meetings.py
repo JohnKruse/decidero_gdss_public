@@ -20,6 +20,7 @@ from app.schemas.meeting import MeetingCreate, PublicityType
 from app.models.categorization import CategorizationBallot
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity
+from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.voting import VotingVote
 from app.models.user import UserRole
 from app.utils.security import get_password_hash
@@ -66,7 +67,7 @@ def test_phase5_step1_inventory_tracks_external_facilitator_contract_debt():
             "**Loquacious Pelican**",
             "### Step 1 — [DONE] Backend Broadcast Envelope for Engine-Driven Mutations",
             "### Step 2 — [DONE] Frontend Cache Invalidation and Non-Linear Topology Rendering",
-            "### Step 3 — Facilitator-Decision and AI-Decision Review UI Surface",
+            "### Step 3 — [DONE] Facilitator-Decision and AI-Decision Review UI Surface",
             "### Step 4 — End-to-End Coherence Validation",
             "BP-5",
             "BP-10",
@@ -1079,6 +1080,170 @@ def test_running_meeting_agenda_post_resequences_and_broadcasts(
             item["activity_id"] == created["activity_id"]
             for item in message["payload"]
         )
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_facilitator_decision_state_surfaces_prior_ai_review(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    """Loquacious Pelican: facilitator decision UI can load prompt/options and AI proposal."""
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Decision State API",
+            description="Review endpoint test.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=admin_user.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=admin_user.user_id,
+        agenda_items=[],
+    )
+    ai_activity = AgendaActivity(
+        activity_id=f"{meeting.meeting_id}-AI-0001",
+        meeting_id=meeting.meeting_id,
+        tool_type="ai_decision",
+        title="AI Summary",
+        order_index=1,
+        tool_config_id=f"{meeting.meeting_id}-CFG-AI-0001",
+        config={},
+    )
+    decision_activity = AgendaActivity(
+        activity_id=f"{meeting.meeting_id}-FD-0001",
+        meeting_id=meeting.meeting_id,
+        tool_type="facilitator_decision",
+        title="Approve summary?",
+        order_index=2,
+        tool_config_id=f"{meeting.meeting_id}-CFG-FD-0001",
+        config={
+            "prompt": "Approve summary?",
+            "options": ["approve", "reject"],
+            "context_bundle_keys": [],
+        },
+    )
+    db_session.add_all([ai_activity, decision_activity])
+    db_session.commit()
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting.meeting_id,
+        ai_activity.activity_id,
+        items=[{
+            "content": '{"summary": "Promote option A"}',
+            "metadata": {
+                "ai_decision": {
+                    "validated_output": {"summary": "Promote option A"},
+                    "review_required": True,
+                }
+            },
+            "source": {
+                "meeting_id": meeting.meeting_id,
+                "activity_id": ai_activity.activity_id,
+                "tool_type": "ai_decision",
+            },
+        }],
+        metadata={"source": "ai_decision"},
+    )
+
+    response = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/orchestration/facilitator-decisions/{decision_activity.activity_id}"
+    )
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert payload["prompt"] == "Approve summary?"
+    assert payload["options"] == ["approve", "reject"]
+    assert payload["ai_decision"]["validated_output"] == {"summary": "Promote option A"}
+
+
+def test_facilitator_decision_response_writes_bundle_and_broadcasts(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+    mocker,
+):
+    """Loquacious Pelican: decision response uses existing agenda/state envelopes."""
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Decision Response API",
+            description="Resume endpoint test.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=admin_user.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=admin_user.user_id,
+        agenda_items=[],
+    )
+    decision_activity = AgendaActivity(
+        activity_id=f"{meeting.meeting_id}-FD-0002",
+        meeting_id=meeting.meeting_id,
+        tool_type="facilitator_decision",
+        title="Continue?",
+        order_index=1,
+        tool_config_id=f"{meeting.meeting_id}-CFG-FD-0002",
+        config={
+            "prompt": "Continue?",
+            "options": ["continue", "stop"],
+            "context_bundle_keys": [],
+        },
+    )
+    db_session.add(decision_activity)
+    db_session.commit()
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": decision_activity.activity_id,
+                "agendaItemId": decision_activity.activity_id,
+                "currentTool": "facilitator_decision",
+                "status": "in_progress",
+                "activeActivities": {
+                    decision_activity.activity_id: {
+                        "activityId": decision_activity.activity_id,
+                        "tool": "facilitator_decision",
+                        "status": "in_progress",
+                    }
+                },
+            },
+        )
+    )
+    broadcast_mock = mocker.patch(
+        "app.services.orchestration_realtime.websocket_manager.broadcast"
+    )
+
+    try:
+        response = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/orchestration/facilitator-decisions/{decision_activity.activity_id}/responses",
+            json={"chosen_option": "continue"},
+        )
+        assert response.status_code == 200, response.json()
+        payload = response.json()
+        assert payload["chosen_option"] == "continue"
+        assert payload["state"]["currentActivity"] is None
+        bundle = ActivityBundleManager(db_session).get_latest_bundle(
+            meeting.meeting_id,
+            decision_activity.activity_id,
+            "output",
+        )
+        assert bundle.items[0]["metadata"]["facilitator_decision"]["chosen"] == "continue"
+        assert broadcast_mock.await_count == 2
+        assert broadcast_mock.await_args_list[0].args[1]["type"] == "agenda_update"
+        assert broadcast_mock.await_args_list[1].args[1]["type"] == "meeting_state"
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 

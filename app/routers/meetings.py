@@ -37,6 +37,7 @@ from app.data.meeting_manager import (
     MeetingManager,
     get_meeting_manager,
 )
+from app.data.activity_bundle_manager import ActivityBundleManager
 from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.auth.auth import (
     get_current_user,
@@ -63,6 +64,7 @@ from app.plugins.context import ActivityContext
 from app.plugins.registry import get_activity_registry
 from app.services.activity_pipeline import ActivityPipeline
 from app.services.agenda_strategy import get_agenda_strategy
+from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.services.transfer_source import get_transfer_count
 from app.plugins.autosave import start_autosave, stop_autosave
 from app.utils.websocket_manager import websocket_manager
@@ -120,6 +122,10 @@ class ParticipantBulkUpdatePayload(BaseModel):
                 seen.add(identifier)
                 cleaned.append(identifier)
         return cleaned
+
+
+class FacilitatorDecisionResponsePayload(BaseModel):
+    chosen_option: str = Field(..., min_length=1)
 
 
 class ActivityParticipantUpdatePayload(BaseModel):
@@ -1898,6 +1904,183 @@ async def update_meeting(
             detail="Failed to update meeting",
         )
     return _serialize_meeting_response(updated_meeting, user)
+
+
+def _get_facilitator_decision_activity(
+    meeting: Meeting,
+    activity_id: str,
+) -> AgendaActivity:
+    activity = next(
+        (
+            item
+            for item in meeting.agenda_activities
+            if item.activity_id == activity_id
+        ),
+        None,
+    )
+    if not activity:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Facilitator decision activity not found.",
+        )
+    if (activity.tool_type or "").lower() != "facilitator_decision":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Activity is not a facilitator-decision step.",
+        )
+    return activity
+
+
+def _latest_ai_decision_before(
+    meeting_manager: MeetingManager,
+    meeting: Meeting,
+    activity: AgendaActivity,
+) -> Optional[Dict[str, object]]:
+    prior_ai = [
+        item
+        for item in meeting.agenda_activities
+        if item.order_index < activity.order_index
+        and (item.tool_type or "").lower() == "ai_decision"
+    ]
+    if not prior_ai:
+        return None
+    prior_ai.sort(key=lambda item: item.order_index, reverse=True)
+    bundle = ActivityBundleManager(meeting_manager.db).get_latest_bundle(
+        meeting.meeting_id,
+        prior_ai[0].activity_id,
+        "output",
+    )
+    if not bundle or not bundle.items:
+        return None
+    first_item = bundle.items[0]
+    metadata = first_item.get("metadata") if isinstance(first_item, dict) else {}
+    ai_meta = metadata.get("ai_decision") if isinstance(metadata, dict) else {}
+    return {
+        "activity_id": prior_ai[0].activity_id,
+        "title": prior_ai[0].title,
+        "content": first_item.get("content") if isinstance(first_item, dict) else None,
+        "validated_output": (
+            ai_meta.get("validated_output") if isinstance(ai_meta, dict) else None
+        ),
+    }
+
+
+@router.get("/{meeting_id}/orchestration/facilitator-decisions/{activity_id}")
+async def get_facilitator_decision_state(
+    meeting_id: str,
+    activity_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+):
+    """Loquacious Pelican: return the facilitator decision prompt/options for the UI."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_manage"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only facilitators can review orchestration decisions.",
+        )
+
+    activity = _get_facilitator_decision_activity(meeting, activity_id)
+    config = dict(activity.config or {})
+    return {
+        "meeting_id": meeting_id,
+        "activity_id": activity.activity_id,
+        "prompt": config.get("prompt") or activity.title,
+        "options": list(config.get("options") or []),
+        "context_bundle_keys": list(config.get("context_bundle_keys") or []),
+        "ai_decision": _latest_ai_decision_before(meeting_manager, meeting, activity),
+    }
+
+
+@router.post("/{meeting_id}/orchestration/facilitator-decisions/{activity_id}/responses")
+async def respond_facilitator_decision(
+    meeting_id: str,
+    activity_id: str,
+    payload: FacilitatorDecisionResponsePayload,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+):
+    """Loquacious Pelican: capture a facilitator-decision response and broadcast state."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_manage"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only facilitators can respond to orchestration decisions.",
+        )
+
+    activity = _get_facilitator_decision_activity(meeting, activity_id)
+    config = dict(activity.config or {})
+    options = list(config.get("options") or [])
+    chosen = payload.chosen_option.strip()
+    if chosen not in options:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Facilitator choice '{chosen}' is not one of the configured options: {options}.",
+        )
+
+    bundle = ActivityBundleManager(meeting_manager.db).finalize_output_bundle(
+        meeting_id,
+        activity.activity_id,
+        items=[{
+            "content": chosen,
+            "metadata": {
+                "facilitator_decision": {
+                    "prompt": config.get("prompt") or activity.title,
+                    "options": options,
+                    "chosen": chosen,
+                    "actor_user_id": user.user_id,
+                    "logical_step_id": (config.get("_orchestration") or {}).get("logical_step_id"),
+                }
+            },
+            "source": {
+                "meeting_id": meeting_id,
+                "activity_id": activity.activity_id,
+                "tool_type": "facilitator_decision",
+            },
+            "activity_id": activity.activity_id,
+            "user_id": user.user_id,
+        }],
+        metadata={
+            "source": "facilitator_decision",
+            "options": options,
+            "chosen": chosen,
+        },
+    )
+
+    realtime = await broadcast_engine_agenda_mutation(
+        meeting_id=meeting_id,
+        initiator_id=user.user_id,
+        meeting_manager=meeting_manager,
+        state_patch={
+            "currentActivity": None,
+            "agendaItemId": None,
+            "currentTool": None,
+            "status": "completed",
+            "activeActivities": {activity.activity_id: None},
+        },
+        action="engine_resume_facilitator_decision",
+    )
+    return {
+        "meeting_id": meeting_id,
+        "activity_id": activity.activity_id,
+        "chosen_option": chosen,
+        "bundle_id": bundle.bundle_id,
+        "state": realtime.get("state"),
+    }
 
 
 @router.post("/{meeting_id}/control", response_model=MeetingControlResponse)

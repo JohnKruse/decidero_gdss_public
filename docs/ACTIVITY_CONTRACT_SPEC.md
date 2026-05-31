@@ -343,11 +343,29 @@ tool-type triple. Invalid options raise `HTTPException(400, ...)` and leave
 the engine paused so the caller can retry. Calling resume when no decision is
 pending also raises a structured error.
 
-**UI is out of scope here.** Phase 5 owns the dashboard surface that lets a
-facilitator actually respond; Phase 4 Step 4 only ships the service-layer
-resumption entry point. The executable contract for that entry point is the
-`test_facilitator_decision_*` family in
-[`app/tests/test_orchestration_engine.py`](../app/tests/test_orchestration_engine.py).
+**UI and router surface.** Phase 5 Step 3 (Loquacious Pelican) adds the
+facilitator-facing meeting-page surface and the router endpoint that captures a
+chosen option. The UI is shown only to meeting managers/facilitators and reads
+the materialized `facilitator_decision` agenda row's `config.prompt`,
+`config.options`, and `config.context_bundle_keys`. If the immediately
+preceding agenda row is an `ai_decision` with an output bundle, the endpoint
+also returns that AI proposal so the UI can display the review-required
+composition.
+
+The production endpoint captures the selected option against the materialized
+`facilitator_decision` row, writes the same typed output-bundle shape as
+`OrchestrationEngineStrategy.resume_with_facilitator_decision`, and broadcasts
+through `app/services/orchestration_realtime.py`. Until orchestration strategy
+instances are persisted and rebound by routers, this endpoint resumes the
+materialized decision row rather than calling an in-memory strategy instance.
+The service-layer executable contract remains the `test_facilitator_decision_*`
+family in
+[`app/tests/test_orchestration_engine.py`](../app/tests/test_orchestration_engine.py);
+the router/UI witnesses are
+`app/tests/test_api_meetings.py::test_facilitator_decision_state_surfaces_prior_ai_review`,
+`app/tests/test_api_meetings.py::test_facilitator_decision_response_writes_bundle_and_broadcasts`,
+and
+`app/tests/test_frontend_smoke.py::test_meeting_page_has_facilitator_decision_review_surface`.
 
 ### `ai-decision` Step Kind
 

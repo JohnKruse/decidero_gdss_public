@@ -226,6 +226,27 @@ def test_meeting_js_supports_orchestration_round_agenda_rows():
     assert ".agenda-item-round" in css
 
 
+def test_meeting_page_has_facilitator_decision_review_surface():
+    """Loquacious Pelican: meeting UI exposes the orchestration decision surface."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+
+    assert "data-facilitator-decision-root" in html
+    assert "facilitatorDecisionPrompt" in html
+    assert "facilitatorDecisionAiReview" in html
+    assert "facilitatorDecisionOptions" in html
+    assert "loadFacilitatorDecisionDetail" in js
+    assert "submitFacilitatorDecision" in js
+    assert "facilitator_decision" in js
+    assert "/orchestration/facilitator-decisions/" in js
+    assert ".facilitator-decision-panel .decision-prompt" in css
+    assert ".decision-options" in css
+
+
 def test_remote_tunnel_script_has_retry_and_log_rotation():
     with open("start_remote_tunnel.sh", "r", encoding="utf-8") as handle:
         script = handle.read()

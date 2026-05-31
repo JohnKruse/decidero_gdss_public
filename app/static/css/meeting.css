@@ -292,6 +292,35 @@
   white-space: nowrap;
 }
 
+.facilitator-decision-panel .decision-prompt {
+  margin: 0;
+  color: var(--navy-blue);
+  font-weight: 600;
+}
+
+.decision-review {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border-radius: 8px;
+  background: rgba(11, 61, 145, 0.05);
+  border: 1px solid rgba(11, 61, 145, 0.12);
+}
+
+.decision-review pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #0f1b2e;
+  font: 0.85rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.decision-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .meeting-activity-card .activity-details-grid {
   display: grid;
   gap: 1rem;

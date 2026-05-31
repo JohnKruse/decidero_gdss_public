@@ -322,6 +322,14 @@
                 title: document.getElementById("genericToolTitle"),
                 description: document.getElementById("genericToolDescription"),
             },
+            facilitatorDecision: {
+                root: document.querySelector("[data-facilitator-decision-root]"),
+                prompt: document.getElementById("facilitatorDecisionPrompt"),
+                aiReview: document.getElementById("facilitatorDecisionAiReview"),
+                aiOutput: document.getElementById("facilitatorDecisionAiOutput"),
+                options: document.getElementById("facilitatorDecisionOptions"),
+                status: document.getElementById("facilitatorDecisionStatus"),
+            },
             // Collision Modal
             collisionModal: document.getElementById("collisionModal"),
             closeCollisionModal: document.getElementById("closeCollisionModal"),
@@ -411,6 +419,12 @@
             ideasBody: document.getElementById("transferIdeasBody"),
             saveDraft: document.getElementById("saveTransferDraft"),
             commit: document.getElementById("commitTransfer"),
+        };
+
+        const facilitatorDecisionState = {
+            activityId: null,
+            loading: false,
+            responding: false,
         };
 
         const participants = new Map();
@@ -6470,6 +6484,118 @@
                     : `This ${moduleMeta.label || toolType} activity is closed. Review details with your facilitator.`);
         }
 
+        function setFacilitatorDecisionStatus(message, variant = "info") {
+            if (!ui.facilitatorDecision.status) {
+                return;
+            }
+            ui.facilitatorDecision.status.textContent = message || "";
+            ui.facilitatorDecision.status.dataset.variant = message ? variant : "";
+        }
+
+        function renderFacilitatorDecisionOptions(activityId, options) {
+            if (!ui.facilitatorDecision.options) {
+                return;
+            }
+            ui.facilitatorDecision.options.innerHTML = "";
+            (options || []).forEach((option) => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "control-btn primary sm";
+                button.textContent = option;
+                button.disabled = facilitatorDecisionState.responding;
+                button.addEventListener("click", () => submitFacilitatorDecision(activityId, option));
+                ui.facilitatorDecision.options.appendChild(button);
+            });
+        }
+
+        function renderFacilitatorDecisionPanel(activity, detail = null) {
+            if (!ui.facilitatorDecision.root) {
+                return;
+            }
+            const config = activity?.config || {};
+            const prompt = detail?.prompt || config.prompt || activity?.title || "Decision required.";
+            const options = detail?.options || config.options || [];
+            ui.facilitatorDecision.root.hidden = false;
+            if (ui.facilitatorDecision.prompt) {
+                ui.facilitatorDecision.prompt.textContent = prompt;
+            }
+            const aiDecision = detail?.ai_decision || null;
+            if (ui.facilitatorDecision.aiReview && ui.facilitatorDecision.aiOutput) {
+                if (aiDecision && (aiDecision.validated_output !== null || aiDecision.content)) {
+                    ui.facilitatorDecision.aiReview.hidden = false;
+                    ui.facilitatorDecision.aiOutput.textContent =
+                        typeof aiDecision.validated_output === "object" && aiDecision.validated_output !== null
+                            ? JSON.stringify(aiDecision.validated_output, null, 2)
+                            : String(aiDecision.content || aiDecision.validated_output || "");
+                } else {
+                    ui.facilitatorDecision.aiReview.hidden = true;
+                    ui.facilitatorDecision.aiOutput.textContent = "";
+                }
+            }
+            renderFacilitatorDecisionOptions(activity.activity_id, options);
+        }
+
+        async function loadFacilitatorDecisionDetail(activity) {
+            if (!activity || facilitatorDecisionState.loading) {
+                return;
+            }
+            facilitatorDecisionState.loading = true;
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/orchestration/facilitator-decisions/${encodeURIComponent(activity.activity_id)}`,
+                    { credentials: "include" },
+                );
+                if (!response.ok) {
+                    throw new Error("Unable to load facilitator decision.");
+                }
+                const detail = await response.json();
+                if (facilitatorDecisionState.activityId === activity.activity_id) {
+                    renderFacilitatorDecisionPanel(activity, detail);
+                }
+            } catch (error) {
+                console.warn("Unable to load facilitator decision detail.", error);
+                setFacilitatorDecisionStatus(error.message || "Unable to load decision detail.", "error");
+            } finally {
+                facilitatorDecisionState.loading = false;
+            }
+        }
+
+        async function submitFacilitatorDecision(activityId, option) {
+            if (!activityId || facilitatorDecisionState.responding) {
+                return;
+            }
+            facilitatorDecisionState.responding = true;
+            setFacilitatorDecisionStatus("Submitting decision...", "info");
+            renderFacilitatorDecisionOptions(activityId, state.agendaMap.get(activityId)?.config?.options || []);
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/orchestration/facilitator-decisions/${encodeURIComponent(activityId)}/responses`,
+                    {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ chosen_option: option }),
+                    },
+                );
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(typeof data.detail === "string" ? data.detail : "Unable to submit decision.");
+                }
+                if (data.state) {
+                    handleStateSnapshot(data.state, true);
+                }
+                setFacilitatorDecisionStatus(`Decision submitted: ${option}`, "success");
+            } catch (error) {
+                setFacilitatorDecisionStatus(error.message || "Unable to submit decision.", "error");
+            } finally {
+                facilitatorDecisionState.responding = false;
+                const activity = state.agendaMap.get(activityId);
+                if (activity) {
+                    renderFacilitatorDecisionPanel(activity);
+                }
+            }
+        }
+
         function updateActivityPanels(snapshot) {
             const eligibility = resolveSelectedActivityContext(snapshot);
             const toolType = (eligibility?.toolType || "").toLowerCase();
@@ -6485,6 +6611,7 @@
             let showVoting = showTool && toolType === "voting";
             let showRankOrder = showTool && toolType === "rank_order_voting";
             let showCategorization = showTool && toolType === "categorization";
+            const showFacilitatorDecision = showTool && toolType === "facilitator_decision" && state.isFacilitator;
             const showTransfer = transferState.active && state.isFacilitator;
             if (showTransfer) {
                 showBrainstorming = false;
@@ -6704,7 +6831,19 @@
                 }
             }
 
-            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showCategorization && !showTransfer && toolType;
+            if (ui.facilitatorDecision.root) {
+                ui.facilitatorDecision.root.hidden = !showFacilitatorDecision;
+                if (showFacilitatorDecision && activeActivity) {
+                    if (facilitatorDecisionState.activityId !== activeActivity.activity_id) {
+                        facilitatorDecisionState.activityId = activeActivity.activity_id;
+                        setFacilitatorDecisionStatus("");
+                    }
+                    renderFacilitatorDecisionPanel(activeActivity);
+                    loadFacilitatorDecisionDetail(activeActivity);
+                }
+            }
+
+            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showCategorization && !showTransfer && !showFacilitatorDecision && toolType;
             showActiveToolPanel(
                 showGeneric ? toolType : null,
                 showGeneric ? activeActivity : null,

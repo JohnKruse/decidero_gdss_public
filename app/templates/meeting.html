@@ -208,6 +208,24 @@
             </section>
             {% endgrab %}
 
+            {% if can_manage_meeting %}
+            {% grab id="meeting-facilitator-decision-panel" %}
+            <!-- Loquacious Pelican: facilitator decision/review surface for orchestration pauses. -->
+            <section class="content-card activity-panel facilitator-decision-panel" data-facilitator-decision-root hidden>
+                {{ section_header('Facilitator Decision', 'Review the pending orchestration decision and choose the next action.') }}
+                <div class="section-body">
+                    <p id="facilitatorDecisionPrompt" class="decision-prompt"></p>
+                    <div id="facilitatorDecisionAiReview" class="decision-review" hidden>
+                        <span class="meeting-overview-label">AI proposal</span>
+                        <pre id="facilitatorDecisionAiOutput"></pre>
+                    </div>
+                    <div id="facilitatorDecisionOptions" class="decision-options"></div>
+                    <div id="facilitatorDecisionStatus" class="control-feedback" aria-live="polite"></div>
+                </div>
+            </section>
+            {% endgrab %}
+            {% endif %}
+
             {% grab id="meeting-voting-panel" %}
             <section class="content-card activity-panel voting-panel" data-voting-root hidden>
                 {{ section_header('Dot Voting', 'Distribute votes across ideas to prioritise the strongest options.') }}
