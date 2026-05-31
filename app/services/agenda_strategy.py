@@ -15,6 +15,11 @@ Convergent Yak: prior-bundle resolution now flows through explicit donor
 requests rather than making the activity pipeline infer meaning from order
 adjacency. Both strategies respect the `PriorActivityReference`/`PriorActivityResolution`
 hook signature introduced in Phase 3.
+
+Loquacious Pelican: realtime broadcast side effects stay outside this
+synchronous strategy interface. Engine callers broadcast mutations through
+`app.services.orchestration_realtime` after `create_activity` or
+`resume_with_facilitator_decision` returns.
 """
 
 from __future__ import annotations

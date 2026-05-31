@@ -386,6 +386,35 @@ pattern: the AI proposes; the facilitator disposes. Documents that declare
 `review_required: true` without a following `facilitator-decision` are
 rejected at document-load time, not at runtime.
 
+### Realtime Broadcast Coherence
+
+Phase 5 Step 1 (Loquacious Pelican) keeps engine-driven realtime side effects
+behind `app/services/orchestration_realtime.py` rather than adding methods to
+the synchronous `AgendaStrategy` interface. After an engine caller materializes
+an activity with `OrchestrationEngineStrategy.create_activity` or resumes a
+pause with `resume_with_facilitator_decision`, it calls
+`broadcast_engine_agenda_mutation(...)` from an async boundary.
+
+The helper emits the same two websocket envelope shapes already used by
+facilitator-driven meetings:
+
+- `agenda_update`, with a serialized agenda payload and
+  `meta.initiatorId`, matching the router helper used after manual agenda
+  mutations.
+- `meeting_state`, with the full meeting-state snapshot and metadata naming
+  the engine action, matching the envelope used by facilitator control
+  actions when `currentActivity`, `currentTool`, `status`, or
+  `activeActivities` changes.
+
+No orchestration-specific websocket message type is introduced. This resolves
+BP-5 for the backend broadcast surface: connected clients can learn about
+engine-created activities and facilitator-decision resume events through the
+same realtime channels they already consume for facilitator-driven meetings.
+The executable witness is
+`app/tests/test_meeting_state.py::test_engine_activity_mutation_reuses_agenda_and_state_broadcasts`
+and
+`app/tests/test_meeting_state.py::test_engine_facilitator_decision_resume_reuses_realtime_envelopes`.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather
@@ -402,5 +431,4 @@ the `Insolent Metronome` canary in its `metadata.notes` slot. The end-to-end
 test at `app/tests/test_orchestration_engine.py::test_engine_brainstorm_vote_end_to_end`
 validates that the loader, engine strategy, both plugins, and Phase 1's bundle
 schema all compose correctly across a live in-memory meeting.
-
 

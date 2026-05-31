@@ -64,7 +64,7 @@ def test_phase5_step1_inventory_tracks_external_facilitator_contract_debt():
         expected_markers = [
             "# PHASE 5 — Realtime and Frontend Coherence",
             "**Loquacious Pelican**",
-            "### Step 1 — Backend Broadcast Envelope for Engine-Driven Mutations",
+            "### Step 1 — [DONE] Backend Broadcast Envelope for Engine-Driven Mutations",
             "### Step 2 — Frontend Cache Invalidation and Non-Linear Topology Rendering",
             "### Step 3 — Facilitator-Decision and AI-Decision Review UI Surface",
             "### Step 4 — End-to-End Coherence Validation",

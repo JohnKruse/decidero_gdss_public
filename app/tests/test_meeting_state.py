@@ -11,9 +11,12 @@ from app.data.user_manager import UserManager
 from app.schemas.meeting import MeetingCreate, AgendaActivityCreate
 from app.services.agenda_strategy import (
     LinearAgendaStrategy,
+    OrchestrationEngineStrategy,
     PriorActivityReference,
     get_agenda_strategy,
 )
+from app.services.orchestration_loader import load_orchestration_data
+from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.utils.security import get_password_hash
 
 
@@ -147,6 +150,166 @@ def test_meeting_state_websocket_flow(db_session, client: TestClient, mocker):
             assert state_payload["updatedAt"]
     finally:
         asyncio.run(meeting_state_manager.reset(meeting_id))
+
+
+def _seed_orchestration_meeting(db_session, title: str = "Engine Realtime"):
+    user_manager = UserManager()
+    user_manager.set_db(db_session)
+    owner = user_manager.add_user(
+        first_name="Engine",
+        last_name="Owner",
+        email=f"{title.lower().replace(' ', '.')}@example.com",
+        login=title.lower().replace(" ", "_"),
+        role="facilitator",
+        hashed_password=get_password_hash("OwnerPass1!"),
+    )
+    meeting_manager = MeetingManager(db_session)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title=title,
+            description="Phase 5 engine realtime witness",
+            start_time=datetime.now(),
+            end_time=datetime.now(),
+            duration_minutes=30,
+            owner_id=owner.user_id,
+            participant_ids=[],
+        ),
+        facilitator_id=owner.user_id,
+        agenda_items=[],
+    )
+    return owner, meeting_manager, meeting
+
+
+@pytest.mark.anyio("asyncio")
+async def test_engine_activity_mutation_reuses_agenda_and_state_broadcasts(
+    db_session, mocker
+):
+    """Loquacious Pelican: engine-created activities reuse existing realtime envelopes."""
+    owner, meeting_manager, meeting = _seed_orchestration_meeting(
+        db_session, "Engine Activity Broadcast"
+    )
+    doc = load_orchestration_data({
+        "name": "engine-activity-broadcast",
+        "version": "1",
+        "author": "phase5",
+        "citation": "Loquacious Pelican",
+        "metadata": {
+            "thinklets": ["t"],
+            "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 10},
+            "notes": "Loquacious Pelican activity mutation fixture",
+        },
+        "steps": [
+            {"type": "activity", "tool_type": "brainstorming", "title": "Engine Seed"}
+        ],
+    })
+    strategy = OrchestrationEngineStrategy(doc)
+    activity = strategy.create_activity(meeting, None, None)
+    broadcast_mock = mocker.patch(
+        "app.services.orchestration_realtime.websocket_manager.broadcast"
+    )
+
+    try:
+        result = await broadcast_engine_agenda_mutation(
+            meeting_id=meeting.meeting_id,
+            initiator_id=owner.user_id,
+            meeting_manager=meeting_manager,
+            active_activity=activity,
+            action="engine_create_activity",
+        )
+
+        assert broadcast_mock.await_count == 2
+        agenda_call, state_call = broadcast_mock.await_args_list
+        assert agenda_call.args[0] == meeting.meeting_id
+        agenda_message = agenda_call.args[1]
+        assert agenda_message["type"] == "agenda_update"
+        assert agenda_message["meta"] == {"initiatorId": owner.user_id}
+        assert agenda_message["payload"][0]["activity_id"] == activity.activity_id
+        assert agenda_message["payload"][0]["tool_type"] == "brainstorming"
+
+        state_message = state_call.args[1]
+        assert state_message["type"] == "meeting_state"
+        assert state_message["meta"]["initiatorId"] == owner.user_id
+        assert state_message["meta"]["action"] == "engine_create_activity"
+        assert state_message["payload"]["currentActivity"] == activity.activity_id
+        assert state_message["payload"]["currentTool"] == "brainstorming"
+        assert result["state"]["activeActivities"][0]["activityId"] == activity.activity_id
+    finally:
+        await meeting_state_manager.reset(meeting.meeting_id)
+
+
+@pytest.mark.anyio("asyncio")
+async def test_engine_facilitator_decision_resume_reuses_realtime_envelopes(
+    db_session, mocker
+):
+    """Loquacious Pelican: facilitator-decision resume broadcasts through existing shapes."""
+    owner, meeting_manager, meeting = _seed_orchestration_meeting(
+        db_session, "Engine Decision Broadcast"
+    )
+    doc = load_orchestration_data({
+        "name": "engine-decision-broadcast",
+        "version": "1",
+        "author": "phase5",
+        "citation": "Loquacious Pelican",
+        "metadata": {
+            "thinklets": ["t"],
+            "collaboration_patterns": ["p"],
+            "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 10},
+            "notes": "Loquacious Pelican decision mutation fixture",
+        },
+        "steps": [
+            {
+                "type": "facilitator-decision",
+                "prompt": "Continue?",
+                "options": ["continue", "stop"],
+                "context_bundle_keys": [],
+            }
+        ],
+    })
+    strategy = OrchestrationEngineStrategy(doc)
+    decision_activity = strategy.create_activity(meeting, None, None)
+    strategy.resume_with_facilitator_decision(
+        meeting,
+        "continue",
+        db=db_session,
+        actor_user_id=owner.user_id,
+    )
+    broadcast_mock = mocker.patch(
+        "app.services.orchestration_realtime.websocket_manager.broadcast"
+    )
+
+    try:
+        await broadcast_engine_agenda_mutation(
+            meeting_id=meeting.meeting_id,
+            initiator_id=owner.user_id,
+            meeting_manager=meeting_manager,
+            state_patch={
+                "currentActivity": None,
+                "agendaItemId": None,
+                "currentTool": None,
+                "status": "completed",
+                "activeActivities": {decision_activity.activity_id: None},
+            },
+            action="engine_resume_facilitator_decision",
+        )
+
+        assert broadcast_mock.await_count == 2
+        agenda_message = broadcast_mock.await_args_list[0].args[1]
+        assert agenda_message["type"] == "agenda_update"
+        assert agenda_message["payload"][0]["activity_id"] == decision_activity.activity_id
+        assert agenda_message["payload"][0]["tool_type"] == "facilitator_decision"
+
+        state_message = broadcast_mock.await_args_list[1].args[1]
+        assert state_message["type"] == "meeting_state"
+        assert state_message["meta"]["action"] == "engine_resume_facilitator_decision"
+        assert state_message["payload"]["currentActivity"] is None
+        assert state_message["payload"]["status"] == "completed"
+    finally:
+        await meeting_state_manager.reset(meeting.meeting_id)
 
 
 def test_agenda_strategy_binding_for_meeting_state_fixture(db_session):

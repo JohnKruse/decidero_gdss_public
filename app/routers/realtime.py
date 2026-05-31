@@ -2,6 +2,10 @@
 
 Smug Otter: initial agenda snapshots consult `AgendaStrategy` so realtime
 clients see the strategy's canonical agenda order.
+
+Loquacious Pelican: engine-driven mutations do not introduce new websocket
+message types; `app.services.orchestration_realtime` reuses the existing
+`agenda_update` and `meeting_state` envelopes consumed by this route's clients.
 """
 
 import logging
