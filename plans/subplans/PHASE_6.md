@@ -6,6 +6,8 @@
 
 **Phase objective:** Prove that the orchestration engine and its primitives compose into a real collaboration-engineering method by authoring Delphi as a JSON document, running it end-to-end with synthetic participants, and producing a paper-ready validation artifact. Phase 6 is the executable witness for DP9 on the central evaluation case: instantiating Delphi must not require modifying `app/plugins/base.py`, any built-in plugin's lifecycle method, or any built-in plugin's manifest beyond what Phase 1 audited. When this phase clears, the master plan's architectural claim — that collaboration processes can be expressed as declarative, composable JSON artifacts over a minimal grammar — is demonstrated against the method that motivated the design.
 
+**Paper-scope boundary:** The Phase 6 evaluation is deliberately about the packaged-method path. It does not claim to evaluate the full space of live facilitator improvisation, nor does it require solving arbitrary hybrid insertion into an active orchestration. Conventional facilitator-driven meetings remain supported by the Phase 2 linear strategy and are protected by Phase 5's manual-facilitation invariant; the HICSS evidence focuses on whether Delphi can be represented, executed, and validated as a reusable declarative process over the existing plugin substrate.
+
 ## Phase Canary
 
 **Oracular Quokka**
@@ -48,6 +50,8 @@ Capture the synthetic-evaluation result in `docs/DELPHI_VALIDATION.md` in a form
 
 The document also names, in a closing subsection, the breaking points whose resolution it indirectly attests to: BP-1 (linear "previous activity") because Delphi requires round-to-round prior-bundle resolution; BP-3 (iteration discriminator on bundles) because Delphi keeps multiple rounds of the same logical step distinct; BP-7 (server-side reliability) because the optional `ai-decision` summary exercises it; BP-5 and BP-10 (realtime + frontend coherence) because the run executes through Phase 5's broadcast and UI surfaces. The document does not re-derive these resolutions — it cites the respective phase tests as the executable witnesses.
 
+The validation document must also state what the run does not demonstrate: it is not a field study, it is not a claim that every facilitator improvisation pattern has been modeled, and it does not settle how ad hoc activities inserted into a running orchestration should affect bundle history or convergence. Those tuning decisions are future product work informed by facilitator feedback after the paper package is complete.
+
 The header carries the `Oracular Quokka` canary.
 
 Conclude this step by:
@@ -83,7 +87,7 @@ Passing this command means:
 - The end-to-end Delphi run with synthetic participants passes, exercises the three IQR regimes authored in the fixture, demonstrates that `DelphiStatisticalAggregationTransform` flags the expected outlier participants, demonstrates correct firing and non-firing of `IQRStabilityPredicate`, and enforces the `max_rounds` hard ceiling.
 - Every bundle written during the Delphi run validates against `bundle_payload.schema.json`; every realtime broadcast emitted matches the Phase 5 envelope shape.
 - DP9 holds in practice for the central evaluation case: `app/plugins/base.py` is unchanged from its Phase 1 state, no built-in plugin's lifecycle method has been modified in this phase, and no built-in plugin manifest has been touched beyond Phase 1's audited declarations.
-- `docs/DELPHI_VALIDATION.md` exists, carries the canary, reports the synthetic-cohort results honestly, names the breaking points whose resolution it indirectly attests to, and is cross-referenced from `docs/ACTIVITY_CONTRACT_SPEC.md` and `docs/INDEX.md`.
+- `docs/DELPHI_VALIDATION.md` exists, carries the canary, reports the synthetic-cohort results honestly, names the breaking points whose resolution it indirectly attests to, explicitly bounds the evaluation to packaged-method execution rather than live-facilitation improvisation, and is cross-referenced from `docs/ACTIVITY_CONTRACT_SPEC.md` and `docs/INDEX.md`.
 - The generalization decision is executed: either `orchestrations/estimate_talk_estimate.json` exists and its lighter-weight test extension passes, or the deferral subsection in `docs/DELPHI_VALIDATION.md` explicitly records the deferral and names the methods considered.
 - No test that previously passed regresses, and no test docstring, document header, fixture, or orchestration `metadata.notes` slot introduced under Phase 6 omits the `Oracular Quokka` canary where the step requirements call for it.
 
@@ -97,6 +101,7 @@ This phase covers only the Delphi instantiation and its evaluation. The followin
 
 - Empirical evaluation with real participant groups in a field setting — future work for a journal extension.
 - Reference orchestrations beyond Delphi (and optionally Estimate-Talk-Estimate per Step 4) — post-master-plan work.
+- Rich hybrid facilitation semantics — especially arbitrary ad hoc activity insertion into a running orchestration and its effect on bundle history, convergence, and provenance — post-HICSS product tuning informed by facilitator feedback.
 - Aesthetic polish, accessibility coverage, or mobile-specific work on any UI surface — post-master-plan work.
 - Runtime implementation of the `conditional` control-flow primitive — defined-but-deferred at the Phase 4 schema layer; out of scope unless separately authorized.
 - Parallel branches, sub-orchestration invocation, variable bindings, expression evaluation, event handlers, timers, and compensation/rollback — out of scope for the entire master plan per its Scope Boundary.

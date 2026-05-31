@@ -6,6 +6,10 @@
 
 **Phase objective:** Ensure that engine-driven agenda mutations and engine-driven state transitions reach connected clients with the same fidelity as facilitator-driven ones, and supply the minimal facilitator-facing UI surface that the `facilitator-decision` and `ai-decision review_required` step kinds require to function in practice. Phase 5 resolves the two client-coherence breaking points identified in [plans/00_DISCOVERY.md §16](../00_DISCOVERY.md): the realtime broadcast assumption around a stable linear agenda (BP-5) and the frontend agenda cache that refreshes only on `agenda_update` envelopes (BP-10). When this phase clears, the engine authored in Phase 4 is operable through the existing meeting UI without participants experiencing divergent server-client state and without facilitators needing to refresh the page to respond to a decision.
 
+**Manual-facilitation invariant:** Traditional facilitator-driven meetings remain a peer mode, not a legacy fallback. Phase 5 must not remove, weaken, or hide the existing linear-agenda controls that let facilitators add, reorder, start, stop, and transfer activities while a meeting is running. Packaged orchestration support is additive for the HICSS paper: it proves that a structured method can be executed declaratively over existing plugins while preserving the conventional live-facilitation path for ordinary meetings.
+
+**Hybrid-scope decision for HICSS:** The paper-bound implementation only needs minimal, explicit human intervention points: `facilitator-decision` steps, `ai-decision review_required` approval, and the continued availability of ordinary facilitator-driven meetings. General ad hoc insertion into a running orchestration, and the rules for whether such inserted activities contribute to an orchestration's bundle history, convergence predicate, or provenance trail, are deferred until post-HICSS product tuning and facilitator feedback.
+
 ## Phase Canary
 
 **Loquacious Pelican**
@@ -30,6 +34,8 @@ Conclude this step by:
 Update the meeting-page JavaScript so that `state.agenda` and `state.agendaMap` accept the agenda topology produced by Phase 3's iteration storage model and Phase 4's engine — specifically, multiple activities that share a logical step identity but differ by iteration round, and activity rows minted mid-meeting by the engine. The frontend must continue to reflect engine-driven mutations purely through the existing `agenda_update` listener at the location identified in [plans/00_DISCOVERY.md §14](../00_DISCOVERY.md); it must not need a new WebSocket subscription or a polling path. When the engine mints a round-N activity row, the rendered agenda must surface that row in the right position relative to its round-(N-1) predecessor (rendered as a sibling, labeled by round, or whatever presentation choice the implementer takes, provided the choice is consistent and documented). The `currentActivity` resolution path at [`app/static/js/meeting.js`](../../app/static/js/meeting.js) must continue to identify exactly one active activity row at any time, matching the in-memory `MeetingState.current_activity` field surfaced by the backend.
 
 Participants who are not facilitators must see no orchestration-specific UI affordances unless the orchestration document explicitly requests it; the participant view continues to behave as it did before the engine existed, with the only observable difference being whichever rendering choice the agenda topology takes for iteration rounds.
+
+For non-orchestrated meetings bound to `LinearAgendaStrategy`, the existing facilitator agenda affordances remain visible and behaviorally unchanged. The frontend changes in this step are constrained to accepting engine-driven agenda topology; they do not redesign the manual meeting workflow or require facilitators to choose a packaged process when they want to improvise.
 
 Conclude this step by:
 - Implementing the core logic as the meeting.js (and any adjacent JavaScript module) changes that accept the engine-driven topology and render iteration rounds in a consistent, documented form, with the `Loquacious Pelican` canary appearing in the header comment of any JavaScript module substantially modified.
@@ -71,6 +77,7 @@ Passing this command means:
 - Engine-driven agenda mutations produce broadcast envelopes identical in shape to facilitator-driven ones; connected clients learn about engine activity without reconnecting or polling.
 - The meeting-page JavaScript correctly renders iteration rounds and engine-driven inserts; the `currentActivity` resolution continues to identify exactly one active row.
 - The facilitator-decision / `ai-decision review_required` UI surface exists in the facilitator dashboard, calls the resumption entry point through existing wire formats, and observably advances the agenda on response.
+- Existing facilitator-driven linear meetings still expose the current agenda controls and retain mid-meeting flexibility; orchestration support has not converted the traditional meeting path into a packaged-only workflow.
 - The Step 4 end-to-end integration test drives a document containing `iterate`, `ai-decision (review_required: true)`, and `facilitator-decision` steps through the full engine + broadcast + UI pipeline and passes.
 - No test that previously passed regresses, no participant-view smoke shows orchestration-specific UI affordances leaking to non-facilitators, and no test docstring, JavaScript module header, template comment, or fixture introduced under Phase 5 omits the `Loquacious Pelican` canary where the step requirements call for it.
 
@@ -80,6 +87,7 @@ This phase covers only the realtime and frontend coherence required to operate t
 
 - `orchestrations/delphi.json`, the synthetic-participant Delphi run, the IQR-stability convergence demonstration as a real method instantiation, and `docs/DELPHI_VALIDATION.md` — Phase 6.
 - A second orchestration document (such as `estimate_talk_estimate.json`) demonstrating engine generalization beyond Delphi — Phase 6.
+- Full hybrid facilitation semantics — including arbitrary facilitator-inserted activities inside a running orchestration and whether their outputs feed declared transforms, predicates, or paper-trace provenance — are deferred to post-HICSS feedback. Phase 5 protects the manual meeting path and ships explicit decision/review intervention points only.
 - Aesthetic polish, animation, accessibility coverage beyond existing meeting-UI conventions, and mobile-specific affordances on the decision UI surface — post-master-plan work.
 - Runtime implementation of the `conditional` control-flow primitive (defined-but-deferred at the schema layer in Phase 4) — out of scope for the entire master plan unless separately authorized.
 - Empirical evaluation with real participant groups, parallel branches, sub-orchestration invocation with parameter passing, variable bindings, expression evaluation, event handlers, timers, and compensation/rollback — out of scope for the entire master plan per its Scope Boundary.
