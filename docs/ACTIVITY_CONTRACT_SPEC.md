@@ -475,6 +475,16 @@ the meeting-page JavaScript keeps the decision surface gated behind
 No orchestration-specific websocket message, reconnect path, or polling path
 is introduced.
 
+### Reference Orchestrations
+
+Phase 6 Step 1 (Oracular Quokka) ships `orchestrations/delphi.json` as the
+canonical packaged Delphi instantiation. The document starts with a
+brainstorming activity and then drives rank-order voting inside an `iterate`
+block using the registered `delphi_statistical_aggregation` transform and
+`iqr_stability` predicate, with `max_rounds` bounded at four. Its
+`metadata.notes` slot carries the Phase 6 canary and the Linstone and Turoff
+source citation because JSON cannot carry a portable top-of-file comment block.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather

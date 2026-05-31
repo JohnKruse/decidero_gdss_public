@@ -36,6 +36,7 @@ from app.services.contract_schemas import validate_bundle_payload
 from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.services.orchestration_loader import (
     ActivityStep,
+    IterateStep,
     load_orchestration_path,
     SequenceStep,
 )
@@ -43,6 +44,7 @@ from app.services.orchestration_loader import (
 _FIXTURE_PATH = (
     Path(__file__).resolve().parents[2] / "docs" / "fixtures" / "brainstorm_vote.orchestration.json"
 )
+_DELPHI_PATH = Path(__file__).resolve().parents[2] / "orchestrations" / "delphi.json"
 
 
 def _seed_engine_meeting(db_session):
@@ -85,6 +87,51 @@ def test_engine_strategy_fixture_carries_canary():
     doc = load_orchestration_path(_FIXTURE_PATH)
     assert doc.metadata.notes is not None
     assert "Insolent Metronome" in doc.metadata.notes
+
+
+def test_phase6_delphi_orchestration_loads_and_resolves_registries():
+    """Oracular Quokka: shipped Delphi document loads and names real primitives."""
+    from app.services.bundle_transforms import get_bundle_transform_registry
+    from app.services.convergence_predicates import get_convergence_predicate_registry
+
+    doc = load_orchestration_path(_DELPHI_PATH)
+
+    assert doc.name == "Classical Delphi"
+    assert doc.metadata.notes is not None
+    assert "Oracular Quokka" in doc.metadata.notes
+    assert not validate_orchestration_has_warnings(_DELPHI_PATH)
+
+    assert len(doc.steps) == 1
+    assert isinstance(doc.steps[0], SequenceStep)
+    sequence = doc.steps[0]
+    assert isinstance(sequence.steps[0], ActivityStep)
+    assert sequence.steps[0].tool_type == "brainstorming"
+    assert isinstance(sequence.steps[1], IterateStep)
+
+    iterate = sequence.steps[1]
+    assert iterate.max_rounds == 4
+    assert isinstance(iterate.steps[0], ActivityStep)
+    assert iterate.steps[0].tool_type == "rank_order_voting"
+
+    transform = get_bundle_transform_registry().get_transform(
+        iterate.bundle_transform["name"]
+    )
+    predicate = get_convergence_predicate_registry().get_predicate(
+        iterate.convergence_predicate["name"]
+    )
+    assert transform is not None
+    assert predicate is not None
+
+
+def validate_orchestration_has_warnings(path: Path) -> bool:
+    """Return whether loader validation emits warnings for the JSON document."""
+    import json
+    from app.services.orchestration_loader import validate_orchestration
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    result = validate_orchestration(data)
+    assert result.valid
+    return bool(result.warnings)
 
 
 def test_engine_strategy_plan_from_bare_sequence():

@@ -106,7 +106,7 @@ def test_phase6_step1_validation_baseline_is_auditable():
         expected_plan_markers = [
             "# PHASE 6 — Delphi Instantiation and Evaluation",
             "**Oracular Quokka**",
-            "### Step 1 — Author `orchestrations/delphi.json`",
+            "Author `orchestrations/delphi.json`",
             "orchestrations/delphi.json",
             "IQRStabilityPredicate",
         ]

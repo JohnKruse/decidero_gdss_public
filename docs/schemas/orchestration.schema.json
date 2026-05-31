@@ -67,6 +67,10 @@
         },
         "typical_duration_minutes": {
           "$ref": "#/$defs/non_negative_range"
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

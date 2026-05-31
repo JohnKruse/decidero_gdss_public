@@ -1,0 +1,77 @@
+{
+  "name": "Classical Delphi",
+  "version": "1.0",
+  "author": "Decidero Engine",
+  "citation": "Linstone, H. A., and Turoff, M., editors. The Delphi Method: Techniques and Applications. Addison-Wesley, 1975.",
+  "metadata": {
+    "notes": "Canary: Oracular Quokka. Construction summary: a Phase 6 reference Delphi process starts with brainstorming, then iterates rank-order voting with Delphi statistical aggregation and IQR stability convergence over at most four rounds. Source citation: Linstone and Turoff, The Delphi Method, Addison-Wesley, 1975.",
+    "thinklets": [
+      "FreeBrainstorm",
+      "Ranked Evaluation",
+      "Delphi statistical feedback"
+    ],
+    "collaboration_patterns": [
+      "Generate",
+      "Evaluate",
+      "Build Consensus"
+    ],
+    "deliverables": [
+      "Converged ranked list",
+      "Per-item median and IQR statistics",
+      "Per-participant outlier annotations"
+    ],
+    "group_size_range": {
+      "min": 4,
+      "max": 25
+    },
+    "typical_duration_minutes": {
+      "min": 45,
+      "max": 120
+    }
+  },
+  "steps": [
+    {
+      "type": "sequence",
+      "steps": [
+        {
+          "type": "activity",
+          "tool_type": "brainstorming",
+          "title": "Round 1: Generate Delphi Items",
+          "config": {
+            "allow_anonymous": true,
+            "allow_subcomments": false,
+            "auto_jump_new_ideas": true
+          }
+        },
+        {
+          "type": "iterate",
+          "max_rounds": 4,
+          "convergence_predicate": {
+            "name": "iqr_stability",
+            "config": {
+              "threshold": 0.15
+            }
+          },
+          "bundle_transform": {
+            "name": "delphi_statistical_aggregation",
+            "config": {}
+          },
+          "steps": [
+            {
+              "type": "activity",
+              "tool_type": "rank_order_voting",
+              "title": "Rank Delphi Items",
+              "transform_input": "previous_round_feedback",
+              "config": {
+                "ideas": [],
+                "randomize_order": false,
+                "show_results_immediately": false,
+                "allow_reset": true
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
