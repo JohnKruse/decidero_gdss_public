@@ -68,7 +68,7 @@ def test_phase5_step1_inventory_tracks_external_facilitator_contract_debt():
             "### Step 1 — [DONE] Backend Broadcast Envelope for Engine-Driven Mutations",
             "### Step 2 — [DONE] Frontend Cache Invalidation and Non-Linear Topology Rendering",
             "### Step 3 — [DONE] Facilitator-Decision and AI-Decision Review UI Surface",
-            "### Step 4 — End-to-End Coherence Validation",
+            "### Step 4 — [DONE] End-to-End Coherence Validation",
             "BP-5",
             "BP-10",
         ]

@@ -454,6 +454,27 @@ The executable witnesses are
 and the iterate metadata assertion in
 `app/tests/test_orchestration_engine.py::test_iterate_fixed_n_predicate_exits_at_configured_rounds`.
 
+### Phase 5 Coherence Witness
+
+Phase 5 Step 4 (Loquacious Pelican) closes the realtime/frontend coherence
+loop with
+`app/tests/test_orchestration_engine.py::test_phase5_coherence_witness_drives_engine_broadcast_ui_and_resume`.
+That executable witness drives a single orchestration document containing an
+`iterate` block, an `ai-decision` with `review_required: true`, and the paired
+`facilitator-decision` step.
+
+The test verifies the surfaces that Phase 6's Delphi instantiation depends on:
+the engine-created round-2 activity row is broadcast through the existing
+`agenda_update` and `meeting_state` envelopes; the agenda payload carries the
+same `_orchestration.logical_step_id` / `_orchestration.round_index` metadata
+that the frontend renderer consumes; the facilitator review endpoint exposes
+the AI proposal to the decision UI; the response endpoint writes the typed
+facilitator-decision bundle and broadcasts the ordinary resume envelopes; and
+the meeting-page JavaScript keeps the decision surface gated behind
+`state.isFacilitator` while continuing to refresh via `renderAgenda(payload)`.
+No orchestration-specific websocket message, reconnect path, or polling path
+is introduced.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather

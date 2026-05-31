@@ -66,7 +66,7 @@ Technical deviations logged:
 - The production router endpoint resumes the materialized `facilitator_decision` agenda row directly instead of calling `OrchestrationEngineStrategy.resume_with_facilitator_decision`. The current engine strategy is not persisted or rebound through routers, so there is no durable strategy instance to call from HTTP. The endpoint writes the same typed decision output-bundle shape and broadcasts through the Phase 5 Step 1 helper; persisted strategy binding remains future engine-integration work.
 - The facilitator-facing UI was implemented as an inline meeting-page disclosure panel rather than a modal. This keeps the minimal HICSS surface visible in context and avoids extra modal focus-management work that the phase explicitly leaves out of scope.
 
-### Step 4 — End-to-End Coherence Validation
+### Step 4 — [DONE] End-to-End Coherence Validation
 Execute an end-to-end coherence run that exercises every Phase 5 surface against a real orchestration document: an engine-driven `iterate` block produces a round-2 agenda row whose mint triggers a broadcast that the frontend handles correctly; an embedded `ai-decision` with `review_required: true` produces a proposed result that the decision UI surfaces; the facilitator selects an option through the decision UI; the resumption broadcast advances the agenda; participant-view smoke confirms no orchestration-specific UI leaks to non-facilitators; and the entire flow occurs without any client needing to reconnect or poll. This run is the executable witness for the Phase 5 success gates in [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md), and it is the prerequisite for Phase 6's Delphi instantiation, which assumes that the engine's outputs are observable to a facilitator running an orchestration in practice.
 
 Any drift discovered between the broadcast envelope shape (Step 1), the frontend's handling of it (Step 2), or the decision UI's interaction with the engine (Step 3) is diagnosed and repaired in the originating step rather than papered over here; this step's role is to surface drift, not to absorb it.
@@ -75,6 +75,9 @@ Conclude this step by:
 - Implementing the core logic as any final wiring corrections the end-to-end run surfaces, with each correction tagged at its origin site under `Loquacious Pelican`.
 - Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with an end-to-end integration test that drives the engine through a fixture document containing `iterate`, `ai-decision (review_required: true)`, and `facilitator-decision` steps, asserts the broadcast envelopes, exercises the resumption endpoint, and verifies that participant-view and facilitator-view rendering each behave as specified; no new pytest module is needed because `test_orchestration_engine.py` already owns the engine integration concern.
 - Updating docstrings and documentation so the spec's Engine section gains a closing "Phase 5 coherence witness" subsection that cites the end-to-end test as the executable proof, and so the master plan's Phase 5 row in any DP-to-test mapping reflects the test's location.
+
+Technical deviations logged:
+- None.
 
 ## Phase Exit Criteria
 

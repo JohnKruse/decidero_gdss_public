@@ -12,22 +12,28 @@ The brainstorm→vote fixture lives at docs/fixtures/brainstorm_vote.orchestrati
 
 from __future__ import annotations
 
+import asyncio
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from app.data.activity_bundle_manager import ActivityBundleManager
+from app.data.meeting_manager import MeetingManager
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
 from app.plugins.builtin.voting_plugin import VotingPlugin
 from app.plugins.context import ActivityContext
+from app.schemas.meeting import MeetingCreate, PublicityType
+from app.services import meeting_state_manager
 from app.services.agenda_strategy import (
     OrchestrationEngineStrategy,
     PriorActivityReference,
 )
 from app.services.contract_schemas import validate_bundle_payload
+from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.services.orchestration_loader import (
     ActivityStep,
     load_orchestration_path,
@@ -964,6 +970,194 @@ def test_phase4_composite_document_runs_all_step_kinds(db_session):
     bm.finalize_output_bundle(meeting.meeting_id, wrap.activity_id, [])
 
     assert strategy.is_complete(meeting)
+
+
+def test_phase5_coherence_witness_drives_engine_broadcast_ui_and_resume(
+    authenticated_client,
+    db_session,
+    mocker,
+):
+    """Loquacious Pelican: end-to-end Phase 5 coherence witness.
+
+    The document drives iterate → ai-decision(review_required=true) →
+    facilitator-decision. The test checks that the round-2 agenda row is
+    broadcast through the existing `agenda_update` envelope, that the
+    facilitator review API exposes the AI proposal used by the UI, that the
+    response endpoint emits the ordinary agenda/state realtime envelopes, and
+    that participant-only frontend code keeps the decision surface gated behind
+    facilitator capability instead of a new polling or websocket path.
+    """
+    from app.services.orchestration_loader import load_orchestration_data
+
+    admin_user = db_session.query(User).filter(User.role == UserRole.ADMIN.value).one()
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Phase 5 Coherence Witness",
+            description="Loquacious Pelican end-to-end coherence run.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=admin_user.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=admin_user.user_id,
+        agenda_items=[],
+    )
+    doc = load_orchestration_data({
+        "name": "phase5-coherence-witness",
+        "version": "1",
+        "author": "phase5",
+        "citation": "Loquacious Pelican",
+        "metadata": {
+            "thinklets": ["FastFocus"],
+            "collaboration_patterns": ["Evaluate"],
+            "deliverables": ["Reviewed AI recommendation"],
+            "group_size_range": {"min": 1, "max": 6},
+            "typical_duration_minutes": {"min": 5, "max": 30},
+            "notes": "Loquacious Pelican coherence witness fixture",
+        },
+        "steps": [{"type": "sequence", "steps": [
+            {
+                "type": "iterate",
+                "max_rounds": 4,
+                "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 2}},
+                "bundle_transform": {"name": "identity", "config": {}},
+                "steps": [
+                    {"type": "activity", "tool_type": "brainstorming", "title": "Round"}
+                ],
+            },
+            {
+                "type": "ai-decision",
+                "prompt_template": "Summarize the reviewed rounds.",
+                "context_bundle_keys": [],
+                "output_schema": {
+                    "type": "object",
+                    "required": ["summary"],
+                    "properties": {"summary": {"type": "string"}},
+                },
+                "review_required": True,
+            },
+            {
+                "type": "facilitator-decision",
+                "prompt": "Approve the AI summary?",
+                "options": ["approve", "reject"],
+                "context_bundle_keys": [],
+            },
+        ]}],
+    })
+    strategy = OrchestrationEngineStrategy(
+        doc,
+        ai_caller=lambda _prompt, _settings: '{"summary": "Promote the stable option."}',
+        ai_retry_policy={"max_retries": 1, "base_delay_ms": 0, "max_delay_ms": 0, "jitter_ratio": 0.0},
+    )
+    bm = ActivityBundleManager(db_session)
+
+    broadcast_mock = mocker.patch(
+        "app.services.orchestration_realtime.websocket_manager.broadcast"
+    )
+    try:
+        round_one = strategy.create_activity(meeting, None, None)
+        logical_step_id, round_index = strategy.iteration_metadata_for(round_one.activity_id)
+        assert round_index == 0
+        bm.finalize_output_bundle(
+            meeting.meeting_id,
+            round_one.activity_id,
+            [{"content": "First-round idea", "source": {"activity_id": round_one.activity_id}}],
+            metadata={"source": "phase5-coherence"},
+            logical_step_id=logical_step_id,
+            round_index=round_index,
+        )
+
+        round_two = strategy.create_activity(meeting, None, None)
+        logical_step_id, round_index = strategy.iteration_metadata_for(round_two.activity_id)
+        assert round_index == 1
+        realtime = asyncio.run(
+            broadcast_engine_agenda_mutation(
+                meeting_id=meeting.meeting_id,
+                initiator_id=admin_user.user_id,
+                meeting_manager=meeting_manager,
+                active_activity=round_two,
+                action="engine_create_iteration_round",
+            )
+        )
+        agenda_payload = realtime["agenda"]
+        round_two_row = next(
+            row for row in agenda_payload if row["activity_id"] == round_two.activity_id
+        )
+        assert round_two_row["config"]["_orchestration"]["round_index"] == 1
+        assert broadcast_mock.await_args_list[-2].args[1]["type"] == "agenda_update"
+        assert broadcast_mock.await_args_list[-1].args[1]["type"] == "meeting_state"
+        assert {call.args[1]["type"] for call in broadcast_mock.await_args_list} <= {
+            "agenda_update",
+            "meeting_state",
+        }
+
+        bm.finalize_output_bundle(
+            meeting.meeting_id,
+            round_two.activity_id,
+            [{"content": "Second-round idea", "source": {"activity_id": round_two.activity_id}}],
+            metadata={"source": "phase5-coherence"},
+            logical_step_id=logical_step_id,
+            round_index=round_index,
+        )
+
+        ai_activity = strategy.create_activity(meeting, None, None)
+        assert ai_activity.tool_type == OrchestrationEngineStrategy.AI_DECISION_TOOL_TYPE
+        ai_bundle = bm.get_latest_bundle(meeting.meeting_id, ai_activity.activity_id, "output")
+        assert ai_bundle is not None
+        validate_bundle_payload({
+            "items": ai_bundle.items,
+            "metadata": ai_bundle.bundle_metadata or {},
+        })
+        assert ai_bundle.items[0]["metadata"]["ai_decision"]["review_required"] is True
+
+        decision_activity = strategy.create_activity(meeting, None, None)
+        assert decision_activity.tool_type == OrchestrationEngineStrategy.FACILITATOR_DECISION_TOOL_TYPE
+        assert strategy.is_paused()
+
+        detail = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/orchestration/facilitator-decisions/{decision_activity.activity_id}"
+        )
+        assert detail.status_code == 200, detail.json()
+        assert detail.json()["ai_decision"]["validated_output"] == {
+            "summary": "Promote the stable option."
+        }
+
+        page = authenticated_client.get(f"/meeting/{meeting.meeting_id}")
+        assert page.status_code == 200
+        assert "data-facilitator-decision-root" in page.text
+
+        broadcast_mock.reset_mock()
+        response = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/orchestration/facilitator-decisions/{decision_activity.activity_id}/responses",
+            json={"chosen_option": "approve"},
+        )
+        assert response.status_code == 200, response.json()
+        assert response.json()["state"]["currentActivity"] is None
+        decision_bundle = bm.get_latest_bundle(
+            meeting.meeting_id, decision_activity.activity_id, "output"
+        )
+        assert decision_bundle.items[0]["metadata"]["facilitator_decision"]["chosen"] == "approve"
+        assert [call.args[1]["type"] for call in broadcast_mock.await_args_list] == [
+            "agenda_update",
+            "meeting_state",
+        ]
+        assert broadcast_mock.await_args_list[1].args[1]["meta"]["action"] == (
+            "engine_resume_facilitator_decision"
+        )
+
+        meeting_js = Path("app/static/js/meeting.js").read_text(encoding="utf-8")
+        assert (
+            'toolType === "facilitator_decision" && state.isFacilitator'
+            in meeting_js
+        )
+        assert "renderAgenda(payload);" in meeting_js
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
 def test_ai_decision_loader_rejects_review_required_without_following_facilitator():
