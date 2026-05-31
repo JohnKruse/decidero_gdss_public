@@ -565,6 +565,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         # Merge activity catalog defaults with document step config (DP6)
         config: Dict[str, Any] = dict(definition.get("default_config", {}))
         config.update(dict(step.config or {}))
+        if iterate_frame is not None:
+            config["_orchestration"] = {
+                "logical_step_id": logical_step_id,
+                "round_index": round_index,
+            }
         plugin = get_activity_registry().get_plugin(step.tool_type)
         validated_config = plugin.validate_config(config) if plugin else config
 

@@ -16,6 +16,7 @@ navigation remain coherent.
 6. [CSS and design system](#6-css-and-design-system)
 7. [Context variables reference](#7-context-variables-reference)
 8. [Common mistakes to avoid](#8-common-mistakes-to-avoid)
+9. [Meeting agenda orchestration rows](#9-meeting-agenda-orchestration-rows)
 
 ---
 
@@ -360,3 +361,34 @@ fallbacks), so most new pages do not need to pass `ui_refresh`.
 | Adding a `/meeting/your-path` route after the catch-all | Route never reached | Place new routes **before** `/meeting/{meeting_id}` in `pages.py` |
 | Adding nav links to `_base.html` header | Header gets cluttered; links show on every page | Add navigation buttons to the Quick Actions panel in `dashboard.html` instead |
 | Duplicating the header in a new template | Header diverges from base over time | Extend `_base.html` instead |
+
+---
+
+## 9. Meeting agenda orchestration rows
+
+Phase 5 Step 2 (Loquacious Pelican) keeps the meeting agenda renderer compatible
+with both facilitator-driven linear meetings and engine-driven orchestration
+meetings. Existing manual agenda controls remain visible for ordinary
+`LinearAgendaStrategy` meetings.
+
+Engine-created activities inside an `iterate` block carry orchestration metadata
+in `activity.config._orchestration`:
+
+```json
+{
+  "logical_step_id": "engine:1.0",
+  "round_index": 1
+}
+```
+
+`app/static/js/meeting.js` normalizes this into `item.orchestration`, preserves
+the existing `agenda_update` websocket flow, and renders a compact `Round N`
+badge with `data-orchestration-logical-step-id` and
+`data-orchestration-round-index` attributes on the agenda row. Do not add a new
+websocket subscription or a polling path for orchestration rows; update the
+existing `agenda_update` payload and renderer instead.
+
+The badge is a presentation hint only. It does not decide whether an ad hoc
+facilitator-inserted activity contributes to orchestration bundle history,
+convergence, or provenance; those richer hybrid semantics are intentionally
+post-HICSS product work.

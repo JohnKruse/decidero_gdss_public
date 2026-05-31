@@ -982,6 +982,48 @@
             }
         }
 
+        function getOrchestrationInfo(item) {
+            const direct = item?.orchestration || item?._orchestration || null;
+            const configured = item?.config?._orchestration || item?.config?.orchestration || null;
+            const source = configured || direct;
+            if (!source || typeof source !== "object") {
+                return null;
+            }
+            const logicalStepId = source.logical_step_id || source.logicalStepId || null;
+            const parsedRound = Number.parseInt(source.round_index ?? source.roundIndex ?? 0, 10);
+            const roundIndex = Number.isFinite(parsedRound) && parsedRound >= 0 ? parsedRound : 0;
+            return {
+                logicalStepId,
+                roundIndex,
+                label: `Round ${roundIndex + 1}`,
+            };
+        }
+
+        function normalizeAgendaItem(item, previous = null) {
+            const normalized = { ...(item || {}) };
+            const info = getOrchestrationInfo(normalized);
+            if (info) {
+                normalized.orchestration = {
+                    logical_step_id: info.logicalStepId,
+                    round_index: info.roundIndex,
+                    label: info.label,
+                };
+            }
+            if (
+                previous &&
+                normalized.transfer_count === undefined &&
+                normalized.transferable_count === undefined &&
+                (previous.transfer_count !== undefined || previous.transferable_count !== undefined)
+            ) {
+                normalized.transfer_count = Number(
+                    previous.transfer_count ?? previous.transferable_count ?? 0,
+                );
+                normalized.transfer_source = normalized.transfer_source ?? previous.transfer_source;
+                normalized.transfer_reason = normalized.transfer_reason ?? previous.transfer_reason;
+            }
+            return normalized;
+        }
+
         function logEvent(message) {
             if (!ui.eventsLog) {
                 return;
@@ -5907,24 +5949,7 @@
                 ? [...agenda].sort((a, b) => (a.order_index || 0) - (b.order_index || 0))
                     .map((item) => {
                         const previous = previousAgendaMap.get(item?.activity_id);
-                        if (!previous) {
-                            return item;
-                        }
-                        if (
-                            item?.transfer_count === undefined &&
-                            item?.transferable_count === undefined &&
-                            (previous.transfer_count !== undefined || previous.transferable_count !== undefined)
-                        ) {
-                            return {
-                                ...item,
-                                transfer_count: Number(
-                                    previous.transfer_count ?? previous.transferable_count ?? 0,
-                                ),
-                                transfer_source: item.transfer_source ?? previous.transfer_source,
-                                transfer_reason: item.transfer_reason ?? previous.transfer_reason,
-                            };
-                        }
-                        return item;
+                        return normalizeAgendaItem(item, previous);
                     })
                 : [];
             state.agendaMap = new Map(state.agenda.map((item) => [item.activity_id, item]));
@@ -5976,6 +6001,11 @@
                 const li = document.createElement("li");
                 li.className = "agenda-item";
                 li.dataset.activityId = item.activity_id;
+                const orchestrationInfo = getOrchestrationInfo(item);
+                if (orchestrationInfo) {
+                    li.dataset.orchestrationLogicalStepId = orchestrationInfo.logicalStepId || "";
+                    li.dataset.orchestrationRoundIndex = String(orchestrationInfo.roundIndex);
+                }
 
                 // Make draggable for facilitators
                 if (state.isFacilitator) {
@@ -6010,6 +6040,16 @@
                 badges.className = "agenda-item-badges";
                 const actions = document.createElement("div");
                 actions.className = "agenda-item-actions";
+
+                if (orchestrationInfo) {
+                    const roundBadge = document.createElement("span");
+                    roundBadge.className = "agenda-item-round";
+                    roundBadge.textContent = orchestrationInfo.label;
+                    roundBadge.title = orchestrationInfo.logicalStepId
+                        ? `Orchestration step ${orchestrationInfo.logicalStepId}`
+                        : "Orchestration round";
+                    badges.appendChild(roundBadge);
+                }
 
                 // Determine status
                 const activityState = state.activeActivities?.[item.activity_id] || null;
@@ -6949,9 +6989,7 @@
                 case "agenda_update":
                     // If it's an agenda-specific update, only re-render the agenda
                     if (Array.isArray(payload)) { // Payload for agenda_update is just the list of agenda items
-                        state.agenda = payload.sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
-                        state.agendaMap = new Map(state.agenda.map((item) => [item.activity_id, item]));
-                        renderAgenda(state.agenda);
+                        renderAgenda(payload);
                         logEvent("Agenda updated in real-time.");
                     }
                     break;

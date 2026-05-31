@@ -461,11 +461,15 @@ def test_iterate_fixed_n_predicate_exits_at_configured_rounds(db_session):
 
     assert len(history) == 3
     assert [r for _a, _i, r in history] == [0, 1, 2]
+    assert [a.config["_orchestration"]["round_index"] for a, _i, _r in history] == [0, 1, 2]
     # Round-N activities share the same logical_step_id, distinguished by round_index
     logical_step_ids = {
         strategy.iteration_metadata_for(a.activity_id)[0] for a, _i, _r in history
     }
     assert len(logical_step_ids) == 1
+    assert {
+        a.config["_orchestration"]["logical_step_id"] for a, _i, _r in history
+    } == logical_step_ids
 
 
 def test_iterate_iqr_stability_predicate_exits_when_stable(db_session):

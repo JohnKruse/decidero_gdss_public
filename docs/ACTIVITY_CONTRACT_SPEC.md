@@ -415,6 +415,27 @@ The executable witness is
 and
 `app/tests/test_meeting_state.py::test_engine_facilitator_decision_resume_reuses_realtime_envelopes`.
 
+### Frontend Coherence
+
+Phase 5 Step 2 (Loquacious Pelican) establishes the frontend convention for
+non-linear agenda topology. Activities materialized inside an `iterate` block
+persist a small `_orchestration` object in their agenda-row config containing
+`logical_step_id` and `round_index`. The meeting page normalizes that metadata
+from incoming `agenda_update` payloads, stores it as `item.orchestration`, and
+renders a `Round N` badge on the agenda row while preserving the ordinary
+facilitator controls for non-orchestrated meetings.
+
+This resolves BP-10 at the cache/rendering layer: `state.agenda` and
+`state.agendaMap` are refreshed through the existing `agenda_update` handler,
+and the renderer can display multiple activities for the same logical step as
+round-labeled siblings. No new websocket subscription or polling path is
+introduced.
+
+The executable witnesses are
+`app/tests/test_frontend_smoke.py::test_meeting_js_supports_orchestration_round_agenda_rows`
+and the iterate metadata assertion in
+`app/tests/test_orchestration_engine.py::test_iterate_fixed_n_predicate_exits_at_configured_rounds`.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather
@@ -431,4 +452,3 @@ the `Insolent Metronome` canary in its `metadata.notes` slot. The end-to-end
 test at `app/tests/test_orchestration_engine.py::test_engine_brainstorm_vote_end_to_end`
 validates that the loader, engine strategy, both plugins, and Phase 1's bundle
 schema all compose correctly across a live in-memory meeting.
-

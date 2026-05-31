@@ -210,6 +210,22 @@ def test_meeting_page_renders_agenda_items(authenticated_client: TestClient):
     assert "Second item" in titles
 
 
+def test_meeting_js_supports_orchestration_round_agenda_rows():
+    """Loquacious Pelican: agenda_update accepts engine iteration metadata without new sockets."""
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+
+    assert "function getOrchestrationInfo(item)" in js
+    assert "function normalizeAgendaItem(item, previous = null)" in js
+    assert "item?.config?._orchestration" in js
+    assert "dataset.orchestrationRoundIndex" in js
+    assert "agenda-item-round" in js
+    assert "renderAgenda(payload);" in js
+    assert ".agenda-item-round" in css
+
+
 def test_remote_tunnel_script_has_retry_and_log_rotation():
     with open("start_remote_tunnel.sh", "r", encoding="utf-8") as handle:
         script = handle.read()
