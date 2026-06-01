@@ -23,6 +23,7 @@ from .categorization import (
 )
 from .app_setting import AppSetting  # runtime-configurable settings store
 from .meeting_designer_log import MeetingDesignerLog
+from .meeting_template import MeetingTemplate
 
 # You can optionally define __all__ to control what `from app.models import *` imports
 __all__ = [
@@ -45,4 +46,5 @@ __all__ = [
     "CategorizationAuditEvent",
     "AppSetting",
     "MeetingDesignerLog",
+    "MeetingTemplate",
 ]

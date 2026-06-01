@@ -11,6 +11,8 @@ The current Phase 7 product assumption is that meeting creation will be organize
 
 The dashboard should expose those choices without training: **Create Meeting** opens the creation choices, while **Import Meeting** remains its own button.
 
+The reusable template storage contract is documented in [MEETING_TEMPLATE_CONTRACT.md](MEETING_TEMPLATE_CONTRACT.md). For pilot observers, the important boundary is that **Start from Template** creates a clean meeting structure; **Import Meeting** restores prior meeting data/history.
+
 ## Purpose
 
 Use the pilot to answer four operational questions:

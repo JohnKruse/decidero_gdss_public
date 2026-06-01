@@ -121,7 +121,7 @@ Conclude this step by:
 Technical deviations:
 - `Start from Template` points to `/meeting/templates`, the route owned by Step 3. Step 1 intentionally implements the dashboard information architecture and copy before the landing page exists, so user-facing template instantiation remains incomplete until Step 3 and Step 4.
 
-### Step 2 — Template Contract and Storage
+### Step 2 — [DONE] Template Contract and Storage
 
 Define the persisted meeting-template contract. The contract must support built-in templates, custom templates saved from meetings, and future orchestration-backed templates without mixing template data with meeting runtime data.
 
@@ -131,6 +131,9 @@ Conclude this step by:
 - Defining the runtime-data stripping rules in tests.
 - Recording the built-in/custom permission model.
 - Documenting the contract in a new or existing docs file.
+
+Technical deviations:
+- None.
 
 ### Step 3 — Meeting Templates Landing Page
 
