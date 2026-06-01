@@ -268,19 +268,26 @@ def test_phase6_step3_consistency_record_is_auditable():
 
 
 def test_phase6_step4_merge_readiness_record_is_auditable():
-    """Lobster Teacup: Phase 6 Step 4 records branch-readiness evidence for review."""
+    """Oracular Quokka: Phase 6 Step 4 records the generalization decision."""
     plan_text = PHASE_6_PLAN_PATH.read_text(encoding="utf-8")
     checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
     if "# PHASE 6 — Delphi Instantiation and Evaluation" in plan_text:
         expected_plan_markers = [
-            "### Step 4 — Generalization Decision: Estimate-Talk-Estimate or Formal Deferral",
+            "Generalization Decision: Estimate-Talk-Estimate or Formal Deferral",
             "orchestrations/estimate_talk_estimate.json",
             "docs/DELPHI_VALIDATION.md",
+            "Oracular Quokka",
             "ETE",
+            "Nominal Group Technique",
             "formally defer",
         ]
         for marker in expected_plan_markers:
             assert marker in plan_text
+        validation_text = (
+            Path(__file__).resolve().parents[2] / "docs" / "DELPHI_VALIDATION.md"
+        ).read_text(encoding="utf-8")
+        assert "## Generalization Decision" in validation_text
+        assert "rests on Delphi alone" in " ".join(validation_text.split())
         assert "Merge-Readiness Notes" in checklist_text
         return
 

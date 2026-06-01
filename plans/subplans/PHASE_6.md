@@ -71,7 +71,7 @@ Conclude this step by:
 Technical deviations:
 - None. The validation writeup remains an analytical synthetic evaluation artifact and explicitly avoids claiming field-study coverage.
 
-### Step 4 — Generalization Decision: Estimate-Talk-Estimate or Formal Deferral
+### Step 4 — [DONE] Generalization Decision: Estimate-Talk-Estimate or Formal Deferral
 Decide and execute one of the two terminal paths the master plan permits for the generalization-beyond-Delphi success criterion: either ship `orchestrations/estimate_talk_estimate.json` as a second reference orchestration that composes the same Phase 3 / Phase 4 primitives in a different shape (initial individual estimation, group discussion through a brainstorming step, revised estimation through rank-order voting, no formal aggregation transform required — the same `iterate` primitive composes it cleanly), with a parallel-shape end-to-end test asserting that the engine drives the document without modifying any plugin; or formally defer ETE to post-master-plan future work, recording the deferral with reasoning in `docs/DELPHI_VALIDATION.md` and stating explicitly that the engine's generalization claim rests on Delphi alone for this submission cycle.
 
 If the ETE path is chosen, the document is authored at `orchestrations/estimate_talk_estimate.json`, validates against the Phase 4 schema and loader, and exercises the iterate primitive without depending on `DelphiStatisticalAggregationTransform` or `IQRStabilityPredicate` — `IdentityBundleTransform` and `FixedNPredicate` from Phase 3 are the minimum-viable resolution. The accompanying test extension in `app/tests/test_orchestration_engine.py` asserts that the second document loads, runs through two rounds, and produces bundles conformant with Phase 1's bundle schema; the assertion volume is intentionally lighter than Delphi's, since the engine-integration claims have already been established and ETE is here to demonstrate composition rather than to re-validate the substrate.
@@ -84,6 +84,10 @@ Conclude this step by:
 - Implementing the core logic as either the new `orchestrations/estimate_talk_estimate.json` document plus the accompanying test extension, or the deferral subsection in `docs/DELPHI_VALIDATION.md`; whichever artifact is produced carries the `Oracular Quokka` canary.
 - Creating or updating the relevant pytest file by extending `app/tests/test_orchestration_engine.py` with the ETE assertions if the ship path is chosen, or with a small assertion that confirms the deferral subsection exists in `docs/DELPHI_VALIDATION.md` if the deferral path is chosen.
 - Updating docstrings and documentation so the spec's "Reference orchestrations" subsection lists whichever artifact was produced (the second orchestration document on the ship path, or the deferral subsection's location on the deferral path), and so the closing chapter of `docs/DELPHI_VALIDATION.md` reflects the chosen outcome.
+
+Technical deviations:
+- The master-plan-permitted deferral path was chosen. `docs/DELPHI_VALIDATION.md` now records that Estimate-Talk-Estimate, Nominal Group Technique, and additional packaged methods are deferred to post-master-plan work, while the conference-submission generalization claim rests on the Delphi witness alone.
+- No `orchestrations/estimate_talk_estimate.json` document was authored because the ETE path was not selected. The deferral is covered by `app/tests/test_orchestration_engine.py::test_phase6_generalization_deferral_is_documented` and cross-referenced from `docs/ACTIVITY_CONTRACT_SPEC.md`.
 
 ## Phase Exit Criteria
 

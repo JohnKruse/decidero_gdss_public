@@ -534,6 +534,22 @@ def test_phase6_delphi_validation_doc_tracks_step2_witness():
     assert "app/tests/fixtures/delphi_synthetic.py" in text
 
 
+def test_phase6_generalization_deferral_is_documented():
+    """Oracular Quokka: Step 4 defers ETE with named method scope."""
+    validation_path = Path(__file__).resolve().parents[2] / "docs" / "DELPHI_VALIDATION.md"
+    text = validation_path.read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+
+    assert "## Generalization Decision" in text
+    assert "Oracular Quokka" in text
+    assert "Estimate-Talk-Estimate" in text
+    assert "ETE" in text
+    assert "Nominal Group Technique" in text
+    assert "NGT" in text
+    assert "formally deferred to post-master-plan work" in normalized
+    assert "rests on Delphi alone" in normalized
+
+
 def test_engine_strategy_plan_from_bare_sequence():
     """Sequence with one activity step produces a single-entry plan."""
     from app.services.orchestration_loader import load_orchestration_data

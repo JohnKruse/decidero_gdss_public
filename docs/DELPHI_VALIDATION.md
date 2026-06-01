@@ -120,11 +120,34 @@ The run indirectly attests to several previously resolved breaking points:
 This document cites those executable witnesses rather than re-deriving their
 phase-specific proofs.
 
+## Generalization Decision
+
+Oracular Quokka: Estimate-Talk-Estimate (ETE), Nominal Group Technique (NGT),
+and additional packaged collaboration-engineering methods are formally
+deferred to post-master-plan work for this submission cycle.
+
+The decision is based on engineering scope rather than on a limitation in the
+orchestration grammar. A useful ETE witness would require a second authored
+fixture, method-specific bundle expectations, and a separate discussion-step
+interpretation, but it would primarily exercise the same Phase 3 transforms,
+Phase 4 `iterate` walker, Phase 5 broadcast envelope, and Phase 6 DP9 boundary
+already covered by the Delphi run. NGT would add a different facilitation
+shape and stronger UI expectations, which would be product work outside this
+paper package's packaged-method path.
+
+For the conference submission, the engine's generalization claim therefore
+rests on Delphi alone: a named, literature-grounded method is represented as a
+declarative orchestration, executed through existing plugins, evaluated across
+multiple rounds, and validated without modifying the plugin substrate. The
+deferred methods remain appropriate next reference orchestrations once there is
+time to author fixtures that would add new evidence instead of duplicating the
+Delphi proof.
+
 ## Boundary
 
 The validation demonstrates that the packaged Delphi method can be expressed as
 a declarative orchestration and executed over existing plugins. It does not
 demonstrate a field deployment, facilitator improvisation semantics, arbitrary
 hybrid insertion into active orchestration history, or the generalization of
-every collaboration-engineering method. Those are future work after the paper
-package.
+every collaboration-engineering method. ETE, NGT, and additional packaged
+methods are future work after the paper package.

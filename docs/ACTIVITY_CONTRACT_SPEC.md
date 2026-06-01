@@ -501,6 +501,13 @@ The paper-ready analytical validation writeup lives at
 cohort statistics, predicate decisions, DP9 confirmation, and evaluation
 boundary for this reference orchestration.
 
+Phase 6 Step 4 records the generalization decision in
+[`docs/DELPHI_VALIDATION.md`](DELPHI_VALIDATION.md#generalization-decision).
+Estimate-Talk-Estimate, Nominal Group Technique, and additional packaged
+methods are formally deferred to post-master-plan work under the Oracular
+Quokka canary; no second reference orchestration is shipped in this master-plan
+cycle.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather
