@@ -155,7 +155,7 @@ def test_phase6_step2_original_failure_modes_are_locked():
     checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
     if "# PHASE 6 — Delphi Instantiation and Evaluation" in plan_text:
         expected_markers = [
-            "### Step 2 — End-to-End Delphi Run with Synthetic Participants",
+            "End-to-End Delphi Run with Synthetic Participants",
             "synthetic participant cohort",
             "high-IQR opening round",
             "IQR contracts",

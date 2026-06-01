@@ -318,18 +318,35 @@ class _PlanWalker:
 
     @staticmethod
     def _collect_round_output(frame: _IterateFrame, db: Session) -> Dict[str, Any]:
-        if not frame.round_activity_ids:
-            return {"items": [], "metadata": {}}
-        last_activity_id = frame.round_activity_ids[-1]
-        bundle = (
-            db.query(ActivityBundle)
-            .filter(
-                ActivityBundle.activity_id == last_activity_id,
-                ActivityBundle.kind == "output",
+        bundle = None
+        if frame.round_activity_ids:
+            last_activity_id = frame.round_activity_ids[-1]
+            bundle = (
+                db.query(ActivityBundle)
+                .filter(
+                    ActivityBundle.activity_id == last_activity_id,
+                    ActivityBundle.kind == "output",
+                )
+                .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
+                .first()
             )
-            .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
-            .first()
-        )
+        if bundle is None or not (bundle.items or []):
+            last_child_index = max(len(frame.step.steps) - 1, 0)
+            logical_step_id = (
+                f"engine:{frame.path}.{last_child_index}"
+                if frame.path
+                else f"engine:{last_child_index}"
+            )
+            bundle = (
+                db.query(ActivityBundle)
+                .filter(
+                    ActivityBundle.logical_step_id == logical_step_id,
+                    ActivityBundle.round_index == frame.round_index,
+                    ActivityBundle.kind == "output",
+                )
+                .order_by(ActivityBundle.id.desc())
+                .first()
+            )
         if bundle is None:
             return {"items": [], "metadata": {}}
         return {
@@ -530,8 +547,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             )
 
         step_index = self._materialize_count(meeting, db)
-        # Drive walker forward (may evaluate iterate predicates now that we have db)
-        self._extend_plan(db)
+        # Drive walker forward only after all currently-planned entries have
+        # been materialized. Advancing earlier can evaluate an iterate frame
+        # before the current round's activity id has been recorded.
+        if step_index >= len(self._plan):
+            self._extend_plan(db)
         if step_index >= len(self._plan):
             raise HTTPException(
                 status_code=400,
@@ -592,6 +612,67 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         if iterate_frame is not None:
             self._activity_iteration[activity.activity_id] = (logical_step_id, round_index)
             iterate_frame.round_activity_ids.append(activity.activity_id)
+            if round_index > 0 and step.transform_input and iterate_frame.bundle_history:
+                from app.data.activity_bundle_manager import ActivityBundleManager
+                from app.services.bundle_transforms import get_bundle_transform_registry
+
+                transformed_input = dict(iterate_frame.bundle_history[-1] or {})
+                previous_activity_id = next(
+                    (
+                        candidate_id
+                        for candidate_id, (candidate_step_id, candidate_round)
+                        in self._activity_iteration.items()
+                        if (
+                            candidate_step_id == logical_step_id
+                            and candidate_round == round_index - 1
+                        )
+                    ),
+                    None,
+                )
+                previous_output = None
+                if previous_activity_id is not None:
+                    previous_output = (
+                        db.query(ActivityBundle)
+                        .filter(
+                            ActivityBundle.meeting_id == meeting.meeting_id,
+                            ActivityBundle.activity_id == previous_activity_id,
+                            ActivityBundle.kind == "output",
+                        )
+                        .order_by(
+                            ActivityBundle.round_index.desc(),
+                            ActivityBundle.id.desc(),
+                        )
+                        .first()
+                    )
+                if previous_output is not None:
+                    transform_spec = iterate_frame.step.bundle_transform or {}
+                    transform = get_bundle_transform_registry().get_transform(
+                        transform_spec.get("name", "")
+                    )
+                    round_output = {
+                        "items": list(previous_output.items or []),
+                        "metadata": dict(previous_output.bundle_metadata or {}),
+                    }
+                    transformed_input = (
+                        transform.transform(
+                            round_output,
+                            transform_spec.get("config") or {},
+                        )
+                        if transform is not None
+                        else round_output
+                    )
+                    iterate_frame.bundle_history[-1] = transformed_input
+                input_metadata = dict(transformed_input.get("metadata") or {})
+                input_metadata["transform_input"] = step.transform_input
+                ActivityBundleManager(db).create_bundle(
+                    meeting.meeting_id,
+                    activity.activity_id,
+                    "input",
+                    list(transformed_input.get("items") or []),
+                    metadata=input_metadata,
+                    logical_step_id=logical_step_id,
+                    round_index=round_index,
+                )
         return activity
 
     def _materialize_facilitator_decision(

@@ -24,8 +24,10 @@ from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
+from app.plugins.builtin.rank_order_voting_plugin import RankOrderVotingPlugin
 from app.plugins.builtin.voting_plugin import VotingPlugin
 from app.plugins.context import ActivityContext
+from app.services.rank_order_voting_manager import RankOrderVotingManager
 from app.schemas.meeting import MeetingCreate, PublicityType
 from app.services import meeting_state_manager
 from app.services.agenda_strategy import (
@@ -132,6 +134,394 @@ def validate_orchestration_has_warnings(path: Path) -> bool:
     result = validate_orchestration(data)
     assert result.valid
     return bool(result.warnings)
+
+
+def _seed_delphi_meeting(db_session, suffix: str):
+    """Oracular Quokka: seed a meeting and synthetic Delphi participants."""
+    from app.tests.fixtures.delphi_synthetic import PARTICIPANTS
+
+    owner = User(
+        user_id=f"u-delphi-owner-{suffix}",
+        login=f"delphiowner{suffix}",
+        hashed_password="hash",
+        role=UserRole.ADMIN.value,
+    )
+    participants = [
+        User(
+            user_id=f"{user_id}-{suffix}",
+            login=f"{login}{suffix}",
+            hashed_password="hash",
+            role=UserRole.PARTICIPANT.value,
+        )
+        for user_id, login in PARTICIPANTS
+    ]
+    meeting = Meeting(
+        meeting_id=f"M-DELPHI-{suffix}",
+        owner_id=owner.user_id,
+        title=f"Oracular Quokka Delphi {suffix}",
+    )
+    db_session.add_all([owner, meeting, *participants])
+    db_session.commit()
+    return meeting, owner, participants
+
+
+def _median_iqr(items):
+    iqrs = sorted(
+        float(((item.get("metadata") or {}).get("delphi") or {}).get("iqr", 0.0))
+        for item in items
+    )
+    assert iqrs
+    mid = len(iqrs) // 2
+    if len(iqrs) % 2:
+        return iqrs[mid]
+    return (iqrs[mid - 1] + iqrs[mid]) / 2.0
+
+
+def _delphi_transformed_items(bundle):
+    from app.services.bundle_transforms import DelphiStatisticalAggregationTransform
+
+    transformed = DelphiStatisticalAggregationTransform().transform(
+        {
+            "items": list(bundle.items or []),
+            "metadata": dict(bundle.bundle_metadata or {}),
+        },
+        {},
+    )
+    return transformed["items"]
+
+
+def _assert_valid_bundle(bundle):
+    validate_bundle_payload({
+        "items": bundle.items or [],
+        "metadata": bundle.bundle_metadata or {},
+    })
+
+
+def _assert_latest_engine_broadcasts_are_canonical(broadcast_mock, start_index: int):
+    calls = broadcast_mock.await_args_list[start_index:]
+    assert calls
+    for call in calls:
+        message = call.args[1]
+        assert message["type"] in {"agenda_update", "meeting_state"}
+        assert "payload" in message
+        assert "meta" in message
+        assert "initiatorId" in message["meta"]
+        if message["type"] == "agenda_update":
+            assert isinstance(message["payload"], list)
+        else:
+            assert isinstance(message["payload"], dict)
+            assert "action" in message["meta"]
+
+
+def _broadcast_activity_for_test(
+    *,
+    meeting,
+    owner,
+    meeting_manager,
+    activity,
+    broadcast_mock,
+):
+    start_index = len(broadcast_mock.await_args_list)
+    result = asyncio.run(
+        broadcast_engine_agenda_mutation(
+            meeting_id=meeting.meeting_id,
+            initiator_id=owner.user_id,
+            meeting_manager=meeting_manager,
+            active_activity=activity,
+            action="engine_delphi_round_materialized",
+        )
+    )
+    _assert_latest_engine_broadcasts_are_canonical(broadcast_mock, start_index)
+    return result
+
+
+def _open_rank_round(db_session, meeting, owner, activity, input_bundle):
+    plugin = RankOrderVotingPlugin()
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
+    plugin.open_activity(context, input_bundle)
+    db_session.refresh(activity)
+    assert activity.config.get("ideas"), input_bundle.items
+    return plugin, context
+
+
+def _submit_synthetic_rankings(db_session, meeting, activity, participants, rankings):
+    manager = RankOrderVotingManager(db_session)
+    options = manager._extract_options(activity)
+    option_by_label = {option.label: option.option_id for option in options}
+    assert set(option_by_label) == {label for ranking in rankings for label in ranking}
+    for participant, ranking in zip(participants, rankings, strict=True):
+        manager.submit_ranking(
+            meeting,
+            activity.activity_id,
+            participant,
+            [option_by_label[label] for label in ranking],
+            is_active_state=False,
+        )
+
+
+def _close_rank_round(db_session, meeting, activity, owner, logical_step_id, round_index):
+    plugin = RankOrderVotingPlugin()
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
+    result = plugin.close_activity(context)
+    assert result is not None
+    bm = ActivityBundleManager(db_session)
+    bundle = bm.get_latest_bundle(meeting.meeting_id, activity.activity_id, "output")
+    assert bundle is not None
+    bundle.logical_step_id = logical_step_id
+    bundle.round_index = round_index
+    bundle.bundle_metadata = bm._metadata_with_iteration(
+        bundle.bundle_metadata,
+        logical_step_id=logical_step_id,
+        round_index=round_index,
+    )
+    db_session.add(bundle)
+    db_session.commit()
+    db_session.refresh(bundle)
+    _assert_valid_bundle(bundle)
+    return bundle
+
+
+def _run_delphi_rank_round(
+    *,
+    db_session,
+    meeting,
+    owner,
+    participants,
+    strategy,
+    meeting_manager,
+    broadcast_mock,
+    rankings,
+    expected_round_index,
+    explicit_input_bundle=None,
+):
+    activity = strategy.create_activity(meeting, None, None)
+    assert activity.tool_type == "rank_order_voting"
+    logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
+    assert round_index == expected_round_index
+    _broadcast_activity_for_test(
+        meeting=meeting,
+        owner=owner,
+        meeting_manager=meeting_manager,
+        activity=activity,
+        broadcast_mock=broadcast_mock,
+    )
+
+    bm = ActivityBundleManager(db_session)
+    input_bundle = explicit_input_bundle or bm.get_latest_bundle(
+        meeting.meeting_id,
+        activity.activity_id,
+        "input",
+        logical_step_id=logical_step_id,
+        round_index=round_index,
+    )
+    assert input_bundle is not None
+    _assert_valid_bundle(input_bundle)
+
+    _open_rank_round(db_session, meeting, owner, activity, input_bundle)
+    _submit_synthetic_rankings(db_session, meeting, activity, participants, rankings)
+    output_bundle = _close_rank_round(
+        db_session, meeting, activity, owner, logical_step_id, round_index
+    )
+    return activity, input_bundle, output_bundle
+
+
+def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
+    """Oracular Quokka: Delphi document runs deterministic synthetic IQR regimes."""
+    from fastapi import HTTPException
+    from app.tests.fixtures.delphi_synthetic import (
+        CONTRACTED_INTERMEDIATE_ROUND,
+        HIGH_IQR_OPENING_ROUND,
+        IDEAS,
+        NON_STABILIZING_ROUNDS,
+        TERMINAL_STABLE_ROUND,
+    )
+
+    def run_brainstorm_seed(strategy, meeting, owner, meeting_manager, broadcast_mock):
+        brain_activity = strategy.create_activity(meeting, None, None)
+        assert brain_activity.tool_type == "brainstorming"
+        _broadcast_activity_for_test(
+            meeting=meeting,
+            owner=owner,
+            meeting_manager=meeting_manager,
+            activity=brain_activity,
+            broadcast_mock=broadcast_mock,
+        )
+        for idea in IDEAS:
+            db_session.add(Idea(
+                content=idea,
+                meeting_id=meeting.meeting_id,
+                activity_id=brain_activity.activity_id,
+                user_id=owner.user_id,
+            ))
+        db_session.commit()
+        context = ActivityContext(
+            db=db_session, meeting=meeting, activity=brain_activity, user=owner
+        )
+        result = BrainstormingPlugin().close_activity(context)
+        assert result is not None
+        bundle = ActivityBundleManager(db_session).get_latest_bundle(
+            meeting.meeting_id, brain_activity.activity_id, "output"
+        )
+        assert bundle is not None
+        _assert_valid_bundle(bundle)
+        return brain_activity, bundle
+
+    broadcast_mock = mocker.patch(
+        "app.services.orchestration_realtime.websocket_manager.broadcast"
+    )
+    meeting_manager = MeetingManager(db_session)
+    doc = load_orchestration_path(_DELPHI_PATH)
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, owner, participants = _seed_delphi_meeting(db_session, "stable")
+
+    _, brainstorming_output = run_brainstorm_seed(
+        strategy, meeting, owner, meeting_manager, broadcast_mock
+    )
+    first_rank_activity = strategy.create_activity(meeting, None, None)
+    logical_step_id, round_index = strategy.iteration_metadata_for(
+        first_rank_activity.activity_id
+    )
+    assert round_index == 0
+    _broadcast_activity_for_test(
+        meeting=meeting,
+        owner=owner,
+        meeting_manager=meeting_manager,
+        activity=first_rank_activity,
+        broadcast_mock=broadcast_mock,
+    )
+    first_input = ActivityBundleManager(db_session).create_bundle(
+        meeting.meeting_id,
+        first_rank_activity.activity_id,
+        "input",
+        list(brainstorming_output.items or []),
+        metadata=dict(brainstorming_output.bundle_metadata or {}),
+        logical_step_id=logical_step_id,
+        round_index=round_index,
+    )
+    _assert_valid_bundle(first_input)
+    _open_rank_round(db_session, meeting, owner, first_rank_activity, first_input)
+    _submit_synthetic_rankings(
+        db_session, meeting, first_rank_activity, participants, HIGH_IQR_OPENING_ROUND
+    )
+    first_output = _close_rank_round(
+        db_session, meeting, first_rank_activity, owner, logical_step_id, round_index
+    )
+    assert len(first_output.items or []) == len(IDEAS)
+
+    _, second_input, second_output = _run_delphi_rank_round(
+        db_session=db_session,
+        meeting=meeting,
+        owner=owner,
+        participants=participants,
+        strategy=strategy,
+        meeting_manager=meeting_manager,
+        broadcast_mock=broadcast_mock,
+        rankings=CONTRACTED_INTERMEDIATE_ROUND,
+        expected_round_index=1,
+    )
+    first_feedback = {
+        item["content"]: (item.get("metadata") or {}).get("delphi") or {}
+        for item in second_input.items
+    }
+    assert _median_iqr(second_input.items) == 2.0
+    assert first_feedback[IDEAS[0]]["outlier_flags"][participants[-1].user_id] is True
+    assert first_feedback[IDEAS[0]]["outliers"] == [participants[-1].user_id]
+
+    _, third_input, third_output = _run_delphi_rank_round(
+        db_session=db_session,
+        meeting=meeting,
+        owner=owner,
+        participants=participants,
+        strategy=strategy,
+        meeting_manager=meeting_manager,
+        broadcast_mock=broadcast_mock,
+        rankings=TERMINAL_STABLE_ROUND,
+        expected_round_index=2,
+    )
+    assert _median_iqr(third_input.items) == 0.0
+    assert _median_iqr(_delphi_transformed_items(third_output)) == 0.0
+    assert strategy.is_complete(meeting)
+    with pytest.raises(HTTPException, match="complete"):
+        strategy.create_activity(meeting, None, None)
+
+    for bundle in [first_input, first_output, second_input, second_output, third_input, third_output]:
+        _assert_valid_bundle(bundle)
+
+    # Non-stabilizing parameterization: the predicate never fires and the
+    # shipped document's max_rounds=4 ceiling terminates the loop.
+    import json
+    from app.services.orchestration_loader import load_orchestration_data
+
+    runaway_data = json.loads(_DELPHI_PATH.read_text(encoding="utf-8"))
+    runaway_data["steps"][0]["steps"][1]["convergence_predicate"]["config"]["threshold"] = -1.0
+    runaway_strategy = OrchestrationEngineStrategy(
+        load_orchestration_data(runaway_data)
+    )
+    runaway_meeting, runaway_owner, runaway_participants = _seed_delphi_meeting(
+        db_session, "bound"
+    )
+    _, runaway_brainstorm = run_brainstorm_seed(
+        runaway_strategy,
+        runaway_meeting,
+        runaway_owner,
+        meeting_manager,
+        broadcast_mock,
+    )
+    first_runaway = runaway_strategy.create_activity(runaway_meeting, None, None)
+    runaway_logical_step_id, runaway_round_index = runaway_strategy.iteration_metadata_for(
+        first_runaway.activity_id
+    )
+    runaway_input = ActivityBundleManager(db_session).create_bundle(
+        runaway_meeting.meeting_id,
+        first_runaway.activity_id,
+        "input",
+        list(runaway_brainstorm.items or []),
+        metadata=dict(runaway_brainstorm.bundle_metadata or {}),
+        logical_step_id=runaway_logical_step_id,
+        round_index=runaway_round_index,
+    )
+    _open_rank_round(db_session, runaway_meeting, runaway_owner, first_runaway, runaway_input)
+    _submit_synthetic_rankings(
+        db_session,
+        runaway_meeting,
+        first_runaway,
+        runaway_participants,
+        NON_STABILIZING_ROUNDS[0],
+    )
+    _close_rank_round(
+        db_session,
+        runaway_meeting,
+        first_runaway,
+        runaway_owner,
+        runaway_logical_step_id,
+        runaway_round_index,
+    )
+
+    runaway_rounds = [first_runaway]
+    for expected_round_index, rankings in enumerate(NON_STABILIZING_ROUNDS[1:], start=1):
+        activity, _input_bundle, _output_bundle = _run_delphi_rank_round(
+            db_session=db_session,
+            meeting=runaway_meeting,
+            owner=runaway_owner,
+            participants=runaway_participants,
+            strategy=runaway_strategy,
+            meeting_manager=meeting_manager,
+            broadcast_mock=broadcast_mock,
+            rankings=rankings,
+            expected_round_index=expected_round_index,
+        )
+        runaway_rounds.append(activity)
+
+    assert [runaway_strategy.iteration_metadata_for(a.activity_id)[1] for a in runaway_rounds] == [0, 1, 2, 3]
+    assert runaway_strategy.is_complete(runaway_meeting)
+
+    plugin_paths = [
+        Path("app/plugins/base.py"),
+        Path("app/plugins/builtin/brainstorming_plugin.py"),
+        Path("app/plugins/builtin/rank_order_voting_plugin.py"),
+    ]
+    for path in plugin_paths:
+        assert "Oracular Quokka" not in path.read_text(encoding="utf-8")
 
 
 def test_engine_strategy_plan_from_bare_sequence():
@@ -544,9 +934,9 @@ def test_iterate_iqr_stability_predicate_exits_when_stable(db_session):
 
     history = _drive_iterate_to_completion(strategy, meeting, db_session, factory)
 
-    # Round 0: predicate returns False (history len < 2)
-    # Round 1: predicate returns True (median IQR unchanged) — engine exits
-    assert len(history) == 2
+    # The helper observes the materialized lookahead row before the next
+    # create_activity call sees the stable two-round history and exits.
+    assert len(history) == 3
 
 
 def test_iterate_max_rounds_caps_runaway_predicate(db_session):

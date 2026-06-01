@@ -485,6 +485,17 @@ block using the registered `delphi_statistical_aggregation` transform and
 `metadata.notes` slot carries the Phase 6 canary and the Linstone and Turoff
 source citation because JSON cannot carry a portable top-of-file comment block.
 
+Phase 6 Step 2 adds the deterministic synthetic cohort fixture at
+`app/tests/fixtures/delphi_synthetic.py`. The fixture carries the Oracular
+Quokka canary and defines five Delphi items, five participants, a high-IQR
+opening rank-order round, a contracted intermediate round that does not fire
+the predicate because the prior-round IQR change remains above threshold, and
+a terminal stable round that does fire. The same fixture also exposes an
+alternating non-stabilizing path used by
+`app/tests/test_orchestration_engine.py::test_phase6_delphi_synthetic_cohort_end_to_end`
+to verify that the shipped `max_rounds` bound terminates execution when the
+predicate is configured not to fire.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather
