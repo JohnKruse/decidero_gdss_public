@@ -57,3 +57,4 @@ If you are new to activity development, start with the first link below. It expl
 2. GitHub handoff: `docs/github/GITHUB_HANDOFF.md`
 3. Legacy VPS redirect note: `docs/VPS_HOSTING_GUIDE.md`
 4. Phase 6 validation checklist: `docs/PHASE_6_VALIDATION_CHECKLIST.md`
+5. User testing guide: `docs/USER_TESTING_GUIDE.md`
