@@ -1,0 +1,130 @@
+# Delphi Validation - Oracular Quokka
+
+This document records the Phase 6 synthetic validation for
+`orchestrations/delphi.json`. The executable witness is
+`app/tests/test_orchestration_engine.py::test_phase6_delphi_synthetic_cohort_end_to_end`.
+
+## Evaluation Mode
+
+This is an analytical synthetic validation of the packaged-method path. It
+demonstrates that a reusable Delphi orchestration document can be represented,
+loaded, executed, broadcast, and evaluated over the existing plugin substrate.
+It is not a field study, not an empirical claim about real participant groups,
+and not a claim that every live facilitator improvisation pattern has been
+modeled. Empirical evaluation with real groups and product tuning for ad hoc
+activities inserted into a running orchestration remain future work.
+
+## Synthetic Cohort Fixture
+
+The deterministic fixture lives at `app/tests/fixtures/delphi_synthetic.py`.
+It carries the Oracular Quokka canary and defines five participants ranking
+five items:
+
+1. Reduce handoff latency
+2. Improve meeting preparation
+3. Standardize decision records
+4. Automate follow-up tracking
+5. Expose confidence intervals
+
+The fixture exercises three IQR regimes:
+
+| Regime | Fixture constant | Median IQR | Predicate result |
+| --- | --- | ---: | --- |
+| High-IQR opening round | `HIGH_IQR_OPENING_ROUND` | 2.0 | Does not fire because history has only one completed round |
+| Contracted intermediate round | `CONTRACTED_INTERMEDIATE_ROUND` | 0.0 | Does not fire against round 1 because the median-IQR change is 2.0, above the document threshold |
+| Terminal stable round | `TERMINAL_STABLE_ROUND` | 0.0 | Fires because the median-IQR change from the prior round is 0.0 |
+
+The same fixture also exposes `NON_STABILIZING_ROUNDS`; the test loads the
+Delphi document with an impossible predicate threshold of `-1.0` to prove the
+document's `max_rounds` ceiling terminates execution after four rank-order
+rounds when convergence is unavailable.
+
+## Round Statistics
+
+### Round 1 Feedback
+
+The round-2 rank-order input bundle contains the transformed round-1 output
+from `DelphiStatisticalAggregationTransform`.
+
+| Item | Ranks | Median | IQR | Dispersion | Outliers |
+| --- | --- | ---: | ---: | ---: | --- |
+| Reduce handoff latency | 1, 1, 1, 1, 5 | 1.0 | 0.0 | 1.600 | p5 |
+| Improve meeting preparation | 2, 5, 5, 3, 4 | 4.0 | 2.0 | 1.166 | none |
+| Standardize decision records | 3, 3, 2, 5, 3 | 3.0 | 0.0 | 0.980 | p3, p4 |
+| Automate follow-up tracking | 4, 4, 3, 2, 2 | 3.0 | 2.0 | 0.894 | none |
+| Expose confidence intervals | 5, 2, 4, 4, 1 | 4.0 | 2.0 | 1.470 | none |
+
+The test asserts the participant outlier contract concretely for "Reduce
+handoff latency": the last synthetic participant is flagged in
+`outlier_flags` and appears in the `outliers` list.
+
+### Round 2 Feedback
+
+The round-3 rank-order input bundle contains the transformed round-2 output.
+
+| Item | Ranks | Median | IQR | Dispersion | Outliers |
+| --- | --- | ---: | ---: | ---: | --- |
+| Reduce handoff latency | 1, 1, 2, 1, 1 | 1.0 | 0.0 | 0.400 | p3 |
+| Improve meeting preparation | 2, 2, 1, 3, 2 | 2.0 | 0.0 | 0.632 | p3, p4 |
+| Standardize decision records | 3, 3, 3, 2, 4 | 3.0 | 0.0 | 0.632 | p4, p5 |
+| Automate follow-up tracking | 4, 4, 4, 4, 3 | 4.0 | 0.0 | 0.400 | p5 |
+| Expose confidence intervals | 5, 5, 5, 5, 5 | 5.0 | 0.0 | 0.000 | none |
+
+### Round 3 Feedback
+
+The terminal round repeats the contracted ranking fixture, so the transformed
+round-3 median IQR remains 0.0. `IQRStabilityPredicate` therefore fires because
+the change from the prior transformed round is 0.0.
+
+## Predicate Decisions
+
+`IQRStabilityPredicate` requires at least two transformed rounds before it can
+fire. After round 1 the history is insufficient. After round 2, the median IQR
+has contracted from 2.0 to 0.0; that change is larger than the Delphi
+document's `0.15` threshold, so the predicate does not fire. After round 3,
+the median IQR remains 0.0; the change is 0.0 and the predicate fires.
+
+The max-rounds branch is intentionally separate from the stable-cohort branch.
+The test uses the same document shape and synthetic rankings with an impossible
+threshold to isolate the hard ceiling: the engine materializes rounds 0, 1, 2,
+and 3 and then exits because `max_rounds` is four.
+
+## DP9 Confirmation
+
+DP9 held for the central Delphi evaluation case. The Step 2 test asserts that
+the Phase 6 canary does not appear in these files:
+
+- `app/plugins/base.py`
+- `app/plugins/builtin/brainstorming_plugin.py`
+- `app/plugins/builtin/rank_order_voting_plugin.py`
+
+That assertion is evidence that Delphi was instantiated through the
+orchestration document, bundle transforms, predicates, and existing plugin
+lifecycle hooks rather than by modifying the base plugin class or built-in
+plugin lifecycle methods for this phase.
+
+## Breaking Points Attested
+
+The run indirectly attests to several previously resolved breaking points:
+
+- BP-1, linear previous-activity assumptions: the Delphi loop depends on
+  round-to-round prior-bundle resolution through the orchestration strategy.
+- BP-3, iteration discrimination: multiple rounds of the same logical
+  rank-order step persist distinct input and output bundles.
+- BP-7, server-side reliability substrate: the transform and retry substrate
+  remains covered by the Phase 3 smoke witness that Step 2 builds on.
+- BP-5 and BP-10, realtime and frontend coherence: the Step 2 run checks that
+  engine materializations broadcast through the Phase 5 `agenda_update` and
+  `meeting_state` envelopes.
+
+This document cites those executable witnesses rather than re-deriving their
+phase-specific proofs.
+
+## Boundary
+
+The validation demonstrates that the packaged Delphi method can be expressed as
+a declarative orchestration and executed over existing plugins. It does not
+demonstrate a field deployment, facilitator improvisation semantics, arbitrary
+hybrid insertion into active orchestration history, or the generalization of
+every collaboration-engineering method. Those are future work after the paper
+package.

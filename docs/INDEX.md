@@ -47,6 +47,10 @@ If you are new to activity development, start with the first link below. It expl
 
 1. Categorization production spec: `docs/CATEGORIZATION_ACTIVITY_SPEC.md`
 
+## Reference Evaluations
+
+1. Delphi synthetic validation: `docs/DELPHI_VALIDATION.md`
+
 ## Other References
 
 1. Avatar pipeline: `docs/AVATAR_PIPELINE.md`

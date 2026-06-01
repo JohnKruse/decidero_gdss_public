@@ -524,6 +524,16 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         assert "Oracular Quokka" not in path.read_text(encoding="utf-8")
 
 
+def test_phase6_delphi_validation_doc_tracks_step2_witness():
+    """Oracular Quokka: validation writeup stays linked to the synthetic E2E witness."""
+    validation_path = Path(__file__).resolve().parents[2] / "docs" / "DELPHI_VALIDATION.md"
+    assert validation_path.exists()
+    text = validation_path.read_text(encoding="utf-8")
+    assert "Oracular Quokka" in text
+    assert "test_phase6_delphi_synthetic_cohort_end_to_end" in text
+    assert "app/tests/fixtures/delphi_synthetic.py" in text
+
+
 def test_engine_strategy_plan_from_bare_sequence():
     """Sequence with one activity step produces a single-entry plan."""
     from app.services.orchestration_loader import load_orchestration_data

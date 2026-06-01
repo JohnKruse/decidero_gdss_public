@@ -227,7 +227,7 @@ def test_phase6_step3_consistency_record_is_auditable():
     checklist_text = PHASE_6_CHECKLIST_PATH.read_text(encoding="utf-8")
     if "# PHASE 6 — Delphi Instantiation and Evaluation" in plan_text:
         expected_markers = [
-            "### Step 3 — Author `docs/DELPHI_VALIDATION.md`",
+            "Author `docs/DELPHI_VALIDATION.md`",
             "docs/DELPHI_VALIDATION.md",
             "synthetic-cohort fixture",
             "BP-1",

@@ -496,6 +496,11 @@ alternating non-stabilizing path used by
 to verify that the shipped `max_rounds` bound terminates execution when the
 predicate is configured not to fire.
 
+The paper-ready analytical validation writeup lives at
+[`docs/DELPHI_VALIDATION.md`](DELPHI_VALIDATION.md). It reports the synthetic
+cohort statistics, predicate decisions, DP9 confirmation, and evaluation
+boundary for this reference orchestration.
+
 ### Prior-Activity Resolution
 
 `OrchestrationEngineStrategy.resolve_prior_activity` uses plan order rather
