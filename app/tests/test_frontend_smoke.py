@@ -180,6 +180,24 @@ def test_dashboard_js_uses_viewer_capabilities_for_meeting_actions():
     assert "meeting.quick_actions?.roster" in js
 
 
+def test_dashboard_create_meeting_choice_surface_copy():
+    """Copper Compass: dashboard separates template, AI, manual, and import paths."""
+    with open("app/templates/dashboard.html", "r", encoding="utf-8") as handle:
+        template = handle.read()
+    with open("app/static/css/dashboard.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+
+    assert "CREATE MEETING" in template
+    assert "Start from Template" in template
+    assert "Design with AI" in template
+    assert "Design Yourself" in template
+    assert "IMPORT MEETING" in template
+    assert "navigateTo('/meeting/templates')" in template
+    assert "navigateTo('/meeting/design')" in template
+    assert "navigateTo('/meeting/create')" in template
+    assert "meeting-create-menu__panel" in css
+
+
 def test_meeting_page_supports_roster_deep_link():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()

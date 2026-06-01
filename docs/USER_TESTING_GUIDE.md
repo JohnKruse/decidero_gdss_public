@@ -9,6 +9,8 @@ The current Phase 7 product assumption is that meeting creation will be organize
 - **Design Yourself** starts from a blank manual creator.
 - **Import Meeting** loads an existing meeting archive for review, recovery, or reuse of prior data.
 
+The dashboard should expose those choices without training: **Create Meeting** opens the creation choices, while **Import Meeting** remains its own button.
+
 ## Purpose
 
 Use the pilot to answer four operational questions:

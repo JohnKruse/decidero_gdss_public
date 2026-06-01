@@ -43,10 +43,20 @@ EXPORT_ZIP_BASE64 = (
 )
 
 PHASE_5_PLAN_PATH = (
-    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_5.md"
+    Path(__file__).resolve().parents[2]
+    / "plans"
+    / "archive"
+    / "orchestration_engine"
+    / "subplans"
+    / "PHASE_5.md"
 )
 PHASE_6_PLAN_PATH = (
-    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_6.md"
+    Path(__file__).resolve().parents[2]
+    / "plans"
+    / "archive"
+    / "orchestration_engine"
+    / "subplans"
+    / "PHASE_6.md"
 )
 PHASE_6_CHECKLIST_PATH = (
     Path(__file__).resolve().parents[2] / "docs" / "PHASE_6_VALIDATION_CHECKLIST.md"

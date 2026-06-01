@@ -136,6 +136,7 @@ body {
     display: flex;
     gap: 0.6rem;
     flex-wrap: wrap;
+    align-items: flex-start;
 }
 
 .meeting-create-group--ghost {
@@ -161,6 +162,75 @@ body {
 
 .meeting-create-group__btn--ai:hover {
     background: linear-gradient(135deg, #0a2d6e 0%, #0d47a1 100%);
+}
+
+.meeting-create-menu {
+    position: relative;
+}
+
+.meeting-create-menu__summary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    min-width: 180px;
+    list-style: none;
+    user-select: none;
+}
+
+.meeting-create-menu__summary::-webkit-details-marker {
+    display: none;
+}
+
+.meeting-create-menu__summary::after {
+    content: "v";
+    font-size: 0.78rem;
+    line-height: 1;
+}
+
+.meeting-create-menu[open] .meeting-create-menu__summary {
+    background: #0A2D6E;
+}
+
+.meeting-create-menu__panel {
+    position: absolute;
+    top: calc(100% + 0.45rem);
+    left: 0;
+    z-index: 40;
+    width: min(330px, calc(100vw - 2rem));
+    padding: 0.45rem;
+    border: 1px solid rgba(11, 61, 145, 0.18);
+    border-radius: 8px;
+    background: var(--white);
+    box-shadow: 0 12px 28px rgba(11, 61, 145, 0.2);
+}
+
+.meeting-create-menu__item {
+    width: 100%;
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.65rem 0.75rem;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--navy-blue);
+    text-align: left;
+}
+
+.meeting-create-menu__item:hover,
+.meeting-create-menu__item:focus {
+    background: rgba(11, 61, 145, 0.08);
+}
+
+.meeting-create-menu__item-title {
+    font-weight: 700;
+    line-height: 1.15;
+}
+
+.meeting-create-menu__item-copy {
+    font-size: 0.82rem;
+    font-weight: 400;
+    line-height: 1.25;
+    color: rgba(11, 61, 145, 0.74);
 }
 
 /* Overview */
@@ -1012,6 +1082,20 @@ button {
 
     .meeting-create-group__buttons .action-btn {
         flex: 1;
+    }
+
+    .meeting-create-menu {
+        width: 100%;
+    }
+
+    .meeting-create-menu__summary {
+        width: 100%;
+    }
+
+    .meeting-create-menu__panel {
+        position: static;
+        width: 100%;
+        margin-top: 0.5rem;
     }
     
     .meetings-grid {

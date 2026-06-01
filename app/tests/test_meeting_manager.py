@@ -36,7 +36,12 @@ from datetime import datetime, timedelta, UTC
 from app.utils.identifiers import generate_user_id
 
 PHASE_4_PLAN_PATH = (
-    Path(__file__).resolve().parents[2] / "plans" / "subplans" / "PHASE_4.md"
+    Path(__file__).resolve().parents[2]
+    / "plans"
+    / "archive"
+    / "orchestration_engine"
+    / "subplans"
+    / "PHASE_4.md"
 )
 
 

@@ -13,22 +13,42 @@
                 <div class="meeting-create-group">
                     <span class="meeting-create-group__label">Create a Meeting</span>
                     <div class="meeting-create-group__buttons">
-                        <button
-                            class="action-btn meeting-create-group__btn--ai"
-                            type="button"
-                            data-requires-role="facilitator"
-                            onclick="navigateTo('/meeting/design')"
-                        >
-                            <span class="ai-sparkle" aria-hidden="true">&#10022;</span> DESIGN WITH AI
-                        </button>
-                        <button
-                            class="action-btn"
-                            type="button"
-                            data-requires-role="facilitator"
-                            onclick="navigateTo('/meeting/create')"
-                        >
-                            DESIGN YOURSELF
-                        </button>
+                        <details class="meeting-create-menu" data-requires-role="facilitator">
+                            <summary class="action-btn meeting-create-menu__summary">
+                                CREATE MEETING
+                            </summary>
+                            <div class="meeting-create-menu__panel" role="menu" aria-label="Create meeting choices">
+                                <button
+                                    class="meeting-create-menu__item"
+                                    type="button"
+                                    role="menuitem"
+                                    onclick="navigateTo('/meeting/templates')"
+                                >
+                                    <span class="meeting-create-menu__item-title">Start from Template</span>
+                                    <span class="meeting-create-menu__item-copy">Use a prebuilt or saved meeting design.</span>
+                                </button>
+                                <button
+                                    class="meeting-create-menu__item"
+                                    type="button"
+                                    role="menuitem"
+                                    onclick="navigateTo('/meeting/design')"
+                                >
+                                    <span class="meeting-create-menu__item-title">
+                                        <span class="ai-sparkle" aria-hidden="true">&#10022;</span> Design with AI
+                                    </span>
+                                    <span class="meeting-create-menu__item-copy">Describe the situation and generate an agenda.</span>
+                                </button>
+                                <button
+                                    class="meeting-create-menu__item"
+                                    type="button"
+                                    role="menuitem"
+                                    onclick="navigateTo('/meeting/create')"
+                                >
+                                    <span class="meeting-create-menu__item-title">Design Yourself</span>
+                                    <span class="meeting-create-menu__item-copy">Build a meeting from a blank agenda.</span>
+                                </button>
+                            </div>
+                        </details>
                         <button
                             class="action-btn import-meeting"
                             type="button"

@@ -107,7 +107,7 @@ Full graphical editing of template internals is not required for v1. The first u
 
 ## Atomic Steps
 
-### Step 1 — Dashboard Creation IA and Copy
+### Step 1 — [DONE] Dashboard Creation IA and Copy
 
 Rework the dashboard creation controls around the user-facing creation model. The button set must make the distinction between template, AI design, manual design, and import obvious without training.
 
@@ -117,6 +117,9 @@ Conclude this step by:
 - Keeping **Import Meeting** visible as a separate operation.
 - Updating frontend smoke tests for the new dashboard affordances.
 - Updating user-testing documentation so observers know what users are expected to understand from the dashboard alone.
+
+Technical deviations:
+- `Start from Template` points to `/meeting/templates`, the route owned by Step 3. Step 1 intentionally implements the dashboard information architecture and copy before the landing page exists, so user-facing template instantiation remains incomplete until Step 3 and Step 4.
 
 ### Step 2 — Template Contract and Storage
 
