@@ -2,14 +2,22 @@
 
 This guide runs the first Decidero pilot sessions after the orchestration-engine master plan. It is practical session guidance, not a publication-grade empirical protocol.
 
+The current Phase 7 product assumption is that meeting creation will be organized around four distinct paths:
+
+- **Start from Template** creates a clean meeting from reusable structure.
+- **Design with AI** generates a custom agenda from conversation.
+- **Design Yourself** starts from a blank manual creator.
+- **Import Meeting** loads an existing meeting archive for review, recovery, or reuse of prior data.
+
 ## Purpose
 
 Use the pilot to answer four operational questions:
 
-1. Can a facilitator create and run a meeting without developer help?
-2. Can participants join, contribute, and understand the active activity?
-3. Do realtime updates, permissions, and transfers behave correctly under observed use?
-4. What blocker or high-severity issues must be fixed before broader testing?
+1. Can a facilitator understand the difference between template, AI, manual, and import paths without explanation?
+2. Can a facilitator create and run a meeting without developer help?
+3. Can participants join, contribute, and understand the active activity?
+4. Do realtime updates, permissions, templates, and transfers behave correctly under observed use?
+5. What blocker or high-severity issues must be fixed before broader testing?
 
 ## Preflight
 
@@ -52,7 +60,7 @@ Read or paraphrase:
 
 Facilitator goal:
 
-"Create a meeting for this group, add the participants, add a brainstorming activity, a voting activity, a rank-order voting activity, and a categorization activity, then share the join path."
+"Create a meeting for this group. Choose the creation path that seems right, add participants, and share the join path."
 
 Observer prompts only if needed:
 
@@ -62,12 +70,30 @@ Observer prompts only if needed:
 
 Success signals:
 
+- Facilitator can explain, in their own words, when they would use Start from Template, Design with AI, Design Yourself, and Import Meeting.
 - Meeting is created.
 - Participants can join.
 - Activities are configured without invalid placeholder data.
 - Facilitator understands role and roster controls.
 
-### Workflow B - Run a Live Meeting
+### Workflow B - Start from Template
+
+Use this workflow once the Phase 7 template path is implemented. Until then, record the missing path as a product gap rather than forcing a workaround.
+
+Facilitator goal:
+
+"Start from a prebuilt meeting template, adjust only the details needed for today's group, and create the meeting."
+
+Observe:
+
+- Whether the facilitator finds Start from Template from the dashboard.
+- Whether the Meeting Templates page makes built-in and custom templates understandable.
+- Whether card details are enough without a separate preview page.
+- Whether the facilitator understands that a template is a clean reusable design, not an old meeting with data.
+- Whether required fields and template-specific parameters are clear.
+- Whether the resulting meeting contains the expected agenda and no stale runtime data.
+
+### Workflow C - Run a Live Meeting
 
 Group goal:
 
@@ -81,7 +107,7 @@ Observe:
 - Whether agenda changes appear without refresh.
 - Whether accidental refresh or reconnect causes data loss or confusion.
 
-### Workflow C - Transfer Output
+### Workflow D - Transfer Output
 
 Facilitator goal:
 
@@ -94,15 +120,30 @@ Observe:
 - Whether provenance and item content remain intact.
 - Whether locked or ineligible targets explain why they are unavailable.
 
-### Workflow D - Delphi Readiness
+### Workflow E - Save as Template
+
+Use this workflow once Phase 7 save-as-template is implemented.
+
+Facilitator goal:
+
+"This meeting structure worked well. Save the reusable structure so you can run a similar meeting next week."
+
+Observe:
+
+- Whether the facilitator finds Save as Template from the meeting page or settings.
+- Whether they understand which data will and will not be saved.
+- Whether the saved template appears in Meeting Templates.
+- Whether starting from the saved template creates a clean meeting without ideas, votes, rankings, categories, runtime state, or participant responses.
+
+### Workflow F - Delphi Readiness
 
 Use only if the Delphi path is exposed in the current product surface.
 
 Facilitator goal:
 
-"Start or inspect the packaged Delphi method and explain how round-to-round feedback works."
+"Start or inspect the Classical Delphi template and explain how round-to-round feedback works."
 
-If Delphi is not exposed through the UI, record that as a product gap. Do not force a backend-only demonstration in a user pilot.
+If Delphi is not exposed through the UI as a template, record that as a product gap. Do not force a backend-only demonstration in a user pilot.
 
 ## Evidence Template
 
@@ -112,7 +153,7 @@ If Delphi is not exposed through the UI, record that as a product gap. Do not fo
 | Date/time |  |
 | Commit SHA |  |
 | Environment | Local, LAN, or hosted |
-| Workflow | Setup, A, B, C, or D |
+| Workflow | Setup, A, B, C, D, E, or F |
 | Role | Admin, facilitator, participant, observer |
 | Browser/device |  |
 | Severity | Blocker, high, medium, low, note |

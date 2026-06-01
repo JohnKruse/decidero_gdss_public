@@ -80,7 +80,7 @@ that owns the relevant configuration write.
 DP7 (Collaboration Processes as Declarative, Composable Artifacts),
 DP8 (Closed Control Flow, Open Step Vocabulary), and
 DP9 (Method-Specific Concerns Do Not Belong in Activity Plugins) are
-defined in [plans/02_ORCHESTRATION_ENGINE.md §1.2](../plans/02_ORCHESTRATION_ENGINE.md).
+defined in [plans/archive/orchestration_engine/02_ORCHESTRATION_ENGINE.md §1.2](../plans/archive/orchestration_engine/02_ORCHESTRATION_ENGINE.md).
 They govern the orchestration grammar and the engine's relationship to the
 activity-plugin contract; this spec does not redefine them.
 
