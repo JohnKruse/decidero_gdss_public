@@ -26,6 +26,10 @@ from ..data.meeting_manager import (
     MeetingManager,
     get_meeting_manager,
 )
+from ..data.meeting_template_manager import (
+    MeetingTemplateManager,
+    get_meeting_template_manager,
+)
 from ..services.meeting_authorization import resolve_meeting_capabilities
 from sqlalchemy.orm import Session
 from ..database import get_db
@@ -332,8 +336,10 @@ async def activity_library(
 @router.get("/meeting/create", response_class=HTMLResponse, response_model=None)
 async def create_meeting(
     request: Request,
+    template_id: str | None = None,
     current_user: User = Depends(get_current_active_user),
     meeting_manager: MeetingManager = Depends(get_meeting_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
 ):
     """Display meeting creation page - requires facilitator/admin"""
     if current_user is None:
@@ -350,6 +356,28 @@ async def create_meeting(
             detail="Only facilitators and administrators can create meetings",
         )
 
+    template_prefill = None
+    if template_id:
+        meeting_template = template_manager.get_template(template_id)
+        if meeting_template is None:
+            raise HTTPException(status_code=404, detail="Meeting template not found")
+        permissions = template_manager.permission_summary(meeting_template, current_user)
+        if not permissions.can_start:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to start from this template",
+            )
+        payload = meeting_template.template_payload or {}
+        defaults = payload.get("defaults") if isinstance(payload, dict) else {}
+        agenda = payload.get("agenda") if isinstance(payload, dict) else []
+        template_prefill = {
+            "template_id": meeting_template.template_id,
+            "template_name": meeting_template.name,
+            "title": (defaults or {}).get("title") or meeting_template.name,
+            "description": (defaults or {}).get("description") or meeting_template.description or "",
+            "agenda": agenda if isinstance(agenda, list) else [],
+        }
+
     return templates.TemplateResponse(request, 
         "create_meeting.html",
         {
@@ -359,6 +387,50 @@ async def create_meeting(
             "UserRole": UserRole,  # For role comparisons in template
             "page_mode": "create",
             "meeting_id": None,
+            "template_prefill": template_prefill,
+        },
+    )
+
+
+@router.get("/meeting/templates", response_class=HTMLResponse, response_model=None)
+async def meeting_templates(
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Display reusable meeting templates - requires facilitator/admin."""
+    if current_user is None:
+        cached_user = getattr(request.state, "user", None)
+        if cached_user is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Authenticated user not available for meeting templates.",
+            )
+        current_user = cached_user
+    if current_user.role not in [UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only facilitators and administrators can start from templates",
+        )
+
+    template_cards = [
+        {
+            "template": template,
+            "permissions": template_manager.permission_summary(template, current_user),
+        }
+        for template in template_manager.list_templates()
+    ]
+
+    return templates.TemplateResponse(
+        request,
+        "meeting_templates.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "role": current_user.role,
+            "UserRole": UserRole,
+            "template_cards": template_cards,
+            "ui_refresh": get_ui_refresh_settings(),
         },
     )
 

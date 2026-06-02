@@ -223,7 +223,8 @@ class MeetingTemplateManager:
         if user is None:
             return MeetingTemplatePermissionSummary()
 
-        role = str(getattr(user, "role", "") or "").lower()
+        raw_role = getattr(user, "role", "") or ""
+        role = str(getattr(raw_role, "value", raw_role)).lower()
         is_active = template.status == MeetingTemplateStatus.ACTIVE.value
         is_builtin = template.source == MeetingTemplateSource.BUILT_IN.value
         owns_template = template.created_by_user_id == user.user_id
@@ -331,3 +332,121 @@ def get_meeting_template_manager(
     db: Session = Depends(get_db),
 ) -> MeetingTemplateManager:
     return MeetingTemplateManager(db=db)
+
+
+def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
+    """Create or refresh built-in templates shipped with the application."""
+    manager = MeetingTemplateManager(db=db)
+    classical_delphi = manager.upsert_builtin_template(
+        built_in_key="classical-delphi",
+        name="Classical Delphi",
+        purpose="Iterative anonymous expert input, review, and convergence.",
+        description=(
+            "A reusable Delphi-style meeting structure for collecting independent "
+            "judgments, grouping themes, ranking priorities, and running a second "
+            "reflection round."
+        ),
+        estimated_duration_minutes=75,
+        min_participants=3,
+        max_participants=25,
+        tags=["Delphi", "Expert judgment", "Multi-round", "Copper Compass"],
+        flow_type=MeetingTemplateFlowType.MULTI_ROUND,
+        template_payload=MeetingTemplatePayload(
+            defaults={
+                "title": "Classical Delphi",
+                "description": (
+                    "Use iterative anonymous input and structured feedback to move "
+                    "a group toward clearer expert judgment."
+                ),
+            },
+            agenda=[
+                {
+                    "tool_type": "brainstorming",
+                    "title": "Round 1: Independent judgments",
+                    "instructions": (
+                        "Ask participants to submit independent responses before "
+                        "discussion. Keep framing neutral and avoid evaluating ideas "
+                        "during collection."
+                    ),
+                    "order_index": 1,
+                    "duration_minutes": 15,
+                    "config": {
+                        "allow_anonymous": True,
+                        "allow_subcomments": False,
+                        "auto_jump_new_ideas": True,
+                        "prompt": "What is your independent judgment, estimate, or recommendation?",
+                    },
+                },
+                {
+                    "tool_type": "categorization",
+                    "title": "Theme review",
+                    "instructions": (
+                        "Group the first-round responses into themes without "
+                        "discarding minority views."
+                    ),
+                    "order_index": 2,
+                    "duration_minutes": 15,
+                    "config": {
+                        "mode": "FACILITATOR_LIVE",
+                        "items": [],
+                        "buckets": [
+                            "Strong agreement",
+                            "Promising but uncertain",
+                            "Needs evidence",
+                            "Divergent view",
+                        ],
+                        "single_assignment_only": True,
+                    },
+                },
+                {
+                    "tool_type": "rank_order_voting",
+                    "title": "Rank emerging priorities",
+                    "instructions": (
+                        "Have participants rank the most important themes or options "
+                        "from the review."
+                    ),
+                    "order_index": 3,
+                    "duration_minutes": 15,
+                    "config": {
+                        "ideas": [
+                            "Replace with theme or option A",
+                            "Replace with theme or option B",
+                            "Replace with theme or option C",
+                        ],
+                        "randomize_order": True,
+                        "show_results_immediately": False,
+                        "allow_reset": True,
+                    },
+                },
+                {
+                    "tool_type": "brainstorming",
+                    "title": "Round 2: Reconsidered judgments",
+                    "instructions": (
+                        "Share summarized feedback and ask participants to revise, "
+                        "confirm, or explain their judgments."
+                    ),
+                    "order_index": 4,
+                    "duration_minutes": 20,
+                    "config": {
+                        "allow_anonymous": True,
+                        "allow_subcomments": False,
+                        "auto_jump_new_ideas": True,
+                        "prompt": (
+                            "After reviewing the group feedback, what is your "
+                            "reconsidered judgment and why?"
+                        ),
+                    },
+                },
+            ],
+            orchestration={
+                "pattern": "classical_delphi",
+                "rounds": 2,
+                "feedback_between_rounds": True,
+            },
+            metadata={
+                "phase_canary": "Copper Compass",
+                "runtime_stripping": "agenda_structure_only",
+            },
+        ),
+    )
+    return [classical_delphi]

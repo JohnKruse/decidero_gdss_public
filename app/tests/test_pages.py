@@ -82,6 +82,38 @@ def test_create_meeting_page_includes_participant_avatar_rendering(
     assert "avatar_icon_path" in page.text
 
 
+def test_meeting_templates_page_lists_builtin_delphi_template(
+    authenticated_client: TestClient,
+    db_session,
+):
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    seed_builtin_meeting_templates(db_session)
+
+    response = authenticated_client.get("/meeting/templates")
+    assert response.status_code == 200
+    assert "Meeting Templates" in response.text
+    assert "Classical Delphi" in response.text
+    assert "START FROM TEMPLATE" in response.text
+    assert "/meeting/create?template_id=" in response.text
+    assert "Meeting not found" not in response.text
+
+
+def test_start_from_template_prefills_create_meeting_page(
+    authenticated_client: TestClient,
+    db_session,
+):
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    response = authenticated_client.get(f"/meeting/create?template_id={template.template_id}")
+    assert response.status_code == 200
+    assert "templatePrefillData" in response.text
+    assert "Classical Delphi" in response.text
+    assert "Round 1: Independent judgments" in response.text
+
+
 def test_meeting_page_exposes_backend_capability_data(
     authenticated_client: TestClient,
 ):

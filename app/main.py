@@ -16,6 +16,7 @@ from sqlalchemy import text
 from app.database import engine, Base, SessionLocal
 from app.database import ensure_sqlite_schema
 import app.models  # noqa: F401  # Ensure all SQLAlchemy models are registered
+from app.data.meeting_template_manager import seed_builtin_meeting_templates
 from app.routers import auth as auth_router
 from app.routers import pages as pages_router
 from app.routers import users as users_router
@@ -97,6 +98,13 @@ async def lifespan(app: FastAPI):
     # Load the ML model
     Base.metadata.create_all(bind=engine)
     ensure_sqlite_schema(engine)
+    db = SessionLocal()
+    try:
+        seed_builtin_meeting_templates(db)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("app").error("Failed to seed built-in meeting templates: %s", exc)
+    finally:
+        db.close()
     print("Database initialized. First user to register will become super admin.")
     yield
     # Clean up the ML model and release the resources

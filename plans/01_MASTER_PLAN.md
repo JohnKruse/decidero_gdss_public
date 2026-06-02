@@ -1,16 +1,34 @@
-# 01 — MASTER PLAN: Meeting Templates and Pilot-Ready Creation Flow
+# 01 - MASTER PLAN: HICSS-Guided Meeting Templates and Pilot-Ready Creation Flow
 
 **Depends on:** Completed orchestration-engine plan archived at [plans/archive/orchestration_engine/01_MASTER_PLAN.md](archive/orchestration_engine/01_MASTER_PLAN.md)
 **Primary subplan:** [plans/subplans/PHASE_7.md](subplans/PHASE_7.md)
+**Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 
-**Target state:** Decidero gives facilitators a low-training path to create a meeting in the way they naturally think about the task:
+**Paper direction:** Decidero should be presented as a collaboration-engineering
+platform that makes reusable meeting methods executable. The activity contract
+lets developers field custom activities, the orchestration layer composes
+activities into complex flows, AI and facilitator decisions lower the burden of
+flow control, and templates expose these methods to ordinary facilitators.
+Delphi is the reference case for this argument, not the primary product thesis.
 
-1. **Start from Template** — choose a prebuilt or saved meeting design such as Classical Delphi and create a fresh meeting from it.
-2. **Design with AI** — describe the situation and let the AI Meeting Designer draft a custom agenda.
-3. **Design Yourself** — manually build a meeting from a blank agenda.
-4. **Import Meeting** — load an existing meeting archive for review, recovery, or reuse of prior data.
+**Target state:** Decidero gives facilitators a low-training path to create a
+meeting in the way they naturally think about the task, while keeping the user
+experience aligned with the HICSS argument:
 
-The product distinction is deliberate: a **template** is reusable meeting structure without session data; an **imported meeting** is a prior meeting artifact that may carry data/history; the **AI Designer** creates a new design from conversation; and **manual design** starts from scratch.
+1. **Start from Template** - choose a prebuilt or saved meeting design such as Classical Delphi and create a fresh meeting from it.
+2. **Design with AI** - describe the situation and let the AI Meeting Designer draft a custom agenda.
+3. **Design Yourself** - manually build a meeting from a blank agenda.
+4. **Import Meeting** - load an existing meeting archive for review, recovery, or reuse of prior data.
+
+The product distinction is deliberate: a **template** is reusable meeting
+structure without session data; an **imported meeting** is a prior meeting
+artifact that may carry data/history; the **AI Designer** creates a new design
+from conversation; and **manual design** starts from scratch.
+
+The research distinction is also deliberate: a built-in method template, such
+as Classical Delphi, should either instantiate the packaged orchestration
+artifact or be clearly marked as not yet wired. A hardcoded agenda that merely
+resembles Delphi does not support the paper claim.
 
 ## Global Canary
 
@@ -44,6 +62,14 @@ Built-in templates such as Classical Delphi are shipped, cited, versioned, and v
 
 The most valuable custom-template path is likely **Save as Template** from an existing meeting: "This worked well; use this approach again." This must strip runtime data and save only reusable structure.
 
+### UF6 — Templates Surface Orchestrations
+
+Some templates are ordinary agenda scaffolds. Others are user-facing surfaces
+for orchestration-backed collaboration methods. Built-in Classical Delphi must
+be treated as the second kind. Its template record should reference the
+packaged orchestration, preserve its citation/version metadata, and expose only
+the facilitator-facing parameters that materially affect the run.
+
 ## Strategic Phases
 
 ### Phase 7 — Meeting Templates and Pilot Hardening
@@ -55,9 +81,11 @@ Build the first product-grade template flow and use it to support pilot testing.
 - Dashboard creation controls are reorganized around `Create Meeting` with choices for `Start from Template`, `Design with AI`, and `Design Yourself`, while `Import Meeting` stays separate.
 - A Meeting Templates landing page exists and lists at least one built-in template: Classical Delphi.
 - Starting from a template creates a fresh meeting through a clear configure/create flow with title, schedule, participants, and any required template parameters.
+- The Classical Delphi template is backed by the packaged Delphi orchestration, or the UI explicitly states that the orchestration bridge is incomplete.
 - Existing meetings can be saved as custom templates with runtime data stripped.
 - Custom templates can be listed, started, renamed, disabled/archived, and deleted or hidden according to the chosen permission model.
 - The first pilot protocol is updated to include the template flow, and at least one user-testing pass records whether facilitators understand the difference between templates, AI design, manual design, and import.
+- The HICSS outline is kept current enough that implementation work can be mapped to activity contract, orchestration, facilitation support, template reuse, or pilot evidence claims.
 
 ## Scope Boundary
 

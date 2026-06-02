@@ -1,10 +1,21 @@
-# PHASE 7 — Meeting Templates and Pilot Hardening
+# PHASE 7 - Meeting Templates, Paper Alignment, and Pilot Hardening
 
 **Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
 **Archived predecessor:** [plans/archive/orchestration_engine/01_MASTER_PLAN.md](../archive/orchestration_engine/01_MASTER_PLAN.md)
 **User-testing guide:** [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md)
+**Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 
-**Phase objective:** Add a low-training, user-facing template path for prebuilt and saved meeting designs, then use that path in pilot testing. The work is primarily product flow and operational hardening: users should be able to start from a stock collaboration process, reuse a successful meeting structure, or manually/AI-design a meeting without needing to understand orchestration internals.
+**Phase objective:** Add a low-training, user-facing template path for prebuilt
+and saved meeting designs, then use that path in pilot testing. The work is
+primarily product flow and operational hardening, but it must now also support
+the HICSS paper argument: activity contracts make custom activities fieldable,
+orchestration composes activities into reusable complex methods, AI and
+facilitator decisions support flow control, and templates expose those methods
+to facilitators without requiring them to understand orchestration internals.
+
+Delphi is the reference method for this argument. It should be surfaced as an
+orchestration-backed built-in template, not as a hand-authored Delphi-like
+agenda scaffold.
 
 **Core product model:**
 
@@ -13,6 +24,14 @@
 - **Design Yourself** starts from a blank manual creator.
 - **Import Meeting** restores or reviews an existing meeting archive and remains a separate operation.
 - **Activity Library** explains individual activities and remains distinct from meeting templates.
+
+**Paper-driven implementation chain:**
+
+1. Activity contract and harness.
+2. Orchestration layer and flow controls.
+3. Reference method, currently Classical Delphi.
+4. Template UX and CRUD/reuse.
+5. Pilot evidence about facilitator comprehension and lowered training burden.
 
 ## Phase Canary
 
@@ -39,6 +58,7 @@ Keep **Import Meeting** as its own button beside the create control. Import is d
 - Search/filter if the template count justifies it; otherwise keep the first version simple.
 - Show **Built-in Templates** and **Custom Templates** as separate sections.
 - Each card shows template name, one-line purpose, estimated duration, group size, tags, and whether it is linear or multi-round.
+- Orchestration-backed cards show that they are packaged methods, including citation/version metadata where practical.
 - Details should be lightweight: tooltip, popover, or expandable card content. Avoid forcing users through a separate preview page for v1.
 - The primary action on each card is **Start from Template**.
 
@@ -59,6 +79,11 @@ Template-specific fields should appear only when they materially affect the meet
 - Maximum rounds.
 - Convergence threshold, if exposed.
 - AI summary/review option, if enabled in the shipped template.
+
+For Classical Delphi, the creation flow should use the packaged orchestration
+document as the source of method structure. If the bridge from templates to
+orchestration-backed meetings is not complete, the UI should say so rather than
+presenting a manually invented Delphi agenda.
 
 The final action remains **Create Meeting**.
 
@@ -142,7 +167,8 @@ Build the `Start from Template` destination. The page should list built-in and c
 Conclude this step by:
 
 - Creating the Meeting Templates page and route.
-- Listing Classical Delphi as a built-in template if its current backend representation can be instantiated safely; otherwise listing it as unavailable with an explicit product-gap note is acceptable for the first iteration.
+- Listing Classical Delphi as a built-in template only if its packaged orchestration representation can be instantiated safely; otherwise listing it as unavailable with an explicit product-gap note is acceptable for the first iteration.
+- Removing any hardcoded Delphi-like agenda payload that is not grounded in the packaged orchestration or clearly labeling it as a temporary scaffold outside the Classical Delphi built-in.
 - Adding card-level details through tooltip, popover, or expandable content rather than a mandatory preview page.
 - Adding route/page tests and frontend smoke coverage.
 
@@ -152,9 +178,11 @@ Implement the clean meeting instantiation path from a selected template. This st
 
 Conclude this step by:
 
-- Adding the API/service path that turns a template into meeting agenda payloads.
+- Adding the API/service path that turns an ordinary agenda template into meeting agenda payloads.
+- Adding the API/service path that turns an orchestration-backed template into a meeting bound to the packaged orchestration document.
 - Prefilling the normal meeting creator or a template-specific create form.
 - Creating a fresh meeting with title, schedule, participants, agenda, and allowed template parameters.
+- Proving that the Classical Delphi template uses the packaged Delphi orchestration rather than a separate hand-authored agenda.
 - Adding tests proving no template-created meeting contains stale runtime data.
 
 ### Step 5 — Save Existing Meeting as Template
@@ -179,6 +207,7 @@ Conclude this step by:
 - Running the agreed regression command to `[100%]`.
 - Updating [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the final template workflow.
 - Recording pilot findings about whether users understood `Start from Template`, `Design with AI`, `Design Yourself`, and `Import Meeting` without explanation.
+- Recording pilot findings against the paper claims: whether templates make reusable methods understandable, whether AI/facilitator decision support lowers the facilitation burden, and whether ordinary agenda templates remain distinct from orchestration-backed methods.
 
 ## Phase Exit Criteria
 
@@ -187,11 +216,14 @@ Phase 7 clears only when:
 - The dashboard creation choices reflect the final vocabulary: `Start from Template`, `Design with AI`, and `Design Yourself`.
 - `Import Meeting` remains visible and conceptually separate from template creation.
 - Users can start a fresh meeting from at least one built-in or custom template.
+- The built-in Classical Delphi path is orchestration-backed, or it is explicitly unavailable pending orchestration-template wiring.
 - Users can save an existing meeting as a custom template without carrying runtime data.
 - Template management covers the v1 lifecycle for custom templates.
 - Documentation explains the product distinction between templates, AI-designed meetings, manual meetings, and imports.
+- Documentation explains the research distinction between ordinary agenda templates and orchestration-backed method templates.
 - The agreed regression command reaches `[100%]`.
 - A pilot or internal dry-run records user-flow findings against the template path.
+- The HICSS outline has been reviewed and updated so the final implementation state, evidence state, and paper claims agree.
 
 ## Scope Boundary
 

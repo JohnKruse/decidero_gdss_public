@@ -171,6 +171,9 @@ endblock %}
 {% endblock %}
 
 {% block extra_js %}
+{% if template_prefill %}
+<script type="application/json" id="templatePrefillData">{{ template_prefill|tojson }}</script>
+{% endif %}
 <script>
     (() => {
         const tabs = document.querySelectorAll('.tab-button');
@@ -286,6 +289,30 @@ endblock %}
         };
         const selectedParticipantHighlights = new Set();
         let participantDirectoryInitialised = false;
+
+        function readTemplatePrefill() {
+            const source = document.getElementById('templatePrefillData');
+            if (!source) return null;
+            try {
+                const parsed = JSON.parse(source.textContent || '{}');
+                if (!parsed || typeof parsed !== 'object') return null;
+                return parsed;
+            } catch (error) {
+                console.warn('Unable to parse template prefill:', error);
+                return null;
+            }
+        }
+
+        function showTemplatePrefillBanner(templateName, activityCount) {
+            const formEl = document.getElementById('createMeetingForm') || document.querySelector('form');
+            if (!formEl || document.getElementById('templatePrefillBanner')) return;
+            const banner = document.createElement('div');
+            banner.id = 'templatePrefillBanner';
+            banner.className = 'agenda-notice';
+            banner.dataset.variant = 'info';
+            banner.textContent = `${templateName || 'Template'} loaded - ${activityCount} activit${activityCount === 1 ? 'y' : 'ies'} pre-filled. Review and adjust below before creating the meeting.`;
+            formEl.prepend(banner);
+        }
 
         function showAgendaNotice(message, variant = 'info') {
             if (!agendaNotice) return;
@@ -1555,7 +1582,9 @@ endblock %}
             const startValue = meeting.start_time || meeting.started_at;
             const localDate = toLocalDate(startValue);
             if (localDate) {
-                setPickerValueFromDate(localDate);
+                if (typeof setPickerValueFromDate === 'function') {
+                    setPickerValueFromDate(localDate);
+                }
                 setTextValueFromDate(localDate);
             }
 
@@ -1761,6 +1790,28 @@ endblock %}
                 }
             }
             // ── End AI Meeting Designer handoff ────────────────────────────────
+
+            if (!meetingPrefill && !isEditMode) {
+                const templatePrefill = readTemplatePrefill();
+                if (templatePrefill) {
+                    const templateAgenda = Array.isArray(templatePrefill.agenda)
+                        ? templatePrefill.agenda.map((item, idx) => ({
+                            tool_type: item.tool_type,
+                            title: item.title || '',
+                            instructions: item.instructions || '',
+                            config: item.config || {},
+                            order_index: item.order_index || idx + 1,
+                        }))
+                        : [];
+                    meetingPrefill = {
+                        title: templatePrefill.title || templatePrefill.template_name || '',
+                        description: templatePrefill.description || '',
+                        agenda: templateAgenda,
+                    };
+                    showTemplatePrefillBanner(templatePrefill.template_name, templateAgenda.length);
+                }
+            }
+
             const backLink = document.getElementById('meetingBackLink');
             if (backLink && activityParam) {
                 backLink.href = `${backLink.href}?activity_id=${encodeURIComponent(activityParam)}`;

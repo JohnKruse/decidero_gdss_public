@@ -1,0 +1,94 @@
+{% extends "_base.html" %}
+
+{% block title %}Meeting Templates - Decidero GDSS{% endblock %}
+
+{% block content %}
+<section class="layout-card meeting-templates-page">
+    <div class="meeting-templates-header">
+        <div>
+            <p class="section-kicker">Create Meeting</p>
+            <h2>Meeting Templates</h2>
+            <p class="meeting-templates-header__copy">
+                Start from a reusable meeting structure. Templates are clean designs and do not include participant responses or prior meeting history.
+            </p>
+        </div>
+        <button class="action-btn" type="button" onclick="navigateTo('/meeting/create')">
+            DESIGN YOURSELF
+        </button>
+    </div>
+
+    {% if template_cards %}
+        <div class="meeting-template-grid">
+            {% for card in template_cards %}
+                {% set template = card.template %}
+                {% set permissions = card.permissions %}
+                <article class="meeting-template-card">
+                    <div class="meeting-template-card__body">
+                        <div class="meeting-template-card__title-row">
+                            <h3>{{ template.name }}</h3>
+                            <span class="meeting-template-badge">{{ template.source.replace('_', ' ')|title }}</span>
+                        </div>
+                        {% if template.purpose %}
+                            <p class="meeting-template-card__purpose">{{ template.purpose }}</p>
+                        {% elif template.description %}
+                            <p class="meeting-template-card__purpose">{{ template.description }}</p>
+                        {% endif %}
+                        <dl class="meeting-template-meta">
+                            <div>
+                                <dt>Duration</dt>
+                                <dd>{{ template.estimated_duration_minutes or 'Flexible' }}{% if template.estimated_duration_minutes %} min{% endif %}</dd>
+                            </div>
+                            <div>
+                                <dt>Group Size</dt>
+                                <dd>
+                                    {% if template.min_participants and template.max_participants %}
+                                        {{ template.min_participants }}-{{ template.max_participants }}
+                                    {% elif template.min_participants %}
+                                        {{ template.min_participants }}+
+                                    {% elif template.max_participants %}
+                                        Up to {{ template.max_participants }}
+                                    {% else %}
+                                        Flexible
+                                    {% endif %}
+                                </dd>
+                            </div>
+                            <div>
+                                <dt>Flow</dt>
+                                <dd>{{ template.flow_type.replace('_', ' ')|title }}</dd>
+                            </div>
+                        </dl>
+                        {% if template.tags %}
+                            <div class="meeting-template-tags" aria-label="Template tags">
+                                {% for tag in template.tags %}
+                                    <span>{{ tag }}</span>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="meeting-template-card__actions">
+                        <a
+                            class="action-btn{% if not permissions.can_start %} action-btn--disabled{% endif %}"
+                            {% if permissions.can_start %}
+                                href="/meeting/create?template_id={{ template.template_id|urlencode }}"
+                            {% else %}
+                                aria-disabled="true"
+                            {% endif %}
+                            data-template-id="{{ template.template_id }}"
+                        >
+                            START FROM TEMPLATE
+                        </a>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state meeting-templates-empty">
+            <h3>No meeting templates yet</h3>
+            <p>Template storage is ready, but no built-in or custom templates have been published in this environment.</p>
+            <button class="action-btn" type="button" onclick="navigateTo('/meeting/create')">
+                DESIGN YOURSELF
+            </button>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}
