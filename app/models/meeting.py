@@ -43,6 +43,9 @@ class Meeting(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     status = Column(String, default="active")  # e.g., 'active', 'archived', 'completed'
     is_public = Column(Boolean, default=False)
+    agenda_strategy = Column(String(32), default="linear", nullable=False)
+    orchestration_path = Column(String(255), nullable=True)
+    source_template_id = Column(String(64), nullable=True)
 
     # Primary owner of the meeting (creator/facilitator with elevated permissions)
     owner_id = Column(String(20), ForeignKey("users.user_id"), nullable=False)

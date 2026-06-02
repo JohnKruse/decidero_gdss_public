@@ -2,18 +2,23 @@ import json
 from datetime import UTC, datetime
 
 from app.data.meeting_manager import MeetingManager
-from app.data.meeting_template_manager import MeetingTemplateManager
+from app.data.meeting_template_manager import (
+    MeetingTemplateManager,
+    seed_builtin_meeting_templates,
+)
 from app.models.activity_bundle import ActivityBundle
 from app.models.idea import Idea
 from app.models.meeting_template import MeetingTemplate
 from app.models.user import User
 from app.models.voting import VotingVote
+from app.plugins.context import ActivityContext
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
 from app.schemas.meeting_template import (
     MeetingTemplateFlowType,
     MeetingTemplatePayload,
     MeetingTemplateSource,
 )
+from app.services.agenda_strategy import OrchestrationEngineStrategy, get_agenda_strategy
 
 
 def _user(user_id: str, role: str) -> User:
@@ -218,3 +223,141 @@ def test_template_permission_model_builtin_and_custom(db_session):
     assert manager.permission_summary(custom, other_facilitator).can_edit is False
     assert manager.permission_summary(custom, admin).can_delete is True
     assert manager.permission_summary(custom, participant).can_start is False
+
+
+def test_seed_builtin_delphi_template_references_packaged_orchestration(db_session):
+    """Copper Compass: Classical Delphi is an orchestration-backed method template."""
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    payload = template.template_payload
+    assert payload["agenda"] == []
+    assert payload["orchestration"] == {
+        "kind": "orchestration_document",
+        "document_path": "orchestrations/delphi.json",
+        "document_name": "Classical Delphi",
+        "document_version": "1.0",
+        "citation": (
+            "Linstone, H. A., and Turoff, M., editors. The Delphi Method: "
+            "Techniques and Applications. Addison-Wesley, 1975."
+        ),
+        "instantiation_status": "pending_template_ui",
+        "method_outline": [
+            "Generate candidate Delphi items.",
+            "Iterate rank-order voting rounds.",
+            "Transform round results into statistical feedback.",
+            "Evaluate IQR stability and max-round bounds.",
+        ],
+        "runtime_gates": [
+            "Additional ranking rounds are materialized only if convergence has not been reached.",
+            "The process stops when IQR stability fires or the maximum-round bound is reached.",
+            "Future facilitator or AI review steps can add explicit continue/stop decisions.",
+        ],
+    }
+    assert "Strong agreement" not in json.dumps(payload)
+    assert "Divergent view" not in json.dumps(payload)
+    assert MeetingTemplateManager(db_session).template_start_block_reason(template)
+
+
+def test_persisted_orchestration_meeting_rebinds_to_engine_strategy(db_session):
+    """Copper Compass: template-created meetings can persist orchestration binding."""
+    owner = _user("engineowner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+
+    meeting = MeetingManager(db_session).create_meeting(
+        meeting_data=MeetingCreate(
+            title="Packaged Delphi",
+            description="Exercise persisted orchestration binding.",
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+            agenda_strategy="orchestration",
+            orchestration_path="orchestrations/delphi.json",
+            source_template_id="builtin-classical-delphi",
+        ),
+        facilitator_id=owner.user_id,
+    )
+
+    strategy = get_agenda_strategy(meeting)
+    assert isinstance(strategy, OrchestrationEngineStrategy)
+    assert meeting.agenda_strategy == "orchestration"
+    assert meeting.orchestration_path == "orchestrations/delphi.json"
+    assert meeting.source_template_id == "builtin-classical-delphi"
+
+
+def test_create_meeting_from_orchestration_template_materializes_first_step_only(db_session):
+    """Copper Compass: orchestration templates create a bound meeting, not a fixed agenda."""
+    owner = _user("templateowner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    meeting = MeetingTemplateManager(db_session).create_meeting_from_template(
+        template_id=template.template_id,
+        facilitator_id=owner.user_id,
+        meeting_data=MeetingCreate(
+            title="Template Delphi Run",
+            description="Use the packaged method outline.",
+            duration_minutes=90,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+        ),
+    )
+
+    assert meeting.agenda_strategy == "orchestration"
+    assert meeting.orchestration_path == "orchestrations/delphi.json"
+    assert meeting.source_template_id == template.template_id
+    assert len(meeting.agenda_activities) == 1
+    first_activity = meeting.agenda_activities[0]
+    assert first_activity.tool_type == "brainstorming"
+    assert first_activity.title == "Round 1: Generate Delphi Items"
+    assert "rank_order_voting" not in [item.tool_type for item in meeting.agenda_activities]
+
+
+def test_activity_context_persists_orchestration_iteration_metadata(db_session):
+    """Copper Compass: activity close can survive request-bound orchestration state."""
+    owner = _user("bundleowner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+
+    meeting = MeetingManager(db_session).create_meeting(
+        meeting_data=MeetingCreate(
+            title="Round Metadata",
+            description="Persist bundle iteration identity from activity config.",
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+        ),
+        facilitator_id=owner.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Round activity",
+                order_index=1,
+                config={
+                    "_orchestration": {
+                        "logical_step_id": "engine:1.0",
+                        "round_index": 2,
+                    }
+                },
+            )
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+
+    bundle = ActivityContext(
+        db=db_session,
+        meeting=meeting,
+        activity=activity,
+        user=owner,
+    ).finalize_output_bundle(
+        [{"content": "Round output"}],
+        metadata={"source": "test"},
+    )
+
+    assert bundle.logical_step_id == "engine:1.0"
+    assert bundle.round_index == 2
+    assert bundle.bundle_metadata["iteration"] == {
+        "logical_step_id": "engine:1.0",
+        "round_index": 2,
+    }

@@ -301,6 +301,58 @@ body {
     color: rgba(11, 61, 145, 0.78);
 }
 
+.meeting-template-method {
+    display: grid;
+    gap: 0.18rem;
+    padding: 0.7rem;
+    border-left: 3px solid rgba(11, 61, 145, 0.34);
+    background: rgba(11, 61, 145, 0.05);
+    color: rgba(11, 61, 145, 0.78);
+    font-size: 0.82rem;
+}
+
+.meeting-template-method strong {
+    color: var(--navy-blue);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+}
+
+.meeting-template-card__notice {
+    margin: 0;
+    padding: 0.7rem;
+    border: 1px solid rgba(191, 120, 0, 0.28);
+    border-radius: 8px;
+    background: rgba(191, 120, 0, 0.08);
+    color: rgba(95, 60, 0, 0.95);
+    font-size: 0.88rem;
+}
+
+.meeting-template-outline,
+.meeting-template-gates {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.meeting-template-outline strong,
+.meeting-template-gates strong {
+    color: rgba(11, 61, 145, 0.72);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+}
+
+.meeting-template-outline ol,
+.meeting-template-gates ul {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: rgba(11, 61, 145, 0.78);
+    font-size: 0.88rem;
+}
+
+.meeting-template-outline li,
+.meeting-template-gates li {
+    margin: 0.22rem 0;
+}
+
 .meeting-template-meta {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

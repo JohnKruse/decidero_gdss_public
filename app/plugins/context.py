@@ -49,9 +49,12 @@ class ActivityContext:
         items: List[Dict[str, Any]],
         metadata: Optional[Dict[str, Any]] = None,
     ) -> ActivityBundle:
+        orchestration = dict((self.activity.config or {}).get("_orchestration") or {})
         return self._bundle_manager().finalize_output_bundle(
             self.meeting.meeting_id,
             self.activity.activity_id,
             items,
             metadata,
+            logical_step_id=orchestration.get("logical_step_id"),
+            round_index=orchestration.get("round_index"),
         )

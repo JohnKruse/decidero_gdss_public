@@ -1001,6 +1001,9 @@ class MeetingManager:
                 owner_id=owner_user.user_id,  # Primary owner identifier
                 status="scheduled",  # Consistent status for new meetings
                 is_public=is_public_value,  # Derived from schema
+                agenda_strategy=(meeting_data.agenda_strategy or "linear"),
+                orchestration_path=meeting_data.orchestration_path,
+                source_template_id=meeting_data.source_template_id,
             )
 
             db_meeting.owner = owner_user

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 from uuid import uuid4
 
@@ -12,6 +14,7 @@ from ..database import get_db
 from ..models.meeting import Meeting
 from ..models.meeting_template import MeetingTemplate
 from ..models.user import User
+from ..schemas.meeting import MeetingCreate
 from ..schemas.meeting_template import (
     MEETING_TEMPLATE_CONTRACT_VERSION,
     MeetingTemplateCreate,
@@ -43,6 +46,7 @@ TEMPLATE_RUNTIME_CONFIG_KEYS = {
 
 START_TEMPLATE_ROLES = {"facilitator", "admin", "super_admin"}
 MANAGE_ALL_TEMPLATE_ROLES = {"admin", "super_admin"}
+DELPHI_ORCHESTRATION_PATH = Path(__file__).resolve().parents[2] / "orchestrations" / "delphi.json"
 
 
 class MeetingTemplateManager:
@@ -181,6 +185,84 @@ class MeetingTemplateManager:
                 detail="Could not save meeting template due to a database error.",
             ) from exc
 
+    def create_meeting_from_template(
+        self,
+        *,
+        template_id: str,
+        meeting_data: MeetingCreate,
+        facilitator_id: str,
+    ) -> Meeting:
+        """Create a fresh meeting from a template without copying runtime data."""
+        template = self.get_template(template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="Meeting template not found")
+
+        payload = template.template_payload if isinstance(template.template_payload, dict) else {}
+        orchestration = payload.get("orchestration") if isinstance(payload, dict) else None
+        if isinstance(orchestration, dict) and orchestration.get("kind") == "orchestration_document":
+            return self._create_orchestration_meeting(
+                template=template,
+                orchestration=orchestration,
+                meeting_data=meeting_data,
+                facilitator_id=facilitator_id,
+            )
+
+        agenda_items = []
+        for item in payload.get("agenda") or []:
+            if not isinstance(item, dict):
+                continue
+            agenda_items.append(
+                {
+                    "tool_type": item.get("tool_type"),
+                    "title": item.get("title"),
+                    "instructions": item.get("instructions"),
+                    "order_index": item.get("order_index"),
+                    "config": item.get("config") or {},
+                }
+            )
+
+        from ..schemas.meeting import AgendaActivityCreate
+        from .meeting_manager import MeetingManager
+
+        meeting_data.source_template_id = template.template_id
+        return MeetingManager(self.db).create_meeting(
+            meeting_data=meeting_data,
+            facilitator_id=facilitator_id,
+            agenda_items=[AgendaActivityCreate.model_validate(item) for item in agenda_items],
+        )
+
+    def _create_orchestration_meeting(
+        self,
+        *,
+        template: MeetingTemplate,
+        orchestration: Dict[str, Any],
+        meeting_data: MeetingCreate,
+        facilitator_id: str,
+    ) -> Meeting:
+        document_path = str(orchestration.get("document_path") or "").strip()
+        if not document_path:
+            raise HTTPException(
+                status_code=400,
+                detail="Orchestration-backed template is missing document_path.",
+            )
+
+        from .meeting_manager import MeetingManager
+        from ..services.agenda_strategy import get_agenda_strategy
+
+        meeting_data.agenda_strategy = "orchestration"
+        meeting_data.orchestration_path = document_path
+        meeting_data.source_template_id = template.template_id
+        manager = MeetingManager(self.db)
+        meeting = manager.create_meeting(
+            meeting_data=meeting_data,
+            facilitator_id=facilitator_id,
+            agenda_items=[],
+        )
+        strategy = get_agenda_strategy(meeting)
+        strategy.create_activity(meeting, payload=None, manager=manager)
+        self.db.refresh(meeting)
+        return meeting
+
     def extract_payload_from_meeting(self, meeting: Meeting) -> MeetingTemplatePayload:
         agenda = []
         activities = sorted(
@@ -239,6 +321,40 @@ class MeetingTemplateManager:
             can_delete=can_edit,
             is_read_only=not can_edit,
         )
+
+    def template_start_block_reason(self, template: MeetingTemplate) -> Optional[str]:
+        """Return why a template cannot yet be started, or None when startable."""
+        payload = template.template_payload if isinstance(template.template_payload, dict) else {}
+        orchestration = payload.get("orchestration") if isinstance(payload, dict) else None
+        if not isinstance(orchestration, dict):
+            return None
+        if orchestration.get("kind") != "orchestration_document":
+            return None
+        status = str(orchestration.get("instantiation_status") or "").strip().lower()
+        if status and status != "ready":
+            return (
+                "Orchestration template UI pending. This packaged method is documented "
+                "and validated, but the user-facing creation flow is not wired yet."
+            )
+        return None
+
+    def orchestration_summary(self, template: MeetingTemplate) -> Optional[Dict[str, Any]]:
+        """Return display metadata for orchestration-backed templates."""
+        payload = template.template_payload if isinstance(template.template_payload, dict) else {}
+        orchestration = payload.get("orchestration") if isinstance(payload, dict) else None
+        if not isinstance(orchestration, dict):
+            return None
+        if orchestration.get("kind") != "orchestration_document":
+            return None
+        return {
+            "label": "Packaged method",
+            "document_name": orchestration.get("document_name"),
+            "document_path": orchestration.get("document_path"),
+            "document_version": orchestration.get("document_version"),
+            "citation": orchestration.get("citation"),
+            "method_outline": orchestration.get("method_outline") or [],
+            "runtime_gates": orchestration.get("runtime_gates") or [],
+        }
 
     def _apply_create_data(
         self, template: MeetingTemplate, data: MeetingTemplateCreate
@@ -334,118 +450,86 @@ def get_meeting_template_manager(
     return MeetingTemplateManager(db=db)
 
 
+def _load_delphi_orchestration_metadata() -> Dict[str, Any]:
+    try:
+        raw = json.loads(DELPHI_ORCHESTRATION_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        raw = {}
+    metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    return {
+        "name": raw.get("name") or "Classical Delphi",
+        "version": raw.get("version") or "1.0",
+        "citation": raw.get("citation"),
+        "group_size_range": metadata.get("group_size_range") or {"min": 3, "max": 25},
+        "typical_duration_minutes": metadata.get("typical_duration_minutes") or {"min": 45, "max": 120},
+        "thinklets": metadata.get("thinklets") or [],
+        "collaboration_patterns": metadata.get("collaboration_patterns") or [],
+        "deliverables": metadata.get("deliverables") or [],
+    }
+
+
 def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
     """Create or refresh built-in templates shipped with the application."""
     manager = MeetingTemplateManager(db=db)
+    delphi = _load_delphi_orchestration_metadata()
+    group_size = delphi["group_size_range"]
+    duration = delphi["typical_duration_minutes"]
     classical_delphi = manager.upsert_builtin_template(
         built_in_key="classical-delphi",
-        name="Classical Delphi",
-        purpose="Iterative anonymous expert input, review, and convergence.",
+        name=str(delphi["name"]),
+        purpose="Iterative expert judgment with structured statistical feedback.",
         description=(
-            "A reusable Delphi-style meeting structure for collecting independent "
-            "judgments, grouping themes, ranking priorities, and running a second "
-            "reflection round."
+            "A packaged Delphi reference method backed by the validated orchestration "
+            "document. The method starts with item generation, then iterates rank-order "
+            "voting with statistical feedback and IQR-based convergence."
         ),
-        estimated_duration_minutes=75,
-        min_participants=3,
-        max_participants=25,
+        estimated_duration_minutes=int(duration.get("max") or 120),
+        min_participants=int(group_size.get("min") or 3),
+        max_participants=int(group_size.get("max") or 25),
         tags=["Delphi", "Expert judgment", "Multi-round", "Copper Compass"],
         flow_type=MeetingTemplateFlowType.MULTI_ROUND,
         template_payload=MeetingTemplatePayload(
             defaults={
                 "title": "Classical Delphi",
                 "description": (
-                    "Use iterative anonymous input and structured feedback to move "
-                    "a group toward clearer expert judgment."
+                    "Use iterative expert input, structured statistical feedback, "
+                    "and convergence checks to move a group toward clearer judgment."
                 ),
             },
-            agenda=[
-                {
-                    "tool_type": "brainstorming",
-                    "title": "Round 1: Independent judgments",
-                    "instructions": (
-                        "Ask participants to submit independent responses before "
-                        "discussion. Keep framing neutral and avoid evaluating ideas "
-                        "during collection."
-                    ),
-                    "order_index": 1,
-                    "duration_minutes": 15,
-                    "config": {
-                        "allow_anonymous": True,
-                        "allow_subcomments": False,
-                        "auto_jump_new_ideas": True,
-                        "prompt": "What is your independent judgment, estimate, or recommendation?",
-                    },
+            agenda=[],
+            parameters={
+                "problem_statement": {"required": True, "label": "Problem statement"},
+                "max_rounds": {"default": 4, "source": "orchestration.iterate.max_rounds"},
+                "convergence_threshold": {
+                    "default": 0.15,
+                    "source": "orchestration.iqr_stability.threshold",
                 },
-                {
-                    "tool_type": "categorization",
-                    "title": "Theme review",
-                    "instructions": (
-                        "Group the first-round responses into themes without "
-                        "discarding minority views."
-                    ),
-                    "order_index": 2,
-                    "duration_minutes": 15,
-                    "config": {
-                        "mode": "FACILITATOR_LIVE",
-                        "items": [],
-                        "buckets": [
-                            "Strong agreement",
-                            "Promising but uncertain",
-                            "Needs evidence",
-                            "Divergent view",
-                        ],
-                        "single_assignment_only": True,
-                    },
-                },
-                {
-                    "tool_type": "rank_order_voting",
-                    "title": "Rank emerging priorities",
-                    "instructions": (
-                        "Have participants rank the most important themes or options "
-                        "from the review."
-                    ),
-                    "order_index": 3,
-                    "duration_minutes": 15,
-                    "config": {
-                        "ideas": [
-                            "Replace with theme or option A",
-                            "Replace with theme or option B",
-                            "Replace with theme or option C",
-                        ],
-                        "randomize_order": True,
-                        "show_results_immediately": False,
-                        "allow_reset": True,
-                    },
-                },
-                {
-                    "tool_type": "brainstorming",
-                    "title": "Round 2: Reconsidered judgments",
-                    "instructions": (
-                        "Share summarized feedback and ask participants to revise, "
-                        "confirm, or explain their judgments."
-                    ),
-                    "order_index": 4,
-                    "duration_minutes": 20,
-                    "config": {
-                        "allow_anonymous": True,
-                        "allow_subcomments": False,
-                        "auto_jump_new_ideas": True,
-                        "prompt": (
-                            "After reviewing the group feedback, what is your "
-                            "reconsidered judgment and why?"
-                        ),
-                    },
-                },
-            ],
+            },
             orchestration={
-                "pattern": "classical_delphi",
-                "rounds": 2,
-                "feedback_between_rounds": True,
+                "kind": "orchestration_document",
+                "document_path": "orchestrations/delphi.json",
+                "document_name": delphi["name"],
+                "document_version": delphi["version"],
+                "citation": delphi["citation"],
+                "instantiation_status": "pending_template_ui",
+                "method_outline": [
+                    "Generate candidate Delphi items.",
+                    "Iterate rank-order voting rounds.",
+                    "Transform round results into statistical feedback.",
+                    "Evaluate IQR stability and max-round bounds.",
+                ],
+                "runtime_gates": [
+                    "Additional ranking rounds are materialized only if convergence has not been reached.",
+                    "The process stops when IQR stability fires or the maximum-round bound is reached.",
+                    "Future facilitator or AI review steps can add explicit continue/stop decisions.",
+                ],
             },
             metadata={
                 "phase_canary": "Copper Compass",
-                "runtime_stripping": "agenda_structure_only",
+                "runtime_stripping": "orchestration_reference_only",
+                "thinklets": delphi["thinklets"],
+                "collaboration_patterns": delphi["collaboration_patterns"],
+                "deliverables": delphi["deliverables"],
             },
         ),
     )

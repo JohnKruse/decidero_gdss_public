@@ -58,6 +58,9 @@ class MeetingCreate(MeetingBase):
     participant_ids: Optional[List[str]] = Field(default_factory=list)
     additional_facilitator_ids: Optional[List[str]] = Field(default_factory=list)
     end_time: Optional[datetime] = None
+    agenda_strategy: str = "linear"
+    orchestration_path: Optional[str] = None
+    source_template_id: Optional[str] = None
 
     @field_validator("participant_ids", mode="before")
     @classmethod
@@ -228,6 +231,9 @@ class MeetingResponse(BaseModel):
     status: str
     owner_id: str
     is_public: bool
+    agenda_strategy: str = "linear"
+    orchestration_path: Optional[str] = None
+    source_template_id: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
     participant_ids: List[str] = Field(default_factory=list)
@@ -288,6 +294,9 @@ class MeetingResponse(BaseModel):
             "status": getattr(data, "status", None),
             "owner_id": getattr(data, "owner_id", None),
             "is_public": getattr(data, "is_public", False),
+            "agenda_strategy": getattr(data, "agenda_strategy", "linear") or "linear",
+            "orchestration_path": getattr(data, "orchestration_path", None),
+            "source_template_id": getattr(data, "source_template_id", None),
             "created_at": getattr(data, "created_at", None),
             "updated_at": getattr(data, "updated_at", None),
             "participant_ids": extracted,

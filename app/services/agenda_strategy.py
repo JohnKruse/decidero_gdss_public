@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -175,11 +176,39 @@ class LinearAgendaStrategy(AgendaStrategy):
 def get_agenda_strategy(meeting: Meeting) -> AgendaStrategy:
     """Smug Otter deterministic binding for a meeting's agenda strategy.
 
-    Currently always returns `LinearAgendaStrategy`. Callers that drive an
-    orchestration document bind `OrchestrationEngineStrategy` directly rather
-    than routing through this function.
+    Linear agendas remain the default. Meetings with persisted orchestration
+    metadata are rebound to an `OrchestrationEngineStrategy` from the packaged
+    document path.
     """
+    strategy_name = str(getattr(meeting, "agenda_strategy", "") or "linear").lower()
+    orchestration_path = getattr(meeting, "orchestration_path", None)
+    if strategy_name == "orchestration" and orchestration_path:
+        document = _load_persisted_orchestration_document(str(orchestration_path))
+        if document is not None:
+            return OrchestrationEngineStrategy(document)
     return LinearAgendaStrategy()
+
+
+def _load_persisted_orchestration_document(orchestration_path: str) -> Optional[Any]:
+    """Load a persisted orchestration path if it resolves inside the repo."""
+    from app.services.orchestration_loader import (
+        OrchestrationValidationError,
+        load_orchestration_path,
+    )
+
+    project_root = Path(__file__).resolve().parents[2]
+    candidate = Path(orchestration_path)
+    if not candidate.is_absolute():
+        candidate = project_root / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(project_root.resolve())
+    except ValueError:
+        return None
+    try:
+        return load_orchestration_path(resolved)
+    except (OSError, OrchestrationValidationError, ValueError):
+        return None
 
 
 @dataclass

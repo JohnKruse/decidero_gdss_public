@@ -17,6 +17,11 @@ Delphi is the reference method for this argument. It should be surfaced as an
 orchestration-backed built-in template, not as a hand-authored Delphi-like
 agenda scaffold.
 
+An orchestration-backed template is not a fixed agenda. It is a planned method
+outline with runtime gates. The facilitator should be able to see the intended
+flow, the control points, the possible next steps, and the hard bounds, but the
+system should not pre-fill future agenda rows that may never be materialized.
+
 **Core product model:**
 
 - **Start from Template** creates a fresh meeting from reusable design structure.
@@ -59,6 +64,7 @@ Keep **Import Meeting** as its own button beside the create control. Import is d
 - Show **Built-in Templates** and **Custom Templates** as separate sections.
 - Each card shows template name, one-line purpose, estimated duration, group size, tags, and whether it is linear or multi-round.
 - Orchestration-backed cards show that they are packaged methods, including citation/version metadata where practical.
+- Orchestration-backed cards show a method outline and runtime gates, not a pretend final agenda.
 - Details should be lightweight: tooltip, popover, or expandable card content. Avoid forcing users through a separate preview page for v1.
 - The primary action on each card is **Start from Template**.
 
@@ -84,6 +90,11 @@ For Classical Delphi, the creation flow should use the packaged orchestration
 document as the source of method structure. If the bridge from templates to
 orchestration-backed meetings is not complete, the UI should say so rather than
 presenting a manually invented Delphi agenda.
+
+The creation flow for an orchestration-backed method should collect meeting
+details and method parameters, then bind the meeting to the orchestration
+document. It should show a planned method outline, but it should not expose the
+ordinary agenda editor as if the full final activity list were known.
 
 The final action remains **Create Meeting**.
 
@@ -169,6 +180,7 @@ Conclude this step by:
 - Creating the Meeting Templates page and route.
 - Listing Classical Delphi as a built-in template only if its packaged orchestration representation can be instantiated safely; otherwise listing it as unavailable with an explicit product-gap note is acceptable for the first iteration.
 - Removing any hardcoded Delphi-like agenda payload that is not grounded in the packaged orchestration or clearly labeling it as a temporary scaffold outside the Classical Delphi built-in.
+- Showing the Classical Delphi planned method outline and runtime gates from template/orchestration metadata.
 - Adding card-level details through tooltip, popover, or expandable content rather than a mandatory preview page.
 - Adding route/page tests and frontend smoke coverage.
 
@@ -183,6 +195,7 @@ Conclude this step by:
 - Prefilling the normal meeting creator or a template-specific create form.
 - Creating a fresh meeting with title, schedule, participants, agenda, and allowed template parameters.
 - Proving that the Classical Delphi template uses the packaged Delphi orchestration rather than a separate hand-authored agenda.
+- Proving that orchestration-backed creation does not pre-create future dynamic agenda rows beyond what the engine materializes.
 - Adding tests proving no template-created meeting contains stale runtime data.
 
 ### Step 5 — Save Existing Meeting as Template
@@ -217,6 +230,7 @@ Phase 7 clears only when:
 - `Import Meeting` remains visible and conceptually separate from template creation.
 - Users can start a fresh meeting from at least one built-in or custom template.
 - The built-in Classical Delphi path is orchestration-backed, or it is explicitly unavailable pending orchestration-template wiring.
+- Orchestration-backed templates display planned method outlines and runtime gates instead of fixed final agendas.
 - Users can save an existing meeting as a custom template without carrying runtime data.
 - Template management covers the v1 lifecycle for custom templates.
 - Documentation explains the product distinction between templates, AI-designed meetings, manual meetings, and imports.

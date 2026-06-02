@@ -22,6 +22,7 @@
             {% for card in template_cards %}
                 {% set template = card.template %}
                 {% set permissions = card.permissions %}
+                {% set orchestration = card.orchestration %}
                 <article class="meeting-template-card">
                     <div class="meeting-template-card__body">
                         <div class="meeting-template-card__title-row">
@@ -64,18 +65,54 @@
                                 {% endfor %}
                             </div>
                         {% endif %}
+                        {% if orchestration %}
+                            <div class="meeting-template-method">
+                                <strong>{{ orchestration.label }}</strong>
+                                {% if orchestration.document_name %}
+                                    <span>{{ orchestration.document_name }}{% if orchestration.document_version %} v{{ orchestration.document_version }}{% endif %}</span>
+                                {% endif %}
+                                {% if orchestration.document_path %}
+                                    <span>{{ orchestration.document_path }}</span>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+                        {% if orchestration and orchestration.method_outline %}
+                            <div class="meeting-template-outline">
+                                <strong>Method outline</strong>
+                                <ol>
+                                    {% for step in orchestration.method_outline %}
+                                        <li>{{ step }}</li>
+                                    {% endfor %}
+                                </ol>
+                            </div>
+                        {% endif %}
+                        {% if orchestration and orchestration.runtime_gates %}
+                            <div class="meeting-template-gates">
+                                <strong>Runtime gates</strong>
+                                <ul>
+                                    {% for gate in orchestration.runtime_gates %}
+                                        <li>{{ gate }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                        {% if card.start_block_reason %}
+                            <p class="meeting-template-card__notice">
+                                {{ card.start_block_reason }}
+                            </p>
+                        {% endif %}
                     </div>
                     <div class="meeting-template-card__actions">
                         <a
-                            class="action-btn{% if not permissions.can_start %} action-btn--disabled{% endif %}"
-                            {% if permissions.can_start %}
+                            class="action-btn{% if not card.can_start %} action-btn--disabled{% endif %}"
+                            {% if card.can_start %}
                                 href="/meeting/create?template_id={{ template.template_id|urlencode }}"
                             {% else %}
                                 aria-disabled="true"
                             {% endif %}
                             data-template-id="{{ template.template_id }}"
                         >
-                            START FROM TEMPLATE
+                            {% if card.can_start %}START FROM TEMPLATE{% else %}CREATION FLOW PENDING{% endif %}
                         </a>
                     </div>
                 </article>

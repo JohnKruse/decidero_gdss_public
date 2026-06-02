@@ -37,6 +37,10 @@ from app.data.meeting_manager import (
     MeetingManager,
     get_meeting_manager,
 )
+from app.data.meeting_template_manager import (
+    MeetingTemplateManager,
+    get_meeting_template_manager,
+)
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.auth.auth import (
@@ -856,6 +860,56 @@ async def create_meeting(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create meeting",
         )
+
+
+@router.post("/templates/{template_id}/meetings", response_model=MeetingResponse)
+async def create_meeting_from_template(
+    template_id: str,
+    payload: MeetingCreatePayload,
+    current_user: str = Depends(get_current_user),
+    _: bool = Depends(check_permission(Permission.CREATE_MEETING)),
+    user_manager: UserManager = Depends(get_user_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Copper Compass: create a meeting from a reusable template definition."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    start_dt = payload.scheduled_datetime
+    end_dt = start_dt + timedelta(minutes=60) if start_dt else None
+    participant_ids = [
+        pid
+        for pid in (str(value).strip() for value in payload.participant_ids)
+        if pid
+    ]
+    seen = set()
+    participant_ids = [
+        pid for pid in participant_ids if not (pid in seen or seen.add(pid))
+    ]
+
+    meeting_request = MeetingCreate(
+        title=payload.title,
+        description=payload.description or "Meeting",
+        start_time=start_dt,
+        end_time=end_dt,
+        duration_minutes=60,
+        publicity=PublicityType.PUBLIC,
+        owner_id=user.user_id,
+        participant_ids=participant_ids,
+        additional_facilitator_ids=[
+            str(fid).strip()
+            for fid in payload.co_facilitator_ids
+            if str(fid).strip()
+        ],
+    )
+
+    meeting = template_manager.create_meeting_from_template(
+        template_id=template_id,
+        meeting_data=meeting_request,
+        facilitator_id=user.user_id,
+    )
+    return _serialize_meeting_response(meeting, user)
 
 
 @router.put("/{meeting_id}/configuration", response_model=MeetingResponse)

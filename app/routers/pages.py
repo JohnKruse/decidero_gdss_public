@@ -367,6 +367,9 @@ async def create_meeting(
                 status_code=403,
                 detail="You do not have permission to start from this template",
             )
+        start_block_reason = template_manager.template_start_block_reason(meeting_template)
+        if start_block_reason:
+            raise HTTPException(status_code=409, detail=start_block_reason)
         payload = meeting_template.template_payload or {}
         defaults = payload.get("defaults") if isinstance(payload, dict) else {}
         agenda = payload.get("agenda") if isinstance(payload, dict) else []
@@ -413,13 +416,19 @@ async def meeting_templates(
             detail="Only facilitators and administrators can start from templates",
         )
 
-    template_cards = [
-        {
-            "template": template,
-            "permissions": template_manager.permission_summary(template, current_user),
-        }
-        for template in template_manager.list_templates()
-    ]
+    template_cards = []
+    for template in template_manager.list_templates():
+        permissions = template_manager.permission_summary(template, current_user)
+        start_block_reason = template_manager.template_start_block_reason(template)
+        template_cards.append(
+            {
+                "template": template,
+                "permissions": permissions,
+                "can_start": permissions.can_start and not start_block_reason,
+                "start_block_reason": start_block_reason,
+                "orchestration": template_manager.orchestration_summary(template),
+            }
+        )
 
     return templates.TemplateResponse(
         request,

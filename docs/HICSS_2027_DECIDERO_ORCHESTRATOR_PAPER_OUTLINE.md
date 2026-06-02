@@ -135,6 +135,14 @@ not meeting archives. They carry reusable structure and references to
 orchestration artifacts, while excluding participant responses, votes, rankings,
 timers, and other runtime data.
 
+This section should distinguish ordinary agenda templates from orchestration
+templates. An agenda template can pre-fill a relatively fixed activity
+sequence. An orchestration template should instead expose a planned method
+outline, runtime gates, possible decision points, and bounds. The system should
+not overstate its knowledge of the future meeting by filling in activities that
+may or may not be created depending on convergence, AI review, or facilitator
+choice.
+
 ### 5. Reference Method: Delphi as a Composition
 
 This section should explain why Delphi was chosen and what it demonstrates.
@@ -150,6 +158,12 @@ aggregation transform computes item-level median, interquartile range,
 dispersion, and outlier flags. A convergence predicate evaluates whether the
 median IQR has stabilized, while a maximum-round bound prevents open-ended
 execution.
+
+The user-facing Classical Delphi template should therefore be described as a
+method outline rather than a completed agenda. The facilitator can see that the
+meeting will generate items, enter an iterative ranking loop, produce feedback,
+check convergence, and stop at a bound. The actual number of ranking rounds is
+not known at creation time.
 
 The section should be careful about method language. The implemented reference
 case is a Delphi-style executable witness focused on iterative ranking and
@@ -215,8 +229,10 @@ one of the paper claims.
    meeting, including safe defaults for title, topic, participants, maximum
    rounds, convergence threshold, and optional AI review.
 3. Keep ordinary agenda templates distinct from orchestration-backed templates.
-4. Finish save-as-template and custom-template management for the reuse claim.
-5. Update the pilot guide so observations map to the paper claims.
+4. Show orchestration-backed templates as method outlines with runtime gates,
+   not as fully pre-filled final agendas.
+5. Finish save-as-template and custom-template management for the reuse claim.
+6. Update the pilot guide so observations map to the paper claims.
 
 ## Terms To Keep Stable
 
@@ -244,3 +260,8 @@ not the same thing as exposing a reusable orchestration-backed method. The plan
 should therefore require the Classical Delphi template either to instantiate
 the packaged orchestration or to be labeled as unavailable until that bridge is
 implemented.
+
+A related risk is that the UI could overstate what orchestration means. A
+complex flow is partly preplanned and partly contingent. The UI should show the
+planned method and its control logic, while making clear that later activities
+are materialized by the engine as the meeting unfolds.

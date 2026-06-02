@@ -266,6 +266,30 @@ def ensure_sqlite_schema(engine_to_check) -> None:
                 )
                 connection.commit()
 
+            meeting_columns_result = connection.execute(text("PRAGMA table_info(meetings)"))
+            meeting_columns = {row[1] for row in meeting_columns_result.fetchall()}
+            if "agenda_strategy" not in meeting_columns and meeting_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE meetings ADD COLUMN agenda_strategy VARCHAR(32) NOT NULL DEFAULT 'linear'"
+                    )  # noqa: S608
+                )
+                connection.commit()
+            if "orchestration_path" not in meeting_columns and meeting_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE meetings ADD COLUMN orchestration_path VARCHAR(255)"
+                    )  # noqa: S608
+                )
+                connection.commit()
+            if "source_template_id" not in meeting_columns and meeting_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE meetings ADD COLUMN source_template_id VARCHAR(64)"
+                    )  # noqa: S608
+                )
+                connection.commit()
+
             users_result = connection.execute(
                 text("SELECT user_id, avatar_color, avatar_key, avatar_seed FROM users")
             )

@@ -94,12 +94,18 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
     assert response.status_code == 200
     assert "Meeting Templates" in response.text
     assert "Classical Delphi" in response.text
-    assert "START FROM TEMPLATE" in response.text
-    assert "/meeting/create?template_id=" in response.text
+    assert "Packaged method" in response.text
+    assert "orchestrations/delphi.json" in response.text
+    assert "Method outline" in response.text
+    assert "Runtime gates" in response.text
+    assert "Iterate rank-order voting rounds." in response.text
+    assert "Additional ranking rounds are materialized only if convergence has not been reached." in response.text
+    assert "CREATION FLOW PENDING" in response.text
+    assert "/meeting/create?template_id=" not in response.text
     assert "Meeting not found" not in response.text
 
 
-def test_start_from_template_prefills_create_meeting_page(
+def test_start_from_orchestration_backed_template_is_blocked_until_bridge_exists(
     authenticated_client: TestClient,
     db_session,
 ):
@@ -108,10 +114,35 @@ def test_start_from_template_prefills_create_meeting_page(
     [template] = seed_builtin_meeting_templates(db_session)
 
     response = authenticated_client.get(f"/meeting/create?template_id={template.template_id}")
-    assert response.status_code == 200
-    assert "templatePrefillData" in response.text
-    assert "Classical Delphi" in response.text
-    assert "Round 1: Independent judgments" in response.text
+    assert response.status_code == 409
+    assert "Orchestration template UI pending" in response.text
+
+
+def test_template_creation_api_creates_orchestration_bound_meeting(
+    authenticated_client: TestClient,
+    db_session,
+):
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    response = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={
+            "title": "API Delphi Run",
+            "description": "Create from the packaged method.",
+            "participant_ids": [],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["agenda_strategy"] == "orchestration"
+    assert payload["orchestration_path"] == "orchestrations/delphi.json"
+    assert payload["source_template_id"] == template.template_id
+    assert len(payload["agenda"]) == 1
+    assert payload["agenda"][0]["tool_type"] == "brainstorming"
+    assert payload["agenda"][0]["title"] == "Round 1: Generate Delphi Items"
 
 
 def test_meeting_page_exposes_backend_capability_data(

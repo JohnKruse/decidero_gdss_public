@@ -70,6 +70,15 @@ be treated as the second kind. Its template record should reference the
 packaged orchestration, preserve its citation/version metadata, and expose only
 the facilitator-facing parameters that materially affect the run.
 
+### UF7 — Orchestrations Are Plans, Not Pre-Filled Agendas
+
+An orchestration-backed template should show the facilitator the intended
+method outline, current step logic, possible runtime gates, and bounds. It
+should not pretend that every future agenda row is known at creation time. Some
+activities are materialized only after convergence checks, AI review, or
+facilitator decisions. As a result, the UI should distinguish a fixed agenda
+template from an executable flow model.
+
 ## Strategic Phases
 
 ### Phase 7 — Meeting Templates and Pilot Hardening
@@ -82,6 +91,7 @@ Build the first product-grade template flow and use it to support pilot testing.
 - A Meeting Templates landing page exists and lists at least one built-in template: Classical Delphi.
 - Starting from a template creates a fresh meeting through a clear configure/create flow with title, schedule, participants, and any required template parameters.
 - The Classical Delphi template is backed by the packaged Delphi orchestration, or the UI explicitly states that the orchestration bridge is incomplete.
+- Orchestration-backed templates show a planned method outline and runtime gates rather than a misleading pre-filled final agenda.
 - Existing meetings can be saved as custom templates with runtime data stripped.
 - Custom templates can be listed, started, renamed, disabled/archived, and deleted or hidden according to the chosen permission model.
 - The first pilot protocol is updated to include the template flow, and at least one user-testing pass records whether facilitators understand the difference between templates, AI design, manual design, and import.
