@@ -248,6 +248,8 @@
             agendaSummaryTotal: document.getElementById("agendaSummaryTotal"),
             agendaSummaryActive: document.getElementById("agendaSummaryActive"),
             accessNotice: document.getElementById("meetingAccessMessage"),
+            saveTemplateButton: document.getElementById("saveMeetingTemplateButton"),
+            saveTemplateFeedback: document.getElementById("saveTemplateFeedback"),
             meetingOverview: {
                 title: document.getElementById("meetingOverviewTitle"),
                 description: document.getElementById("meetingOverviewDescription"),
@@ -642,6 +644,54 @@
                 count += 1;
             });
             return count;
+        }
+
+        function setSaveTemplateFeedback(message, variant = "info") {
+            if (!ui.saveTemplateFeedback) return;
+            ui.saveTemplateFeedback.textContent = message || "";
+            if (message) {
+                ui.saveTemplateFeedback.dataset.variant = variant;
+            } else {
+                ui.saveTemplateFeedback.removeAttribute("data-variant");
+            }
+        }
+
+        async function saveMeetingAsTemplate() {
+            if (!state.isFacilitator || !ui.saveTemplateButton) {
+                return;
+            }
+            const defaultName = (state.meeting?.title || ui.meetingOverview.title?.textContent || "").trim();
+            const name = window.prompt("Save this meeting structure as a template", defaultName);
+            if (name === null) {
+                return;
+            }
+            const cleanedName = name.trim();
+            if (!cleanedName) {
+                setSaveTemplateFeedback("Template name is required.", "error");
+                return;
+            }
+            ui.saveTemplateButton.disabled = true;
+            setSaveTemplateFeedback("Saving template...", "info");
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/templates`,
+                    {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ name: cleanedName }),
+                    },
+                );
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(payload.detail || "Could not save this meeting as a template.");
+                }
+                setSaveTemplateFeedback(`Saved template: ${payload.name || cleanedName}.`, "success");
+            } catch (error) {
+                setSaveTemplateFeedback(error.message || "Could not save this meeting as a template.", "error");
+            } finally {
+                ui.saveTemplateButton.disabled = false;
+            }
         }
 
         function getActivityAccessState(item, activityState, isActive) {
@@ -7871,6 +7921,11 @@
             if (ui.openParticipantAdminButton) {
                 ui.openParticipantAdminButton.addEventListener("click", () => {
                     openParticipantAdminModal();
+                });
+            }
+            if (ui.saveTemplateButton) {
+                ui.saveTemplateButton.addEventListener("click", () => {
+                    saveMeetingAsTemplate();
                 });
             }
             if (new URLSearchParams(window.location.search || "").get("roster") === "1") {

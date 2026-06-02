@@ -205,6 +205,19 @@ def test_meeting_page_supports_roster_deep_link():
     assert "openParticipantAdminModal();" in js
 
 
+def test_meeting_page_exposes_save_as_template_action():
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+
+    assert 'id="saveMeetingTemplateButton"' in html
+    assert "Save as Template" in html
+    assert "saveMeetingAsTemplate" in js
+    assert "/api/meetings/${encodeURIComponent(context.meetingId)}/templates" in js
+    assert "Saved template:" in js
+
+
 def test_meeting_page_renders_agenda_items(authenticated_client: TestClient):
     """Meeting page should load and agenda API should return created items."""
     meeting_payload = {

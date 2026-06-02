@@ -506,6 +506,100 @@ def test_archive_and_restore_meeting_dashboard_visibility(
     )
 
 
+def test_save_meeting_as_template_endpoint_strips_runtime_data(
+    authenticated_client: TestClient,
+):
+    meeting_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Reusable Working Session",
+            "description": "A structure worth repeating.",
+            "agenda": [
+                {
+                    "tool_type": "brainstorming",
+                    "title": "Collect options",
+                    "order_index": 1,
+                    "config": {
+                        "prompt": "Suggest options",
+                        "duration_minutes": 12,
+                        "output_bundle": {"items": ["runtime idea"]},
+                        "votes": [{"option": "runtime"}],
+                        "elapsedTime": 99,
+                    },
+                }
+            ],
+        },
+    )
+    assert meeting_response.status_code == 200, meeting_response.text
+    meeting_id = meeting_response.json()["id"]
+
+    template_response = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/templates",
+        json={
+            "name": "Repeatable Working Session",
+            "purpose": "Use this structure again.",
+            "tags": ["Reusable", "Reusable", "Workshop"],
+        },
+    )
+
+    assert template_response.status_code == 200, template_response.text
+    payload = template_response.json()
+    assert payload["source"] == "custom"
+    assert payload["name"] == "Repeatable Working Session"
+    assert payload["purpose"] == "Use this structure again."
+    assert payload["tags"] == ["Reusable", "Workshop"]
+    assert payload["permissions"]["can_edit"] is True
+    assert payload["template_payload"]["defaults"]["title"] == "Reusable Working Session"
+    saved_config = payload["template_payload"]["agenda"][0]["config"]
+    assert saved_config["prompt"] == "Suggest options"
+    assert "output_bundle" not in saved_config
+    assert "votes" not in saved_config
+    assert "elapsedTime" not in saved_config
+    assert "participant_ids" not in json.dumps(payload["template_payload"])
+
+
+def test_participant_cannot_save_meeting_as_template(
+    client: TestClient,
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+):
+    participant_password = "TemplateSave1!"
+    participant = user_manager_with_admin.add_user(
+        first_name="Template",
+        last_name="Participant",
+        email="template.participant@example.com",
+        hashed_password=get_password_hash(participant_password),
+        role=UserRole.PARTICIPANT.value,
+        login="template_participant",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(participant)
+
+    meeting_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Participant Template Block",
+            "description": "Participants can attend but not save templates.",
+            "agenda_items": ["Review"],
+            "participant_ids": [participant.user_id],
+        },
+    )
+    assert meeting_response.status_code == 200, meeting_response.text
+    meeting_id = meeting_response.json()["id"]
+
+    login_response = client.post(
+        "/api/auth/token",
+        json={"username": participant.login, "password": participant_password},
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    template_response = client.post(
+        f"/api/meetings/{meeting_id}/templates",
+        json={"name": "Should Not Save"},
+    )
+    assert template_response.status_code == 403
+
+
 def test_participant_cannot_archive_meeting(
     client: TestClient,
     user_manager_with_admin: UserManager,

@@ -212,17 +212,20 @@ Conclude this step by:
 - Proving that orchestration-backed creation does not pre-create future dynamic agenda rows beyond what the engine materializes.
 - Adding tests proving no template-created meeting contains stale runtime data.
 
-### Step 5 — Save Existing Meeting as Template
+### Step 5 — [DONE] Save Existing Meeting as Template
 
 Add the reuse path for successful meetings. A facilitator should be able to say: "That worked well; save this structure for next time."
 
 Conclude this step by:
 
-- Adding **Save as Template** from the meeting page or meeting settings.
-- Extracting only reusable structure from the meeting.
-- Stripping ideas, votes, rankings, categories, output bundles, runtime state, timers, and participant responses.
-- Adding regression coverage for the extraction boundary.
-- Updating documentation and pilot scripts to include this flow.
+- [DONE] Adding **Save as Template** from the meeting page or meeting settings.
+- [DONE] Extracting only reusable structure from the meeting.
+- [DONE] Stripping ideas, votes, rankings, categories, output bundles, runtime state, timers, and participant responses.
+- [DONE] Adding regression coverage for the extraction boundary.
+- [DONE] Updating documentation and pilot scripts to include this flow.
+
+Technical deviations:
+- The v1 meeting-page action collects only the template name. Purpose, tags, and metadata editing remain part of Step 6 template management.
 
 ### Step 6 — Template Management and Pilot Validation
 

@@ -126,15 +126,21 @@ Observe:
 
 ### Workflow E - Save as Template
 
-Use this workflow once Phase 7 save-as-template is implemented.
-
 Facilitator goal:
 
 "This meeting structure worked well. Save the reusable structure so you can run a similar meeting next week."
 
+Current product path:
+
+1. Open a meeting as a facilitator or administrator.
+2. Select **Save as Template**.
+3. Enter a clear template name.
+4. Return to **Start from Template** and look for the saved custom template.
+
 Observe:
 
 - Whether the facilitator finds Save as Template from the meeting page or settings.
+- Whether the name prompt is enough, or whether purpose/tags should be collected in the first interaction.
 - Whether they understand which data will and will not be saved.
 - Whether the saved template appears in Meeting Templates.
 - Whether starting from the saved template creates a clean meeting without ideas, votes, rankings, categories, runtime state, or participant responses.

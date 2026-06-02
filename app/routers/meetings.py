@@ -28,6 +28,7 @@ from app.schemas.meeting import (
     JoinMeetingResponse,
     AgendaReorderPayload,
 )
+from app.schemas.meeting_template import MeetingTemplateResponse
 from app.models.user import User, UserRole
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.idea import Idea
@@ -94,6 +95,32 @@ class MeetingCreatePayload(BaseModel):
     participant_contacts: List[str] = Field(default_factory=list)
     co_facilitator_ids: List[str] = Field(default_factory=list)
     participant_ids: List[str] = Field(default_factory=list)
+
+
+class SaveMeetingTemplatePayload(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    purpose: Optional[str] = Field(None, max_length=1000)
+    tags: List[str] = Field(default_factory=list)
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalise_tags(cls, value):
+        if value is None:
+            return []
+        if not isinstance(value, (list, tuple, set)):
+            raise ValueError("tags must be a list")
+        cleaned = []
+        seen = set()
+        for raw in value:
+            tag = str(raw or "").strip()
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            cleaned.append(tag)
+            seen.add(key)
+        return cleaned
 
 
 class ParticipantAssignPayload(BaseModel):
@@ -910,6 +937,37 @@ async def create_meeting_from_template(
         facilitator_id=user.user_id,
     )
     return _serialize_meeting_response(meeting, user)
+
+
+@router.post("/{meeting_id}/templates", response_model=MeetingTemplateResponse)
+async def save_meeting_as_template(
+    meeting_id: str,
+    payload: SaveMeetingTemplatePayload,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Copper Compass: save reusable meeting structure without runtime state."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+    _assert_meeting_access(meeting, user, require_facilitator=True)
+
+    template = template_manager.save_custom_template_from_meeting(
+        meeting_id=meeting_id,
+        creator_user_id=user.user_id,
+        name=payload.name,
+        purpose=payload.purpose,
+        tags=payload.tags,
+    )
+    response = MeetingTemplateResponse.model_validate(template)
+    response.permissions = template_manager.permission_summary(template, user)
+    return response
 
 
 @router.put("/{meeting_id}/configuration", response_model=MeetingResponse)

@@ -71,6 +71,9 @@
             </div>
             {% endif %}
         </div>
+        {% if can_manage_meeting %}
+        <div id="saveTemplateFeedback" class="control-feedback" aria-live="polite"></div>
+        {% endif %}
         <div id="meetingAccessMessage" class="meeting-access" hidden></div>
     </section>
     {% endgrab %}
@@ -136,6 +139,7 @@
                     <div class="agenda-header-actions">
                         {% if can_manage_meeting %}
                         <button type="button" class="control-btn primary" id="openParticipantAdminButton">Meeting Roster</button>
+                        <button type="button" class="control-btn" id="saveMeetingTemplateButton">Save as Template</button>
                         <button type="button" class="control-btn primary" id="agendaAddActivityButton">Meeting Settings</button>
                         {% endif %}
                         <button type="button" class="control-btn sm agenda-collapse-toggle" id="agendaCollapseToggle"
