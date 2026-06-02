@@ -183,34 +183,43 @@ Conclude this step by:
 Technical deviations:
 - None.
 
-### Step 3 — Meeting Templates Landing Page
+### Step 3 — [DONE] Meeting Templates Landing Page
 
 Build the `Start from Template` destination. The page should list built-in and custom templates with enough information to choose quickly.
 
 Conclude this step by:
 
-- Creating the Meeting Templates page and route.
-- Listing Classical Delphi as a built-in template only if its packaged orchestration representation can be instantiated safely; otherwise listing it as unavailable with an explicit product-gap note is acceptable for the first iteration.
-- Removing any hardcoded Delphi-like agenda payload that is not grounded in the packaged orchestration or clearly labeling it as a temporary scaffold outside the Classical Delphi built-in.
-- Showing the Classical Delphi planned method outline and runtime gates from template/orchestration metadata.
-- Adding card-level details through tooltip, popover, or expandable content rather than a mandatory preview page.
-- Adding route/page tests and frontend smoke coverage.
+- [DONE] Creating the Meeting Templates page and route.
+- [DONE] Listing Classical Delphi as a built-in orchestration-backed template.
+- [DONE] Removing any hardcoded Delphi-like agenda payload that is not grounded in the packaged orchestration.
+- [DONE] Showing the Classical Delphi planned method outline and runtime gates from template/orchestration metadata.
+- [DONE] Adding card-level details through expanded card content rather than a mandatory preview page.
+- [DONE] Adding route/page tests and focused coverage.
 
-### Step 4 — Start from Template to Create Meeting
+Technical deviations:
+- The v1 card details are inline expanded content on each template card, not tooltip/popover interactions. This is acceptable for the first pilot because it keeps the method outline and runtime gates visible without adding another preview page.
+- Search/filter remains deferred because the current template count does not justify it.
+
+### Step 4 — [DONE] Start from Template to Create Meeting
 
 Implement the clean meeting instantiation path from a selected template. This step owns the configure/create flow: meeting details are collected, template defaults are applied, and a fresh meeting is created without carrying old runtime data.
 
 Conclude this step by:
 
-- Adding the API/service path that turns an ordinary agenda template into meeting agenda payloads.
-- Adding the API/service path that turns an orchestration-backed template into a meeting bound to the packaged orchestration document.
-- Prefilling the normal meeting creator or a template-specific create form.
-- Using a template-specific guided start page for orchestration-backed methods so facilitators are not asked to edit a fictional final agenda.
-- Showing facilitator-only orchestration guidance on the created meeting page, including the method outline and runtime gates.
-- Creating a fresh meeting with title, schedule, participants, agenda, and allowed template parameters.
-- Proving that the Classical Delphi template uses the packaged Delphi orchestration rather than a separate hand-authored agenda.
-- Proving that orchestration-backed creation does not pre-create future dynamic agenda rows beyond what the engine materializes.
-- Adding tests proving no template-created meeting contains stale runtime data.
+- [DONE] Adding the API/service path that turns an ordinary agenda template into meeting agenda payloads.
+- [DONE] Adding the API/service path that turns an orchestration-backed template into a meeting bound to the packaged orchestration document.
+- [DONE] Prefilling the normal meeting creator for ordinary templates and using a template-specific create form for orchestration-backed methods.
+- [DONE] Using a template-specific guided start page for orchestration-backed methods so facilitators are not asked to edit a fictional final agenda.
+- [DONE] Showing facilitator-only orchestration guidance on the created meeting page, including the method outline and runtime gates.
+- [DONE] Creating a fresh meeting with title, schedule, participants, agenda, and allowed template parameters.
+- [DONE] Proving that the Classical Delphi template uses the packaged Delphi orchestration rather than a separate hand-authored agenda.
+- [DONE] Proving that orchestration-backed creation does not pre-create future dynamic agenda rows beyond what the engine materializes.
+- [DONE] Adding tests proving no template-created meeting contains stale runtime data.
+
+Technical deviations:
+- Ordinary templates continue through the existing `/meeting/create?template_id=...` creator with template defaults prefilled. Orchestration-backed templates use `/meeting/templates/{template_id}/start` because the final agenda is engine-materialized.
+- Runtime stripping is recursive across activity config dictionaries and lists before a saved meeting becomes a template, so nested runtime keys cannot be carried into a future template-created meeting.
+- Focused verification command: `PYTHONPATH=. ./venv/bin/pytest app/tests/test_meeting_templates.py app/tests/test_pages.py::test_meeting_templates_page_lists_builtin_delphi_template app/tests/test_pages.py::test_start_from_orchestration_backed_template_uses_guided_start_page app/tests/test_pages.py::test_template_creation_api_creates_orchestration_bound_meeting app/tests/test_pages.py::test_orchestration_meeting_page_sets_facilitator_expectations app/tests/test_api_meetings.py::test_save_meeting_as_template_endpoint_strips_runtime_data app/tests/test_api_meetings.py::test_custom_template_metadata_archive_and_delete_lifecycle app/tests/test_api_meetings.py::test_builtin_template_management_routes_are_read_only -v` reached `14 passed`.
 
 ### Step 5 — [DONE] Save Existing Meeting as Template
 

@@ -445,11 +445,19 @@ class MeetingTemplateManager:
         return MeetingTemplatePayload.model_validate(payload)
 
     def _strip_runtime_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        clean = deepcopy(config)
-        for key in list(clean.keys()):
-            if key in TEMPLATE_RUNTIME_CONFIG_KEYS:
-                clean.pop(key, None)
-        return clean
+        return self._strip_runtime_value(config)
+
+    def _strip_runtime_value(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            clean: Dict[str, Any] = {}
+            for key, child in value.items():
+                if key in TEMPLATE_RUNTIME_CONFIG_KEYS:
+                    continue
+                clean[key] = self._strip_runtime_value(child)
+            return clean
+        if isinstance(value, list):
+            return [self._strip_runtime_value(item) for item in value]
+        return deepcopy(value)
 
     def _extract_duration_minutes(self, config: Dict[str, Any]) -> Optional[int]:
         for key in ("duration_minutes", "duration", "time_limit_minutes"):

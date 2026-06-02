@@ -74,6 +74,13 @@ def test_save_custom_template_from_meeting_strips_runtime_data(db_session):
                     "output_bundle": {"items": ["stale"]},
                     "votes": [{"option": "runtime"}],
                     "elapsedTime": 99,
+                    "display": {
+                        "labels": ["saved"],
+                        "runtime_data": {"participant": participant.user_id},
+                        "nested": {
+                            "output_bundle": {"items": ["nested stale"]},
+                        },
+                    },
                 },
             ),
             AgendaActivityCreate(
@@ -148,6 +155,7 @@ def test_save_custom_template_from_meeting_strips_runtime_data(db_session):
     ]
     assert payload["agenda"][0]["duration_minutes"] == 12
     assert payload["agenda"][0]["config"]["prompt"] == "Release focus"
+    assert payload["agenda"][0]["config"]["display"]["labels"] == ["saved"]
     assert payload["agenda"][1]["config"]["options"][0]["label"] == "Option A"
 
     payload_json = json.dumps(payload)
@@ -160,6 +168,82 @@ def test_save_custom_template_from_meeting_strips_runtime_data(db_session):
     assert "started_at" not in runtime_keys
     assert "stopped_at" not in runtime_keys
     assert "participant_ids" not in runtime_keys
+    assert "runtime_data" not in runtime_keys
+
+
+def test_create_meeting_from_custom_template_uses_clean_agenda_payload(db_session):
+    """Copper Compass: ordinary templates create a fresh linear meeting from structure only."""
+    owner = _user("customowner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+
+    source_meeting = MeetingManager(db_session).create_meeting(
+        meeting_data=MeetingCreate(
+            title="Reusable Linear Workshop",
+            description="A clean agenda should survive; runtime data should not.",
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+        ),
+        facilitator_id=owner.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Collect options",
+                instructions="Capture candidate actions.",
+                order_index=1,
+                config={
+                    "prompt": "Suggest actions",
+                    "duration_minutes": 15,
+                    "nested": {
+                        "kept": "facilitator default",
+                        "votes": [{"user_id": owner.user_id, "option": "runtime"}],
+                    },
+                },
+            ),
+            AgendaActivityCreate(
+                tool_type="voting",
+                title="Prioritize options",
+                instructions="Vote on the candidate actions.",
+                order_index=2,
+                config={"max_votes_per_user": 3},
+            ),
+        ],
+    )
+
+    manager = MeetingTemplateManager(db_session)
+    template = manager.save_custom_template_from_meeting(
+        meeting_id=source_meeting.meeting_id,
+        creator_user_id=owner.user_id,
+        name="Linear Workshop Template",
+    )
+
+    meeting = manager.create_meeting_from_template(
+        template_id=template.template_id,
+        facilitator_id=owner.user_id,
+        meeting_data=MeetingCreate(
+            title="Fresh Linear Workshop",
+            description="Started from a custom template.",
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+        ),
+    )
+
+    assert meeting.agenda_strategy == "linear"
+    assert meeting.orchestration_path is None
+    assert meeting.source_template_id == template.template_id
+    assert [activity.title for activity in meeting.agenda_activities] == [
+        "Collect options",
+        "Prioritize options",
+    ]
+    first_config = meeting.agenda_activities[0].config
+    assert first_config["prompt"] == "Suggest actions"
+    assert first_config["duration_minutes"] == 15
+    assert first_config["nested"] == {"kept": "facilitator default"}
+    assert owner.user_id not in json.dumps(
+        [activity.config for activity in meeting.agenda_activities]
+    )
 
 
 def test_template_permission_model_builtin_and_custom(db_session):
