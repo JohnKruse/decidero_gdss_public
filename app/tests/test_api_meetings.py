@@ -558,6 +558,83 @@ def test_save_meeting_as_template_endpoint_strips_runtime_data(
     assert "participant_ids" not in json.dumps(payload["template_payload"])
 
 
+def test_custom_template_metadata_archive_and_delete_lifecycle(
+    authenticated_client: TestClient,
+):
+    meeting_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Lifecycle Source Meeting",
+            "description": "Template lifecycle source.",
+            "agenda_items": ["Review"],
+        },
+    )
+    assert meeting_response.status_code == 200, meeting_response.text
+    meeting_id = meeting_response.json()["id"]
+
+    template_response = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/templates",
+        json={"name": "Lifecycle Template"},
+    )
+    assert template_response.status_code == 200, template_response.text
+    template_id = template_response.json()["template_id"]
+
+    update_response = authenticated_client.put(
+        f"/api/meetings/templates/{template_id}",
+        json={
+            "name": "Renamed Lifecycle Template",
+            "purpose": "Reusable lifecycle path.",
+            "tags": ["Lifecycle", "Lifecycle", "Custom"],
+        },
+    )
+    assert update_response.status_code == 200, update_response.text
+    updated = update_response.json()
+    assert updated["name"] == "Renamed Lifecycle Template"
+    assert updated["purpose"] == "Reusable lifecycle path."
+    assert updated["tags"] == ["Lifecycle", "Custom"]
+    assert updated["permissions"]["can_archive"] is True
+    assert updated["permissions"]["can_delete"] is True
+
+    archive_response = authenticated_client.post(
+        f"/api/meetings/templates/{template_id}/archive",
+        json={},
+    )
+    assert archive_response.status_code == 200, archive_response.text
+    assert archive_response.json()["status"] == "archived"
+
+    delete_response = authenticated_client.delete(f"/api/meetings/templates/{template_id}")
+    assert delete_response.status_code == 204
+
+    second_delete = authenticated_client.delete(f"/api/meetings/templates/{template_id}")
+    assert second_delete.status_code == 404
+
+
+def test_builtin_template_management_routes_are_read_only(
+    authenticated_client: TestClient,
+    db_session,
+):
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    update_response = authenticated_client.put(
+        f"/api/meetings/templates/{template.template_id}",
+        json={"name": "Not Editable"},
+    )
+    assert update_response.status_code == 403
+
+    archive_response = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/archive",
+        json={},
+    )
+    assert archive_response.status_code == 403
+
+    delete_response = authenticated_client.delete(
+        f"/api/meetings/templates/{template.template_id}"
+    )
+    assert delete_response.status_code == 403
+
+
 def test_participant_cannot_save_meeting_as_template(
     client: TestClient,
     authenticated_client: TestClient,

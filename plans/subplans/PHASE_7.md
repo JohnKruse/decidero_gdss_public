@@ -233,11 +233,14 @@ Round out the v1 management surface and test it with users. This step is where i
 
 Conclude this step by:
 
-- Supporting custom template rename/start/archive/delete or the chosen minimum management set.
+- [DONE] Supporting custom template rename/start/archive/delete or the chosen minimum management set.
 - Running the agreed regression command to `[100%]`.
 - Updating [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the final template workflow.
 - Recording pilot findings about whether users understood `Start from Template`, `Design with AI`, `Design Yourself`, and `Import Meeting` without explanation.
 - Recording pilot findings against the paper claims: whether templates make reusable methods understandable, whether AI/facilitator decision support lowers the facilitation burden, and whether ordinary agenda templates remain distinct from orchestration-backed methods.
+
+Technical deviations:
+- The v1 custom-template management surface uses prompt/confirm interactions on the Meeting Templates page for name, purpose, tags, archive, and delete. A richer modal editor can wait until pilot feedback shows which metadata facilitators actually use.
 
 ## Phase Exit Criteria
 

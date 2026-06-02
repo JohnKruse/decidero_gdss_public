@@ -83,6 +83,43 @@ class MeetingTemplateManager:
             .one_or_none()
         )
 
+    def update_custom_template_metadata(
+        self,
+        *,
+        template: MeetingTemplate,
+        name: Optional[str] = None,
+        purpose: Optional[str] = None,
+        tags: Optional[Iterable[str]] = None,
+    ) -> MeetingTemplate:
+        if template.source == MeetingTemplateSource.BUILT_IN.value:
+            raise HTTPException(status_code=403, detail="Built-in templates are read-only")
+        if name is not None:
+            cleaned_name = name.strip()
+            if not cleaned_name:
+                raise HTTPException(status_code=400, detail="Template name is required")
+            template.name = cleaned_name
+        if purpose is not None:
+            template.purpose = purpose.strip() or None
+        if tags is not None:
+            template.tags = self._normalize_tags(tags)
+        self.db.commit()
+        self.db.refresh(template)
+        return template
+
+    def archive_custom_template(self, template: MeetingTemplate) -> MeetingTemplate:
+        if template.source == MeetingTemplateSource.BUILT_IN.value:
+            raise HTTPException(status_code=403, detail="Built-in templates are read-only")
+        template.status = MeetingTemplateStatus.ARCHIVED.value
+        self.db.commit()
+        self.db.refresh(template)
+        return template
+
+    def delete_custom_template(self, template: MeetingTemplate) -> None:
+        if template.source == MeetingTemplateSource.BUILT_IN.value:
+            raise HTTPException(status_code=403, detail="Built-in templates are read-only")
+        self.db.delete(template)
+        self.db.commit()
+
     def upsert_builtin_template(
         self,
         *,
@@ -385,6 +422,20 @@ class MeetingTemplateManager:
             )
             if not exists:
                 return candidate
+
+    def _normalize_tags(self, tags: Iterable[str]) -> list[str]:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for raw in tags:
+            tag = str(raw or "").strip()
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            cleaned.append(tag)
+            seen.add(key)
+        return cleaned
 
     def _coerce_payload(
         self, payload: MeetingTemplatePayload | Dict[str, Any]

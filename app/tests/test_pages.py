@@ -106,6 +106,34 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
     assert "Meeting not found" not in response.text
 
 
+def test_meeting_templates_page_exposes_custom_template_management(
+    authenticated_client: TestClient,
+):
+    meeting_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Reusable Template Management Source",
+            "description": "Save this structure for management.",
+            "agenda_items": ["Review"],
+        },
+    )
+    assert meeting_response.status_code == 200, meeting_response.text
+    template_response = authenticated_client.post(
+        f"/api/meetings/{meeting_response.json()['id']}/templates",
+        json={"name": "Managed Custom Template"},
+    )
+    assert template_response.status_code == 200, template_response.text
+    template_id = template_response.json()["template_id"]
+
+    page = authenticated_client.get("/meeting/templates")
+    assert page.status_code == 200
+    assert "Managed Custom Template" in page.text
+    assert f'data-template-id="{template_id}"' in page.text
+    assert 'data-template-action="edit"' in page.text
+    assert 'data-template-action="archive"' in page.text
+    assert 'data-template-action="delete"' in page.text
+
+
 def test_start_from_orchestration_backed_template_uses_guided_start_page(
     authenticated_client: TestClient,
     db_session,

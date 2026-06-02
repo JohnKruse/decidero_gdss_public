@@ -144,6 +144,7 @@ Observe:
 - Whether they understand which data will and will not be saved.
 - Whether the saved template appears in Meeting Templates.
 - Whether starting from the saved template creates a clean meeting without ideas, votes, rankings, categories, runtime state, or participant responses.
+- Whether custom template **Edit**, **Archive**, and **Delete** actions are discoverable and clearly distinct from starting a meeting.
 
 ### Workflow F - Delphi Readiness
 

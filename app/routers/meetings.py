@@ -123,6 +123,32 @@ class SaveMeetingTemplatePayload(BaseModel):
         return cleaned
 
 
+class UpdateMeetingTemplatePayload(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    purpose: Optional[str] = Field(None, max_length=1000)
+    tags: Optional[List[str]] = None
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def _normalise_tags(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple, set)):
+            raise ValueError("tags must be a list")
+        cleaned = []
+        seen = set()
+        for raw in value:
+            tag = str(raw or "").strip()
+            if not tag:
+                continue
+            key = tag.lower()
+            if key in seen:
+                continue
+            cleaned.append(tag)
+            seen.add(key)
+        return cleaned
+
+
 class ParticipantAssignPayload(BaseModel):
     user_id: Optional[str] = None
     login: Optional[str] = None
@@ -284,6 +310,30 @@ def _serialize_meeting_response(meeting: Meeting, user: User) -> MeetingResponse
     payload = MeetingResponse.model_validate(meeting).model_dump()
     payload["viewer_capabilities"] = resolve_meeting_capabilities(meeting, user).to_dict()
     return MeetingResponse.model_validate(payload)
+
+
+def _assert_template_edit_access(
+    template_manager: MeetingTemplateManager,
+    template_id: str,
+    user: User,
+):
+    template = template_manager.get_template(template_id)
+    if template is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting template not found")
+    permissions = template_manager.permission_summary(template, user)
+    if not permissions.can_edit:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You cannot edit this template")
+    return template
+
+
+def _serialize_template_response(
+    template_manager: MeetingTemplateManager,
+    template,
+    user: User,
+) -> MeetingTemplateResponse:
+    response = MeetingTemplateResponse.model_validate(template)
+    response.permissions = template_manager.permission_summary(template, user)
+    return response
 
 
 def _serialize_datetime(value: Optional[datetime]) -> Optional[str]:
@@ -937,6 +987,60 @@ async def create_meeting_from_template(
         facilitator_id=user.user_id,
     )
     return _serialize_meeting_response(meeting, user)
+
+
+@router.put("/templates/{template_id}", response_model=MeetingTemplateResponse)
+async def update_meeting_template(
+    template_id: str,
+    payload: UpdateMeetingTemplatePayload,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Copper Compass: update editable custom template metadata."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    template = _assert_template_edit_access(template_manager, template_id, user)
+    updated = template_manager.update_custom_template_metadata(
+        template=template,
+        name=payload.name,
+        purpose=payload.purpose,
+        tags=payload.tags,
+    )
+    return _serialize_template_response(template_manager, updated, user)
+
+
+@router.post("/templates/{template_id}/archive", response_model=MeetingTemplateResponse)
+async def archive_meeting_template(
+    template_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Copper Compass: archive a custom template so it no longer appears by default."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    template = _assert_template_edit_access(template_manager, template_id, user)
+    archived = template_manager.archive_custom_template(template)
+    return _serialize_template_response(template_manager, archived, user)
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_meeting_template(
+    template_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Copper Compass: delete a custom template owned by the requester or admin."""
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    template = _assert_template_edit_access(template_manager, template_id, user)
+    template_manager.delete_custom_template(template)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{meeting_id}/templates", response_model=MeetingTemplateResponse)

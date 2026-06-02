@@ -23,7 +23,7 @@
                 {% set template = card.template %}
                 {% set permissions = card.permissions %}
                 {% set orchestration = card.orchestration %}
-                <article class="meeting-template-card">
+                <article class="meeting-template-card" data-template-card data-template-id="{{ template.template_id }}">
                     <div class="meeting-template-card__body">
                         <div class="meeting-template-card__title-row">
                             <h3>{{ template.name }}</h3>
@@ -114,6 +114,39 @@
                         >
                             {% if card.can_start %}START FROM TEMPLATE{% else %}CREATION FLOW PENDING{% endif %}
                         </a>
+                        {% if permissions.can_edit %}
+                            <button
+                                type="button"
+                                class="meeting-template-manage-btn"
+                                data-template-action="edit"
+                                data-template-id="{{ template.template_id }}"
+                                data-template-name="{{ template.name }}"
+                                data-template-purpose="{{ template.purpose or '' }}"
+                                data-template-tags="{{ (template.tags or [])|join(', ') }}"
+                            >
+                                EDIT
+                            </button>
+                        {% endif %}
+                        {% if permissions.can_archive %}
+                            <button
+                                type="button"
+                                class="meeting-template-manage-btn"
+                                data-template-action="archive"
+                                data-template-id="{{ template.template_id }}"
+                            >
+                                ARCHIVE
+                            </button>
+                        {% endif %}
+                        {% if permissions.can_delete %}
+                            <button
+                                type="button"
+                                class="meeting-template-manage-btn meeting-template-manage-btn--danger"
+                                data-template-action="delete"
+                                data-template-id="{{ template.template_id }}"
+                            >
+                                DELETE
+                            </button>
+                        {% endif %}
                     </div>
                 </article>
             {% endfor %}
@@ -128,4 +161,78 @@
         </div>
     {% endif %}
 </section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (() => {
+        const buttons = document.querySelectorAll('[data-template-action]');
+        const feedback = (message) => {
+            if (message) {
+                window.alert(message);
+            }
+        };
+        async function requestJson(url, options) {
+            const response = await fetch(url, {
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                ...options,
+            });
+            if (response.status === 204) {
+                return {};
+            }
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                throw new Error(payload.detail || 'Template update failed.');
+            }
+            return payload;
+        }
+        buttons.forEach((button) => {
+            button.addEventListener('click', async () => {
+                const templateId = button.dataset.templateId;
+                const action = button.dataset.templateAction;
+                if (!templateId || !action) return;
+                try {
+                    if (action === 'edit') {
+                        const name = window.prompt('Template name', button.dataset.templateName || '');
+                        if (name === null) return;
+                        const purpose = window.prompt('Template purpose', button.dataset.templatePurpose || '');
+                        if (purpose === null) return;
+                        const tagsRaw = window.prompt('Tags, separated by commas', button.dataset.templateTags || '');
+                        if (tagsRaw === null) return;
+                        await requestJson(`/api/meetings/templates/${encodeURIComponent(templateId)}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({
+                                name: name.trim(),
+                                purpose: purpose.trim(),
+                                tags: tagsRaw.split(',').map((tag) => tag.trim()).filter(Boolean),
+                            }),
+                        });
+                        window.location.reload();
+                        return;
+                    }
+                    if (action === 'archive') {
+                        if (!window.confirm('Archive this template? It will no longer appear by default.')) return;
+                        await requestJson(`/api/meetings/templates/${encodeURIComponent(templateId)}/archive`, {
+                            method: 'POST',
+                            body: JSON.stringify({}),
+                        });
+                        window.location.reload();
+                        return;
+                    }
+                    if (action === 'delete') {
+                        if (!window.confirm('Delete this template? This cannot be undone.')) return;
+                        await requestJson(`/api/meetings/templates/${encodeURIComponent(templateId)}`, {
+                            method: 'DELETE',
+                            body: JSON.stringify({}),
+                        });
+                        window.location.reload();
+                    }
+                } catch (error) {
+                    feedback(error.message || 'Template update failed.');
+                }
+            });
+        });
+    })();
+</script>
 {% endblock %}
