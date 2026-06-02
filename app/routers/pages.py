@@ -606,6 +606,7 @@ async def meeting(
     meeting_id: str,
     current_user: User = Depends(get_current_active_user),
     meeting_manager: MeetingManager = Depends(get_meeting_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
 ):
     """Display a specific meeting - requires authenticated user with meeting access"""
     if current_user is None:
@@ -630,6 +631,16 @@ async def meeting(
     brainstorming_limits = get_brainstorming_limits()
     meeting_refresh = get_meeting_refresh_settings()
     frontend_reliability = get_frontend_reliability_settings()
+    orchestration_template = None
+    if getattr(meeting, "source_template_id", None):
+        source_template = template_manager.get_template(meeting.source_template_id)
+        if source_template is not None:
+            orchestration_summary = template_manager.orchestration_summary(source_template)
+            if orchestration_summary is not None:
+                orchestration_template = {
+                    "template_name": source_template.name,
+                    "summary": orchestration_summary,
+                }
 
     return templates.TemplateResponse(request, 
         "meeting.html",
@@ -640,6 +651,7 @@ async def meeting(
             "meeting": meeting,
             "can_manage_meeting": meeting_capabilities["can_manage"],
             "meeting_capabilities": meeting_capabilities,
+            "orchestration_template": orchestration_template,
             "role": current_user.role,
             "UserRole": UserRole,  # For role comparisons in template
             "brainstorming_limits": brainstorming_limits,

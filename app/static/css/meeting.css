@@ -143,6 +143,54 @@
   color: #7f1d1d;
 }
 
+.orchestration-guidance-card .section-header {
+  align-items: flex-start;
+}
+
+.orchestration-version {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(11, 61, 145, 0.08);
+  color: var(--navy-blue);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.orchestration-guidance-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.orchestration-guidance-block {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.orchestration-guidance-block strong {
+  color: rgba(11, 61, 145, 0.72);
+  font-size: 0.76rem;
+  text-transform: uppercase;
+}
+
+.orchestration-guidance-block ol,
+.orchestration-guidance-block ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: rgba(11, 61, 145, 0.78);
+}
+
+.orchestration-guidance-block li {
+  margin: 0.25rem 0;
+}
+
+@media (max-width: 720px) {
+  .orchestration-guidance-body {
+    grid-template-columns: 1fr;
+  }
+}
+
 .agenda-timeline {
   list-style: none;
   margin: 0;

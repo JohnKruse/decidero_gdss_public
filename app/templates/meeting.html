@@ -75,6 +75,48 @@
     </section>
     {% endgrab %}
 
+    {% if can_manage_meeting and orchestration_template %}
+    {% set orchestration = orchestration_template.summary %}
+    {% grab id="meeting-orchestration-guidance-card" %}
+    <section class="content-card orchestration-guidance-card">
+        <div class="section-header">
+            <div>
+                <p class="section-kicker">Orchestrated Method</p>
+                <h2>{{ orchestration_template.template_name }}</h2>
+                <div class="overview-subtitle">
+                    Decidero will create later rounds and decision points only when this method reaches them.
+                </div>
+            </div>
+            {% if orchestration.document_version %}
+            <span class="orchestration-version">v{{ orchestration.document_version }}</span>
+            {% endif %}
+        </div>
+        <div class="section-body orchestration-guidance-body">
+            {% if orchestration.method_outline %}
+            <div class="orchestration-guidance-block">
+                <strong>Method outline</strong>
+                <ol>
+                    {% for step in orchestration.method_outline %}
+                    <li>{{ step }}</li>
+                    {% endfor %}
+                </ol>
+            </div>
+            {% endif %}
+            {% if orchestration.runtime_gates %}
+            <div class="orchestration-guidance-block">
+                <strong>Runtime gates</strong>
+                <ul>
+                    {% for gate in orchestration.runtime_gates %}
+                    <li>{{ gate }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+    {% endgrab %}
+    {% endif %}
+
     <div class="layout-grid">
         <div class="meeting-main">
             {% grab id="meeting-agenda-card" %}

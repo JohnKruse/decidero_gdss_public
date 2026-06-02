@@ -165,6 +165,34 @@ def test_template_creation_api_creates_orchestration_bound_meeting(
     assert payload["agenda"][0]["title"] == "Round 1: Generate Delphi Items"
 
 
+def test_orchestration_meeting_page_sets_facilitator_expectations(
+    authenticated_client: TestClient,
+    db_session,
+):
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    create_response = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={
+            "title": "Facilitator Delphi Run",
+            "description": "Create from the packaged method.",
+            "participant_ids": [],
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+
+    page = authenticated_client.get(f"/meeting/{create_response.json()['id']}")
+    assert page.status_code == 200
+    assert "Orchestrated Method" in page.text
+    assert "Decidero will create later rounds and decision points only when this method reaches them." in page.text
+    assert "Method outline" in page.text
+    assert "Runtime gates" in page.text
+    assert "Generate candidate Delphi items." in page.text
+    assert "The process stops when IQR stability fires or the maximum-round bound is reached." in page.text
+
+
 def test_meeting_page_exposes_backend_capability_data(
     authenticated_client: TestClient,
 ):
