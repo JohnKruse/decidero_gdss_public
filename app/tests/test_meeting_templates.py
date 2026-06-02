@@ -240,7 +240,7 @@ def test_seed_builtin_delphi_template_references_packaged_orchestration(db_sessi
             "Linstone, H. A., and Turoff, M., editors. The Delphi Method: "
             "Techniques and Applications. Addison-Wesley, 1975."
         ),
-        "instantiation_status": "pending_template_ui",
+        "instantiation_status": "ready",
         "method_outline": [
             "Generate candidate Delphi items.",
             "Iterate rank-order voting rounds.",
@@ -255,7 +255,7 @@ def test_seed_builtin_delphi_template_references_packaged_orchestration(db_sessi
     }
     assert "Strong agreement" not in json.dumps(payload)
     assert "Divergent view" not in json.dumps(payload)
-    assert MeetingTemplateManager(db_session).template_start_block_reason(template)
+    assert MeetingTemplateManager(db_session).template_start_block_reason(template) is None
 
 
 def test_persisted_orchestration_meeting_rebinds_to_engine_strategy(db_session):

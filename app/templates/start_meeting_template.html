@@ -1,0 +1,198 @@
+{% extends "_base.html" %}
+
+{% block title %}Start {{ template.name }} - Decidero GDSS{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/create_meeting.css">
+{% endblock %}
+
+{% block content %}
+<section
+    class="layout-card template-start-page"
+    data-template-id="{{ template.template_id }}"
+    data-create-url="/api/meetings/templates/{{ template.template_id }}/meetings"
+>
+    <div class="template-start-header">
+        <div>
+            <p class="section-kicker">Start from Template</p>
+            <h2>{{ template.name }}</h2>
+            {% if template.purpose %}
+                <p class="template-start-copy">{{ template.purpose }}</p>
+            {% endif %}
+        </div>
+        <a class="secondary-btn" href="/meeting/templates">Back to Templates</a>
+    </div>
+
+    <div class="template-start-grid">
+        <form id="templateStartForm" class="form-grid template-start-form">
+            <div>
+                <label for="title">Session Name <span style="color:var(--error-color);">*</span></label>
+                <input
+                    type="text"
+                    id="title"
+                    name="title"
+                    required
+                    value="{{ defaults.title or template.name }}"
+                    placeholder="e.g. Expert review of release priorities"
+                >
+            </div>
+
+            <div>
+                <label for="description">Question for the Group <span style="color:var(--error-color);">*</span></label>
+                <textarea
+                    id="description"
+                    name="description"
+                    required
+                    placeholder="What should this group judge, prioritize, or decide?"
+                >{{ defaults.description or '' }}</textarea>
+            </div>
+
+            <div>
+                <label for="scheduledDatetime">Start Time</label>
+                <input type="datetime-local" id="scheduledDatetime" name="scheduledDatetime">
+            </div>
+
+            <div>
+                <label for="participantContacts">Participants</label>
+                <input
+                    type="text"
+                    id="participantContacts"
+                    name="participantContacts"
+                    placeholder="Names, logins, or emails separated by commas"
+                >
+                <p class="muted-note">Optional. You can add or adjust participants after the session is created.</p>
+            </div>
+
+            <div class="template-start-expectation">
+                <strong>What happens next</strong>
+                <span>Decidero creates the session and opens the first activity. Rounds and stop/continue points stay live, so the facilitator sees them only when the method reaches them.</span>
+            </div>
+
+            <div class="template-start-expectation template-start-expectation--decision">
+                <strong>Facilitator role</strong>
+                <span>At each gate, Decidero will show the current evidence and the next available choice in plain language.</span>
+            </div>
+
+            <div id="templateStartFeedback" class="feedback" aria-live="polite"></div>
+
+            <div class="actions-row">
+                <button type="submit" class="primary-btn" id="templateStartSubmit">
+                    Create Session
+                </button>
+            </div>
+        </form>
+
+        <aside class="template-method-panel">
+            <div class="meeting-template-method">
+                <strong>{{ orchestration.label }}</strong>
+                {% if orchestration.document_name %}
+                    <span>{{ orchestration.document_name }}{% if orchestration.document_version %} v{{ orchestration.document_version }}{% endif %}</span>
+                {% endif %}
+                {% if orchestration.document_path %}
+                    <span>{{ orchestration.document_path }}</span>
+                {% endif %}
+            </div>
+
+            {% if orchestration.method_outline %}
+                <div class="meeting-template-outline">
+                    <strong>Method outline</strong>
+                    <ol>
+                        {% for step in orchestration.method_outline %}
+                            <li>{{ step }}</li>
+                        {% endfor %}
+                    </ol>
+                </div>
+            {% endif %}
+
+            {% if orchestration.runtime_gates %}
+                <div class="meeting-template-gates">
+                    <strong>Runtime gates</strong>
+                    <ul>
+                        {% for gate in orchestration.runtime_gates %}
+                            <li>{{ gate }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        </aside>
+    </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    (() => {
+        const page = document.querySelector('.template-start-page');
+        const form = document.getElementById('templateStartForm');
+        const submit = document.getElementById('templateStartSubmit');
+        const feedback = document.getElementById('templateStartFeedback');
+        const titleInput = document.getElementById('title');
+        const descriptionInput = document.getElementById('description');
+        const scheduledInput = document.getElementById('scheduledDatetime');
+        const participantContactsInput = document.getElementById('participantContacts');
+
+        function setFeedback(message, variant = 'info') {
+            if (!feedback) return;
+            if (!message) {
+                feedback.className = 'feedback';
+                feedback.style.display = 'none';
+                feedback.textContent = '';
+                return;
+            }
+            feedback.className = `feedback ${variant === 'error' ? 'error' : 'success'}`;
+            feedback.style.display = 'block';
+            feedback.textContent = message;
+        }
+
+        function scheduledIsoValue() {
+            const value = (scheduledInput?.value || '').trim();
+            if (!value) return null;
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+        }
+
+        form?.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const templateId = page?.dataset.templateId;
+            const title = (titleInput?.value || '').trim();
+            const description = (descriptionInput?.value || '').trim();
+            const participantContacts = (participantContactsInput?.value || '')
+                .split(',')
+                .map((value) => value.trim())
+                .filter(Boolean);
+            if (!title || !description || !templateId) {
+                setFeedback('Add a meeting title and problem statement before creating the meeting.', 'error');
+                return;
+            }
+            submit.disabled = true;
+            setFeedback('Creating meeting...', 'success');
+            try {
+                const createUrl = page?.dataset.createUrl || `/api/meetings/templates/${encodeURIComponent(templateId)}/meetings`;
+                const response = await fetch(createUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        title,
+                        description,
+                        scheduled_datetime: scheduledIsoValue(),
+                        participant_contacts: participantContacts,
+                    }),
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(result.detail || 'Could not create the meeting.');
+                }
+                const meetingId = result.meeting_id || result.id;
+                if (!meetingId) {
+                    throw new Error('Meeting created, but no meeting id was returned.');
+                }
+                window.location.href = `/meeting/${encodeURIComponent(meetingId)}`;
+            } catch (error) {
+                setFeedback(error.message || 'Could not create the meeting.', 'error');
+                submit.disabled = false;
+            }
+        });
+    })();
+</script>
+{% endblock %}

@@ -106,7 +106,7 @@
                         <a
                             class="action-btn{% if not card.can_start %} action-btn--disabled{% endif %}"
                             {% if card.can_start %}
-                                href="/meeting/create?template_id={{ template.template_id|urlencode }}"
+                                href="{{ card.start_url }}"
                             {% else %}
                                 aria-disabled="true"
                             {% endif %}

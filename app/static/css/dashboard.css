@@ -425,6 +425,68 @@ body {
     margin: 0;
 }
 
+.template-start-page {
+    display: grid;
+    gap: 1.25rem;
+}
+
+.template-start-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.template-start-header h2 {
+    margin: 0;
+    font-size: 1.75rem;
+}
+
+.template-start-copy {
+    max-width: 720px;
+    margin: 0.35rem 0 0;
+    color: rgba(11, 61, 145, 0.78);
+}
+
+.template-start-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+    gap: 1.25rem;
+    align-items: start;
+}
+
+.template-start-form {
+    min-width: 0;
+}
+
+.template-start-expectation {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.85rem;
+    border-radius: 8px;
+    background: rgba(11, 61, 145, 0.06);
+    color: rgba(11, 61, 145, 0.78);
+}
+
+.template-start-expectation strong {
+    color: var(--navy-blue);
+    text-transform: uppercase;
+    font-size: 0.76rem;
+}
+
+.template-start-expectation--decision {
+    background: rgba(126, 192, 238, 0.15);
+}
+
+.template-method-panel {
+    display: grid;
+    gap: 1rem;
+    padding: 1rem;
+    border: 1px solid rgba(11, 61, 145, 0.14);
+    border-radius: 8px;
+    background: rgba(11, 61, 145, 0.03);
+}
+
 @media (max-width: 720px) {
     .meeting-templates-header {
         display: grid;
@@ -432,6 +494,11 @@ body {
 
     .meeting-template-meta {
         grid-template-columns: 1fr;
+    }
+
+    .template-start-header,
+    .template-start-grid {
+        display: grid;
     }
 }
 

@@ -79,6 +79,15 @@ activities are materialized only after convergence checks, AI review, or
 facilitator decisions. As a result, the UI should distinguish a fixed agenda
 template from an executable flow model.
 
+### UF8 — Facilitator Decisions Must Be Plain
+
+The facilitator-facing path should minimize prior training. Before launch, ask
+only for the session details and method parameters that matter. At runtime,
+decision points should state the current evidence, the available next choices,
+and what will happen after each choice. The facilitator should not need to infer
+whether Decidero is creating another round, stopping the method, or waiting for
+review.
+
 ## Strategic Phases
 
 ### Phase 7 — Meeting Templates and Pilot Hardening
@@ -92,6 +101,7 @@ Build the first product-grade template flow and use it to support pilot testing.
 - Starting from a template creates a fresh meeting through a clear configure/create flow with title, schedule, participants, and any required template parameters.
 - The Classical Delphi template is backed by the packaged Delphi orchestration, or the UI explicitly states that the orchestration bridge is incomplete.
 - Orchestration-backed templates show a planned method outline and runtime gates rather than a misleading pre-filled final agenda.
+- Orchestration-backed template launch uses a guided facilitator start page rather than the ordinary agenda editor, and sets accurate expectations that future rounds and stop/continue points appear only when the method reaches them.
 - Existing meetings can be saved as custom templates with runtime data stripped.
 - Custom templates can be listed, started, renamed, disabled/archived, and deleted or hidden according to the chosen permission model.
 - The first pilot protocol is updated to include the template flow, and at least one user-testing pass records whether facilitators understand the difference between templates, AI design, manual design, and import.

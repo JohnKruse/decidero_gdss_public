@@ -96,6 +96,12 @@ details and method parameters, then bind the meeting to the orchestration
 document. It should show a planned method outline, but it should not expose the
 ordinary agenda editor as if the full final activity list were known.
 
+For facilitator experience, the orchestration-backed start page should ask only
+simple launch questions such as session name, group question/problem statement,
+and start time. It should set the next expectation plainly: Decidero creates
+the first activity now, and later rounds or stop/continue choices appear only
+when the orchestration reaches those gates.
+
 The final action remains **Create Meeting**.
 
 ### Save as Template
@@ -193,6 +199,7 @@ Conclude this step by:
 - Adding the API/service path that turns an ordinary agenda template into meeting agenda payloads.
 - Adding the API/service path that turns an orchestration-backed template into a meeting bound to the packaged orchestration document.
 - Prefilling the normal meeting creator or a template-specific create form.
+- Using a template-specific guided start page for orchestration-backed methods so facilitators are not asked to edit a fictional final agenda.
 - Creating a fresh meeting with title, schedule, participants, agenda, and allowed template parameters.
 - Proving that the Classical Delphi template uses the packaged Delphi orchestration rather than a separate hand-authored agenda.
 - Proving that orchestration-backed creation does not pre-create future dynamic agenda rows beyond what the engine materializes.

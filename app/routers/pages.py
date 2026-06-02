@@ -370,6 +370,11 @@ async def create_meeting(
         start_block_reason = template_manager.template_start_block_reason(meeting_template)
         if start_block_reason:
             raise HTTPException(status_code=409, detail=start_block_reason)
+        if template_manager.orchestration_summary(meeting_template):
+            return RedirectResponse(
+                url=f"/meeting/templates/{meeting_template.template_id}/start",
+                status_code=status.HTTP_303_SEE_OTHER,
+            )
         payload = meeting_template.template_payload or {}
         defaults = payload.get("defaults") if isinstance(payload, dict) else {}
         agenda = payload.get("agenda") if isinstance(payload, dict) else []
@@ -420,13 +425,19 @@ async def meeting_templates(
     for template in template_manager.list_templates():
         permissions = template_manager.permission_summary(template, current_user)
         start_block_reason = template_manager.template_start_block_reason(template)
+        orchestration = template_manager.orchestration_summary(template)
         template_cards.append(
             {
                 "template": template,
                 "permissions": permissions,
                 "can_start": permissions.can_start and not start_block_reason,
                 "start_block_reason": start_block_reason,
-                "orchestration": template_manager.orchestration_summary(template),
+                "orchestration": orchestration,
+                "start_url": (
+                    f"/meeting/templates/{template.template_id}/start"
+                    if orchestration
+                    else f"/meeting/create?template_id={template.template_id}"
+                ),
             }
         )
 
@@ -439,6 +450,64 @@ async def meeting_templates(
             "role": current_user.role,
             "UserRole": UserRole,
             "template_cards": template_cards,
+            "ui_refresh": get_ui_refresh_settings(),
+        },
+    )
+
+
+@router.get("/meeting/templates/{template_id}/start", response_class=HTMLResponse, response_model=None)
+async def start_meeting_template(
+    template_id: str,
+    request: Request,
+    current_user: User = Depends(get_current_active_user),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Display the guided start flow for an orchestration-backed template."""
+    if current_user is None:
+        cached_user = getattr(request.state, "user", None)
+        if cached_user is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Authenticated user not available for template creation.",
+            )
+        current_user = cached_user
+    if current_user.role not in [UserRole.FACILITATOR, UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only facilitators and administrators can start from templates",
+        )
+
+    template = template_manager.get_template(template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Meeting template not found")
+    permissions = template_manager.permission_summary(template, current_user)
+    start_block_reason = template_manager.template_start_block_reason(template)
+    if not permissions.can_start:
+        raise HTTPException(status_code=403, detail="You do not have permission to start this template")
+    if start_block_reason:
+        raise HTTPException(status_code=409, detail=start_block_reason)
+
+    orchestration = template_manager.orchestration_summary(template)
+    if orchestration is None:
+        raise HTTPException(
+            status_code=400,
+            detail="This template uses the ordinary agenda creator.",
+        )
+
+    payload = template.template_payload if isinstance(template.template_payload, dict) else {}
+    defaults = payload.get("defaults") if isinstance(payload, dict) else {}
+
+    return templates.TemplateResponse(
+        request,
+        "start_meeting_template.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "role": current_user.role,
+            "UserRole": UserRole,
+            "template": template,
+            "orchestration": orchestration,
+            "defaults": defaults or {},
             "ui_refresh": get_ui_refresh_settings(),
         },
     )

@@ -511,7 +511,7 @@ def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
                 "document_name": delphi["name"],
                 "document_version": delphi["version"],
                 "citation": delphi["citation"],
-                "instantiation_status": "pending_template_ui",
+                "instantiation_status": "ready",
                 "method_outline": [
                     "Generate candidate Delphi items.",
                     "Iterate rank-order voting rounds.",

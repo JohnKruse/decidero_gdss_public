@@ -88,7 +88,7 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
 ):
     from app.data.meeting_template_manager import seed_builtin_meeting_templates
 
-    seed_builtin_meeting_templates(db_session)
+    [template] = seed_builtin_meeting_templates(db_session)
 
     response = authenticated_client.get("/meeting/templates")
     assert response.status_code == 200
@@ -100,12 +100,13 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
     assert "Runtime gates" in response.text
     assert "Iterate rank-order voting rounds." in response.text
     assert "Additional ranking rounds are materialized only if convergence has not been reached." in response.text
-    assert "CREATION FLOW PENDING" in response.text
+    assert "START FROM TEMPLATE" in response.text
+    assert f"/meeting/templates/{template.template_id}/start" in response.text
     assert "/meeting/create?template_id=" not in response.text
     assert "Meeting not found" not in response.text
 
 
-def test_start_from_orchestration_backed_template_is_blocked_until_bridge_exists(
+def test_start_from_orchestration_backed_template_uses_guided_start_page(
     authenticated_client: TestClient,
     db_session,
 ):
@@ -113,9 +114,28 @@ def test_start_from_orchestration_backed_template_is_blocked_until_bridge_exists
 
     [template] = seed_builtin_meeting_templates(db_session)
 
-    response = authenticated_client.get(f"/meeting/create?template_id={template.template_id}")
-    assert response.status_code == 409
-    assert "Orchestration template UI pending" in response.text
+    response = authenticated_client.get(
+        f"/meeting/create?template_id={template.template_id}",
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert response.headers["location"] == f"/meeting/templates/{template.template_id}/start"
+
+    start_page = authenticated_client.get(response.headers["location"])
+    assert start_page.status_code == 200
+    assert "Start Classical Delphi" in start_page.text
+    assert "Session Name" in start_page.text
+    assert "Question for the Group" in start_page.text
+    assert "Participants" in start_page.text
+    assert "Names, logins, or emails separated by commas" in start_page.text
+    assert "What happens next" in start_page.text
+    assert "Facilitator role" in start_page.text
+    assert "Decidero will show the current evidence and the next available choice" in start_page.text
+    assert "Generate candidate Delphi items." in start_page.text
+    assert "Runtime gates" in start_page.text
+    assert f"/api/meetings/templates/{template.template_id}/meetings" in start_page.text
+    assert "agendaItems" not in start_page.text
+    assert "addAgendaItem" not in start_page.text
 
 
 def test_template_creation_api_creates_orchestration_bound_meeting(
