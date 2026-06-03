@@ -2,6 +2,8 @@
 
 **Depends on:** Completed orchestration-engine plan archived at [plans/archive/orchestration_engine/01_MASTER_PLAN.md](archive/orchestration_engine/01_MASTER_PLAN.md)
 **Primary subplan:** [plans/subplans/PHASE_7.md](subplans/PHASE_7.md)
+**Follow-on subplan:** [plans/subplans/PHASE_8.md](subplans/PHASE_8.md) — orchestration runtime advancement and facilitator cycle control (surfaced by the Phase 7 pilot)
+**Follow-on subplan:** [plans/subplans/PHASE_9.md](subplans/PHASE_9.md) — facilitator-shaped authoring of control points (the non-technical authoring surface; evolutionary, pilot-driven)
 **Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 
 **Paper direction:** Decidero should be presented as a collaboration-engineering
@@ -107,12 +109,39 @@ Build the first product-grade template flow and use it to support pilot testing.
 - The first pilot protocol is updated to include the template flow, and at least one user-testing pass records whether facilitators understand the difference between templates, AI design, manual design, and import.
 - The HICSS outline is kept current enough that implementation work can be mapped to activity contract, orchestration, facilitation support, template reuse, or pilot evidence claims.
 
+### Phase 8 — Orchestration Runtime Advancement and Facilitator Cycle Control
+
+Detailed in [plans/subplans/PHASE_8.md](subplans/PHASE_8.md). The Phase 7 pilot
+revealed that orchestration-backed meetings cannot advance past their first
+activity through the UI, and that facilitator/AI decisions are recorded but do not
+steer flow. Phase 8 wires runtime advancement and gives the facilitator a narrow,
+recommendation-backed continue/conclude gate at each method cycle boundary — the
+runnable form of UF8. This intentionally adds a narrow loop-control decision, which
+extends the scope boundary below; the general `conditional` primitive remains out.
+
+### Phase 9 — Facilitator-Shaped Authoring of Control Points
+
+Detailed in [plans/subplans/PHASE_9.md](subplans/PHASE_9.md). Phase 8 makes control
+points runnable; Phase 9 makes them *authorable by non-technical facilitators*
+without editing JSON. It is a front-end translation layer that compiles
+meeting-language choices down to the existing orchestration schema — never touching
+activities or the document format. Anchored on fork-and-tune plus a single
+plain-language control-point card, with a pattern-block canvas and AI co-author as
+later, pilot-tuned steps. Explicitly evolutionary: the UX is expected to be
+re-planned from facilitator feedback rather than specified up front.
+
+### Phase 7 Pilot Findings
+
+Record findings from the Copper Compass pilot dry-run against the template path and
+the paper claims (this is the remaining open item from Phase 7 Step 6). The pilot's
+first major finding is captured in Phase 8.
+
 ## Scope Boundary
 
 This plan does not cover:
 
 - A publication-grade empirical study.
-- New orchestration grammar primitives.
+- New orchestration grammar primitives, **except** the narrow loop-control decision authorized for Phase 8 (continue/conclude steering of an `iterate` round boundary). The general `conditional` branching primitive remains out of scope.
 - A visual redesign of the whole dashboard beyond the creation controls needed for template discoverability.
 - Arbitrary drag-and-drop template editing beyond what is needed to save and reuse high-level meeting structure.
 - Importing old meeting ZIPs as templates unless explicitly implemented as a separate extraction path.
