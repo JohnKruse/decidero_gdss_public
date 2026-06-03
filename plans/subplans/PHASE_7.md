@@ -236,7 +236,7 @@ Conclude this step by:
 Technical deviations:
 - The v1 meeting-page action collects only the template name. Purpose, tags, and metadata editing remain part of Step 6 template management.
 
-### Step 6 — Template Management and Pilot Validation
+### Step 6 — [DONE] Template Management and Pilot Validation
 
 Round out the v1 management surface and test it with users. This step is where implementation meets the Phase 7 pilot guide.
 
@@ -246,11 +246,12 @@ Conclude this step by:
 - [DONE] Running the agreed regression command to `[100%]` — 307 passed, 2 skipped.
 - [DONE] Updating [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the final template workflow.
 - [DONE] Updating [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md) — implemented evidence sections updated; conclusion and risk sections reflect current implementation state.
-- Recording pilot findings about whether users understood `Start from Template`, `Design with AI`, `Design Yourself`, and `Import Meeting` without explanation.
-- Recording pilot findings against the paper claims: whether templates make reusable methods understandable, whether AI/facilitator decision support lowers the facilitation burden, and whether ordinary agenda templates remain distinct from orchestration-backed methods.
+- [DONE] Recording pilot findings about whether users understood `Start from Template`, `Design with AI`, `Design Yourself`, and `Import Meeting` without explanation — see [docs/PILOT_FINDINGS_COPPER_COMPASS.md](../../docs/PILOT_FINDINGS_COPPER_COMPASS.md).
+- [DONE] Recording pilot findings against the paper claims: whether templates make reusable methods understandable, whether AI/facilitator decision support lowers the facilitation burden, and whether ordinary agenda templates remain distinct from orchestration-backed methods — see [docs/PILOT_FINDINGS_COPPER_COMPASS.md](../../docs/PILOT_FINDINGS_COPPER_COMPASS.md).
 
 Technical deviations:
 - The v1 custom-template management surface uses prompt/confirm interactions on the Meeting Templates page for name, purpose, tags, archive, and delete. A richer modal editor can wait until pilot feedback shows which metadata facilitators actually use.
+- The Copper Compass dry-run was facilitator-operated by the maintainer, not naive first-time users, so dashboard-vocabulary comprehension is recorded as unverified rather than confirmed; a second session with first-time users is the recommended next action. The dry-run nonetheless produced actionable findings: three blockers (two fixed in `c9514db` and `05f2fa2`, one — runtime advancement — deferred to Phase 8) and one research-level gap (decisions record but do not branch) deferred to Phase 8/9. The pilot path therefore exercised the template flow end-to-end up to the first orchestration runtime gate.
 
 ## Phase Exit Criteria
 
