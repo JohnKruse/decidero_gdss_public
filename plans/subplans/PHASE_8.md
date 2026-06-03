@@ -171,28 +171,50 @@ Technical deviations:
   the endpoint reports `status: "paused"` with the decision prompt/options rather
   than presenting the decision row as a runnable activity.
 
-### Step 3 — [PENDING] Loop-control decision at the iterate boundary (A)
+### Step 3 — [DONE] Loop-control decision at the iterate boundary (A)
 
 Give a facilitator decision at the round boundary real continue/conclude authority,
 with the convergence predicate as the recommendation.
 
 Conclude this step by:
 
-- Adding a document-level round-gate declaration on the `iterate` step (e.g. a
-  `round_gate` config naming mode `facilitator` and recommendation source
-  `convergence`), defined in `docs/schemas/orchestration.schema.json` and enforced
+- [DONE] Adding a `round_gate` declaration on the `iterate` step (mode `facilitator`,
+  recommendation source `convergence`), defined in
+  `docs/schemas/orchestration.schema.json`, parsed onto `IterateStep`, and validated
   by the loader. The recommendation source is an enumerated seam (`convergence`
-  now; `ai` reserved) so the AI advisor slots in later without engine changes.
-- Making the walker **pause** at the iterate boundary when the gate is present
-  instead of silently auto-deciding ([agenda_strategy.py:319-335]), surfacing the
-  predicate verdict and round/cap state as the recommendation.
-- Making the resumed choice **steer** the loop: "conclude" pops the iterate frame
-  (method ends); "continue" starts the next round. `max_rounds` remains a hard
-  backstop that disables/forces the recommendation at the cap.
-- Authoring the gate into `orchestrations/delphi.json`.
-- Tests: continue-steers-to-next-round, conclude-steers-to-method-end, cap backstop,
-  recommendation surfaced, and gate state survives a fresh-strategy rehydration
-  (depends on Step 1).
+  implemented; `ai` accepted by schema/loader but reserved) so the AI advisor slots
+  in later without engine changes.
+- [DONE] The walker **pauses** at the iterate boundary when the gate is present
+  instead of auto-deciding, materializing a continue/conclude decision whose config
+  carries the predicate verdict (`recommendation`) and round evidence.
+- [DONE] The resumed choice **steers** the loop: "conclude" pops the iterate frame;
+  "continue" starts the next round. `max_rounds` is a hard backstop that auto-
+  concludes at the cap without a pause.
+- [DONE] Authored the gate into `orchestrations/delphi.json`.
+- [DONE] Tests (`test_round_gate_*`): pauses-with-recommendation,
+  continue-steers-to-next-round, conclude-steers-to-method-end, cap backstop, and
+  survives a fresh-strategy rehydration. The shipped-Delphi e2e
+  (`test_phase6_delphi_synthetic_cohort_end_to_end`) and the advance-endpoint e2e
+  now drive through the gate.
+
+Technical deviations:
+- The gate reuses the `facilitator_decision` tool type and pause/resume contract
+  rather than a new step kind; the options are the loop-control verbs
+  `continue`/`conclude`. Gate decisions are materialized out-of-band (they are not
+  plan entries), so they are excluded from the plan-aligned `_materialize_count`,
+  and `order_index` is now assigned from the total row count to respect the unique
+  `(meeting, order_index)` constraint.
+- The Step 1 convergence-timing lookahead artifact is resolved **for gated iterates**:
+  the walker now stops at an unfinished round boundary instead of appending an empty
+  round output and evaluating on stale data, so a gate's recommendation reflects the
+  actually-closed round. Gate-less iterates keep their prior lookahead behavior, so
+  this is a scoped change that leaves existing non-gated iterate tests unchanged.
+- Fixed a latent cross-meeting bug surfaced by the gate: round-gate and round-output
+  bundle lookups previously matched on `(logical_step_id, round_index)` alone, which
+  collide across meetings built from the same document. They are now scoped by
+  `meeting_id` (threaded onto the walker), and `respond_facilitator_decision` now
+  tags the decision bundle with `logical_step_id`/`round_index` so a per-request
+  walker can read the steer back.
 
 ### Step 4 — [PENDING] Plain facilitator gate UI (UF8)
 

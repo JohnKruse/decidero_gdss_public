@@ -225,6 +225,19 @@ class _SequenceFrame:
 
 
 @dataclass
+class _GateContext:
+    """Deliberate Heron: a paused iterate round-gate awaiting a facilitator choice."""
+
+    gate_logical_step_id: str
+    round_index: int
+    recommendation: str  # "continue" or "conclude"
+    recommendation_source: str  # "convergence" or "ai"
+    round_number: int
+    max_rounds: int
+    converged: bool
+
+
+@dataclass
 class _IterateFrame:
     """Insolent Metronome walker frame: an iterate step in progress.
 
@@ -255,6 +268,11 @@ class _PlanWalker:
     def __init__(self, top_steps: List[Any]) -> None:
         self._stack: List[Any] = [_SequenceFrame(steps=list(top_steps), path="")]
         self.needs_db: bool = False
+        # Deliberate Heron: set when the walker pauses at an iterate round-gate.
+        self.needs_gate: Optional[_GateContext] = None
+        # Deliberate Heron: bundle lookups must be scoped to this meeting, since
+        # logical_step_ids are shared across meetings built from the same document.
+        self.meeting_id: Optional[str] = None
 
     @property
     def exhausted(self) -> bool:
@@ -275,6 +293,7 @@ class _PlanWalker:
         from app.services.convergence_predicates import get_convergence_predicate_registry
 
         self.needs_db = False
+        self.needs_gate = None
         while self._stack:
             frame = self._stack[-1]
             if isinstance(frame, _SequenceFrame):
@@ -309,17 +328,43 @@ class _PlanWalker:
                     if db is None:
                         self.needs_db = True
                         return None
-                    round_output = self._collect_round_output(frame, db)
-                    transform_spec = frame.step.bundle_transform or {}
-                    transform = get_bundle_transform_registry().get_transform(
-                        transform_spec.get("name", "")
+                    next_round = frame.round_index + 1
+                    at_cap = next_round >= frame.step.max_rounds
+                    gate = getattr(frame.step, "round_gate", None)
+
+                    already_recorded = len(frame.bundle_history) > frame.round_index
+                    round_output = (
+                        None
+                        if already_recorded
+                        else self._collect_round_output(frame, db, self.meeting_id)
                     )
-                    transformed = (
-                        transform.transform(round_output or {}, transform_spec.get("config") or {})
-                        if transform is not None
-                        else (round_output or {})
-                    )
-                    frame.bundle_history.append(transformed)
+
+                    # Deliberate Heron: a gated boundary below the cap must wait for
+                    # the round to actually close before presenting the continue/
+                    # conclude decision. Stop extending rather than appending an
+                    # empty round and evaluating the recommendation on stale data.
+                    if (
+                        gate
+                        and not at_cap
+                        and not already_recorded
+                        and not (round_output or {}).get("items")
+                    ):
+                        return None
+
+                    # Idempotent per-round append: re-entering the same boundary
+                    # (e.g. while paused on a round-gate) must not double-count
+                    # this round into the convergence history.
+                    if not already_recorded:
+                        transform_spec = frame.step.bundle_transform or {}
+                        transform = get_bundle_transform_registry().get_transform(
+                            transform_spec.get("name", "")
+                        )
+                        transformed = (
+                            transform.transform(round_output or {}, transform_spec.get("config") or {})
+                            if transform is not None
+                            else (round_output or {})
+                        )
+                        frame.bundle_history.append(transformed)
                     pred_spec = frame.step.convergence_predicate or {}
                     predicate = get_convergence_predicate_registry().get_predicate(
                         pred_spec.get("name", "")
@@ -329,8 +374,38 @@ class _PlanWalker:
                         if predicate is not None
                         else False
                     )
-                    next_round = frame.round_index + 1
-                    if fired or next_round >= frame.step.max_rounds:
+
+                    # Deliberate Heron: facilitator round-gate. Below the cap the
+                    # walker pauses for a continue/conclude decision instead of
+                    # auto-deciding; the predicate verdict is the recommendation.
+                    if gate and not at_cap:
+                        gate_lsid = (
+                            f"engine:{frame.path}#gate" if frame.path else "engine:#gate"
+                        )
+                        decision = self._lookup_gate_decision(
+                            db, gate_lsid, frame.round_index, self.meeting_id
+                        )
+                        if decision == "conclude":
+                            self._stack.pop()
+                            continue
+                        if decision == "continue":
+                            frame.round_index = next_round
+                            frame.pointer = 0
+                            frame.round_activity_ids = []
+                            continue
+                        self.needs_gate = _GateContext(
+                            gate_logical_step_id=gate_lsid,
+                            round_index=frame.round_index,
+                            recommendation=("conclude" if fired else "continue"),
+                            recommendation_source=str(gate.get("recommendation", "convergence")),
+                            round_number=frame.round_index + 1,
+                            max_rounds=frame.step.max_rounds,
+                            converged=fired,
+                        )
+                        return None
+
+                    # No gate, or the cap is a hard backstop that forces conclude.
+                    if fired or at_cap:
                         self._stack.pop()
                         continue
                     frame.round_index = next_round
@@ -350,7 +425,37 @@ class _PlanWalker:
         return None
 
     @staticmethod
-    def _collect_round_output(frame: _IterateFrame, db: Session) -> Dict[str, Any]:
+    def _lookup_gate_decision(
+        db: Session,
+        gate_logical_step_id: str,
+        round_index: int,
+        meeting_id: Optional[str],
+    ) -> Optional[str]:
+        """Deliberate Heron: read a persisted round-gate choice, if any.
+
+        Gate decisions are persisted as facilitator-decision output bundles tagged
+        with the gate's logical_step_id and round_index, so a per-request strategy
+        re-derives the facilitator's continue/conclude steer for each boundary.
+        Scoped to `meeting_id` because logical_step_ids are shared across meetings
+        built from the same document.
+        """
+        query = db.query(ActivityBundle).filter(
+            ActivityBundle.logical_step_id == gate_logical_step_id,
+            ActivityBundle.round_index == round_index,
+            ActivityBundle.kind == "output",
+        )
+        if meeting_id is not None:
+            query = query.filter(ActivityBundle.meeting_id == meeting_id)
+        bundle = query.order_by(ActivityBundle.id.desc()).first()
+        if bundle is None:
+            return None
+        chosen = dict(bundle.bundle_metadata or {}).get("chosen")
+        return chosen if chosen in ("continue", "conclude") else None
+
+    @staticmethod
+    def _collect_round_output(
+        frame: _IterateFrame, db: Session, meeting_id: Optional[str] = None
+    ) -> Dict[str, Any]:
         bundle = None
         if frame.round_activity_ids:
             last_activity_id = frame.round_activity_ids[-1]
@@ -370,16 +475,14 @@ class _PlanWalker:
                 if frame.path
                 else f"engine:{last_child_index}"
             )
-            bundle = (
-                db.query(ActivityBundle)
-                .filter(
-                    ActivityBundle.logical_step_id == logical_step_id,
-                    ActivityBundle.round_index == frame.round_index,
-                    ActivityBundle.kind == "output",
-                )
-                .order_by(ActivityBundle.id.desc())
-                .first()
+            fallback = db.query(ActivityBundle).filter(
+                ActivityBundle.logical_step_id == logical_step_id,
+                ActivityBundle.round_index == frame.round_index,
+                ActivityBundle.kind == "output",
             )
+            if meeting_id is not None:
+                fallback = fallback.filter(ActivityBundle.meeting_id == meeting_id)
+            bundle = fallback.order_by(ActivityBundle.id.desc()).first()
         if bundle is None:
             return {"items": [], "metadata": {}}
         return {
@@ -459,13 +562,38 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             self._plan.append(entry)
 
     def _materialize_count(self, meeting: Meeting, db: Session) -> int:
-        """Count AgendaActivity rows already minted for this meeting."""
+        """Count plan-aligned AgendaActivity rows already minted for this meeting.
+
+        Round-gate decision activities are materialized out-of-band (they are not
+        plan entries), so they are excluded here to keep `step_index` aligned with
+        the plan list.
+        """
+        rows = (
+            db.query(AgendaActivity.config)
+            .filter(AgendaActivity.meeting_id == meeting.meeting_id)
+            .all()
+        )
+        count = 0
+        for (config,) in rows:
+            orchestration = (config or {}).get("_orchestration") or {}
+            if orchestration.get("gate"):
+                continue
+            count += 1
+        return count
+
+    def _next_order_index(self, meeting: Meeting, db: Session) -> int:
+        """Next agenda position across *all* rows (including out-of-band gates).
+
+        `step_index` is the plan-aligned count and excludes gate decisions, so it
+        cannot be used for `order_index` (which has a unique (meeting, order_index)
+        constraint). This counts every materialized row instead.
+        """
         count = (
             db.query(func.count(AgendaActivity.activity_id))
             .filter(AgendaActivity.meeting_id == meeting.meeting_id)
             .scalar()
         ) or 0
-        return int(count)
+        return int(count) + 1
 
     def _completed_count(self, meeting: Meeting, db: Session) -> int:
         """Count plan steps whose activity has an output bundle (closed)."""
@@ -540,9 +668,13 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                     "activity_id": activity.activity_id,
                     "logical_step_id": orchestration.get("logical_step_id")
                     or config.get("logical_step_id"),
+                    "round_index": int(orchestration.get("round_index", 0) or 0),
                     "prompt": config.get("prompt") or activity.title,
                     "options": list(config.get("options") or []),
                     "context_bundle_keys": list(config.get("context_bundle_keys") or []),
+                    "gate": bool(orchestration.get("gate", False)),
+                    "recommendation": config.get("recommendation"),
+                    "evidence": config.get("evidence"),
                 }
                 break
 
@@ -592,6 +724,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
     def is_complete(self, meeting: Meeting) -> bool:
         db = object_session(meeting)
         if db is not None:
+            self._walker.meeting_id = meeting.meeting_id
             self._extend_plan(db)
         if self._walker.exhausted and not self._plan:
             return True
@@ -646,12 +779,19 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 ),
             )
 
+        self._walker.meeting_id = meeting.meeting_id
         step_index = self._materialize_count(meeting, db)
         # Drive walker forward only after all currently-planned entries have
         # been materialized. Advancing earlier can evaluate an iterate frame
         # before the current round's activity id has been recorded.
         if step_index >= len(self._plan):
             self._extend_plan(db)
+        # Deliberate Heron: the walker paused at an iterate round-gate; materialize
+        # the continue/conclude decision rather than a plan activity.
+        if step_index >= len(self._plan) and self._walker.needs_gate is not None:
+            return self._materialize_gate_decision(
+                meeting, db, step_index, self._walker.needs_gate
+            )
         if step_index >= len(self._plan):
             raise HTTPException(
                 status_code=400,
@@ -701,7 +841,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             meeting_id=meeting.meeting_id,
             tool_type=step.tool_type,
             title=step.title,
-            order_index=step_index + 1,
+            order_index=self._next_order_index(meeting, db),
             tool_config_id=tool_config_id,
             config=validated_config,
         )
@@ -810,7 +950,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             meeting_id=meeting.meeting_id,
             tool_type=tool_type,
             title=step.prompt,
-            order_index=step_index + 1,
+            order_index=self._next_order_index(meeting, db),
             tool_config_id=tool_config_id,
             config=config,
         )
@@ -824,6 +964,78 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "prompt": step.prompt,
             "options": list(step.options),
             "context_bundle_keys": list(step.context_bundle_keys or []),
+        }
+        return activity
+
+    def _materialize_gate_decision(
+        self,
+        meeting: Meeting,
+        db: Session,
+        step_index: int,
+        gate: _GateContext,
+    ) -> AgendaActivity:
+        """Deliberate Heron: mint the iterate round-gate decision and pause.
+
+        Reuses the facilitator-decision tool type and pause contract, but the
+        options are the loop-control verbs (`continue`/`conclude`) and the config
+        carries the convergence recommendation and round evidence so the gate UI
+        can render it. The decision is tagged `gate` in `_orchestration` so it is
+        excluded from the plan-aligned activity count and so `resume_*` writes a
+        gate-keyed output bundle the walker can read back.
+        """
+        from app.utils.identifiers import generate_activity_id, generate_tool_config_id
+
+        tool_type = self.FACILITATOR_DECISION_TOOL_TYPE
+        activity_id = generate_activity_id(db, meeting.meeting_id, tool_type)
+        tool_config_id = generate_tool_config_id(activity_id, meeting.meeting_id)
+
+        prompt = (
+            f"Round {gate.round_number} of up to {gate.max_rounds} complete. "
+            "Run another round or conclude the method?"
+        )
+        options = ["continue", "conclude"]
+        evidence = {
+            "round_number": gate.round_number,
+            "max_rounds": gate.max_rounds,
+            "converged": gate.converged,
+            "recommendation_source": gate.recommendation_source,
+        }
+        config: Dict[str, Any] = {
+            "prompt": prompt,
+            "options": options,
+            "context_bundle_keys": [],
+            "recommendation": gate.recommendation,
+            "evidence": evidence,
+            "_orchestration": {
+                "logical_step_id": gate.gate_logical_step_id,
+                "round_index": gate.round_index,
+                "gate": True,
+            },
+        }
+
+        activity = AgendaActivity(
+            activity_id=activity_id,
+            meeting_id=meeting.meeting_id,
+            tool_type=tool_type,
+            title=prompt,
+            order_index=self._next_order_index(meeting, db),
+            tool_config_id=tool_config_id,
+            config=config,
+        )
+        db.add(activity)
+        db.commit()
+        db.refresh(activity)
+
+        self._pending_decision = {
+            "activity_id": activity.activity_id,
+            "logical_step_id": gate.gate_logical_step_id,
+            "round_index": gate.round_index,
+            "prompt": prompt,
+            "options": options,
+            "context_bundle_keys": [],
+            "gate": True,
+            "recommendation": gate.recommendation,
+            "evidence": evidence,
         }
         return activity
 
@@ -867,7 +1079,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             meeting_id=meeting.meeting_id,
             tool_type=tool_type,
             title="AI Decision",
-            order_index=step_index + 1,
+            order_index=self._next_order_index(meeting, db),
             tool_config_id=tool_config_id,
             config={
                 "prompt_template": step.prompt_template,
@@ -1076,6 +1288,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
 
         activity_id = pending["activity_id"]
         logical_step_id = pending["logical_step_id"]
+        round_index = int(pending.get("round_index", 0) or 0)
 
         bundle_manager = ActivityBundleManager(session)
         bundle = bundle_manager.finalize_output_bundle(
@@ -1106,6 +1319,10 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 "options": options,
                 "chosen": chosen_option,
             },
+            # Deliberate Heron: tag with the step pointer so a per-request walker
+            # can read a round-gate steer back by (logical_step_id, round_index).
+            logical_step_id=logical_step_id,
+            round_index=round_index,
         )
 
         self._pending_decision = None

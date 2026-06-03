@@ -56,6 +56,10 @@
             "name": "delphi_statistical_aggregation",
             "config": {}
           },
+          "round_gate": {
+            "mode": "facilitator",
+            "recommendation": "convergence"
+          },
           "steps": [
             {
               "type": "activity",

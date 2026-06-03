@@ -210,6 +210,26 @@
                     "type": "object"
                   }
                 }
+              },
+              "round_gate": {
+                "description": "Optional facilitator round-gate. When present the engine pauses at each round boundary below max_rounds for a continue/conclude decision, with the recommendation source as the suggestion. The cap remains a hard backstop.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "recommendation"
+                ],
+                "properties": {
+                  "mode": {
+                    "const": "facilitator"
+                  },
+                  "recommendation": {
+                    "enum": [
+                      "convergence",
+                      "ai"
+                    ]
+                  }
+                }
               }
             }
           }

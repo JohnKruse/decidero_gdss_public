@@ -287,6 +287,21 @@ def test_orchestration_advance_endpoint_materializes_next_round(
         logical_step_id=orch0["logical_step_id"], round_index=0,
     )
 
+    # Advance -> round-gate decision (facilitator continue/conclude).
+    gate_adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert gate_adv.status_code == 200, gate_adv.text
+    gate_body = gate_adv.json()
+    assert gate_body["status"] == "paused"
+    gate_activity_id = gate_body["pending_decision"]["activity_id"]
+    assert gate_body["pending_decision"]["options"] == ["continue", "conclude"]
+
+    # Choose "continue" to run another round.
+    resume = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}/responses",
+        json={"chosen_option": "continue"},
+    )
+    assert resume.status_code == 200, resume.text
+
     # Advance -> Round 2 rank-order vote, carrying the prior round's feedback.
     adv2 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
     assert adv2.status_code == 200, adv2.text

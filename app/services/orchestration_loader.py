@@ -80,6 +80,11 @@ class IterateStep(OrchestrationStep):
     max_rounds: int
     convergence_predicate: Dict[str, Any]
     bundle_transform: Dict[str, Any]
+    # Deliberate Heron: optional facilitator round-gate. When present the engine
+    # pauses at each round boundary (below the cap) for a continue/conclude
+    # decision instead of auto-deciding. `recommendation` is an enumerated seam:
+    # "convergence" (predicate verdict, implemented) or "ai" (reserved).
+    round_gate: Optional[Dict[str, Any]] = None
     type: Literal["iterate"] = "iterate"
 
 
@@ -265,6 +270,17 @@ def validate_orchestration(data: Any) -> OrchestrationValidationResult:
                                     elif not isinstance(obj["config"], dict):
                                         errors.append(OrchestrationFieldError(field=f"{path}.{pred_field}.config", message=f"'{pred_field}' config must be a dictionary."))
 
+                        # Deliberate Heron: optional facilitator round-gate.
+                        if "round_gate" in step:
+                            gate = step["round_gate"]
+                            if not isinstance(gate, dict):
+                                errors.append(OrchestrationFieldError(field=f"{path}.round_gate", message="'round_gate' must be a dictionary."))
+                            else:
+                                if gate.get("mode") != "facilitator":
+                                    errors.append(OrchestrationFieldError(field=f"{path}.round_gate.mode", message="'round_gate.mode' must be 'facilitator'."))
+                                if gate.get("recommendation") not in ("convergence", "ai"):
+                                    errors.append(OrchestrationFieldError(field=f"{path}.round_gate.recommendation", message="'round_gate.recommendation' must be 'convergence' or 'ai'."))
+
                     elif stype == "conditional":
                         errors.append(OrchestrationFieldError(
                             field=f"{path}.type",
@@ -388,7 +404,8 @@ def _parse_step(data: Dict[str, Any]) -> OrchestrationStep:
             steps=[_parse_step(s) for s in data["steps"]],
             max_rounds=data["max_rounds"],
             convergence_predicate=data["convergence_predicate"],
-            bundle_transform=data["bundle_transform"]
+            bundle_transform=data["bundle_transform"],
+            round_gate=data.get("round_gate"),
         )
     elif stype == "conditional":
         return ConditionalStep()

@@ -2247,6 +2247,12 @@ async def respond_facilitator_decision(
             detail=f"Facilitator choice '{chosen}' is not one of the configured options: {options}.",
         )
 
+    # Deliberate Heron: tag the bundle with the step pointer so a round-gate steer
+    # is readable by a per-request walker via (logical_step_id, round_index).
+    orchestration = config.get("_orchestration") or {}
+    decision_logical_step_id = orchestration.get("logical_step_id")
+    decision_round_index = int(orchestration.get("round_index", 0) or 0)
+
     bundle = ActivityBundleManager(meeting_manager.db).finalize_output_bundle(
         meeting_id,
         activity.activity_id,
@@ -2258,7 +2264,7 @@ async def respond_facilitator_decision(
                     "options": options,
                     "chosen": chosen,
                     "actor_user_id": user.user_id,
-                    "logical_step_id": (config.get("_orchestration") or {}).get("logical_step_id"),
+                    "logical_step_id": decision_logical_step_id,
                 }
             },
             "source": {
@@ -2273,7 +2279,10 @@ async def respond_facilitator_decision(
             "source": "facilitator_decision",
             "options": options,
             "chosen": chosen,
+            "logical_step_id": decision_logical_step_id,
         },
+        logical_step_id=decision_logical_step_id,
+        round_index=decision_round_index,
     )
 
     realtime = await broadcast_engine_agenda_mutation(

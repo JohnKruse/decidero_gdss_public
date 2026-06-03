@@ -297,6 +297,11 @@ def _run_delphi_rank_round(
     explicit_input_bundle=None,
 ):
     activity = strategy.create_activity(meeting, None, None)
+    if activity.tool_type == "facilitator_decision":
+        # Deliberate Heron: the shipped Delphi document now gates each round
+        # boundary; continue to the next round.
+        strategy.resume_with_facilitator_decision(meeting, "continue", db=db_session)
+        activity = strategy.create_activity(meeting, None, None)
     assert activity.tool_type == "rank_order_voting"
     logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
     assert round_index == expected_round_index
@@ -442,6 +447,12 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
     )
     assert _median_iqr(third_input.items) == 0.0
     assert _median_iqr(_delphi_transformed_items(third_output)) == 0.0
+    # Deliberate Heron: the round-2 boundary gate recommends conclude (IQR stable);
+    # the facilitator concludes the method.
+    conclude_gate = strategy.create_activity(meeting, None, None)
+    assert conclude_gate.tool_type == "facilitator_decision"
+    assert conclude_gate.config["recommendation"] == "conclude"
+    strategy.resume_with_facilitator_decision(meeting, "conclude", db=db_session)
     assert strategy.is_complete(meeting)
     with pytest.raises(HTTPException, match="complete"):
         strategy.create_activity(meeting, None, None)
@@ -1780,3 +1791,139 @@ def test_rehydrate_restores_pending_facilitator_decision(db_session):
 
     with pytest.raises(HTTPException):
         fresh.create_activity(meeting, None, None)
+
+
+# ---------------------------------------------------------------------------
+# Deliberate Heron — Phase 8 Step 3: facilitator round-gate at iterate boundary
+# ---------------------------------------------------------------------------
+
+def _gated_iterate_doc(max_rounds=4, predicate_config=None, recommendation="convergence"):
+    """Deliberate Heron: a gated iterate of brainstorming rounds."""
+    return load_orchestration_data({
+        "name": "gated-iterate", "version": "1", "author": "phase8step3",
+        "citation": "Deliberate Heron",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Deliberate Heron gated iterate fixture",
+        },
+        "steps": [{
+            "type": "iterate", "max_rounds": max_rounds,
+            "convergence_predicate": {"name": "fixed_n", "config": predicate_config or {"max_rounds": 99}},
+            "bundle_transform": {"name": "identity", "config": {}},
+            "round_gate": {"mode": "facilitator", "recommendation": recommendation},
+            "steps": [{"type": "activity", "tool_type": "brainstorming", "title": "round-step"}],
+        }],
+    })
+
+
+def _close_round(db_session, meeting, activity, strategy):
+    logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting.meeting_id, activity.activity_id, [{"content": "x"}],
+        metadata={"source": "gate-test"},
+        logical_step_id=logical_step_id, round_index=round_index,
+    )
+
+
+def test_round_gate_pauses_with_recommendation(db_session):
+    """Deliberate Heron: at the round boundary the engine pauses on a gate decision
+    carrying the convergence recommendation, not an auto-advance."""
+    strategy = OrchestrationEngineStrategy(_gated_iterate_doc())
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    round0 = strategy.create_activity(meeting, None, None)
+    assert round0.tool_type == "brainstorming"
+    _close_round(db_session, meeting, round0, strategy)
+
+    gate = strategy.create_activity(meeting, None, None)
+    assert gate.tool_type == "facilitator_decision"
+    assert gate.config["options"] == ["continue", "conclude"]
+    # fixed_n(99) never fires after round 1 -> recommendation is to continue
+    assert gate.config["recommendation"] == "continue"
+    assert gate.config["evidence"]["round_number"] == 1
+    assert strategy.is_paused()
+
+
+def test_round_gate_continue_steers_to_next_round(db_session):
+    """Deliberate Heron: choosing continue materializes the next round."""
+    strategy = OrchestrationEngineStrategy(_gated_iterate_doc())
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    round0 = strategy.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, round0, strategy)
+    strategy.create_activity(meeting, None, None)  # gate
+    strategy.resume_with_facilitator_decision(meeting, "continue", db=db_session)
+
+    round1 = strategy.create_activity(meeting, None, None)
+    assert round1.tool_type == "brainstorming"
+    assert strategy.iteration_metadata_for(round1.activity_id)[1] == 1
+
+
+def test_round_gate_conclude_steers_to_method_end(db_session):
+    """Deliberate Heron: choosing conclude ends the method."""
+    from fastapi import HTTPException
+
+    strategy = OrchestrationEngineStrategy(_gated_iterate_doc())
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    round0 = strategy.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, round0, strategy)
+    strategy.create_activity(meeting, None, None)  # gate
+    strategy.resume_with_facilitator_decision(meeting, "conclude", db=db_session)
+
+    with pytest.raises(HTTPException):
+        strategy.create_activity(meeting, None, None)
+    assert strategy.is_complete(meeting)
+
+
+def test_round_gate_cap_backstop_auto_concludes_without_pause(db_session):
+    """Deliberate Heron: the final round below the cap does not pause; the cap
+    forces conclude regardless of the gate."""
+    from fastapi import HTTPException
+
+    strategy = OrchestrationEngineStrategy(_gated_iterate_doc(max_rounds=2))
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    # Round 0 -> gate -> continue -> Round 1 (which is the cap round).
+    r0 = strategy.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, r0, strategy)
+    strategy.create_activity(meeting, None, None)
+    strategy.resume_with_facilitator_decision(meeting, "continue", db=db_session)
+    r1 = strategy.create_activity(meeting, None, None)
+    assert strategy.iteration_metadata_for(r1.activity_id)[1] == 1
+    _close_round(db_session, meeting, r1, strategy)
+
+    # At the cap the engine concludes without materializing another gate.
+    with pytest.raises(HTTPException):
+        strategy.create_activity(meeting, None, None)
+    assert not strategy.is_paused()
+
+
+def test_round_gate_survives_fresh_strategy_rehydration(db_session):
+    """Deliberate Heron: a paused gate and its continue steer survive per-request
+    reconstruction (depends on Step 1 rehydration)."""
+    doc = _gated_iterate_doc()
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    seed = OrchestrationEngineStrategy(doc)
+    r0 = seed.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, r0, seed)
+    seed.create_activity(meeting, None, None)  # gate materialized, engine paused
+
+    # Fresh strategy must rediscover the pause from persisted rows.
+    fresh = OrchestrationEngineStrategy(doc)
+    fresh.rehydrate_from_db(meeting, db_session)
+    assert fresh.is_paused()
+    pending = fresh.pending_decision()
+    assert pending["options"] == ["continue", "conclude"]
+
+    fresh.resume_with_facilitator_decision(meeting, "continue", db=db_session)
+
+    # Another fresh strategy reads the persisted continue steer and advances.
+    after = OrchestrationEngineStrategy(doc)
+    after.rehydrate_from_db(meeting, db_session)
+    round1 = after.create_activity(meeting, None, None)
+    assert round1.tool_type == "brainstorming"
+    assert after.iteration_metadata_for(round1.activity_id)[1] == 1
