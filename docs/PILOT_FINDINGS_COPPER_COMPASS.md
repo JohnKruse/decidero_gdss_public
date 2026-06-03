@@ -101,3 +101,53 @@ past round 1) is the origin of Phase 8.
   Supported. Ordinary templates run through the standard creator; the Classical
   Delphi template bound to the packaged orchestration and used the guided start page
   rather than a hand-authored agenda, consistent with the Phase 7 design.
+
+---
+
+# Phase 8 Follow-up — Deliberate Heron (Orchestration Runtime Cycle Gate)
+
+Phase 8 was created directly from the Copper Compass blockers B2 (no runtime
+advancement) and H1 (decisions recorded but did not steer flow). This section
+records the resolution and the end-to-end re-run of the Classical Delphi path.
+
+## Blocker / gap resolution
+
+| Ref | Finding (Phase 7) | Status after Phase 8 |
+| --- | --- | --- |
+| B2 | Orchestration-backed meetings could not advance past the first activity through the UI. | **Resolved.** A facilitator-only `POST /orchestration/advance` endpoint materializes the next engine step, surfaced by an **Advance to next step** control. A per-request strategy rehydrates round state from persisted rows, so advancement works across the stateless request boundary (Step 1 + Step 2). |
+| H1 | Facilitator/AI decisions were recorded but did not branch; the Delphi cycle was silent automation. | **Resolved.** A `round_gate` on the iterate step pauses at each round boundary (below the cap) and gives the facilitator real continue/conclude authority, with the convergence predicate as the recommendation. The choice steers the loop; the cap is a hard backstop (Step 3). The gate is rendered with round evidence and a plain recommendation on the meeting page (Step 4). |
+
+## End-to-end re-run (automated)
+
+The Classical Delphi path now runs end-to-end through the facilitator gate, verified
+by automated tests rather than only at the engine level:
+
+- `test_orchestration_advance_endpoint_materializes_next_round` drives the API path:
+  create Delphi meeting → stop brainstorm → advance → Round 1 rank vote → advance →
+  round-gate (paused, with recommendation + evidence) → choose continue → Round 2
+  rank vote carrying the prior round's statistical feedback.
+- `test_phase6_delphi_synthetic_cohort_end_to_end` drives the shipped Delphi document
+  through the gate across multiple synthetic IQR regimes, concluding on a stable
+  round and capping the non-stabilizing regime at `max_rounds`.
+
+## Findings against the paper claims (UF8 / facilitation support)
+
+- **AI/statistical support lowers the facilitation burden without removing human
+  authority:** Now demonstrable in the runnable system. The convergence predicate
+  produces a recommendation; the facilitator owns the continue/conclude decision; the
+  cap prevents runaway. This is the concrete realization of the facilitation-support
+  claim that was only scaffolding at the end of Phase 7.
+- **Templates expose reusable methods that remain operable by a non-expert:** The
+  method advances one step at a time with plain round evidence and a recommendation,
+  rather than requiring the facilitator to understand the orchestration internals.
+
+## Remaining / deferred
+
+- Advancement is an explicit facilitator gesture (a button), not automatic on activity
+  stop — a deliberate design choice, but worth testing for discoverability.
+- Naive first-time-user comprehension of the cycle gate (evidence + recommendation)
+  is still unverified by a live session; it remains the recommended next pilot
+  (USER_TESTING_GUIDE Workflow G).
+- The AI recommendation source for the gate is a reserved seam (`recommendation: ai`);
+  only `convergence` is implemented. A live in-method LLM advisor is out of Phase 8
+  scope.

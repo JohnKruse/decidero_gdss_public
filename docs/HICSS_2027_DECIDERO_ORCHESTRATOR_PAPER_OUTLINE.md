@@ -159,11 +159,23 @@ dispersion, and outlier flags. A convergence predicate evaluates whether the
 median IQR has stabilized, while a maximum-round bound prevents open-ended
 execution.
 
+Crucially, the convergence predicate is a *recommendation*, not an automatic
+gate. At each round boundary below the cap, the engine pauses and presents the
+facilitator with the round evidence (round number, whether responses have
+stabilized) and a plain continue/conclude recommendation; the facilitator
+retains continue/conclude authority, and the maximum-round bound remains a hard
+backstop. This is the concrete realization of the facilitation-support claim:
+AI and statistical analysis inform a decision that a human still owns, rather
+than silently automating method termination.
+
 The user-facing Classical Delphi template should therefore be described as a
 method outline rather than a completed agenda. The facilitator can see that the
 meeting will generate items, enter an iterative ranking loop, produce feedback,
-check convergence, and stop at a bound. The actual number of ranking rounds is
-not known at creation time.
+check convergence, decide round by round whether to continue, and stop at a
+bound. The actual number of ranking rounds is not known at creation time; it is
+materialized one round at a time as the facilitator advances the method, with a
+per-request engine that reconstructs round state (including the prior round's
+statistical feedback) from persisted data.
 
 The section should be careful about method language. The implemented reference
 case is a Delphi-style executable witness focused on iterative ranking and
@@ -193,12 +205,24 @@ Implemented evidence includes:
    meeting as a custom template (with runtime data stripped), and rename,
    archive, or delete custom templates. Ordinary agenda templates and
    orchestration-backed templates are visually and functionally distinct.
+10. A runnable facilitator cycle gate. An orchestration-backed meeting advances
+    through the UI one engine-materialized step at a time, and at each iterate
+    round boundary the facilitator is presented with round evidence, a
+    convergence-backed continue/conclude recommendation, and authority to steer
+    the loop. The choice genuinely changes execution: continue materializes the
+    next round (with the prior round's statistical feedback carried forward),
+    conclude ends the method, and the maximum-round bound is a hard backstop.
+    The engine state is reconstructed per request from persisted rows, so this
+    holds across the stateless web request boundary. Covered by per-request
+    rehydration tests, round-gate steering tests, and an end-to-end Classical
+    Delphi run driven through the gate.
 
 Planned or incomplete evidence includes:
 
 1. A pilot or internal dry run that examines whether facilitators understand
    Start from Template, Design with AI, Design Yourself, and Import Meeting
-   without explanation.
+   without explanation, and whether the cycle-gate evidence and recommendation
+   make the continue/conclude choice obvious without coaching.
 2. Usability evidence about whether templates and decision-support surfaces
    lower the barrier for inexperienced facilitators, and whether the
    orchestration-backed method outline sets accurate expectations at runtime.

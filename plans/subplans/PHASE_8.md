@@ -1,4 +1,4 @@
-# PHASE 8 — Orchestration Runtime Advancement and Facilitator Cycle Control
+# PHASE 8 [COMPLETE] — Orchestration Runtime Advancement and Facilitator Cycle Control
 
 **Parent plan:** [plans/01_MASTER_PLAN.md](../01_MASTER_PLAN.md)
 **Predecessor:** [plans/subplans/PHASE_7.md](PHASE_7.md) — surfaced during the Copper Compass pilot dry-run
@@ -249,16 +249,28 @@ Technical deviations:
   and per-option hints render only when `is_round_gate` is set, so ordinary
   facilitator/AI decisions are visually unchanged.
 
-### Step 5 — [PENDING] Regression, pilot evidence, and outline alignment
+### Step 5 — [DONE] Regression, pilot evidence, and outline alignment
 
 Conclude this step by:
 
-- Extending the agreed regression command with the new/changed test modules and
-  reaching `[100%]`.
-- Re-running the Classical Delphi pilot path end-to-end and recording findings
-  against UF8 and the facilitation-support paper claim.
-- Updating the HICSS outline so the facilitation-support claim reflects a runnable
-  facilitator cycle gate rather than scaffolding.
+- [DONE] Extending the agreed regression command with the new/changed test modules
+  (`test_orchestration_schema.py`, `test_meeting_templates.py`) and reaching
+  `[100%]`. The full suite is green at 661 passed, 2 skipped.
+- [DONE] Re-running the Classical Delphi pilot path end-to-end (automated) and
+  recording findings against UF8 and the facilitation-support paper claim in
+  [docs/PILOT_FINDINGS_COPPER_COMPASS.md](../../docs/PILOT_FINDINGS_COPPER_COMPASS.md)
+  (Deliberate Heron follow-up): blockers B2 and H1 are resolved and the gate runs
+  end-to-end.
+- [DONE] Updating the HICSS outline so the facilitation-support claim reflects a
+  runnable facilitator cycle gate (predicate as recommendation, human authority,
+  hard cap) rather than scaffolding, and adding it to the implemented-evidence list.
+
+Technical deviations:
+- The end-to-end Delphi re-run is recorded as automated verification (the
+  advance-endpoint and synthetic-cohort e2e tests driving the gate), not a live
+  naive-user session; live first-time-user comprehension of the gate remains the
+  recommended next pilot (USER_TESTING_GUIDE Workflow G). This mirrors the Phase 7
+  Step 6 handling, where a human pilot could not be run autonomously.
 
 ## Phase Exit Criteria
 
