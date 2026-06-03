@@ -53,14 +53,88 @@
             </div>
 
             <div>
-                <label for="participantContacts">Participants</label>
-                <input
-                    type="text"
-                    id="participantContacts"
-                    name="participantContacts"
-                    placeholder="Names, logins, or emails separated by commas"
-                >
-                <p class="muted-note">Optional. You can add or adjust participants after the session is created.</p>
+                <label>Participants</label>
+                <p class="muted-note">
+                    Use the directory to move people into this session. Double-click or use the arrows to
+                    transfer participants. Optional now &mdash; you can also adjust the roster and scope each
+                    activity after the session is created.
+                </p>
+                <div class="participant-selection-grid">
+                    <div class="participant-column">
+                        <div class="participant-column-header">
+                            <h4>Available Users</h4>
+                            <div class="participant-column-actions">
+                                <button type="button" class="secondary-btn" id="participantDirectoryRefresh">
+                                    Refresh
+                                </button>
+                                <button type="button" class="secondary-btn" id="availableSelectAllButton" disabled>
+                                    Select All
+                                </button>
+                            </div>
+                        </div>
+                        <div class="participant-directory-panel">
+                            <div class="participant-directory-search">
+                                <input type="text" id="participantDirectorySearch" class="form-input"
+                                    placeholder="Search name, login, or email…" maxlength="120">
+                            </div>
+                            <div id="participantDirectoryStatus" class="control-feedback" aria-live="polite"></div>
+                            <div id="participantDirectoryList" class="participant-directory-list" role="listbox"
+                                aria-multiselectable="true">
+                                <div class="participant-directory-empty">
+                                    Start typing above to search the directory.
+                                </div>
+                            </div>
+                            <div class="participant-directory-footer">
+                                <div class="participant-directory-pagination">
+                                    <button type="button" class="secondary-btn"
+                                        id="participantDirectoryPrev">Previous</button>
+                                    <span id="participantDirectoryPageLabel">Page 1 of 1</span>
+                                    <button type="button" class="secondary-btn"
+                                        id="participantDirectoryNext">Next</button>
+                                </div>
+                                <div class="participant-directory-actions">
+                                    <button type="button" class="secondary-btn" id="participantDirectoryClearButton"
+                                        disabled>
+                                        Clear Selection
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="participant-transfer-controls">
+                        <button type="button" class="transfer-btn" id="moveToSelectedButton" disabled
+                            aria-label="Move to meeting">
+                            →
+                        </button>
+                        <button type="button" class="transfer-btn" id="moveToAvailableButton" disabled
+                            aria-label="Remove from meeting">
+                            ←
+                        </button>
+                    </div>
+
+                    <div class="participant-column">
+                        <div class="participant-column-header">
+                            <h4>Selected Participants</h4>
+                            <div class="participant-column-actions">
+                                <button type="button" class="secondary-btn" id="selectedSelectAllButton" disabled>
+                                    Select All
+                                </button>
+                            </div>
+                        </div>
+                        <div class="participant-directory-panel participant-directory-panel--selected">
+                            <div class="participant-directory-status">
+                                <span id="selectedParticipantsStatus" class="muted-note">No participants
+                                    selected.</span>
+                            </div>
+                            <div id="selectedParticipantsList"
+                                class="participant-directory-list participant-directory-list--selected" role="listbox"
+                                aria-multiselectable="true">
+                                <div class="participant-directory-empty">No participants selected yet.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="template-start-expectation">
@@ -120,6 +194,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="/static/js/participant_directory.js"></script>
 <script>
     (() => {
         const page = document.querySelector('.template-start-page');
@@ -129,7 +204,8 @@
         const titleInput = document.getElementById('title');
         const descriptionInput = document.getElementById('description');
         const scheduledInput = document.getElementById('scheduledDatetime');
-        const participantContactsInput = document.getElementById('participantContacts');
+        const participantDirectory = window.createParticipantDirectory();
+        participantDirectory.init();
 
         function setFeedback(message, variant = 'info') {
             if (!feedback) return;
@@ -156,10 +232,7 @@
             const templateId = page?.dataset.templateId;
             const title = (titleInput?.value || '').trim();
             const description = (descriptionInput?.value || '').trim();
-            const participantContacts = (participantContactsInput?.value || '')
-                .split(',')
-                .map((value) => value.trim())
-                .filter(Boolean);
+            const participantIds = participantDirectory.getSelectedIds();
             if (!title || !description || !templateId) {
                 setFeedback('Add a meeting title and problem statement before creating the meeting.', 'error');
                 return;
@@ -176,7 +249,7 @@
                         title,
                         description,
                         scheduled_datetime: scheduledIsoValue(),
-                        participant_contacts: participantContacts,
+                        participant_ids: participantIds,
                     }),
                 });
                 const result = await response.json().catch(() => ({}));

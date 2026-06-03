@@ -396,7 +396,6 @@ def test_meeting_data(
         "description": "Description for get test",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(days=2)).isoformat(),
         "agenda_items": ["Discuss milestones"],
-        "participant_contacts": [admin_user.login],
     }
 
     response = authenticated_client.post("/api/meetings/", json=meeting_data)
@@ -730,7 +729,6 @@ def test_dashboard_marks_rostered_participant_as_non_facilitator(
             "description": "Verifies participant-facing meeting capability output",
             "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             "agenda_items": ["Review"],
-            "participant_contacts": [],
             "participant_ids": [participant.user_id],
         },
     )
@@ -782,7 +780,6 @@ def test_meeting_payload_exposes_rostered_facilitator_viewer_capabilities(
             "description": "Expose meeting capability state to rostered facilitator clients",
             "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             "agenda_items": ["Review"],
-            "participant_contacts": [],
             "participant_ids": [facilitator.user_id],
             "co_facilitator_ids": [facilitator.user_id],
         },
@@ -924,7 +921,6 @@ def test_create_meeting_returns_new_meeting(
         "description": "A new meeting created by test",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
         "agenda_items": ["Kickoff", "Risk review"],
-        "participant_contacts": [admin_user.login],
     }
 
     # Act
@@ -966,7 +962,6 @@ def test_create_meeting_accepts_participant_ids(
         "description": "Ensures participant IDs are accepted.",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
         "agenda_items": ["Review"],
-        "participant_contacts": [],
         "participant_ids": [additional_user.user_id],
     }
 
@@ -1075,7 +1070,6 @@ def test_meeting_outputs_ignore_off_roster_facilitator_role(
             "description": "Step 4 capability output regression",
             "scheduled_datetime": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             "agenda_items": ["Review"],
-            "participant_contacts": [],
         },
     )
     assert create_response.status_code == 200, create_response.json()
@@ -1772,7 +1766,6 @@ def test_rostered_facilitator_update_permissions(
             "description": "Updated through the configuration endpoint",
             "scheduled_datetime": (datetime.now(UTC) + timedelta(days=2)).isoformat(),
             "agenda_items": ["Review"],
-            "participant_contacts": [],
             "participant_ids": [cofac_user_id],
         },
     )
@@ -1815,7 +1808,6 @@ def test_facilitator_controls_start_stop_tool(
         "description": "Testing meeting control authority",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=2)).isoformat(),
         "agenda_items": ["Kickoff"],
-        "participant_contacts": [admin_user.login],
         "participant_ids": [cofac_user.user_id],
     }
     meeting_response = authenticated_client.post("/api/meetings/", json=meeting_request)
@@ -2071,7 +2063,6 @@ def test_start_preserves_accumulated_elapsed_time(
             "description": "Ensure elapsed_time survives restart",
             "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
             "agenda_items": ["Item A"],
-            "participant_contacts": [admin_user.login],
         },
     )
     assert meeting_response.status_code == 200, meeting_response.json()
@@ -2166,7 +2157,6 @@ def test_control_default_scope_resets_between_runs(
         "description": "Verify scope resets when launching new activities",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         "agenda_items": ["Item A", "Item B"],
-        "participant_contacts": [admin_user.login],
     }
     meeting_response = authenticated_client.post("/api/meetings/", json=meeting_request)
     assert meeting_response.status_code == 200, meeting_response.json()
@@ -2222,7 +2212,6 @@ def test_control_stop_clears_scope_metadata(
         "description": "Stopping an activity should clear scoped metadata.",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         "agenda_items": ["Item A"],
-        "participant_contacts": [admin_user.login],
     }
     meeting_response = authenticated_client.post("/api/meetings/", json=meeting_request)
     assert meeting_response.status_code == 200, meeting_response.json()
@@ -2349,7 +2338,6 @@ def test_join_meeting_by_code_success(
         "description": "Test join flow",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         "agenda_items": ["Intro"],
-        "participant_contacts": [admin_user.login],
     }
     create_res = authenticated_client.post("/api/meetings/", json=meeting_request)
     assert create_res.status_code == 200, create_res.json()
@@ -2392,7 +2380,6 @@ def test_guest_join_by_code_success(
         "description": "Guest join flow",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         "agenda_items": ["Intro"],
-        "participant_contacts": [admin_user.login],
     }
     create_res = client.post("/api/meetings/", json=meeting_request)
     assert create_res.status_code == 200, create_res.json()
@@ -2440,7 +2427,6 @@ def test_guest_join_requires_flag(
         "description": "Ensure 401 without as_guest",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         "agenda_items": ["Intro"],
-        "participant_contacts": [admin_user.login],
     }
     create_res = client.post("/api/meetings/", json=meeting_request)
     assert create_res.status_code == 200, create_res.json()
@@ -2490,7 +2476,6 @@ def test_join_meeting_by_code_participant_added(
         "description": "Verify participant added",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=2)).isoformat(),
         "agenda_items": ["Welcome"],
-        "participant_contacts": [admin_user.login],
     }
     m_res = authenticated_client.post("/api/meetings/", json=meeting_req)
     assert m_res.status_code == 200, m_res.json()

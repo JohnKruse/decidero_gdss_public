@@ -225,7 +225,6 @@ def test_meeting_page_renders_agenda_items(authenticated_client: TestClient):
         "description": "Smoke test for agenda rendering",
         "scheduled_datetime": "2099-12-31T12:00:00Z",
         "agenda_items": ["First item", "Second item"],
-        "participant_contacts": [ADMIN_LOGIN_FOR_TEST],
     }
     create_res = authenticated_client.post("/api/meetings/", json=meeting_payload)
     assert create_res.status_code == 200, create_res.json()

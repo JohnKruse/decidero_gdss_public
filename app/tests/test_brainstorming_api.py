@@ -18,7 +18,6 @@ def _create_meeting(client: TestClient, cofacilitator_id: str | None = None) -> 
         "description": "Session focused on creative thinking.",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
         "agenda_items": ["Intro", "Ideation"],
-        "participant_contacts": [],
     }
     if cofacilitator_id:
         payload["co_facilitator_ids"] = [cofacilitator_id]

@@ -13,7 +13,6 @@ def _create_meeting(client: TestClient) -> str:
         "description": "Manage participant assignments",
         "scheduled_datetime": (datetime.now(UTC) + timedelta(hours=2)).isoformat(),
         "agenda_items": ["Intro"],
-        "participant_contacts": [],
     }
     res = client.post("/api/meetings/", json=payload)
     assert res.status_code == 200, res.json()

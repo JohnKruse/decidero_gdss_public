@@ -92,7 +92,6 @@ class MeetingCreatePayload(BaseModel):
     scheduled_datetime: Optional[datetime] = None
     agenda_items: List[str] = Field(default_factory=list)
     agenda: List[AgendaActivityCreate] = Field(default_factory=list)
-    participant_contacts: List[str] = Field(default_factory=list)
     co_facilitator_ids: List[str] = Field(default_factory=list)
     participant_ids: List[str] = Field(default_factory=list)
 

@@ -78,8 +78,9 @@ def test_create_meeting_page_includes_participant_avatar_rendering(
 
     page = client.get("/meeting/create")
     assert page.status_code == 200
-    assert "normalizeAvatarPath" in page.text
-    assert "avatar_icon_path" in page.text
+    # Avatar rendering now lives in the shared participant directory module.
+    assert "/static/js/participant_directory.js" in page.text
+    assert 'id="participantDirectoryList"' in page.text
 
 
 def test_meeting_templates_page_lists_builtin_delphi_template(
@@ -155,7 +156,11 @@ def test_start_from_orchestration_backed_template_uses_guided_start_page(
     assert "Session Name" in start_page.text
     assert "Question for the Group" in start_page.text
     assert "Participants" in start_page.text
-    assert "Names, logins, or emails separated by commas" in start_page.text
+    # Participants are attached with the shared directory picker (real users by
+    # id), not a free-text contacts field.
+    assert "/static/js/participant_directory.js" in start_page.text
+    assert 'id="participantDirectoryList"' in start_page.text
+    assert "Names, logins, or emails separated by commas" not in start_page.text
     assert "What happens next" in start_page.text
     assert "Facilitator role" in start_page.text
     assert "Decidero will show the current evidence and the next available choice" in start_page.text
@@ -191,6 +196,46 @@ def test_template_creation_api_creates_orchestration_bound_meeting(
     assert len(payload["agenda"]) == 1
     assert payload["agenda"][0]["tool_type"] == "brainstorming"
     assert payload["agenda"][0]["title"] == "Round 1: Generate Delphi Items"
+
+
+def test_template_creation_api_attaches_selected_participants(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Participant IDs chosen on the template start page must reach the meeting.
+
+    Regression: the start page previously sent a free-text ``participant_contacts``
+    field that the backend never consumed, so template meetings were created with
+    no participants. The directory picker now submits real ``participant_ids``.
+    """
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    participant = user_manager_with_admin.add_user(
+        first_name="Template",
+        last_name="Panelist",
+        email="template.panelist@example.com",
+        hashed_password=get_password_hash("PanelPass1!"),
+        role=UserRole.PARTICIPANT.value,
+        login="template_panelist",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(participant)
+
+    response = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={
+            "title": "Delphi With Panel",
+            "description": "Attach a real panelist to the orchestration meeting.",
+            "participant_ids": [participant.user_id],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert participant.user_id in payload.get("participant_ids", [])
 
 
 def test_orchestration_meeting_page_sets_facilitator_expectations(
@@ -231,7 +276,6 @@ def test_meeting_page_exposes_backend_capability_data(
             "description": "Expose per-meeting capability state to the page shell",
             "scheduled_datetime": "2099-12-31T12:00:00Z",
             "agenda_items": ["Review"],
-            "participant_contacts": [ADMIN_LOGIN_FOR_TEST],
         },
     )
     assert create_response.status_code == 200, create_response.json()
@@ -269,7 +313,6 @@ def test_off_roster_facilitator_cannot_access_meeting_page_controls(
             "description": "Verifies page-route gates use canonical meeting capability",
             "scheduled_datetime": "2099-12-31T12:00:00Z",
             "agenda_items": ["Review"],
-            "participant_contacts": [],
         },
     )
     assert create_response.status_code == 200, create_response.json()
@@ -312,7 +355,6 @@ def test_rostered_facilitator_can_access_meeting_page_controls(
             "description": "Verifies rostered facilitators keep page-route control access",
             "scheduled_datetime": "2099-12-31T12:00:00Z",
             "agenda_items": ["Review"],
-            "participant_contacts": [],
             "participant_ids": [facilitator.user_id],
             "co_facilitator_ids": [facilitator.user_id],
         },
