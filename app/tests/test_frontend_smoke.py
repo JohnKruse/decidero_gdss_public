@@ -284,3 +284,22 @@ def test_remote_tunnel_script_has_retry_and_log_rotation():
     assert "DECIDERO_TUNNEL_RETRY_MAX_SECONDS" in script
     assert "rotate_tunnel_logs" in script
     assert "cloudflared.log" in script
+
+
+def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
+    """Deliberate Heron: the orchestration advance control and round-gate panel
+    are present so a facilitator can drive the engine and answer cycle gates."""
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert "data-orchestration-advance" in html
+    assert "orchestrationAdvanceButton" in html
+    assert "facilitatorDecisionGate" in html
+    assert "facilitatorDecisionGateRecommendation" in html
+
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "advanceOrchestration" in js
+    assert "renderRoundGate" in js
+    # continue steers to the next round; conclude finishes the method.
+    assert "Run another round." in js
+    assert "Finish the method and stop here." in js

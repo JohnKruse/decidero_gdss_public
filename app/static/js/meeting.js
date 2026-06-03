@@ -331,6 +331,13 @@
                 aiOutput: document.getElementById("facilitatorDecisionAiOutput"),
                 options: document.getElementById("facilitatorDecisionOptions"),
                 status: document.getElementById("facilitatorDecisionStatus"),
+                gate: document.getElementById("facilitatorDecisionGate"),
+                gateEvidence: document.getElementById("facilitatorDecisionGateEvidence"),
+                gateRecommendation: document.getElementById("facilitatorDecisionGateRecommendation"),
+            },
+            orchestrationAdvance: {
+                button: document.querySelector("[data-orchestration-advance]"),
+                status: document.getElementById("orchestrationAdvanceStatus"),
             },
             // Collision Modal
             collisionModal: document.getElementById("collisionModal"),
@@ -427,6 +434,10 @@
             activityId: null,
             loading: false,
             responding: false,
+        };
+
+        const orchestrationAdvanceState = {
+            busy: false,
         };
 
         const participants = new Map();
@@ -6542,20 +6553,69 @@
             ui.facilitatorDecision.status.dataset.variant = message ? variant : "";
         }
 
-        function renderFacilitatorDecisionOptions(activityId, options) {
+        const GATE_OPTION_HINTS = {
+            continue: "Run another round.",
+            conclude: "Finish the method and stop here.",
+        };
+
+        function renderFacilitatorDecisionOptions(activityId, options, { isGate = false } = {}) {
             if (!ui.facilitatorDecision.options) {
                 return;
             }
             ui.facilitatorDecision.options.innerHTML = "";
             (options || []).forEach((option) => {
+                const wrapper = document.createElement("div");
+                wrapper.className = "decision-option";
                 const button = document.createElement("button");
                 button.type = "button";
                 button.className = "control-btn primary sm";
                 button.textContent = option;
                 button.disabled = facilitatorDecisionState.responding;
                 button.addEventListener("click", () => submitFacilitatorDecision(activityId, option));
-                ui.facilitatorDecision.options.appendChild(button);
+                wrapper.appendChild(button);
+                const hint = isGate ? GATE_OPTION_HINTS[String(option).toLowerCase()] : null;
+                if (hint) {
+                    const note = document.createElement("span");
+                    note.className = "decision-option-hint";
+                    note.textContent = hint;
+                    wrapper.appendChild(note);
+                }
+                ui.facilitatorDecision.options.appendChild(wrapper);
             });
+        }
+
+        function renderRoundGate(detail) {
+            const gate = ui.facilitatorDecision.gate;
+            if (!gate) {
+                return;
+            }
+            const isGate = Boolean(detail && detail.is_round_gate);
+            const evidence = (detail && detail.evidence) || {};
+            const recommendation = detail && detail.recommendation;
+            if (!isGate) {
+                gate.hidden = true;
+                return;
+            }
+            gate.hidden = false;
+            if (ui.facilitatorDecision.gateEvidence) {
+                const roundNumber = evidence.round_number;
+                const maxRounds = evidence.max_rounds;
+                let text = "";
+                if (roundNumber && maxRounds) {
+                    text = `Round ${roundNumber} of up to ${maxRounds} complete.`;
+                }
+                if (typeof evidence.converged === "boolean") {
+                    text += evidence.converged
+                        ? " The group's responses have stabilized."
+                        : " The group's responses are still changing.";
+                }
+                ui.facilitatorDecision.gateEvidence.textContent = text.trim();
+            }
+            if (ui.facilitatorDecision.gateRecommendation) {
+                ui.facilitatorDecision.gateRecommendation.textContent = recommendation
+                    ? `Suggestion: ${recommendation}.`
+                    : "";
+            }
         }
 
         function renderFacilitatorDecisionPanel(activity, detail = null) {
@@ -6582,7 +6642,9 @@
                     ui.facilitatorDecision.aiOutput.textContent = "";
                 }
             }
-            renderFacilitatorDecisionOptions(activity.activity_id, options);
+            const isGate = Boolean(detail && detail.is_round_gate);
+            renderRoundGate(detail);
+            renderFacilitatorDecisionOptions(activity.activity_id, options, { isGate });
         }
 
         async function loadFacilitatorDecisionDetail(activity) {
@@ -6635,13 +6697,105 @@
                     handleStateSnapshot(data.state, true);
                 }
                 setFacilitatorDecisionStatus(`Decision submitted: ${option}`, "success");
+                // Deliberate Heron: hide the resolved gate, then steer the loop.
+                if (ui.facilitatorDecision.root) {
+                    ui.facilitatorDecision.root.hidden = true;
+                }
+                const choice = String(option).toLowerCase();
+                if (choice === "continue") {
+                    await advanceOrchestration({ silent: true });
+                } else if (choice === "conclude") {
+                    await refreshAgendaFromServer();
+                    setOrchestrationAdvanceStatus("Method concluded.", "success");
+                }
             } catch (error) {
                 setFacilitatorDecisionStatus(error.message || "Unable to submit decision.", "error");
             } finally {
                 facilitatorDecisionState.responding = false;
-                const activity = state.agendaMap.get(activityId);
-                if (activity) {
-                    renderFacilitatorDecisionPanel(activity);
+            }
+        }
+
+        function setOrchestrationAdvanceStatus(message, variant = "info") {
+            const node = ui.orchestrationAdvance.status;
+            if (!node) {
+                return;
+            }
+            node.textContent = message || "";
+            node.dataset.variant = message ? variant : "";
+        }
+
+        async function refreshAgendaFromServer() {
+            try {
+                const res = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/agenda`,
+                    { credentials: "include", cache: "no-store" },
+                );
+                if (!res.ok) {
+                    return null;
+                }
+                const agenda = await res.json();
+                if (Array.isArray(agenda)) {
+                    state.agenda = agenda;
+                    state.agendaMap = new Map(agenda.map((item) => [item.activity_id, item]));
+                    if (state.latestState) {
+                        state.latestState.agenda = agenda;
+                    }
+                    renderAgenda(agenda);
+                    updateAgendaSummary();
+                }
+                return agenda;
+            } catch (error) {
+                console.warn("Agenda refresh failed:", error);
+                return null;
+            }
+        }
+
+        async function advanceOrchestration({ silent = false } = {}) {
+            if (orchestrationAdvanceState.busy) {
+                return;
+            }
+            orchestrationAdvanceState.busy = true;
+            if (ui.orchestrationAdvance.button) {
+                ui.orchestrationAdvance.button.disabled = true;
+            }
+            if (!silent) {
+                setOrchestrationAdvanceStatus("Advancing...", "info");
+            }
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/orchestration/advance`,
+                    { method: "POST", credentials: "include" },
+                );
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(typeof data.detail === "string" ? data.detail : "Unable to advance.");
+                }
+                await refreshAgendaFromServer();
+                if (data.status === "advanced" && data.activity) {
+                    selectAgendaItem(data.activity.activity_id, { source: "engine" });
+                    setOrchestrationAdvanceStatus(
+                        `Next activity ready: ${data.activity.title || data.activity.tool_type}.`,
+                        "success",
+                    );
+                } else if (data.status === "paused" && data.pending_decision) {
+                    const decisionId = data.pending_decision.activity_id;
+                    selectAgendaItem(decisionId, { source: "engine" });
+                    const activity = state.agendaMap.get(decisionId);
+                    if (activity) {
+                        facilitatorDecisionState.activityId = decisionId;
+                        renderFacilitatorDecisionPanel(activity, data.pending_decision);
+                        loadFacilitatorDecisionDetail(activity);
+                    }
+                    setOrchestrationAdvanceStatus("A facilitator decision is required.", "info");
+                } else if (data.status === "complete") {
+                    setOrchestrationAdvanceStatus("The method is complete. No further steps.", "success");
+                }
+            } catch (error) {
+                setOrchestrationAdvanceStatus(error.message || "Unable to advance.", "error");
+            } finally {
+                orchestrationAdvanceState.busy = false;
+                if (ui.orchestrationAdvance.button) {
+                    ui.orchestrationAdvance.button.disabled = false;
                 }
             }
         }
@@ -7926,6 +8080,11 @@
             if (ui.saveTemplateButton) {
                 ui.saveTemplateButton.addEventListener("click", () => {
                     saveMeetingAsTemplate();
+                });
+            }
+            if (ui.orchestrationAdvance.button) {
+                ui.orchestrationAdvance.button.addEventListener("click", () => {
+                    advanceOrchestration();
                 });
             }
             if (new URLSearchParams(window.location.search || "").get("roster") === "1") {

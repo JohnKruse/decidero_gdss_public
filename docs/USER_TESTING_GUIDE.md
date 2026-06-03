@@ -156,6 +156,40 @@ Facilitator goal:
 
 If Delphi is not exposed through the UI as a template, record that as a product gap. Do not force a backend-only demonstration in a user pilot.
 
+### Workflow G - Orchestration Cycle Gate (Copper Compass / Deliberate Heron)
+
+Use for orchestration-backed methods such as Classical Delphi, where the engine
+materializes activities round by round rather than from a fixed agenda.
+
+Facilitator goal:
+
+"Run an orchestration method one step at a time, and decide at each round boundary
+whether to run another round or conclude."
+
+Current product path:
+
+1. Start a meeting from an orchestration-backed template (e.g. Classical Delphi).
+   The first activity is created automatically; later steps are not pre-filled.
+2. Run and stop the current activity as usual.
+3. In the orchestration guidance card, select **Advance to next step**. The engine
+   either materializes and selects the next activity, or pauses for a decision.
+4. At a round boundary the **Facilitator Decision** panel appears with the round
+   evidence (round N of max), a plain recommendation (continue or conclude), and
+   two choices:
+   - **continue** — run another round; the engine immediately materializes it.
+   - **conclude** — finish the method and stop.
+5. `max_rounds` is a hard stop: at the cap the engine concludes without asking.
+
+Observe:
+
+- Whether the facilitator understands that activities appear when advanced, not all
+  at once.
+- Whether the round evidence and recommendation make the continue/conclude choice
+  obvious without explanation.
+- Whether the facilitator can tell what each choice will do next.
+- Whether choosing **continue** visibly produces the next round.
+- Whether the method-complete state is clear after **conclude** or the cap.
+
 ## Evidence Template
 
 | Field | Value |

@@ -2204,6 +2204,7 @@ async def get_facilitator_decision_state(
 
     activity = _get_facilitator_decision_activity(meeting, activity_id)
     config = dict(activity.config or {})
+    orchestration = config.get("_orchestration") or {}
     return {
         "meeting_id": meeting_id,
         "activity_id": activity.activity_id,
@@ -2211,6 +2212,10 @@ async def get_facilitator_decision_state(
         "options": list(config.get("options") or []),
         "context_bundle_keys": list(config.get("context_bundle_keys") or []),
         "ai_decision": _latest_ai_decision_before(meeting_manager, meeting, activity),
+        # Deliberate Heron: round-gate recommendation/evidence for the gate UI.
+        "is_round_gate": bool(orchestration.get("gate")),
+        "recommendation": config.get("recommendation"),
+        "evidence": config.get("evidence"),
     }
 
 
@@ -2353,6 +2358,9 @@ async def advance_orchestration(
                 "activity_id": pending["activity_id"],
                 "prompt": pending.get("prompt"),
                 "options": list(pending.get("options") or []),
+                "is_round_gate": bool(pending.get("gate")),
+                "recommendation": pending.get("recommendation"),
+                "evidence": pending.get("evidence"),
             },
         }
 
@@ -2387,6 +2395,9 @@ async def advance_orchestration(
                 "activity_id": pending_after["activity_id"],
                 "prompt": pending_after.get("prompt"),
                 "options": list(pending_after.get("options") or []),
+                "is_round_gate": bool(pending_after.get("gate")),
+                "recommendation": pending_after.get("recommendation"),
+                "evidence": pending_after.get("evidence"),
             },
             "state": realtime.get("state"),
         }

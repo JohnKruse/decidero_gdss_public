@@ -216,20 +216,38 @@ Technical deviations:
   tags the decision bundle with `logical_step_id`/`round_index` so a per-request
   walker can read the steer back.
 
-### Step 4 — [PENDING] Plain facilitator gate UI (UF8)
+### Step 4 — [DONE] Plain facilitator gate UI (UF8)
 
 Surface the cycle gate on the meeting page so a less-skilled facilitator picks A or
 B with full context, reusing the existing facilitator-decision UI surface.
 
 Conclude this step by:
 
-- Rendering current evidence (round N of max, convergence metric vs target,
-  recommendation), the two choices, and a plain statement of what each does next.
-- Selecting the newly materialized activity on "continue"; showing a clear
-  method-complete state on "conclude" or plan exhaustion.
-- Adding a frontend smoke test and updating
-  [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the cycle-gate
-  flow.
+- [DONE] Rendering round evidence (round N of up to max, whether responses have
+  stabilized), the plain recommendation, the two choices, and a one-line statement
+  of what each does next (`continue` → run another round; `conclude` → finish). The
+  decision-state and advance endpoints now return `is_round_gate`, `recommendation`,
+  and `evidence`.
+- [DONE] An explicit **Advance to next step** facilitator control (in the
+  orchestration guidance card) that calls the Step 2 advance endpoint and reacts:
+  selects the newly materialized activity on `advanced`, selects and renders the
+  gate panel on `paused`, and shows a method-complete message on `complete`.
+  Choosing `continue` immediately advances to the next round; `conclude` shows the
+  concluded state.
+- [DONE] Frontend smoke test
+  (`test_meeting_page_includes_orchestration_advance_and_gate_hooks`) plus a backend
+  assertion of the enriched gate fields in the advance/decision-state responses, and
+  updated [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the new
+  Workflow G (Orchestration Cycle Gate).
+
+Technical deviations:
+- The advance control lives in the orchestration guidance card (facilitator-only,
+  orchestration meetings) rather than inside the decision panel, because advancing
+  is also how the facilitator reaches the gate after a round closes — it is the
+  general "materialize next step" gesture, not only a gate response.
+- The gate reuses the existing facilitator-decision panel; gate-specific evidence
+  and per-option hints render only when `is_round_gate` is set, so ordinary
+  facilitator/AI decisions are visually unchanged.
 
 ### Step 5 — [PENDING] Regression, pilot evidence, and outline alignment
 

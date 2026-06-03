@@ -294,6 +294,19 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     assert gate_body["status"] == "paused"
     gate_activity_id = gate_body["pending_decision"]["activity_id"]
     assert gate_body["pending_decision"]["options"] == ["continue", "conclude"]
+    # Deliberate Heron: the gate carries recommendation + evidence for the UI.
+    assert gate_body["pending_decision"]["is_round_gate"] is True
+    assert gate_body["pending_decision"]["recommendation"] in ("continue", "conclude")
+    assert gate_body["pending_decision"]["evidence"]["round_number"] == 1
+
+    # The decision-state endpoint exposes the same gate context for rendering.
+    state_resp = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}"
+    )
+    assert state_resp.status_code == 200, state_resp.text
+    state_json = state_resp.json()
+    assert state_json["is_round_gate"] is True
+    assert state_json["evidence"]["max_rounds"] == 4
 
     # Choose "continue" to run another round.
     resume = authenticated_client.post(
