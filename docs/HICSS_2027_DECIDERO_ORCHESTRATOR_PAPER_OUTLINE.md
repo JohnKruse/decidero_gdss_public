@@ -183,16 +183,25 @@ Implemented evidence includes:
 5. An end-to-end synthetic Delphi run.
 6. A Delphi validation document that reports the synthetic cohort behavior.
 7. A meeting-template contract and runtime-stripping tests.
+8. An orchestration-backed template path: the Classical Delphi built-in template
+   references the packaged Delphi orchestration document rather than a
+   hand-authored Delphi-like agenda. A service layer turns the template into an
+   orchestration-bound meeting with safe defaults for title, topic, participants,
+   maximum rounds, and convergence threshold.
+9. A complete v1 template CRUD surface: facilitators can browse built-in and
+   custom templates, start a meeting from any active template, save an existing
+   meeting as a custom template (with runtime data stripped), and rename,
+   archive, or delete custom templates. Ordinary agenda templates and
+   orchestration-backed templates are visually and functionally distinct.
 
 Planned or incomplete evidence includes:
 
-1. Wiring the user-facing Classical Delphi template to the actual orchestration
-   artifact.
-2. Template creation and CRUD paths that are usable by facilitators.
-3. A pilot or internal dry run that examines whether facilitators understand
-   Start from Template, Design with AI, Design Yourself, and Import Meeting.
-4. Usability evidence about whether templates and decision-support surfaces
-   lower the barrier for inexperienced facilitators.
+1. A pilot or internal dry run that examines whether facilitators understand
+   Start from Template, Design with AI, Design Yourself, and Import Meeting
+   without explanation.
+2. Usability evidence about whether templates and decision-support surfaces
+   lower the barrier for inexperienced facilitators, and whether the
+   orchestration-backed method outline sets accurate expectations at runtime.
 
 ### 7. Discussion
 
@@ -214,25 +223,35 @@ The conclusion should be modest and forward looking. Decidero provides the
 beginnings of an executable collaboration-engineering environment in which
 activities, flow controls, AI assistance, and templates can be composed into
 reusable meeting methods. Delphi provides the first substantive reference case.
-If the template and pilot work are completed, the system can offer stronger
-evidence that such methods are not only executable, but also usable by
-facilitators who do not have deep collaboration-engineering training.
+The template layer — including the orchestration-backed Classical Delphi path,
+save-as-template reuse, and the v1 management surface — is now implemented. The
+remaining gap is pilot evidence: whether facilitators understand the four
+creation paths without training, and whether the orchestration guidance at
+runtime sets accurate expectations. That evidence, when collected, can
+strengthen the claim that such methods are not only executable but also usable
+by facilitators who do not have deep collaboration-engineering training.
 
 ## Implementation Work That Supports the Paper
 
-The next implementation work should be judged against whether it strengthens
-one of the paper claims.
+Items 1–6 below are complete as of Phase 7 (Copper Compass). The remaining
+work is the pilot.
 
-1. Replace the current hardcoded Delphi-like template with a template that
-   references or instantiates the packaged Delphi orchestration.
-2. Add a service path from a meeting template to an orchestration-backed
+1. ~~Replace the current hardcoded Delphi-like template with a template that
+   references or instantiates the packaged Delphi orchestration.~~ Done.
+2. ~~Add a service path from a meeting template to an orchestration-backed
    meeting, including safe defaults for title, topic, participants, maximum
-   rounds, convergence threshold, and optional AI review.
-3. Keep ordinary agenda templates distinct from orchestration-backed templates.
-4. Show orchestration-backed templates as method outlines with runtime gates,
-   not as fully pre-filled final agendas.
-5. Finish save-as-template and custom-template management for the reuse claim.
-6. Update the pilot guide so observations map to the paper claims.
+   rounds, convergence threshold, and optional AI review.~~ Done.
+3. ~~Keep ordinary agenda templates distinct from orchestration-backed templates.~~ Done.
+4. ~~Show orchestration-backed templates as method outlines with runtime gates,
+   not as fully pre-filled final agendas.~~ Done.
+5. ~~Finish save-as-template and custom-template management for the reuse claim.~~ Done.
+6. ~~Update the pilot guide so observations map to the paper claims.~~ Done.
+
+Remaining:
+
+7. Run a pilot or internal dry run using the session guide in
+   `docs/USER_TESTING_GUIDE.md`. Record findings against the template path and
+   the paper claims. Fix any blockers before a wider session.
 
 ## Terms To Keep Stable
 
@@ -254,14 +273,19 @@ one of the paper claims.
 
 ## Current Risk To The Argument
 
-The main risk is that the user-facing template path could drift away from the
-orchestration architecture. A prefilled agenda that merely looks Delphi-like is
-not the same thing as exposing a reusable orchestration-backed method. The plan
-should therefore require the Classical Delphi template either to instantiate
-the packaged orchestration or to be labeled as unavailable until that bridge is
-implemented.
+The orchestration bridge risk is resolved: the Classical Delphi built-in
+template now instantiates the packaged orchestration rather than a hand-authored
+Delphi-like agenda. The template and orchestration paths are tested and the
+meeting page shows the facilitator the planned method outline and runtime gates.
 
-A related risk is that the UI could overstate what orchestration means. A
-complex flow is partly preplanned and partly contingent. The UI should show the
-planned method and its control logic, while making clear that later activities
-are materialized by the engine as the meeting unfolds.
+The remaining risk is in the UI and in the pilot. A complex flow is partly
+preplanned and partly contingent. The UI should show the planned method and its
+control logic, while making clear that later activities are materialized by the
+engine as the meeting unfolds. If observational pilot findings show that
+facilitators misread the orchestration guidance as a fixed final agenda, that is
+a bug to fix before broader testing.
+
+A second remaining risk is the evidence gap. The paper's usability claim rests
+on pilot observation that the template and orchestration surfaces lower the
+training burden. Without at least one observed session, the claim must be
+qualified as architectural rather than empirical.

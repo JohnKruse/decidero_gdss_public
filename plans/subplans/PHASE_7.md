@@ -243,8 +243,9 @@ Round out the v1 management surface and test it with users. This step is where i
 Conclude this step by:
 
 - [DONE] Supporting custom template rename/start/archive/delete or the chosen minimum management set.
-- Running the agreed regression command to `[100%]`.
-- Updating [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the final template workflow.
+- [DONE] Running the agreed regression command to `[100%]` — 307 passed, 2 skipped.
+- [DONE] Updating [docs/USER_TESTING_GUIDE.md](../../docs/USER_TESTING_GUIDE.md) with the final template workflow.
+- [DONE] Updating [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md) — implemented evidence sections updated; conclusion and risk sections reflect current implementation state.
 - Recording pilot findings about whether users understood `Start from Template`, `Design with AI`, `Design Yourself`, and `Import Meeting` without explanation.
 - Recording pilot findings against the paper claims: whether templates make reusable methods understandable, whether AI/facilitator decision support lowers the facilitation burden, and whether ordinary agenda templates remain distinct from orchestration-backed methods.
 
