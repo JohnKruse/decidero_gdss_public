@@ -290,6 +290,25 @@ def ensure_sqlite_schema(engine_to_check) -> None:
                 )
                 connection.commit()
 
+            bundle_columns_result = connection.execute(
+                text("PRAGMA table_info(activity_bundles)")
+            )
+            bundle_columns = {row[1] for row in bundle_columns_result.fetchall()}
+            if "logical_step_id" not in bundle_columns and bundle_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE activity_bundles ADD COLUMN logical_step_id VARCHAR(80)"
+                    )  # noqa: S608
+                )
+                connection.commit()
+            if "round_index" not in bundle_columns and bundle_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE activity_bundles ADD COLUMN round_index INTEGER NOT NULL DEFAULT 0"
+                    )  # noqa: S608
+                )
+                connection.commit()
+
             users_result = connection.execute(
                 text("SELECT user_id, avatar_color, avatar_key, avatar_seed FROM users")
             )
