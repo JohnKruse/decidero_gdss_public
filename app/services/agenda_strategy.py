@@ -185,7 +185,11 @@ def get_agenda_strategy(meeting: Meeting) -> AgendaStrategy:
     if strategy_name == "orchestration" and orchestration_path:
         document = _load_persisted_orchestration_document(str(orchestration_path))
         if document is not None:
-            return OrchestrationEngineStrategy(document)
+            strategy = OrchestrationEngineStrategy(document)
+            # Deliberate Heron: the strategy is rebuilt per request, so restore
+            # the iteration map and any paused decision from persisted rows.
+            strategy.rehydrate_from_db(meeting, object_session(meeting))
+            return strategy
     return LinearAgendaStrategy()
 
 
@@ -475,6 +479,73 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         ) or 0
         return int(count)
 
+    def rehydrate_from_db(self, meeting: Meeting, db: Optional[Session]) -> None:
+        """Deliberate Heron: rebuild per-run in-memory state from persisted rows.
+
+        A fresh `OrchestrationEngineStrategy` is constructed on every request
+        (see `get_agenda_strategy`), so the in-memory `_activity_iteration` map
+        and `_pending_decision` reset to empty. Production advancement (Phase 8)
+        reconstructs the strategy per request, so without this rebuild the
+        engine forgets which prior activity belongs to which iterate round and
+        `previous_round_feedback` injection silently produces empty input
+        bundles. This reconstructs that state from persisted rows:
+
+        - `_activity_iteration` from activities whose config carries the
+          `_orchestration` iteration discriminator, so the feedback path can
+          locate the prior round's activity and bundle.
+        - `_pending_decision` from the last materialized facilitator-decision
+          activity that has no output bundle yet (the engine paused there).
+
+        Idempotent and merge-only: safe to call on an already-populated
+        strategy, so the in-process test flows that accumulate state are
+        unaffected.
+        """
+        if db is None:
+            return
+        activities = (
+            db.query(AgendaActivity)
+            .filter(AgendaActivity.meeting_id == meeting.meeting_id)
+            .order_by(AgendaActivity.order_index.asc())
+            .all()
+        )
+        for activity in activities:
+            config = dict(activity.config or {})
+            orchestration = config.get("_orchestration")
+            if isinstance(orchestration, dict) and orchestration.get("logical_step_id"):
+                self._activity_iteration.setdefault(
+                    activity.activity_id,
+                    (
+                        str(orchestration["logical_step_id"]),
+                        int(orchestration.get("round_index", 0) or 0),
+                    ),
+                )
+        if self._pending_decision is None:
+            for activity in reversed(activities):
+                if activity.tool_type != self.FACILITATOR_DECISION_TOOL_TYPE:
+                    continue
+                has_output = (
+                    db.query(ActivityBundle)
+                    .filter(
+                        ActivityBundle.activity_id == activity.activity_id,
+                        ActivityBundle.kind == "output",
+                    )
+                    .first()
+                    is not None
+                )
+                if has_output:
+                    break  # the latest decision is resolved; engine is not paused
+                config = dict(activity.config or {})
+                orchestration = config.get("_orchestration") or {}
+                self._pending_decision = {
+                    "activity_id": activity.activity_id,
+                    "logical_step_id": orchestration.get("logical_step_id")
+                    or config.get("logical_step_id"),
+                    "prompt": config.get("prompt") or activity.title,
+                    "options": list(config.get("options") or []),
+                    "context_bundle_keys": list(config.get("context_bundle_keys") or []),
+                }
+                break
+
     def resolve_prior_activity(
         self,
         meeting: Meeting,
@@ -729,6 +800,9 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "prompt": step.prompt,
             "options": list(step.options),
             "context_bundle_keys": list(step.context_bundle_keys or []),
+            # Deliberate Heron: persist the step pointer so a per-request strategy
+            # can rehydrate the pause state from this row alone.
+            "_orchestration": {"logical_step_id": logical_step_id, "round_index": 0},
         }
 
         activity = AgendaActivity(

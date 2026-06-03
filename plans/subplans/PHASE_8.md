@@ -96,23 +96,46 @@ Add `logical_step_id` and `round_index` to `ensure_sqlite_schema` in
 `app/database.py`, matching the existing `ALTER TABLE ... ADD COLUMN` pattern, and
 apply to the live database. Done during the pilot session that surfaced this phase.
 
-### Step 1 — [PENDING] Engine state rehydration
+### Step 1 — [DONE] Engine state rehydration
 
 Make a freshly constructed `OrchestrationEngineStrategy` reproduce the in-memory
 state an in-process-accumulated instance would hold, from persisted rows alone.
 
 Conclude this step by:
 
-- Adding a rehydration path (constructor-time or first-use) that rebuilds
-  `_activity_iteration` from persisted `AgendaActivity` rows and their stored
-  `logical_step_id`/`round_index`, and restores `_pending_decision` when the last
-  materialized step is a `facilitator_decision` activity with no output bundle.
-- Rebuilding each live `_IterateFrame`'s round history from persisted output
-  bundles so convergence evaluation and `previous_round_feedback` injection match.
-- Proving with a unit test that a fresh strategy mid-multi-round Delphi yields
-  identical `create_activity` results and identical feedback carry-forward as an
-  instance that accumulated state in process (reuse the multi-round fixtures in
-  `app/tests/test_orchestration_engine.py` as the oracle).
+- [DONE] Adding a rehydration path (`OrchestrationEngineStrategy.rehydrate_from_db`,
+  invoked from `get_agenda_strategy`) that rebuilds `_activity_iteration` from
+  persisted `AgendaActivity` rows carrying the `_orchestration` discriminator, and
+  restores `_pending_decision` when the last materialized step is a
+  `facilitator_decision` activity with no output bundle.
+- [DONE] `previous_round_feedback` injection now matches in-process: the empirical
+  failure (a fresh strategy produced empty feedback input bundles in iterate rounds
+  2+) is fixed and guarded by a regression test.
+- [DONE] Proving with a unit test that a per-request (fresh + rehydrated) strategy
+  yields identical feedback carry-forward as an in-process instance
+  (`test_per_request_reconstruction_matches_in_process_feedback`), plus a
+  decision-pause survival test (`test_rehydrate_restores_pending_facilitator_decision`).
+
+Technical deviations:
+- The "rebuild each `_IterateFrame`'s round history" sub-goal was not implemented as
+  explicit frame-state restoration. Empirical investigation showed the walker
+  already rebuilds round history from persisted output bundles (`_collect_round_output`
+  queries by `logical_step_id`/`round_index`), so the only genuinely lost state was
+  `_activity_iteration` (the prior-round activity lookup) and `_pending_decision`.
+  Rehydrating those two is sufficient for feedback parity; reconstructing live frame
+  objects would have been redundant.
+- `_materialize_facilitator_decision` now persists `_orchestration.logical_step_id`
+  into the decision activity's config so the pause is rehydratable from the row
+  alone (previously `logical_step_id` lived only in the in-memory `_pending_decision`).
+- A residual convergence-timing discrepancy remains for content-sensitive predicates:
+  with `iqr_stability`, an in-process strategy can mint one extra "lookahead" round
+  because `_extend_plan` evaluates convergence against a not-yet-closed round's empty
+  output, whereas a per-request strategy reads only closed rounds and stops one round
+  earlier. The per-request count is the more correct one. This is a convergence-timing
+  artifact, not a state-rehydration bug, and is left to Phase 8 Step 3, where the
+  facilitator round-gate replaces the automatic lookahead entirely. The oracle test
+  therefore uses a content-independent `fixed_n` predicate to assert exact parity of
+  the state this step governs (feedback carry-forward and round identity).
 
 ### Step 2 — [PENDING] Runtime advancement wiring (C)
 

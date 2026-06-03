@@ -19,6 +19,7 @@ from pathlib import Path
 import pytest
 
 from app.data.activity_bundle_manager import ActivityBundleManager
+from app.models.activity_bundle import ActivityBundle
 from app.data.meeting_manager import MeetingManager
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
@@ -39,6 +40,7 @@ from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.services.orchestration_loader import (
     ActivityStep,
     IterateStep,
+    load_orchestration_data,
     load_orchestration_path,
     SequenceStep,
 )
@@ -1648,3 +1650,133 @@ def test_ai_decision_loader_rejects_review_required_without_following_facilitato
         load_orchestration_data(bad_doc)
     messages = [e.message for e in excinfo.value.result.errors]
     assert any("must be immediately followed by a facilitator-decision" in m for m in messages)
+
+
+# ---------------------------------------------------------------------------
+# Deliberate Heron — Phase 8 Step 1: per-request engine state rehydration
+# ---------------------------------------------------------------------------
+
+def _feedback_iterate_doc():
+    """Deliberate Heron: iterate of rank_order_voting carrying previous_round_feedback."""
+    return load_orchestration_data({
+        "name": "feedback-iterate", "version": "1", "author": "phase8step1",
+        "citation": "Deliberate Heron",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Deliberate Heron feedback iterate fixture",
+        },
+        "steps": [{
+            "type": "iterate", "max_rounds": 4,
+            "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 3}},
+            "bundle_transform": {"name": "delphi_statistical_aggregation", "config": {}},
+            "steps": [{
+                "type": "activity", "tool_type": "rank_order_voting", "title": "rank",
+                "transform_input": "previous_round_feedback", "config": {"ideas": []},
+            }],
+        }],
+    })
+
+
+def _drive_feedback(strategy_factory, meeting, db_session):
+    """Drive the feedback iterate to completion, returning per-round
+    (round_index, input_item_count). strategy_factory() supplies the strategy
+    for the next create_activity call — a fresh+rehydrated one to simulate
+    per-request reconstruction, or a shared one for in-process accumulation."""
+    from fastapi import HTTPException
+    bm = ActivityBundleManager(db_session)
+    rounds = []
+    while True:
+        strategy = strategy_factory()
+        try:
+            activity = strategy.create_activity(meeting, None, None)
+        except HTTPException:
+            break
+        logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
+        inp = (
+            db_session.query(ActivityBundle)
+            .filter(ActivityBundle.activity_id == activity.activity_id,
+                    ActivityBundle.kind == "input")
+            .first()
+        )
+        rounds.append((round_index, len(inp.items) if inp else 0))
+        bm.finalize_output_bundle(
+            meeting.meeting_id, activity.activity_id,
+            [{"content": "a", "metadata": {"delphi": {"iqr": 2.0, "median": 1.0}}}],
+            metadata={"source": "oracle"},
+            logical_step_id=logical_step_id, round_index=round_index,
+        )
+        if len(rounds) > 12:
+            pytest.fail("iterate ran away")
+    return rounds
+
+
+def test_per_request_reconstruction_matches_in_process_feedback(db_session):
+    """Deliberate Heron: a per-request (fresh + rehydrated) strategy injects the
+    same previous_round_feedback as an in-process strategy that accumulated
+    state in memory.
+
+    Regression guard for the silent break where a freshly reconstructed strategy
+    produced empty feedback input bundles in iterate rounds 2+ because
+    _activity_iteration reset to empty and the prior-round activity lookup
+    failed.
+    """
+    doc = _feedback_iterate_doc()
+
+    meeting_a, _ = _seed_engine_meeting(db_session)
+    shared = OrchestrationEngineStrategy(doc)
+    in_process = _drive_feedback(lambda: shared, meeting_a, db_session)
+
+    meeting_b = Meeting(meeting_id="M-ENG-REHYDRATE", owner_id="u-eng-01", title="b")
+    db_session.add(meeting_b)
+    db_session.commit()
+
+    def fresh_factory():
+        strategy = OrchestrationEngineStrategy(doc)
+        strategy.rehydrate_from_db(meeting_b, db_session)
+        return strategy
+
+    per_request = _drive_feedback(fresh_factory, meeting_b, db_session)
+
+    assert per_request == in_process
+    # round 0 has no prior feedback; rounds 1+ carry exactly one aggregated item
+    assert per_request == [(0, 0), (1, 1), (2, 1)]
+
+
+def test_rehydrate_restores_pending_facilitator_decision(db_session):
+    """Deliberate Heron: a paused facilitator-decision survives per-request rebuild.
+
+    A fresh strategy does not know the engine is paused until rehydration reads
+    the dangling decision row; after rehydration it refuses to advance, matching
+    the in-process pause contract.
+    """
+    from fastapi import HTTPException
+    doc = load_orchestration_data({
+        "name": "fd", "version": "1", "author": "phase8step1", "citation": "Deliberate Heron",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "Deliberate Heron decision fixture",
+        },
+        "steps": [{
+            "type": "facilitator-decision", "prompt": "Continue?",
+            "options": ["yes", "no"], "context_bundle_keys": [],
+        }],
+    })
+    meeting, _ = _seed_engine_meeting(db_session)
+    strategy = OrchestrationEngineStrategy(doc)
+    decision_activity = strategy.create_activity(meeting, None, None)
+    assert strategy._pending_decision is not None
+
+    fresh = OrchestrationEngineStrategy(doc)
+    assert fresh._pending_decision is None
+    fresh.rehydrate_from_db(meeting, db_session)
+    assert fresh._pending_decision is not None
+    assert fresh._pending_decision["activity_id"] == decision_activity.activity_id
+    assert fresh._pending_decision["options"] == ["yes", "no"]
+    assert fresh._pending_decision["logical_step_id"]
+
+    with pytest.raises(HTTPException):
+        fresh.create_activity(meeting, None, None)
