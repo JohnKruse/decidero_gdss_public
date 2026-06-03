@@ -137,22 +137,39 @@ Technical deviations:
   therefore uses a content-independent `fixed_n` predicate to assert exact parity of
   the state this step governs (feedback carry-forward and round identity).
 
-### Step 2 — [PENDING] Runtime advancement wiring (C)
+### Step 2 — [DONE] Runtime advancement wiring (C)
 
 Let the facilitator advance the engine after an activity closes.
 
 Conclude this step by:
 
-- Adding a facilitator-only advance entry point that calls `create_activity` for an
-  orchestration-backed meeting when it is not paused on a decision and the plan is
-  not complete, then broadcasts via `broadcast_engine_agenda_mutation`.
-- Wiring it so it is triggered by an explicit facilitator action, not automatically
-  on stop. Refuse cleanly (structured response) when the plan is complete or a
+- [DONE] Adding a facilitator-only advance entry point
+  (`POST /api/meetings/{meeting_id}/orchestration/advance`,
+  `advance_orchestration` in `app/routers/meetings.py`) that calls `create_activity`
+  for an orchestration-backed meeting when it is not paused on a decision and the
+  plan is not complete, then broadcasts via `broadcast_engine_agenda_mutation`.
+- [DONE] Triggered by an explicit facilitator action, never automatically on stop;
+  facilitator-only (403 otherwise). Refuses cleanly with a structured `status`
+  (`"complete"` / `"paused"`) rather than an error when the plan is complete or a
   decision is pending.
-- End-to-end test: create Delphi meeting → submit ideas → stop brainstorm → advance
-  materializes the Round 1 rank-order vote with correct config and no stale runtime
-  data; advancing again at the right point reaches Round 2 with correct
-  `previous_round_feedback` (the Step 1 rehydration is what makes round 2 correct).
+- [DONE] End-to-end test
+  (`test_orchestration_advance_endpoint_materializes_next_round`): create Delphi
+  meeting → finalize brainstorm output → advance materializes the Round 1
+  rank-order vote with correct `_orchestration` config and no stale runtime data;
+  advancing again reaches Round 2 with a non-empty `previous_round_feedback` input
+  bundle (the Step 1 rehydration is what makes round 2 correct). Plus an
+  authorization test (`test_orchestration_advance_rejects_non_facilitator`).
+
+Technical deviations:
+- The endpoint mints the next activity and broadcasts the agenda update but does
+  **not** auto-start it; the facilitator starts it through the existing control
+  action. This keeps "advance" (materialize) and "start" (run) as distinct
+  facilitator gestures, consistent with the explicit-action design.
+- Paused/complete are reported as HTTP 200 with a `status` field rather than a 4xx,
+  so the (Step 4) facilitator UI can render the gate/complete state from a normal
+  response. If `create_activity` itself materializes a facilitator-decision step,
+  the endpoint reports `status: "paused"` with the decision prompt/options rather
+  than presenting the decision row as a runnable activity.
 
 ### Step 3 — [PENDING] Loop-control decision at the iterate boundary (A)
 

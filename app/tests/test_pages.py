@@ -238,6 +238,112 @@ def test_template_creation_api_attaches_selected_participants(
     assert participant.user_id in payload.get("participant_ids", [])
 
 
+def test_orchestration_advance_endpoint_materializes_next_round(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Deliberate Heron (Phase 8 Step 2): the facilitator advance endpoint
+    materializes the next engine step, and round 2 carries previous_round_feedback
+    — proving the Step 1 rehydration survives the per-request endpoint boundary.
+    """
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+    from app.models.activity_bundle import ActivityBundle
+
+    [template] = seed_builtin_meeting_templates(db_session)
+    create = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={"title": "Advance Run", "description": "Drive the Delphi loop.",
+              "participant_ids": []},
+    )
+    assert create.status_code == 200, create.text
+    meeting_id = create.json()["meeting_id"]
+    brainstorm_id = create.json()["agenda"][0]["activity_id"]
+
+    bm = ActivityBundleManager(db_session)
+    # Simulate stopping the brainstorm by finalizing its output bundle.
+    bm.finalize_output_bundle(
+        meeting_id, brainstorm_id,
+        [{"content": "idea-a"}, {"content": "idea-b"}], metadata={"source": "test"},
+    )
+
+    # Advance -> Round 1 rank-order vote.
+    adv1 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert adv1.status_code == 200, adv1.text
+    body1 = adv1.json()
+    assert body1["status"] == "advanced"
+    act1 = body1["activity"]
+    assert act1["tool_type"] == "rank_order_voting"
+    assert act1["config"]["_orchestration"]["round_index"] == 0
+    # No stale runtime data on the freshly materialized activity.
+    assert not act1.get("started_at")
+    assert not act1.get("stopped_at")
+
+    orch0 = act1["config"]["_orchestration"]
+    bm.finalize_output_bundle(
+        meeting_id, act1["activity_id"],
+        [{"content": "idea-a", "metadata": {"delphi": {"iqr": 2.0, "median": 1.0}}}],
+        metadata={"source": "test"},
+        logical_step_id=orch0["logical_step_id"], round_index=0,
+    )
+
+    # Advance -> Round 2 rank-order vote, carrying the prior round's feedback.
+    adv2 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert adv2.status_code == 200, adv2.text
+    body2 = adv2.json()
+    assert body2["status"] == "advanced"
+    act2 = body2["activity"]
+    assert act2["tool_type"] == "rank_order_voting"
+    assert act2["config"]["_orchestration"]["round_index"] == 1
+
+    input_bundle = (
+        db_session.query(ActivityBundle)
+        .filter(ActivityBundle.activity_id == act2["activity_id"],
+                ActivityBundle.kind == "input")
+        .first()
+    )
+    assert input_bundle is not None
+    # Non-empty feedback proves rehydration worked; without it this would be 0.
+    assert len(input_bundle.items) >= 1
+
+
+def test_orchestration_advance_rejects_non_facilitator(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """Deliberate Heron: advancing the orchestration is facilitator-only."""
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    # Log in as the admin facilitator and create the orchestration meeting.
+    client.post(
+        "/api/auth/token",
+        json={"username": ADMIN_LOGIN_FOR_TEST, "password": ADMIN_PASSWORD_FOR_TEST},
+    )
+    create = client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={"title": "Auth Run", "description": "x", "participant_ids": []},
+    )
+    assert create.status_code == 200, create.text
+    meeting_id = create.json()["meeting_id"]
+
+    # Create a non-facilitator participant and log in as them.
+    user_manager_with_admin.add_user(
+        first_name="Pan", last_name="El", email="pan.el@example.com",
+        hashed_password=get_password_hash("PanelPass1!"),
+        role=UserRole.PARTICIPANT.value, login="pan_el",
+    )
+    user_manager_with_admin.db.commit()
+    client.post(
+        "/api/auth/token", json={"username": "pan_el", "password": "PanelPass1!"},
+    )
+
+    resp = client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert resp.status_code == 403, resp.text
+
+
 def test_orchestration_meeting_page_sets_facilitator_expectations(
     authenticated_client: TestClient,
     db_session,

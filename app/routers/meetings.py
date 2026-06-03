@@ -68,7 +68,7 @@ from app.services import meeting_state_manager
 from app.plugins.context import ActivityContext
 from app.plugins.registry import get_activity_registry
 from app.services.activity_pipeline import ActivityPipeline
-from app.services.agenda_strategy import get_agenda_strategy
+from app.services.agenda_strategy import get_agenda_strategy, OrchestrationEngineStrategy
 from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.services.transfer_source import get_transfer_count
 from app.plugins.autosave import start_autosave, stop_autosave
@@ -2294,6 +2294,98 @@ async def respond_facilitator_decision(
         "activity_id": activity.activity_id,
         "chosen_option": chosen,
         "bundle_id": bundle.bundle_id,
+        "state": realtime.get("state"),
+    }
+
+
+@router.post("/{meeting_id}/orchestration/advance")
+async def advance_orchestration(
+    meeting_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+):
+    """Deliberate Heron: materialize the next orchestration step on facilitator request.
+
+    This is an explicit facilitator action — advancement is never automatic on
+    activity stop. It calls the engine's `create_activity` to mint the next plan
+    step, then broadcasts the agenda mutation through the existing realtime
+    envelope. It refuses cleanly (structured response, not an error) when the
+    engine is paused on a facilitator-decision or the plan is complete.
+    """
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_manage"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only facilitators can advance the orchestration.",
+        )
+
+    strategy = get_agenda_strategy(meeting)
+    if not isinstance(strategy, OrchestrationEngineStrategy):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This meeting is not orchestration-backed.",
+        )
+
+    # Already paused on a decision (restored by rehydration): surface, do not advance.
+    pending = strategy.pending_decision()
+    if pending is not None:
+        return {
+            "meeting_id": meeting_id,
+            "status": "paused",
+            "pending_decision": {
+                "activity_id": pending["activity_id"],
+                "prompt": pending.get("prompt"),
+                "options": list(pending.get("options") or []),
+            },
+        }
+
+    if strategy.is_complete(meeting):
+        return {"meeting_id": meeting_id, "status": "complete"}
+
+    try:
+        activity = strategy.create_activity(meeting, None, meeting_manager)
+    except HTTPException as exc:
+        # Structured refusal: plan complete (400) or paused mid-flight (409).
+        if exc.status_code == status.HTTP_400_BAD_REQUEST:
+            return {"meeting_id": meeting_id, "status": "complete", "detail": exc.detail}
+        if exc.status_code == status.HTTP_409_CONFLICT:
+            return {"meeting_id": meeting_id, "status": "paused", "detail": exc.detail}
+        raise
+
+    realtime = await broadcast_engine_agenda_mutation(
+        meeting_id=meeting_id,
+        initiator_id=user.user_id,
+        meeting_manager=meeting_manager,
+        action="engine_advance",
+    )
+
+    # If the materialized step was itself a facilitator-decision, the engine is
+    # now paused: report that rather than presenting it as a runnable activity.
+    pending_after = strategy.pending_decision()
+    if pending_after is not None:
+        return {
+            "meeting_id": meeting_id,
+            "status": "paused",
+            "pending_decision": {
+                "activity_id": pending_after["activity_id"],
+                "prompt": pending_after.get("prompt"),
+                "options": list(pending_after.get("options") or []),
+            },
+            "state": realtime.get("state"),
+        }
+
+    return {
+        "meeting_id": meeting_id,
+        "status": "advanced",
+        "activity": AgendaActivityResponse.model_validate(activity).model_dump(),
         "state": realtime.get("state"),
     }
 
