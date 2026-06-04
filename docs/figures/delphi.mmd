@@ -1,0 +1,17 @@
+flowchart TD
+    subgraph c0["Sequence"]
+        direction TB
+        n0_0["Round 1: Generate Delphi Items<br/><small>brainstorming</small>"]
+        subgraph c0_1["Iterate · ≤4 rounds · converge: iqr_stability · transform: delphi_statistical_aggregation · gate: facilitator"]
+            direction TB
+            subgraph c0_1_0["Sequence (subcycle)"]
+                direction TB
+                n0_1_0_0["Rank Delphi Items<br/><small>rank_order_voting</small><br/>↩ feedback"]
+                n0_1_0_1["Explain Your Ranking<br/><small>brainstorming</small>"]
+            end
+        end
+    end
+
+    n0_1_0_0 --> n0_1_0_1
+    n0_1_0_1 -. "continue · facilitator gate" .-> n0_1_0_0
+    n0_0 --> n0_1_0_0

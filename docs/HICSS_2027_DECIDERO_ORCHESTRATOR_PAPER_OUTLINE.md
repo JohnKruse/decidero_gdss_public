@@ -488,12 +488,15 @@ same object.
 - **Optional runtime figure:** the stack machine pushing/popping frames as it
   materializes round 1 then round 2 — visualizes "where it started / is now / is
   going" and shows static structure unfolding into the round-by-round agenda.
-- **Methods clincher:** write a small exporter that walks the parsed AST
-  (`SequenceStep`/`IterateStep`/`ActivityStep`) and emits **Mermaid or Graphviz
+- **Methods clincher [DONE]:** an exporter walks the parsed AST
+  (`SequenceStep`/`IterateStep`/`ActivityStep`) and emits **Mermaid and Graphviz
   DOT directly from any orchestration document**, so figures are *generated from
-  the real artifact* (cannot drift) and reusable for every method. This is also
-  the seed of a future "show the DAG in the UI" feature. NOT yet built — offered
-  as the next high-value task.
+  the real artifact* (cannot drift) and reusable for every method. Implemented in
+  `app/services/orchestration_diagram.py` (`to_mermaid` / `to_graphviz`); CLI at
+  `scripts/export_orchestration_diagram.py`; generated Delphi figure +
+  regeneration/rendering instructions in `docs/figures/` (README embeds the
+  Mermaid, which renders on GitHub). This is also the seed of a future "show the
+  DAG in the UI" feature.
 
 ### I. [VENUE] Conference vs journal
 
@@ -511,11 +514,13 @@ the conference scope.
 
 ### J. Status summary for the paper's "implemented vs future" split
 
-- [DONE] Delphi round as a nested subcycle; one-level recursion in the engine;
-  prior-round median/IQR feedback shown to participants; per-phase interstitials;
-  premature-"complete" gate bug fixed; dashboard focus-refresh.
+- [DONE] Delphi round as a nested subcycle (rank → justify); one-level recursion
+  in the engine; prior-round median/IQR feedback shown to participants; per-phase
+  interstitials; premature-"complete" gate bug fixed; dashboard focus-refresh; the
+  AST→Mermaid/Graphviz figure exporter (generates the recursion figure from the
+  real document).
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
-  anonymized cross-round display of outlier rationales; the AST→Mermaid/Graphviz
-  figure exporter (next candidate task); the in-UI DAG visualization.
+  the purpose-built justification activity (per-viewer outlier queue, F.1) +
+  anonymized cross-round display of rationales; the in-UI DAG visualization.
