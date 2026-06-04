@@ -429,6 +429,41 @@ contribution.
   justification" needs per-round branching = the deferred `conditional` step /
   dynamic dispatch. Current gate is binary continue/conclude.
 
+#### F.1 Justification activity — design spec [FUTURE; current step is a placeholder]
+
+Decided 2026-06-04: the shipped Delphi's justification step currently *reuses the
+brainstorming tool* as a thin placeholder (a free-text "Explain Your Ranking" box
+that follows the ranking). That is not the real thing and must not be presented
+as the finished method — it is a stand-in so the round subcycle exists and the
+recursion engine is exercised. The proper step is a **purpose-built justification
+activity**, specified here so it can be built later (it slots into the existing
+subcycle where the placeholder sits — **no engine change needed**):
+
+- **Per-viewer content, one activity (not N activities).** A single activity that
+  renders different content per participant — the same pattern `rank_order_voting`
+  already uses (shared state, per-user ballot). Each participant sees only *their*
+  items needing justification.
+- **Outlier-driven queue.** The set of items participant P must justify is already
+  derivable: every item where `metadata.delphi.outlier_flags[P] == True` (computed
+  by `DelphiStatisticalAggregation`; no new computation). Render it as a
+  drive-to-action queue: per item, show the item, P's own rank, the group median +
+  IQR, and a comment box — "You ranked X at 2; the group median was 7. Why?"
+- **Comment-only, seeded set, no new items.** The activity is constrained to
+  commenting on the flagged items; no idea creation. This is precisely what
+  brainstorming cannot enforce, which is why a new activity type is required
+  rather than configured brainstorming.
+- **Zero-outlier participants** see "nothing needs your justification this round"
+  and are done.
+- **Cross-round anonymized display.** Collected rationales attach to their items
+  and surface in the *next* round's ranking view, **unattributed** ("others who
+  ranked this differently said: …"). Peer-anonymous only; per the small-N caveat,
+  show aggregate + unattributed text, never per-person.
+- **Build surface (multi-day):** new plugin (manifest + lifecycle +
+  comment-only validation), storage for per-user-per-item rationales (a bundle or
+  small table), a new UI panel with the per-viewer queue, outlier derivation from
+  the input bundle, and the next-round anonymized display. The recursion engine
+  already hosts it; this is activity-layer + UI work, not engine work.
+
 ### G. Per-phase interstitials [DONE]
 
 Because the participant's task *changes* across the subcycle (review feedback →
