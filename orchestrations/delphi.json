@@ -71,7 +71,7 @@
                   "transform_input": "previous_round_feedback",
                   "config": {
                     "ideas": [],
-                    "randomize_order": false,
+                    "randomize_order": true,
                     "show_results_immediately": false,
                     "allow_reset": true
                   }

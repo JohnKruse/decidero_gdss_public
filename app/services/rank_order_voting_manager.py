@@ -135,15 +135,29 @@ class RankOrderVotingManager:
         return bool(resolve_meeting_capabilities(meeting, user)["can_manage"])
 
     @staticmethod
+    def _stable_option_key(option_id: str) -> str:
+        """The activity-independent part of an option id.
+
+        Option ids are prefixed `{activity_id}:...`, and each Delphi round is a new
+        activity, so the raw option id changes every round. Stripping the prefix
+        yields a key tied to the item's identity (idea id / content slug) that is
+        stable across rounds — so a participant's randomized order stays consistent
+        round to round instead of reshuffling.
+        """
+        text = str(option_id)
+        return text.split(":", 1)[1] if ":" in text else text
+
+    @classmethod
     def _participant_order_key(
+        cls,
         meeting_id: str,
-        activity_id: str,
         user_id: str,
         option_id: str,
     ) -> Tuple[int, str]:
-        seed = f"{meeting_id}:{activity_id}:{user_id}:{option_id}"
+        stable_key = cls._stable_option_key(option_id)
+        seed = f"{meeting_id}:{user_id}:{stable_key}"
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-        return int(digest, 16), option_id
+        return int(digest, 16), stable_key
 
     def _resolve_activity(self, meeting: Meeting, activity_id: str) -> AgendaActivity:
         if not meeting.agenda_activities:
@@ -340,7 +354,6 @@ class RankOrderVotingManager:
             serialized_options.sort(
                 key=lambda row: self._participant_order_key(
                     meeting.meeting_id,
-                    activity.activity_id,
                     user.user_id,
                     row["option_id"],
                 )
