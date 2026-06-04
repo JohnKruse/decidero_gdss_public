@@ -6,7 +6,6 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-from app.data.activity_bundle_manager import ActivityBundleManager
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
 from app.services.categorization_manager import CategorizationManager
 
@@ -160,9 +159,7 @@ class CategorizationPlugin(ActivityPlugin):
             finalization_metadata = {
                 "mode": mode,
             }
-        bundle = ActivityBundleManager(context.db).finalize_output_bundle(
-            context.meeting.meeting_id,
-            context.activity.activity_id,
+        bundle = context.finalize_output_bundle(
             items,
             metadata={
                 "source": "categorization",

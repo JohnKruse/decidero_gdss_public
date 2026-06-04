@@ -89,10 +89,29 @@
         loadDashboardData();
         if (refreshConfig.enabled) {
             document.addEventListener('visibilitychange', () => {
-                scheduleRefresh();
+                // Becoming visible: fetch right away so a meeting added while the
+                // tab was backgrounded shows up immediately, rather than waiting
+                // out the (possibly hidden-cadence) timer. Going hidden: just
+                // reschedule onto the slower hidden interval.
+                if (!document.hidden) {
+                    refreshNow();
+                } else {
+                    scheduleRefresh();
+                }
             });
         }
     });
+
+    function refreshNow() {
+        if (!refreshConfig.enabled || refreshInFlight) {
+            return;
+        }
+        stopRefresh();
+        refreshInFlight = true;
+        loadDashboardData().finally(() => {
+            refreshInFlight = false;
+        });
+    }
 
     function getRefreshDelayMs() {
         if (refreshFailures > 0) {

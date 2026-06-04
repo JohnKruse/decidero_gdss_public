@@ -6,7 +6,6 @@ from copy import deepcopy
 import re
 from typing import Any, Dict, Optional
 
-from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.meeting import AgendaActivity, Meeting
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
 from app.services.voting_manager import VotingManager
@@ -133,9 +132,7 @@ class VotingPlugin(ActivityPlugin):
         meeting: Meeting = context.meeting
         activity: AgendaActivity = context.activity
         items = self._build_items(context, meeting, activity)
-        bundle = ActivityBundleManager(context.db).finalize_output_bundle(
-            meeting.meeting_id,
-            activity.activity_id,
+        bundle = context.finalize_output_bundle(
             items,
             metadata={"source": "voting"},
         )

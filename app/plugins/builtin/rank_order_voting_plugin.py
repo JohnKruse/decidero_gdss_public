@@ -5,7 +5,6 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
-from app.data.activity_bundle_manager import ActivityBundleManager
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.rank_order_voting import RankOrderVote
 from app.models.user import UserRole
@@ -157,9 +156,7 @@ class RankOrderVotingPlugin(ActivityPlugin):
             }
             for v in votes
         ]
-        bundle = ActivityBundleManager(context.db).finalize_output_bundle(
-            meeting.meeting_id,
-            activity.activity_id,
+        bundle = context.finalize_output_bundle(
             items,
             metadata={
                 "source": "rank_order_voting",

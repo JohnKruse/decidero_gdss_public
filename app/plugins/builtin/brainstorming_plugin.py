@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.config.loader import get_brainstorming_defaults
-from app.data.activity_bundle_manager import ActivityBundleManager, serialize_idea
+from app.data.activity_bundle_manager import serialize_idea
 from app.models.idea import Idea
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
 from app.utils.user_colors import get_user_color
@@ -98,9 +98,7 @@ class BrainstormingPlugin(ActivityPlugin):
             .all()
         )
         items = [serialize_idea(idea) for idea in ideas]
-        bundle = ActivityBundleManager(context.db).finalize_output_bundle(
-            context.meeting.meeting_id,
-            context.activity.activity_id,
+        bundle = context.finalize_output_bundle(
             items,
             metadata={"source": "brainstorming"},
         )
