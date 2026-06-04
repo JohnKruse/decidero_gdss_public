@@ -1332,6 +1332,44 @@
   line-height: 1.2;
 }
 
+/* Facilitator round-statistics report-out modal. */
+.round-stats-modal {
+  max-width: 520px;
+}
+
+.round-stats-intro {
+  margin: 0 0 12px;
+  color: #4f5d75;
+  font-size: 0.85rem;
+}
+
+.round-stats-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid #eef1f6;
+}
+
+.round-stats-row:last-child {
+  border-bottom: none;
+}
+
+.round-stats-key {
+  color: #33415c;
+}
+
+.round-stats-val {
+  font-weight: 600;
+  color: #1d3a6e;
+  text-align: right;
+}
+
+.round-stats-empty {
+  color: #4f5d75;
+  font-style: italic;
+}
+
 /* Per-phase guidance interstitial shown above the active activity. */
 .activity-interstitial {
   display: flex;

@@ -3,7 +3,7 @@
 {% block title %}{{ meeting.title }} – Meeting - Decidero GDSS{% endblock %}
 
 {% block extra_css %}
-    <link rel="stylesheet" href="/static/css/meeting.css?v=20260604a">
+    <link rel="stylesheet" href="/static/css/meeting.css?v=20260604b">
 {% endblock %}
 
 {% block content %}
@@ -655,11 +655,26 @@
         </div>
     </div>
 
+    <!-- Facilitator report-out: aggregated round statistics shown at the
+         justification step. Closeable; reopenable from the agenda item. -->
+    <div id="roundStatsModal" class="modal-overlay" hidden>
+        <div class="modal-content round-stats-modal">
+            <div class="modal-header">
+                <h2 id="roundStatsTitle">Round statistics</h2>
+                <button type="button" class="close-button" id="closeRoundStatsModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p class="round-stats-intro">A read-out of where the group landed this round. Close to continue.</p>
+                <div id="roundStatsBody" class="round-stats-body"></div>
+            </div>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
 
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260604b"></script>
+<script src="/static/js/meeting.js?v=20260604c"></script>
 {% endblock %}

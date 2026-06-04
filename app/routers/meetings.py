@@ -2264,6 +2264,45 @@ async def get_facilitator_decision_state(
     }
 
 
+@router.get("/{meeting_id}/orchestration/round-statistics/{activity_id}")
+async def get_round_statistics(
+    meeting_id: str,
+    activity_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+):
+    """Aggregated ranking statistics for the round an activity sits in.
+
+    Powers the facilitator report-out dialog at the justification step: counts and
+    an agreement summary (not per-idea detail), computed on demand from the round's
+    ranking output. Facilitator-only.
+    """
+    from app.services.round_statistics import compute_round_statistics
+
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_manage"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only facilitators can view round statistics.",
+        )
+    activity = next(
+        (a for a in getattr(meeting, "agenda_activities", []) if a.activity_id == activity_id),
+        None,
+    )
+    if activity is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agenda activity not found")
+
+    summary = compute_round_statistics(meeting_manager.db, meeting, activity)
+    return {"meeting_id": meeting_id, "activity_id": activity_id, **summary}
+
+
 @router.post("/{meeting_id}/orchestration/facilitator-decisions/{activity_id}/responses")
 async def respond_facilitator_decision(
     meeting_id: str,

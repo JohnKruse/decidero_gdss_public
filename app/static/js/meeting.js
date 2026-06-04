@@ -347,6 +347,12 @@
                 dismiss: document.getElementById("activityInterstitialDismiss"),
             },
             // Collision Modal
+            roundStats: {
+                modal: document.getElementById("roundStatsModal"),
+                body: document.getElementById("roundStatsBody"),
+                title: document.getElementById("roundStatsTitle"),
+                close: document.getElementById("closeRoundStatsModal"),
+            },
             collisionModal: document.getElementById("collisionModal"),
             closeCollisionModal: document.getElementById("closeCollisionModal"),
             cancelCollision: document.getElementById("cancelCollision"),
@@ -785,6 +791,8 @@
         let activeVotingConfig = {};
         // Activity ids whose per-phase guidance the user has dismissed this session.
         const dismissedInterstitials = new Set();
+        // Justify activity ids whose round-statistics report-out has auto-opened.
+        const roundStatsAutoShown = new Set();
         let rankOrderSummary = null;
         let rankOrderActivityId = null;
         let rankOrderRequestInFlight = false;
@@ -6301,6 +6309,20 @@
                     actions.appendChild(transferBtn);
                 }
 
+                // Reopen the round-statistics report-out for a justification step.
+                if (state.isFacilitator && isJustifyStep(item, item.tool_type)) {
+                    const statsBtn = document.createElement("button");
+                    statsBtn.type = "button";
+                    statsBtn.className = "control-btn sm";
+                    statsBtn.textContent = "Round stats";
+                    statsBtn.title = "Show the aggregated statistics for this round";
+                    statsBtn.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        openRoundStatsModal(item.activity_id);
+                    });
+                    actions.appendChild(statsBtn);
+                }
+
                 // Add delete button for facilitators
                 if (state.isFacilitator) {
                     const deleteBtn = document.createElement("button");
@@ -7084,6 +7106,7 @@
                 { isActive },
             );
             updateActivityInterstitial(activeActivity, toolType, { showTool, showTransfer });
+            maybeAutoShowRoundStats(activeActivity, toolType, { showTool });
             updateSubmitButtonState();
         }
 
@@ -7135,6 +7158,81 @@
             if (ui_.text) ui_.text.textContent = content.text;
             ui_.root.dataset.activityId = activityId;
             ui_.root.hidden = false;
+        }
+
+        // A brainstorming step carrying orchestration round metadata is the Delphi
+        // justification step (the generation brainstorm has none).
+        function isJustifyStep(activity, toolType) {
+            return Boolean(
+                toolType === "brainstorming" &&
+                activity &&
+                (activity.config || {})._orchestration
+            );
+        }
+
+        function renderRoundStats(summary) {
+            const body = ui.roundStats.body;
+            if (!body) return;
+            if (ui.roundStats.title) {
+                ui.roundStats.title.textContent = `Round ${summary.round_number || ""} statistics`.trim();
+            }
+            if (!summary.available) {
+                body.innerHTML = `<p class="round-stats-empty">${summary.detail || "No ranking results for this round yet."}</p>`;
+                return;
+            }
+            const rows = [
+                ["Overall agreement", `${summary.agreement_label} (median spread ${summary.median_iqr})`],
+                ["Items ranked", String(summary.item_count)],
+                ["Participants", String(summary.participant_count)],
+                ["Items in strong agreement", String(summary.strong_agreement_items)],
+                ["Contested items", String(summary.contested_items)],
+                ["Participants with outlier rankings", String(summary.participants_with_outliers)],
+                ["Total outlier positions", String(summary.outlier_instances)],
+            ];
+            body.innerHTML = rows
+                .map(([k, v]) => `<div class="round-stats-row"><span class="round-stats-key">${k}</span><span class="round-stats-val">${v}</span></div>`)
+                .join("");
+        }
+
+        async function openRoundStatsModal(activityId) {
+            if (!ui.roundStats.modal || !activityId) return;
+            if (ui.roundStats.body) {
+                ui.roundStats.body.innerHTML = '<p class="round-stats-empty">Loading…</p>';
+            }
+            ui.roundStats.modal.hidden = false;
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/orchestration/round-statistics/${encodeURIComponent(activityId)}`,
+                    { credentials: "include", cache: "no-store" },
+                );
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(typeof data.detail === "string" ? data.detail : "Could not load round statistics.");
+                }
+                renderRoundStats(data);
+            } catch (error) {
+                if (ui.roundStats.body) {
+                    ui.roundStats.body.innerHTML = `<p class="round-stats-empty">${error.message || "Could not load round statistics."}</p>`;
+                }
+            }
+        }
+
+        function closeRoundStatsModal() {
+            if (ui.roundStats.modal) {
+                ui.roundStats.modal.hidden = true;
+            }
+        }
+
+        function maybeAutoShowRoundStats(activity, toolType, { showTool } = {}) {
+            if (!state.isFacilitator || !showTool || !isJustifyStep(activity, toolType)) {
+                return;
+            }
+            const activityId = activity.activity_id;
+            if (roundStatsAutoShown.has(activityId)) {
+                return;
+            }
+            roundStatsAutoShown.add(activityId);
+            openRoundStatsModal(activityId);
         }
 
 
@@ -8175,6 +8273,16 @@
                         dismissedInterstitials.add(activityId);
                     }
                     ui.activityInterstitial.root.hidden = true;
+                });
+            }
+            if (ui.roundStats && ui.roundStats.close) {
+                ui.roundStats.close.addEventListener("click", closeRoundStatsModal);
+            }
+            if (ui.roundStats && ui.roundStats.modal) {
+                ui.roundStats.modal.addEventListener("click", (event) => {
+                    if (event.target === ui.roundStats.modal) {
+                        closeRoundStatsModal();
+                    }
                 });
             }
             if (new URLSearchParams(window.location.search || "").get("roster") === "1") {

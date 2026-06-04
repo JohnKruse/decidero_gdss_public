@@ -524,3 +524,19 @@ the conference scope.
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
   the purpose-built justification activity (per-viewer outlier queue, F.1) +
   anonymized cross-round display of rationales; the in-UI DAG visualization.
+
+### K. Post-paper backlog (circle back after the deadline)
+
+Explicit "do later" list captured 2026-06-04 so it is not lost:
+
+- **Skip-the-justification control.** Let the facilitator choose, at the round
+  boundary, to *skip* the justification sub-step (run-justification vs continue
+  directly). The decision surface is easy; making the engine actually *skip* an
+  activity from a choice needs conditional/branching execution (the deferred
+  `conditional` step / dynamic dispatch, section E/F). Defer.
+- **Anonymized cross-round display of rationales.** Collected justification text
+  shown back to the group, unattributed, on the next round's ranking screen
+  (peer-anonymous; mind the small-N leak). Pairs with the justification activity
+  (F.1). Defer.
+- **Justification activity itself** beyond the MVP — richer review surface,
+  optional comments on non-outlier items, etc. (F.1 is the spec.)
