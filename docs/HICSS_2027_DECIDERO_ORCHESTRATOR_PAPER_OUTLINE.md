@@ -313,3 +313,174 @@ A second remaining risk is the evidence gap. The paper's usability claim rests
 on pilot observation that the template and orchestration surfaces lower the
 training burden. Without at least one observed session, the claim must be
 qualified as architectural rather than empirical.
+
+## Session Design Notes — 2026-06-04 (capture so it is not lost)
+
+These notes capture a working session that materially strengthened the design
+argument. Tags: [DONE] = implemented + tested in the repo; [FUTURE] = explicitly
+deferred / Future Directions; [FIGURE] = paper graphic idea; [VENUE] = publishing
+strategy. The throughline: **a collaboration method is a recursive composition,
+and the engine is a small stack interpreter that already supports it.**
+
+### A. The reframe: a round is a cycle of subcycles [DONE for Delphi]
+
+The earlier framing treated the Delphi loop as a single repeated activity
+(`iterate[rank_order_voting]`). The corrected, stronger framing: each Delphi
+*round* is itself a multi-step **subcycle** — review the prior round's feedback,
+(optionally) justify outlier positions, then re-rank. So the method is a
+*cycle of subcycles*, not a flat loop.
+
+Implemented: the Delphi round body is now a nested
+`iterate -> sequence([Review-and-Justify (brainstorming), Re-rank
+(rank_order_voting)])`. The justification step reuses the brainstorming tool. It
+is placed first so the re-rank stays last and the IQR convergence predicate reads
+the ranking output. (`orchestrations/delphi.json`.)
+
+### B. The engine is a recursion (stack) machine — one level now [DONE]
+
+Key realization: the orchestration engine (`_PlanWalker` in
+`app/services/agenda_strategy.py`) is **already a stack-based interpreter** — a
+frame stack where each frame holds its steps + a pointer ("where it started, is
+now, is going"). Descending = push (call); finishing = pop (return). Sequences
+already nested arbitrarily; the only thing blocking deeper nesting was a single
+deliberate guard.
+
+Implemented this session (one level of recursion):
+- Lifted the "no nested control flow in iterate" guard so an iterate body may
+  contain a `sequence`, which the walker pushes as a frame.
+- Propagated the enclosing iterate's **round context** (round_index + frame) to
+  leaf activities inside a nested sequence, so feedback injection and iteration
+  metadata keep working.
+- `_collect_round_output` now descends to the round's **terminal leaf** activity
+  (`_last_leaf_logical_step_id`) so round-output lookup works on the per-request
+  rehydration path (the same path that caused an earlier premature-"complete"
+  bug — now fixed and regression-tested).
+
+Deliberately deferred [FUTURE]: `iterate`-inside-`iterate` (nested loops with
+independent convergence). One level of nesting fully backs the "recursion engine"
+claim; Delphi does not need nested loops.
+
+### C. Control flow recurses for free; data does not [partly DONE, design FUTURE]
+
+Recursion handles **control flow** cheaply. **Data flow** needs an explicit
+model. The elegant design (mirror of the control stack): each frame also carries
+an **input slot, an output slot, and a scope** — i.e., a thinkLet is a *function
+with a typed bundle contract* (input = parameters, output = return value,
+internals = locals). This maps onto pieces that already exist:
+`transform_input` ≈ parameters, `bundle_transform` ≈ return transform,
+`_collect_round_output` ≈ return value, `_IterateFrame.bundle_history` is already
+frame-local (so convergence composes under nesting for free), and
+`contract_schemas.validate_bundle_payload` can type the ports. Recommendation:
+**explicit named bindings, not implicit lexical scope** (predictable + validatable
+for a research tool). Citation hook: scientific-workflow systems (Taverna, Kepler,
+Pegasus) solve exactly this with typed ports + nested-loop scoping. The general
+I/O-contract layer is [FUTURE].
+
+### D. ThinkLets as composable fragments — the composition tool is FUTURE
+
+Per Collaboration Engineering (Briggs / de Vreede / Nunamaker), a thinkLet is
+the smallest reusable unit that yields a predictable pattern of collaboration —
+*tool + configuration + rules/script*, not just a tool. Today in the codebase
+`thinklet` is only a descriptive tag (`ActivityPluginManifest.thinklets`,
+document metadata), not a building block. The vision: a **palette of thinkLets**
+that are combinations of activities, which the composer drops in and **expands**
+at authoring time into the existing step grammar — so the engine never changes
+(thinkLets resolve to plain steps). The Delphi round subcycle is itself a
+thinkLet. NOTE: the user explicitly is *not* asking for the authoring/composition
+tool now — it is Future Directions. Start with a small curated library before a
+general nested composer (over-abstraction risk).
+
+### E. Runaway safety: static for #1, dynamic for #2 [FUTURE, clean theory split]
+
+A tidy theoretical contrast worth writing up:
+- **Static composition (#1, what we built):** thinkLet references form a
+  directed graph; safety = the graph is a **DAG**. Detect cycles at author/save
+  time (DFS gray/black coloring, or Kahn topological sort, O(V+E)) + a max
+  expansion-depth cap. Runaway is eliminated *by construction* — same mechanism
+  as build systems (Make/Bazel), package managers, spreadsheet circular-ref
+  detection, compiler include/`-ftemplate-depth` limits.
+- **Dynamic dispatch (#2, FUTURE):** a thinkLet picks its successor at runtime;
+  the call graph is data-dependent, so static acyclicity is insufficient. Needs
+  runtime **resource budgets / "fuel"** (cf. Ethereum gas; the repo already has
+  `max_rounds` caps and a 20-round runaway trip in tests) and optionally
+  **termination analysis** (well-founded ranking functions / size-change).
+
+Frame in the paper as **static safety vs dynamic safety** — a clean methods
+contribution.
+
+### F. Controlled feedback + outlier justification (Delphi fidelity)
+
+- **Feedback display [DONE]:** the engine already computes per-item median, IQR,
+  dispersion, and outlier flags between rounds (`DelphiStatisticalAggregation`)
+  and feeds them forward as `previous_round_feedback`. This session surfaced them
+  to participants: rounds after the first now show the prior round's group median
+  rank + spread (IQR) beside each item in the re-rank UI. This is the visible
+  feedback loop that makes it behave like real Delphi.
+- **Outlier rationales [FUTURE, justification step is DONE structurally]:** in
+  classical Delphi the *outlier participants themselves* write the rationales
+  (not the facilitator, not AI). Anonymity is **peer-anonymity, not
+  system-anonymity** — the system must know identities to route the "please
+  justify" prompt and compute outliers; peers see unattributed rationales.
+  Caveat to state in the paper: **small-N panels leak** (with ~6 participants and
+  one outlier, peers can infer identity) — mitigate by only ever showing
+  aggregates + unattributed text. The structural justification step exists; the
+  anonymized cross-round display of rationales is the next increment.
+- **Facilitator 3-way gate [FUTURE]:** "conclude / revote / revote-with-
+  justification" needs per-round branching = the deferred `conditional` step /
+  dynamic dispatch. Current gate is binary continue/conclude.
+
+### G. Per-phase interstitials [DONE]
+
+Because the participant's task *changes* across the subcycle (review feedback →
+justify → re-rank), each phase shows a short click-through "what to do now" note.
+Implemented as a dismiss-once inline notice above the active activity. The
+facilitator-decision rows also dropped their run controls (no participant
+session), and the advance/continue control moved to a panel below the current
+activity.
+
+### H. [FIGURE] Communicating recursion via graphics + JSON
+
+This is highly doable and is the most communicable part of the design, because
+**the recursion is literally a tree in the JSON** — structure and figure are the
+same object.
+- **Anchor figure:** `delphi.json` on the left (nested `iterate -> sequence ->
+  [justify, re-rank]` highlighted) ↔ a diagram on the right, color-keyed node to
+  JSON block.
+- **Diagram idiom:** nested containment boxes (iterate = box with loop-back arrow
+  containing the subcycle box containing the activity tiles) — same idea as the
+  indented agenda tiles in the UI, so figure and product reinforce each other.
+  Alternative: a node-link AST tree.
+- **Optional runtime figure:** the stack machine pushing/popping frames as it
+  materializes round 1 then round 2 — visualizes "where it started / is now / is
+  going" and shows static structure unfolding into the round-by-round agenda.
+- **Methods clincher:** write a small exporter that walks the parsed AST
+  (`SequenceStep`/`IterateStep`/`ActivityStep`) and emits **Mermaid or Graphviz
+  DOT directly from any orchestration document**, so figures are *generated from
+  the real artifact* (cannot drift) and reusable for every method. This is also
+  the seed of a future "show the DAG in the UI" feature. NOT yet built — offered
+  as the next high-value task.
+
+### I. [VENUE] Conference vs journal
+
+The contribution has journal-level depth as **Design Science Research** (artifact
++ design theory: recursion engine, thinkLet composition, static-vs-dynamic
+safety). But it is not either/or, and the HICSS deadline dominates: **ship the
+focused HICSS 2027 conference paper** (priority, GDSS-community feedback, forcing
+function; recursion/thinkLet/DAG material framed as design + Future Directions),
+then **extend to a journal** post-deadline with the composition engine built out
+and real (ideally multi-cohort) pilot data. Journal homes: **Group Decision and
+Negotiation (best fit)**, JMIS, Decision Support Systems, or DSR-framed JAIS/MISQ.
+HICSS best papers are often invited to journal special issues; IS journals expect
+~30%+ new material over a conference version. Do not let journal ambition bloat
+the conference scope.
+
+### J. Status summary for the paper's "implemented vs future" split
+
+- [DONE] Delphi round as a nested subcycle; one-level recursion in the engine;
+  prior-round median/IQR feedback shown to participants; per-phase interstitials;
+  premature-"complete" gate bug fixed; dashboard focus-refresh.
+- [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
+  data model; the thinkLet authoring/composition tool + curated library; the DAG
+  validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
+  anonymized cross-round display of outlier rationales; the AST→Mermaid/Graphviz
+  figure exporter (next candidate task); the in-UI DAG visualization.
