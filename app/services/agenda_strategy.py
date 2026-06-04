@@ -254,24 +254,41 @@ def _load_persisted_orchestration_document(orchestration_path: str) -> Optional[
         return None
 
 
-def _last_leaf_logical_step_id(step: Any, path: str) -> str:
-    """Logical_step_id of the last leaf activity reachable from a control step.
+def _round_output_logical_step_id(step: Any, path: str) -> str:
+    """Logical_step_id of the activity that produces the round's convergence output.
 
-    Descends through the last child of a sequence/iterate body until it reaches a
-    leaf, so round-output collection can find the round's terminal activity even
-    when the round body is a nested subcycle. `path` is the step's own path.
+    In a feedback loop this is the activity declaring `transform_input` (it both
+    consumes the prior round's feedback and produces the result the transform /
+    predicate read); when several do, the last; when none do, the last leaf.
+    This lets a round subcycle place non-converging steps (e.g. a post-ranking
+    justification) *after* the ranking without the predicate reading the wrong
+    output.
     """
-    from app.services.orchestration_loader import IterateStep, SequenceStep
+    from app.services.orchestration_loader import ActivityStep
 
-    child_steps = getattr(step, "steps", None)
-    if not child_steps:
+    leaves: List[Tuple[str, Optional[str]]] = []
+
+    def _walk(node: Any, node_path: str) -> None:
+        children = getattr(node, "steps", None)
+        if not children:
+            transform_input = (
+                getattr(node, "transform_input", None)
+                if isinstance(node, ActivityStep)
+                else None
+            )
+            leaves.append((f"engine:{node_path}", transform_input))
+            return
+        for index, child in enumerate(children):
+            child_path = f"{node_path}.{index}" if node_path else str(index)
+            _walk(child, child_path)
+
+    _walk(step, path)
+    if not leaves:
         return f"engine:{path}" if path else "engine:0"
-    idx = len(child_steps) - 1
-    child = child_steps[idx]
-    child_path = f"{path}.{idx}" if path else str(idx)
-    if isinstance(child, (SequenceStep, IterateStep)):
-        return _last_leaf_logical_step_id(child, child_path)
-    return f"engine:{child_path}"
+    for lsid, transform_input in reversed(leaves):
+        if transform_input:
+            return lsid
+    return leaves[-1][0]
 
 
 @dataclass
@@ -539,31 +556,35 @@ class _PlanWalker:
     def _collect_round_output(
         frame: _IterateFrame, db: Session, meeting_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        bundle = None
-        if frame.round_activity_ids:
-            last_activity_id = frame.round_activity_ids[-1]
-            bundle = (
-                db.query(ActivityBundle)
-                .filter(
-                    ActivityBundle.activity_id == last_activity_id,
-                    ActivityBundle.kind == "output",
+        # The round's convergence output comes from the round-output activity (the
+        # ranking in a feedback loop), not necessarily the last step minted — a
+        # subcycle may end with a non-converging step such as a justification.
+        target_lsid = _round_output_logical_step_id(frame.step, frame.path)
+        query = db.query(ActivityBundle).filter(
+            ActivityBundle.logical_step_id == target_lsid,
+            ActivityBundle.round_index == frame.round_index,
+            ActivityBundle.kind == "output",
+        )
+        if meeting_id is not None:
+            query = query.filter(ActivityBundle.meeting_id == meeting_id)
+        bundle = query.order_by(ActivityBundle.id.desc()).first()
+
+        # Legacy in-process fallback: a flow that did not tag logical_step_id.
+        # Scan the round's minted activities (newest first) for one with items.
+        if bundle is None and frame.round_activity_ids:
+            for activity_id in reversed(frame.round_activity_ids):
+                candidate = (
+                    db.query(ActivityBundle)
+                    .filter(
+                        ActivityBundle.activity_id == activity_id,
+                        ActivityBundle.kind == "output",
+                    )
+                    .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
+                    .first()
                 )
-                .order_by(ActivityBundle.round_index.desc(), ActivityBundle.id.desc())
-                .first()
-            )
-        if bundle is None or not (bundle.items or []):
-            # Per-request fallback (round_activity_ids is empty after rehydration):
-            # the round's output lives at the last *leaf* activity of the body,
-            # descending through a nested subcycle sequence if present.
-            logical_step_id = _last_leaf_logical_step_id(frame.step, frame.path)
-            fallback = db.query(ActivityBundle).filter(
-                ActivityBundle.logical_step_id == logical_step_id,
-                ActivityBundle.round_index == frame.round_index,
-                ActivityBundle.kind == "output",
-            )
-            if meeting_id is not None:
-                fallback = fallback.filter(ActivityBundle.meeting_id == meeting_id)
-            bundle = fallback.order_by(ActivityBundle.id.desc()).first()
+                if candidate is not None and (candidate.items or []):
+                    bundle = candidate
+                    break
         if bundle is None:
             return {"items": [], "metadata": {}}
         return {

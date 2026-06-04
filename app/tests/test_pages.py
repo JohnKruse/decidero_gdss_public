@@ -268,8 +268,8 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     )
 
     def _advance_close_justify(expected_round):
-        # Delphi subcycle: each round opens with a justification step
-        # (brainstorming) before the re-rank. Advance into it and finalize it.
+        # Delphi subcycle: each round closes with a post-ranking justification
+        # step (brainstorming). Advance into it and finalize it.
         adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
         assert adv.status_code == 200, adv.text
         jbody = adv.json()
@@ -284,8 +284,7 @@ def test_orchestration_advance_endpoint_materializes_next_round(
             logical_step_id=jorch["logical_step_id"], round_index=expected_round,
         )
 
-    # Advance -> Round 1 subcycle: justification step, then rank-order vote.
-    _advance_close_justify(0)
+    # Advance -> Round 1 subcycle: rank-order vote first.
     adv1 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
     assert adv1.status_code == 200, adv1.text
     body1 = adv1.json()
@@ -304,6 +303,9 @@ def test_orchestration_advance_endpoint_materializes_next_round(
         metadata={"source": "test"},
         logical_step_id=orch0["logical_step_id"], round_index=0,
     )
+
+    # ... then the post-ranking justification step closes the round.
+    _advance_close_justify(0)
 
     # Advance -> round-gate decision (facilitator continue/conclude).
     gate_adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
@@ -333,9 +335,8 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     )
     assert resume.status_code == 200, resume.text
 
-    # Advance -> Round 2 subcycle: justification step, then rank-order vote
-    # carrying the prior round's feedback.
-    _advance_close_justify(1)
+    # Advance -> Round 2 subcycle: rank-order vote, carrying the prior round's
+    # feedback. (Its post-ranking justification step would follow.)
     adv2 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
     assert adv2.status_code == 200, adv2.text
     body2 = adv2.json()

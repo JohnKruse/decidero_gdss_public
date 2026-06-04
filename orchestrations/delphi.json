@@ -66,16 +66,6 @@
               "steps": [
                 {
                   "type": "activity",
-                  "tool_type": "brainstorming",
-                  "title": "Review Feedback and Justify",
-                  "config": {
-                    "allow_anonymous": true,
-                    "allow_subcomments": false,
-                    "auto_jump_new_ideas": false
-                  }
-                },
-                {
-                  "type": "activity",
                   "tool_type": "rank_order_voting",
                   "title": "Rank Delphi Items",
                   "transform_input": "previous_round_feedback",
@@ -84,6 +74,16 @@
                     "randomize_order": false,
                     "show_results_immediately": false,
                     "allow_reset": true
+                  }
+                },
+                {
+                  "type": "activity",
+                  "tool_type": "brainstorming",
+                  "title": "Explain Your Ranking",
+                  "config": {
+                    "allow_anonymous": true,
+                    "allow_subcomments": false,
+                    "auto_jump_new_ideas": false
                   }
                 }
               ]

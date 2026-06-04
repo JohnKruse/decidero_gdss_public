@@ -7111,8 +7111,8 @@
             }
             if (toolType === "brainstorming" && inDelphiLoop) {
                 return {
-                    title: "Review and justify",
-                    text: "Look at how the group ranked the items, then share your reasoning — especially for items where your view differs from the group. Your notes are visible to the group and inform the next ranking.",
+                    title: "Explain your ranking",
+                    text: "You've just ranked the items. Share your reasoning — especially for any you rated much higher or lower than you think the group did. Your notes are visible to the group and inform the next round.",
                 };
             }
             return null;

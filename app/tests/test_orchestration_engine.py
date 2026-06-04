@@ -115,15 +115,16 @@ def test_phase6_delphi_orchestration_loads_and_resolves_registries():
     iterate = sequence.steps[1]
     assert iterate.max_rounds == 4
     # The round body is a nested subcycle (one level of recursion): a sequence of
-    # [justify (brainstorming) -> re-rank (rank_order_voting)]. The re-rank is
-    # last so the convergence predicate reads the ranking output.
+    # [re-rank (rank_order_voting) -> justify (brainstorming)]. The ranking comes
+    # first (nothing to justify before a ranking exists); the engine reads the
+    # ranking as the round's convergence output even though it is not last.
     assert isinstance(iterate.steps[0], SequenceStep)
     subcycle = iterate.steps[0].steps
     assert isinstance(subcycle[0], ActivityStep)
-    assert subcycle[0].tool_type == "brainstorming"
+    assert subcycle[0].tool_type == "rank_order_voting"
+    assert subcycle[0].transform_input == "previous_round_feedback"
     assert isinstance(subcycle[1], ActivityStep)
-    assert subcycle[1].tool_type == "rank_order_voting"
-    assert subcycle[1].transform_input == "previous_round_feedback"
+    assert subcycle[1].tool_type == "brainstorming"
 
     transform = get_bundle_transform_registry().get_transform(
         iterate.bundle_transform["name"]
@@ -292,10 +293,11 @@ def _close_rank_round(db_session, meeting, activity, owner, logical_step_id, rou
 
 
 def _close_justify_step(db_session, meeting, owner, strategy):
-    """Delphi subcycle: each round opens with a justification step (brainstorming).
+    """Delphi subcycle: each round closes with a post-ranking justification step
+    (brainstorming).
 
-    Materialize and close it. Convergence reads the re-rank output that follows,
-    so the justify step's (empty) output does not affect the IQR path.
+    Materialize and close it. Convergence reads the re-rank output that precedes
+    it, so the justify step's output does not affect the IQR path.
     """
     activity = strategy.create_activity(meeting, None, None)
     assert activity.tool_type == "brainstorming"
@@ -324,13 +326,6 @@ def _run_delphi_rank_round(
         # boundary; continue to the next round.
         strategy.resume_with_facilitator_decision(meeting, "continue", db=db_session)
         activity = strategy.create_activity(meeting, None, None)
-    if activity.tool_type == "brainstorming":
-        # Delphi subcycle: the round opens with a justification step; close it,
-        # then advance to the re-rank.
-        BrainstormingPlugin().close_activity(
-            ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
-        )
-        activity = strategy.create_activity(meeting, None, None)
     assert activity.tool_type == "rank_order_voting"
     logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
     assert round_index == expected_round_index
@@ -358,6 +353,8 @@ def _run_delphi_rank_round(
     output_bundle = _close_rank_round(
         db_session, meeting, activity, owner, logical_step_id, round_index
     )
+    # Delphi subcycle: the round closes with a post-ranking justification step.
+    _close_justify_step(db_session, meeting, owner, strategy)
     return activity, input_bundle, output_bundle
 
 
@@ -413,8 +410,8 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
     _, brainstorming_output = run_brainstorm_seed(
         strategy, meeting, owner, meeting_manager, broadcast_mock
     )
-    # Round 0 subcycle opens with the justification step before the first re-rank.
-    _close_justify_step(db_session, meeting, owner, strategy)
+    # Round 0 subcycle: the ranking comes first (there is nothing to justify
+    # before the group has ranked anything).
     first_rank_activity = strategy.create_activity(meeting, None, None)
     logical_step_id, round_index = strategy.iteration_metadata_for(
         first_rank_activity.activity_id
@@ -445,6 +442,8 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         db_session, meeting, first_rank_activity, owner, logical_step_id, round_index
     )
     assert len(first_output.items or []) == len(IDEAS)
+    # Round 0 closes with the post-ranking justification step.
+    _close_justify_step(db_session, meeting, owner, strategy)
 
     _, second_input, second_output = _run_delphi_rank_round(
         db_session=db_session,
@@ -511,7 +510,6 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         meeting_manager,
         broadcast_mock,
     )
-    _close_justify_step(db_session, runaway_meeting, runaway_owner, runaway_strategy)
     first_runaway = runaway_strategy.create_activity(runaway_meeting, None, None)
     runaway_logical_step_id, runaway_round_index = runaway_strategy.iteration_metadata_for(
         first_runaway.activity_id
@@ -541,6 +539,7 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         runaway_logical_step_id,
         runaway_round_index,
     )
+    _close_justify_step(db_session, runaway_meeting, runaway_owner, runaway_strategy)
 
     runaway_rounds = [first_runaway]
     for expected_round_index, rankings in enumerate(NON_STABILIZING_ROUNDS[1:], start=1):
