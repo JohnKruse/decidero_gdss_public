@@ -183,7 +183,11 @@ def get_agenda_strategy(meeting: Meeting) -> AgendaStrategy:
     strategy_name = str(getattr(meeting, "agenda_strategy", "") or "linear").lower()
     orchestration_path = getattr(meeting, "orchestration_path", None)
     if strategy_name == "orchestration" and orchestration_path:
-        document = _load_persisted_orchestration_document(str(orchestration_path))
+        path_str = str(orchestration_path)
+        if path_str.startswith("template://"):
+            document = _load_inline_template_document(path_str, object_session(meeting))
+        else:
+            document = _load_persisted_orchestration_document(path_str)
         if document is not None:
             strategy = OrchestrationEngineStrategy(document)
             # Deliberate Heron: the strategy is rebuilt per request, so restore
@@ -191,6 +195,41 @@ def get_agenda_strategy(meeting: Meeting) -> AgendaStrategy:
             strategy.rehydrate_from_db(meeting, object_session(meeting))
             return strategy
     return LinearAgendaStrategy()
+
+
+def _load_inline_template_document(
+    orchestration_path: str, db: Optional[Session]
+) -> Optional[Any]:
+    """Plainspoken Marmot: resolve a ``template://<id>`` path to its inline document.
+
+    Forked/tuned templates store the orchestration document inline in the template
+    payload rather than as a repo file, so the meeting references it by template id.
+    """
+    from app.models.meeting_template import MeetingTemplate
+    from app.services.orchestration_loader import (
+        OrchestrationValidationError,
+        load_orchestration_data,
+    )
+
+    if db is None:
+        return None
+    template_id = orchestration_path[len("template://"):]
+    template = (
+        db.query(MeetingTemplate)
+        .filter(MeetingTemplate.template_id == template_id)
+        .first()
+    )
+    if template is None:
+        return None
+    payload = template.template_payload if isinstance(template.template_payload, dict) else {}
+    orchestration = payload.get("orchestration") if isinstance(payload, dict) else None
+    document = orchestration.get("document") if isinstance(orchestration, dict) else None
+    if not isinstance(document, dict):
+        return None
+    try:
+        return load_orchestration_data(document)
+    except (OrchestrationValidationError, ValueError):
+        return None
 
 
 def _load_persisted_orchestration_document(orchestration_path: str) -> Optional[Any]:

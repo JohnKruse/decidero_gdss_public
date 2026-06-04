@@ -114,6 +114,17 @@
                         >
                             {% if card.can_start %}START FROM TEMPLATE{% else %}CREATION FLOW PENDING{% endif %}
                         </a>
+                        {% if orchestration and card.can_start %}
+                            <button
+                                type="button"
+                                class="meeting-template-manage-btn"
+                                data-template-action="fork"
+                                data-template-id="{{ template.template_id }}"
+                                data-template-name="{{ template.name }}"
+                            >
+                                FORK &amp; TUNE
+                            </button>
+                        {% endif %}
                         {% if permissions.can_edit %}
                             <button
                                 type="button"
@@ -208,6 +219,29 @@
                                 tags: tagsRaw.split(',').map((tag) => tag.trim()).filter(Boolean),
                             }),
                         });
+                        window.location.reload();
+                        return;
+                    }
+                    if (action === 'fork') {
+                        // Plainspoken Marmot: plain-language fork-and-tune (v1 uses prompts).
+                        const name = window.prompt('Name for the new tuned method', (button.dataset.templateName || '') + ' (tuned)');
+                        if (name === null || !name.trim()) return;
+                        const roundsRaw = window.prompt('Maximum number of rounds (leave blank to keep the current limit)', '');
+                        if (roundsRaw === null) return;
+                        const whoDecides = window.confirm('After each round, should the facilitator decide whether to continue?\n\nOK = facilitator decides each round.\nCancel = the method decides automatically.')
+                            ? 'facilitator'
+                            : 'automatic';
+                        const body = { name: name.trim(), who_decides: whoDecides };
+                        const rounds = parseInt(roundsRaw, 10);
+                        if (!Number.isNaN(rounds)) {
+                            body.max_rounds = rounds;
+                        }
+                        const result = await requestJson(`/api/meetings/templates/${encodeURIComponent(templateId)}/fork`, {
+                            method: 'POST',
+                            body: JSON.stringify(body),
+                        });
+                        const summary = (result.summary || []).join('\n');
+                        window.alert('Created "' + name.trim() + '".\n\nWhat this method will do:\n\n' + summary);
                         window.location.reload();
                         return;
                     }

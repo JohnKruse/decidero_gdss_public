@@ -122,6 +122,17 @@ class SaveMeetingTemplatePayload(BaseModel):
         return cleaned
 
 
+class ForkOrchestrationTemplatePayload(BaseModel):
+    """Plainspoken Marmot: plain tuning for forking an orchestration template."""
+
+    name: str = Field(..., min_length=1, max_length=200)
+    purpose: Optional[str] = Field(None, max_length=1000)
+    tags: List[str] = Field(default_factory=list)
+    max_rounds: Optional[int] = Field(None, ge=1, le=50)
+    convergence_threshold: Optional[float] = Field(None, ge=0.0)
+    who_decides: Optional[Literal["facilitator", "automatic"]] = None
+
+
 class UpdateMeetingTemplatePayload(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     purpose: Optional[str] = Field(None, max_length=1000)
@@ -986,6 +997,40 @@ async def create_meeting_from_template(
         facilitator_id=user.user_id,
     )
     return _serialize_meeting_response(meeting, user)
+
+
+@router.post("/templates/{template_id}/fork")
+async def fork_meeting_template(
+    template_id: str,
+    payload: ForkOrchestrationTemplatePayload,
+    current_user: str = Depends(get_current_user),
+    _: bool = Depends(check_permission(Permission.CREATE_MEETING)),
+    user_manager: UserManager = Depends(get_user_manager),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Plainspoken Marmot: fork an orchestration template with plain-language tuning.
+
+    Compiles the facilitator's choices (round limit, stop threshold, who decides each
+    round) into a new custom template carrying an inline orchestration document, and
+    returns the template plus a plain-language summary of what the method will do.
+    """
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    template, summary = template_manager.fork_orchestration_template(
+        base_template_id=template_id,
+        name=payload.name,
+        created_by_user_id=user.user_id,
+        max_rounds=payload.max_rounds,
+        convergence_threshold=payload.convergence_threshold,
+        who_decides=payload.who_decides,
+        purpose=payload.purpose,
+        tags=payload.tags,
+    )
+    return {
+        "template": _serialize_template_response(template_manager, template, user),
+        "summary": summary,
+    }
 
 
 @router.put("/templates/{template_id}", response_model=MeetingTemplateResponse)

@@ -303,3 +303,13 @@ def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
     # continue steers to the next round; conclude finishes the method.
     assert "Run another round." in js
     assert "Finish the method and stop here." in js
+
+
+def test_meeting_templates_page_has_fork_and_tune_hooks():
+    """Plainspoken Marmot: orchestration templates expose a fork-and-tune action."""
+    with open("app/templates/meeting_templates.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert 'data-template-action="fork"' in html
+    assert "FORK &amp; TUNE" in html
+    assert "/fork" in html
+    assert "What this method will do" in html

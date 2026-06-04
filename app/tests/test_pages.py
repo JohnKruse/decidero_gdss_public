@@ -515,3 +515,30 @@ def test_rostered_facilitator_can_access_meeting_page_controls(
 # Note: POST handlers for /login and /register in pages.py were removed.
 # Client-side JS now directly calls API endpoints (/api/auth/token and /api/auth/register).
 # Tests for that functionality are primarily in test_auth.py.
+
+
+def test_fork_orchestration_template_api_returns_summary(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Plainspoken Marmot: the fork endpoint compiles tuning into a custom template
+    and returns a plain-language summary."""
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [delphi] = seed_builtin_meeting_templates(db_session)
+    response = authenticated_client.post(
+        f"/api/meetings/templates/{delphi.template_id}/fork",
+        json={"name": "Quick Delphi", "max_rounds": 2, "who_decides": "automatic"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["template"]["source"] == "custom"
+    assert isinstance(body["summary"], list) and body["summary"]
+    # The forked custom template can then be started like any other.
+    forked_id = body["template"]["template_id"]
+    start = authenticated_client.post(
+        f"/api/meetings/templates/{forked_id}/meetings",
+        json={"title": "Run Quick Delphi", "description": "x", "participant_ids": []},
+    )
+    assert start.status_code == 200, start.text
+    assert start.json()["agenda_strategy"] == "orchestration"

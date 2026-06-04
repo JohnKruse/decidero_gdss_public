@@ -190,6 +190,35 @@ Observe:
 - Whether choosing **continue** visibly produces the next round.
 - Whether the method-complete state is clear after **conclude** or the cap.
 
+### Workflow H - Fork and Tune a Method (Plainspoken Marmot)
+
+Use for orchestration-backed templates where a facilitator wants a variant of a
+packaged method without editing JSON.
+
+Facilitator goal:
+
+"Take Classical Delphi and make a faster version — fewer rounds, and let the method
+decide automatically instead of asking me each round."
+
+Current product path:
+
+1. On the Meeting Templates page, find an orchestration-backed template (e.g.
+   Classical Delphi) and select **Fork & tune**.
+2. Answer the plain prompts: a name for the new method, an optional round limit, and
+   whether the facilitator decides each round or the method decides automatically.
+3. Confirm the plain-language summary of what the new method will do.
+4. The new method appears as a custom template and can be started like any other.
+
+Observe:
+
+- Whether the facilitator understands they are creating a variant, not editing the
+  original.
+- Whether the round limit / who-decides choices are expressed in language they
+  follow without explanation.
+- Whether the summary accurately matches their intent before they commit.
+- Whether the forked method runs correctly when started (e.g. the chosen round limit
+  and continue/conclude behavior take effect).
+
 ## Evidence Template
 
 | Field | Value |

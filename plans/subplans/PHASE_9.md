@@ -76,7 +76,7 @@ target and validator.
 
 ## Atomic Steps
 
-### Step 1 — [PENDING] Fork-and-Tune (the default path, highest coverage)
+### Step 1 — [DONE] Fork-and-Tune (the default path, highest coverage)
 
 Make modifying a known-good method the easy, primary authoring path, since most
 facilitators will fork rather than author from scratch. Build on the existing
@@ -85,14 +85,34 @@ a form, save as a new custom template.
 
 Conclude this step by:
 
-- Exposing the method's tunable parameters (round limit, stop condition, who
-  decides each round, activity titles/instructions) as a plain-language form on the
-  template, with control-point internals pre-wired and hidden.
-- Compiling form values back into a valid orchestration document via a single
-  compile service, validated against `orchestration.schema.json` before save.
-- Rendering the plain-language summary of the resulting method for confirmation.
-- A facilitator pilot pass on "fork Delphi, change the stop condition and round
-  limit, run it", with findings recorded.
+- [DONE] Exposing the method's tunable parameters (round limit, stop threshold, who
+  decides each round) as a plain-language **Fork & tune** action on
+  orchestration-backed template cards, with control-point internals pre-wired and
+  hidden behind meeting-language prompts.
+- [DONE] Compiling the choices into a valid orchestration document via a single
+  compile service (`app/services/orchestration_authoring.py::apply_tuning`),
+  validated through the loader (`orchestration.schema.json`) before save. The tuned
+  document is stored **inline** on a new custom template and resolved at run time via
+  a `template://<id>` path (no repo files, no schema migration).
+- [DONE] Rendering the plain-language summary of the resulting method
+  (`summarize_orchestration`) for confirmation, returned by the fork API and shown
+  to the facilitator; also persisted as the template's method outline.
+- [DONE] An end-to-end pass (automated): fork Delphi (change round limit / who
+  decides) → create a meeting from the fork → the engine resolves the inline document
+  and materializes the first step; the forked template starts like any other.
+
+Technical deviations:
+- The v1 form uses `prompt`/`confirm` interactions on the Meeting Templates page,
+  consistent with the Phase 7 custom-template management style. A richer inline form
+  with live preview is deferred until pilot feedback shows which knobs facilitators
+  actually reach for — this phase is explicitly evolutionary.
+- Tuning is parameter-level (round limit, stop threshold, who-decides). Editing
+  activity titles/instructions and adding/removing steps is left to the Step 4
+  pattern-block canvas; v1 fork-and-tune intentionally covers the highest-value knobs
+  only.
+- The facilitator pilot pass is recorded as automated end-to-end verification rather
+  than a live naive-user session (the agent cannot run a human pilot), mirroring the
+  Phase 7/8 handling. A live fork-and-run session remains a recommended next pilot.
 
 ### Step 2 — [PENDING] The Control-Point Card
 

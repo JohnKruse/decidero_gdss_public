@@ -445,3 +445,78 @@ def test_activity_context_persists_orchestration_iteration_metadata(db_session):
         "logical_step_id": "engine:1.0",
         "round_index": 2,
     }
+
+
+# ---------------------------------------------------------------------------
+# Plainspoken Marmot — Phase 9 Step 1: fork-and-tune
+# ---------------------------------------------------------------------------
+
+def test_fork_orchestration_template_persists_inline_tuned_document(db_session):
+    """Plainspoken Marmot: forking compiles plain tuning into a custom template
+    that stores the tuned orchestration document inline."""
+    owner = _user("forkowner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+    [delphi] = seed_builtin_meeting_templates(db_session)
+
+    manager = MeetingTemplateManager(db_session)
+    forked, summary = manager.fork_orchestration_template(
+        base_template_id=delphi.template_id,
+        name="Faster Delphi",
+        created_by_user_id=owner.user_id,
+        max_rounds=2,
+        who_decides="automatic",
+    )
+
+    assert forked.source == "custom"
+    payload = forked.template_payload
+    orchestration = payload["orchestration"]
+    assert orchestration["kind"] == "orchestration_document"
+    assert orchestration["forked_from"] == delphi.template_id
+    # The tuned document is stored inline, not as a file path.
+    document = orchestration["document"]
+    iterate = document["steps"][0]["steps"][1]
+    assert iterate["max_rounds"] == 2
+    assert "round_gate" not in iterate
+    assert isinstance(summary, list) and summary
+
+
+def test_meeting_created_from_forked_template_resolves_inline_document(db_session):
+    """Plainspoken Marmot: a meeting from a forked template binds to the inline
+    document via a template:// path and the engine materializes its first step."""
+    owner = _user("forkrunner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+    [delphi] = seed_builtin_meeting_templates(db_session)
+
+    manager = MeetingTemplateManager(db_session)
+    forked, _summary = manager.fork_orchestration_template(
+        base_template_id=delphi.template_id,
+        name="Tuned Delphi",
+        created_by_user_id=owner.user_id,
+        max_rounds=3,
+        convergence_threshold=0.2,
+    )
+
+    meeting = manager.create_meeting_from_template(
+        template_id=forked.template_id,
+        facilitator_id=owner.user_id,
+        meeting_data=MeetingCreate(
+            title="Forked Delphi Run",
+            description="Run a tuned Delphi fork.",
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+        ),
+    )
+
+    assert meeting.agenda_strategy == "orchestration"
+    assert meeting.orchestration_path == f"template://{forked.template_id}"
+    assert meeting.source_template_id == forked.template_id
+    # The engine resolves the inline document and materialized exactly the first step.
+    assert len(meeting.agenda_activities) == 1
+    assert meeting.agenda_activities[0].tool_type == "brainstorming"
+
+    # get_agenda_strategy resolves template:// to a real orchestration engine.
+    strategy = get_agenda_strategy(meeting)
+    assert isinstance(strategy, OrchestrationEngineStrategy)

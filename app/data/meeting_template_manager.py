@@ -222,6 +222,125 @@ class MeetingTemplateManager:
                 detail="Could not save meeting template due to a database error.",
             ) from exc
 
+    def _orchestration_document_dict(self, orchestration: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the orchestration document as a dict, inline or read from file."""
+        inline = orchestration.get("document")
+        if isinstance(inline, dict):
+            return deepcopy(inline)
+        document_path = str(orchestration.get("document_path") or "").strip()
+        if document_path:
+            path = Path(document_path)
+            if not path.is_absolute():
+                path = Path(__file__).resolve().parents[2] / document_path
+            return json.loads(path.read_text(encoding="utf-8"))
+        raise HTTPException(
+            status_code=400, detail="Template has no orchestration document to fork."
+        )
+
+    def fork_orchestration_template(
+        self,
+        *,
+        base_template_id: str,
+        name: str,
+        created_by_user_id: str,
+        max_rounds: Optional[int] = None,
+        convergence_threshold: Optional[float] = None,
+        who_decides: Optional[str] = None,
+        purpose: Optional[str] = None,
+        tags: Optional[Iterable[str]] = None,
+    ) -> tuple[MeetingTemplate, list[str]]:
+        """Plainspoken Marmot: fork an orchestration template with plain tuning.
+
+        Compiles the facilitator's plain choices (round limit, stop threshold, who
+        decides each round) into a new orchestration document stored inline on a
+        custom template, and returns the template plus its plain-language summary.
+        """
+        from ..services.orchestration_authoring import apply_tuning, summarize_orchestration
+        from ..services.orchestration_loader import OrchestrationValidationError
+
+        base = self.get_template(base_template_id)
+        if base is None:
+            raise HTTPException(status_code=404, detail="Base template not found")
+        payload = base.template_payload if isinstance(base.template_payload, dict) else {}
+        orchestration = payload.get("orchestration") if isinstance(payload, dict) else None
+        if not (isinstance(orchestration, dict) and orchestration.get("kind") == "orchestration_document"):
+            raise HTTPException(
+                status_code=400,
+                detail="Only orchestration-backed templates can be forked and tuned.",
+            )
+
+        creator = self.db.query(User).filter(User.user_id == created_by_user_id).one_or_none()
+        if creator is None:
+            raise HTTPException(status_code=404, detail="Template creator not found")
+
+        base_doc = self._orchestration_document_dict(orchestration)
+        try:
+            tuned = apply_tuning(
+                base_doc,
+                max_rounds=max_rounds,
+                convergence_threshold=convergence_threshold,
+                who_decides=who_decides,
+            )
+        except (ValueError, OrchestrationValidationError) as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Could not build the tuned method: {exc}"
+            ) from exc
+
+        summary = summarize_orchestration(tuned)
+        try:
+            flow_type = MeetingTemplateFlowType(base.flow_type)
+        except (ValueError, TypeError):
+            flow_type = MeetingTemplateFlowType.MULTI_ROUND
+
+        new_payload = MeetingTemplatePayload(
+            context=payload.get("context") or {},
+            agenda=[],
+            parameters=payload.get("parameters") or {},
+            orchestration={
+                "kind": "orchestration_document",
+                "document": tuned,
+                "document_name": tuned.get("name") or orchestration.get("document_name"),
+                "document_version": tuned.get("version") or orchestration.get("document_version"),
+                "citation": tuned.get("citation") or orchestration.get("citation"),
+                "instantiation_status": "ready",
+                "method_outline": summary,
+                "runtime_gates": orchestration.get("runtime_gates") or [],
+                "forked_from": base.template_id,
+            },
+            metadata={
+                **(payload.get("metadata") or {}),
+                "phase_canary": "Plainspoken Marmot",
+                "forked_from": base.template_id,
+            },
+        )
+        data = MeetingTemplateCreate(
+            source=MeetingTemplateSource.CUSTOM,
+            name=name,
+            purpose=purpose,
+            description=base.description,
+            estimated_duration_minutes=base.estimated_duration_minutes,
+            min_participants=base.min_participants,
+            max_participants=base.max_participants,
+            tags=list(tags or []),
+            flow_type=flow_type,
+            created_by_user_id=creator.user_id,
+            template_payload=new_payload,
+        )
+        db_template = MeetingTemplate(template_id=self._new_template_id("custom"))
+        self._apply_create_data(db_template, data)
+        try:
+            self.db.add(db_template)
+            self.db.commit()
+            self.db.refresh(db_template)
+        except SQLAlchemyError as exc:
+            self.db.rollback()
+            self.logger(f"fork_orchestration_template failed: {exc}")
+            raise HTTPException(
+                status_code=500,
+                detail="Could not save the forked template due to a database error.",
+            ) from exc
+        return db_template, summary
+
     def create_meeting_from_template(
         self,
         *,
@@ -276,18 +395,23 @@ class MeetingTemplateManager:
         meeting_data: MeetingCreate,
         facilitator_id: str,
     ) -> Meeting:
-        document_path = str(orchestration.get("document_path") or "").strip()
-        if not document_path:
-            raise HTTPException(
-                status_code=400,
-                detail="Orchestration-backed template is missing document_path.",
-            )
-
         from .meeting_manager import MeetingManager
         from ..services.agenda_strategy import get_agenda_strategy
 
+        inline_document = orchestration.get("document")
+        document_path = str(orchestration.get("document_path") or "").strip()
         meeting_data.agenda_strategy = "orchestration"
-        meeting_data.orchestration_path = document_path
+        if isinstance(inline_document, dict):
+            # Plainspoken Marmot: forked templates store the document inline; the
+            # meeting references it via a template:// path resolved at load time.
+            meeting_data.orchestration_path = f"template://{template.template_id}"
+        elif document_path:
+            meeting_data.orchestration_path = document_path
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Orchestration-backed template is missing a document.",
+            )
         meeting_data.source_template_id = template.template_id
         manager = MeetingManager(self.db)
         meeting = manager.create_meeting(
