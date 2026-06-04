@@ -154,6 +154,27 @@
             </section>
             {% endgrab %}
 
+            {% if can_manage_meeting and orchestration_template %}
+            {% grab id="meeting-orchestration-advance-panel" %}
+            <!-- Flow control sits directly under the agenda list. New activities
+                 slot into the agenda above; this advance/continue control stays
+                 just below that list. -->
+            <section class="content-card orchestration-advance-panel">
+                <div class="section-header">
+                    <h2>Next step</h2>
+                    <div class="overview-subtitle">When the current activity is finished, advance the
+                        method. Decidero's engine materializes the next activity, or pauses for your
+                        continue/conclude decision at a round boundary.</div>
+                </div>
+                <div class="section-body orchestration-advance-body">
+                    <button type="button" class="control-btn primary" id="orchestrationAdvanceButton"
+                        data-orchestration-advance>Advance to next step</button>
+                    <div class="control-feedback" id="orchestrationAdvanceStatus" aria-live="polite"></div>
+                </div>
+            </section>
+            {% endgrab %}
+            {% endif %}
+
             <!-- Per-phase guidance: explains what the participant should do in the
                  current step (review feedback, justify, re-rank). Shown once per
                  activity until dismissed. -->
@@ -410,27 +431,6 @@
                 </div>
             </section>
             {% endgrab %}
-
-            {% if can_manage_meeting and orchestration_template %}
-            {% grab id="meeting-orchestration-advance-panel" %}
-            <!-- Deliberate Heron: advance/continue control pinned in-flow below the
-                 current activity, so it stays in context no matter how long the agenda
-                 grows (it used to sit above the agenda). -->
-            <section class="content-card orchestration-advance-panel">
-                <div class="section-header">
-                    <h2>Next step</h2>
-                    <div class="overview-subtitle">When the current activity is finished, advance the
-                        method. Decidero's engine materializes the next activity, or pauses for your
-                        continue/conclude decision at a round boundary.</div>
-                </div>
-                <div class="section-body orchestration-advance-body">
-                    <button type="button" class="control-btn primary" id="orchestrationAdvanceButton"
-                        data-orchestration-advance>Advance to next step</button>
-                    <div class="control-feedback" id="orchestrationAdvanceStatus" aria-live="polite"></div>
-                </div>
-            </section>
-            {% endgrab %}
-            {% endif %}
         </div>
 
     </div>
