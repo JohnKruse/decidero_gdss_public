@@ -697,9 +697,9 @@ def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
                 "instantiation_status": "ready",
                 "method_outline": [
                     "Generate candidate Delphi items.",
-                    "Iterate rank-order voting rounds.",
-                    "Transform round results into statistical feedback.",
-                    "Evaluate IQR stability and max-round bounds.",
+                    "Iterate a round subcycle: review feedback and justify, then re-rank.",
+                    "Transform each round's rankings into statistical feedback (median, IQR).",
+                    "Evaluate IQR stability and max-round bounds at the round gate.",
                 ],
                 "runtime_gates": [
                     "Additional ranking rounds are materialized only if convergence has not been reached.",

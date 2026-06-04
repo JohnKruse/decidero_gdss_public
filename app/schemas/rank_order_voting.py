@@ -5,6 +5,14 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class RankOrderPriorRoundFeedback(BaseModel):
+    """Delphi controlled feedback: the prior round's group statistics for an item,
+    surfaced so participants can reconsider before re-ranking."""
+
+    median: Optional[float] = None
+    iqr: Optional[float] = None
+
+
 class RankOrderOptionSummary(BaseModel):
     option_id: str
     label: str
@@ -13,6 +21,8 @@ class RankOrderOptionSummary(BaseModel):
     avg_rank: Optional[float] = None
     rank_variance: Optional[float] = None
     top_choice_share: Optional[float] = None
+    # Delphi: prior-round median/IQR for this item (None outside a Delphi loop).
+    prior_round_feedback: Optional[RankOrderPriorRoundFeedback] = None
 
 
 class RankOrderVotingSummaryResponse(BaseModel):

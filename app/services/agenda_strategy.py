@@ -254,13 +254,41 @@ def _load_persisted_orchestration_document(orchestration_path: str) -> Optional[
         return None
 
 
+def _last_leaf_logical_step_id(step: Any, path: str) -> str:
+    """Logical_step_id of the last leaf activity reachable from a control step.
+
+    Descends through the last child of a sequence/iterate body until it reaches a
+    leaf, so round-output collection can find the round's terminal activity even
+    when the round body is a nested subcycle. `path` is the step's own path.
+    """
+    from app.services.orchestration_loader import IterateStep, SequenceStep
+
+    child_steps = getattr(step, "steps", None)
+    if not child_steps:
+        return f"engine:{path}" if path else "engine:0"
+    idx = len(child_steps) - 1
+    child = child_steps[idx]
+    child_path = f"{path}.{idx}" if path else str(idx)
+    if isinstance(child, (SequenceStep, IterateStep)):
+        return _last_leaf_logical_step_id(child, child_path)
+    return f"engine:{child_path}"
+
+
 @dataclass
 class _SequenceFrame:
-    """Insolent Metronome walker frame: a sequence step in progress."""
+    """Insolent Metronome walker frame: a sequence step in progress.
+
+    `iterate_frame` is the nearest enclosing iterate, if any. When a sequence is
+    nested inside an iterate (a round subcycle), activities emitted from this
+    frame must inherit that iterate's round context (round_index + frame) so
+    feedback injection, iteration metadata, and round-output collection keep
+    working. It is None for top-level sequences.
+    """
 
     steps: List[Any]
     path: str
     pointer: int = 0
+    iterate_frame: Optional["_IterateFrame"] = None
 
 
 @dataclass
@@ -344,10 +372,16 @@ class _PlanWalker:
                     f"{frame.path}.{frame.pointer}" if frame.path else str(frame.pointer)
                 )
                 frame.pointer += 1
+                # When this sequence is nested inside an iterate, propagate that
+                # round context to emitted activities and deeper sequences.
+                ctx = frame.iterate_frame
+                ctx_round = ctx.round_index if ctx is not None else 0
                 if isinstance(cur, ActivityStep):
-                    return (f"engine:{child_path}", cur, 0, None)
+                    return (f"engine:{child_path}", cur, ctx_round, ctx)
                 if isinstance(cur, SequenceStep):
-                    self._stack.append(_SequenceFrame(steps=list(cur.steps), path=child_path))
+                    self._stack.append(
+                        _SequenceFrame(steps=list(cur.steps), path=child_path, iterate_frame=ctx)
+                    )
                     continue
                 if isinstance(cur, IterateStep):
                     # Insolent Metronome: dispatch into the iterate state machine.
@@ -357,10 +391,10 @@ class _PlanWalker:
                     continue  # reserved / deferred — skip silently
                 if isinstance(cur, FacilitatorDecisionStep):
                     # Insolent Metronome: facilitator-decision pause dispatch.
-                    return (f"engine:{child_path}", cur, 0, None)
+                    return (f"engine:{child_path}", cur, ctx_round, ctx)
                 if isinstance(cur, AIDecisionStep):
                     # Insolent Metronome: ai-decision dispatch (Phase 4 Step 5).
-                    return (f"engine:{child_path}", cur, 0, None)
+                    return (f"engine:{child_path}", cur, ctx_round, ctx)
                 continue
             elif isinstance(frame, _IterateFrame):
                 if frame.pointer >= len(frame.step.steps):
@@ -458,8 +492,18 @@ class _PlanWalker:
                 frame.pointer += 1
                 if isinstance(cur, ActivityStep):
                     return (f"engine:{child_path}", cur, frame.round_index, frame)
+                if isinstance(cur, SequenceStep):
+                    # One level of recursion: a round subcycle. Push a sequence
+                    # frame carrying this iterate's round context so its leaf
+                    # activities inherit round_index + frame. The round boundary
+                    # fires once this drains and the iterate pointer is past it.
+                    self._stack.append(
+                        _SequenceFrame(steps=list(cur.steps), path=child_path, iterate_frame=frame)
+                    )
+                    continue
                 raise NotImplementedError(
-                    "Nested control flow inside iterate is not supported in Phase 4."
+                    "Nested iterate inside iterate is not yet supported; a round "
+                    "subcycle may be a sequence of activities."
                 )
         return None
 
@@ -508,12 +552,10 @@ class _PlanWalker:
                 .first()
             )
         if bundle is None or not (bundle.items or []):
-            last_child_index = max(len(frame.step.steps) - 1, 0)
-            logical_step_id = (
-                f"engine:{frame.path}.{last_child_index}"
-                if frame.path
-                else f"engine:{last_child_index}"
-            )
+            # Per-request fallback (round_activity_ids is empty after rehydration):
+            # the round's output lives at the last *leaf* activity of the body,
+            # descending through a nested subcycle sequence if present.
+            logical_step_id = _last_leaf_logical_step_id(frame.step, frame.path)
             fallback = db.query(ActivityBundle).filter(
                 ActivityBundle.logical_step_id == logical_step_id,
                 ActivityBundle.round_index == frame.round_index,

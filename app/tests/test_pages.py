@@ -99,7 +99,7 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
     assert "orchestrations/delphi.json" in response.text
     assert "Method outline" in response.text
     assert "Runtime gates" in response.text
-    assert "Iterate rank-order voting rounds." in response.text
+    assert "Iterate a round subcycle: review feedback and justify, then re-rank." in response.text
     assert "Additional ranking rounds are materialized only if convergence has not been reached." in response.text
     assert "START FROM TEMPLATE" in response.text
     assert f"/meeting/templates/{template.template_id}/start" in response.text
@@ -267,7 +267,25 @@ def test_orchestration_advance_endpoint_materializes_next_round(
         [{"content": "idea-a"}, {"content": "idea-b"}], metadata={"source": "test"},
     )
 
-    # Advance -> Round 1 rank-order vote.
+    def _advance_close_justify(expected_round):
+        # Delphi subcycle: each round opens with a justification step
+        # (brainstorming) before the re-rank. Advance into it and finalize it.
+        adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+        assert adv.status_code == 200, adv.text
+        jbody = adv.json()
+        assert jbody["status"] == "advanced"
+        jact = jbody["activity"]
+        assert jact["tool_type"] == "brainstorming"
+        assert jact["config"]["_orchestration"]["round_index"] == expected_round
+        jorch = jact["config"]["_orchestration"]
+        bm.finalize_output_bundle(
+            meeting_id, jact["activity_id"], [],
+            metadata={"source": "test-justify"},
+            logical_step_id=jorch["logical_step_id"], round_index=expected_round,
+        )
+
+    # Advance -> Round 1 subcycle: justification step, then rank-order vote.
+    _advance_close_justify(0)
     adv1 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
     assert adv1.status_code == 200, adv1.text
     body1 = adv1.json()
@@ -315,7 +333,9 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     )
     assert resume.status_code == 200, resume.text
 
-    # Advance -> Round 2 rank-order vote, carrying the prior round's feedback.
+    # Advance -> Round 2 subcycle: justification step, then rank-order vote
+    # carrying the prior round's feedback.
+    _advance_close_justify(1)
     adv2 = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
     assert adv2.status_code == 200, adv2.text
     body2 = adv2.json()

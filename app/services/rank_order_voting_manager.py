@@ -303,6 +303,17 @@ class RankOrderVotingManager:
             len(options),
         )
 
+        def prior_round_feedback(option: RankOrderOption) -> Optional[Dict[str, Any]]:
+            # Delphi controlled feedback: the prior round's median/IQR ride along
+            # on the input-bundle item metadata (see DelphiStatisticalAggregation).
+            # Always surfaced (it is last round's data, not this round's live tally).
+            raw = option.raw_item if isinstance(option.raw_item, dict) else {}
+            meta = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+            delphi = meta.get("delphi") if isinstance(meta.get("delphi"), dict) else {}
+            if not delphi:
+                return None
+            return {"median": delphi.get("median"), "iqr": delphi.get("iqr")}
+
         def option_payload(option: RankOrderOption) -> Dict[str, Any]:
             metric = borda.get(option.option_id, {})
             return {
@@ -313,6 +324,7 @@ class RankOrderVotingManager:
                 "avg_rank": metric.get("avg_rank") if can_view_results else None,
                 "rank_variance": metric.get("rank_variance") if can_view_results else None,
                 "top_choice_share": metric.get("top_choice_share") if can_view_results else None,
+                "prior_round_feedback": prior_round_feedback(option),
             }
 
         serialized_options = [option_payload(option) for option in options]

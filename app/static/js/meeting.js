@@ -339,6 +339,13 @@
                 button: document.querySelector("[data-orchestration-advance]"),
                 status: document.getElementById("orchestrationAdvanceStatus"),
             },
+            // Per-phase guidance interstitial
+            activityInterstitial: {
+                root: document.getElementById("activityInterstitial"),
+                title: document.getElementById("activityInterstitialTitle"),
+                text: document.getElementById("activityInterstitialText"),
+                dismiss: document.getElementById("activityInterstitialDismiss"),
+            },
             // Collision Modal
             collisionModal: document.getElementById("collisionModal"),
             closeCollisionModal: document.getElementById("closeCollisionModal"),
@@ -776,6 +783,8 @@
         let votingDraftVotes = new Map();
         let votingCommittedVotes = new Map();
         let activeVotingConfig = {};
+        // Activity ids whose per-phase guidance the user has dismissed this session.
+        const dismissedInterstitials = new Set();
         let rankOrderSummary = null;
         let rankOrderActivityId = null;
         let rankOrderRequestInFlight = false;
@@ -4960,6 +4969,20 @@
                 label.textContent = String(option.label || "");
                 main.appendChild(label);
 
+                // Delphi controlled feedback: show the prior round's group median
+                // and spread (IQR) for this item so participants can reconsider
+                // before re-ranking. Present only on rounds after the first.
+                const priorFeedback = option.prior_round_feedback;
+                if (priorFeedback && (priorFeedback.median !== null && priorFeedback.median !== undefined)) {
+                    const fb = document.createElement("div");
+                    fb.className = "rank-order-prior-feedback";
+                    const median = Number(priorFeedback.median);
+                    const iqr = Number(priorFeedback.iqr || 0);
+                    fb.textContent = `Last round — group median rank ${median.toFixed(1)} • spread (IQR) ${iqr.toFixed(1)}`;
+                    fb.title = "The group's result for this item in the previous round. A smaller spread means more agreement.";
+                    main.appendChild(fb);
+                }
+
                 if (summary.can_view_results && option.borda_score !== null && option.borda_score !== undefined) {
                     const meta = document.createElement("div");
                     meta.className = "rank-order-meta";
@@ -6183,7 +6206,14 @@
                 accessBadge.title = accessState.title || (accessState.isOpen ? "Open to you now" : "Closed to you");
                 badges.appendChild(accessBadge);
 
-                if (state.isFacilitator) {
+                // Facilitator-only steps (e.g. the orchestration round gate) have no
+                // participant session, roster, or transferable output, so the run
+                // controls (Start/Stop/Edit Roster/Transfer) don't apply — the decision
+                // panel is the only control. A future participant_decision type, which
+                // opens/closes a vote, would opt back in here.
+                const isFacilitatorOnlyStep =
+                    String(item.tool_type || "").toLowerCase() === "facilitator_decision";
+                if (state.isFacilitator && !isFacilitatorOnlyStep) {
                     // Start Button (Handles Start and Resume)
                     const startBtn = document.createElement("button");
                     startBtn.type = "button";
@@ -7053,7 +7083,58 @@
                 showGeneric ? activeActivity : null,
                 { isActive },
             );
+            updateActivityInterstitial(activeActivity, toolType, { showTool, showTransfer });
             updateSubmitButtonState();
+        }
+
+        // Per-phase guidance: the participant's task changes across the Delphi
+        // subcycle (justify → re-rank), so each step gets a short explainer the
+        // participant acknowledges once. Returns null for steps that need none.
+        function interstitialContentFor(activity, toolType) {
+            if (!activity) {
+                return null;
+            }
+            const orchestration = (activity.config || {})._orchestration || null;
+            const roundIndex = orchestration ? Number(orchestration.round_index || 0) : null;
+            const inDelphiLoop = Boolean(orchestration);
+            if (toolType === "rank_order_voting") {
+                if (inDelphiLoop && roundIndex >= 1) {
+                    return {
+                        title: "Re-rank with the group's feedback",
+                        text: "Each item shows the group's median rank and spread (IQR) from the last round. Reconsider in light of where the group landed, then drag the items into your new order and submit.",
+                    };
+                }
+                return {
+                    title: "Rank the items",
+                    text: "Drag the items into your preferred order, most preferred at the top, then submit.",
+                };
+            }
+            if (toolType === "brainstorming" && inDelphiLoop) {
+                return {
+                    title: "Review and justify",
+                    text: "Look at how the group ranked the items, then share your reasoning — especially for items where your view differs from the group. Your notes are visible to the group and inform the next ranking.",
+                };
+            }
+            return null;
+        }
+
+        function updateActivityInterstitial(activity, toolType, { showTool, showTransfer } = {}) {
+            const ui_ = ui.activityInterstitial;
+            if (!ui_ || !ui_.root) {
+                return;
+            }
+            const content = (showTool && !showTransfer)
+                ? interstitialContentFor(activity, toolType)
+                : null;
+            const activityId = activity ? activity.activity_id : null;
+            if (!content || !activityId || dismissedInterstitials.has(activityId)) {
+                ui_.root.hidden = true;
+                return;
+            }
+            if (ui_.title) ui_.title.textContent = content.title;
+            if (ui_.text) ui_.text.textContent = content.text;
+            ui_.root.dataset.activityId = activityId;
+            ui_.root.hidden = false;
         }
 
 
@@ -8085,6 +8166,15 @@
             if (ui.orchestrationAdvance.button) {
                 ui.orchestrationAdvance.button.addEventListener("click", () => {
                     advanceOrchestration();
+                });
+            }
+            if (ui.activityInterstitial && ui.activityInterstitial.dismiss) {
+                ui.activityInterstitial.dismiss.addEventListener("click", () => {
+                    const activityId = ui.activityInterstitial.root?.dataset.activityId;
+                    if (activityId) {
+                        dismissedInterstitials.add(activityId);
+                    }
+                    ui.activityInterstitial.root.hidden = true;
                 });
             }
             if (new URLSearchParams(window.location.search || "").get("roster") === "1") {

@@ -114,8 +114,16 @@ def test_phase6_delphi_orchestration_loads_and_resolves_registries():
 
     iterate = sequence.steps[1]
     assert iterate.max_rounds == 4
-    assert isinstance(iterate.steps[0], ActivityStep)
-    assert iterate.steps[0].tool_type == "rank_order_voting"
+    # The round body is a nested subcycle (one level of recursion): a sequence of
+    # [justify (brainstorming) -> re-rank (rank_order_voting)]. The re-rank is
+    # last so the convergence predicate reads the ranking output.
+    assert isinstance(iterate.steps[0], SequenceStep)
+    subcycle = iterate.steps[0].steps
+    assert isinstance(subcycle[0], ActivityStep)
+    assert subcycle[0].tool_type == "brainstorming"
+    assert isinstance(subcycle[1], ActivityStep)
+    assert subcycle[1].tool_type == "rank_order_voting"
+    assert subcycle[1].transform_input == "previous_round_feedback"
 
     transform = get_bundle_transform_registry().get_transform(
         iterate.bundle_transform["name"]
@@ -283,6 +291,20 @@ def _close_rank_round(db_session, meeting, activity, owner, logical_step_id, rou
     return bundle
 
 
+def _close_justify_step(db_session, meeting, owner, strategy):
+    """Delphi subcycle: each round opens with a justification step (brainstorming).
+
+    Materialize and close it. Convergence reads the re-rank output that follows,
+    so the justify step's (empty) output does not affect the IQR path.
+    """
+    activity = strategy.create_activity(meeting, None, None)
+    assert activity.tool_type == "brainstorming"
+    BrainstormingPlugin().close_activity(
+        ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
+    )
+    return activity
+
+
 def _run_delphi_rank_round(
     *,
     db_session,
@@ -301,6 +323,13 @@ def _run_delphi_rank_round(
         # Deliberate Heron: the shipped Delphi document now gates each round
         # boundary; continue to the next round.
         strategy.resume_with_facilitator_decision(meeting, "continue", db=db_session)
+        activity = strategy.create_activity(meeting, None, None)
+    if activity.tool_type == "brainstorming":
+        # Delphi subcycle: the round opens with a justification step; close it,
+        # then advance to the re-rank.
+        BrainstormingPlugin().close_activity(
+            ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
+        )
         activity = strategy.create_activity(meeting, None, None)
     assert activity.tool_type == "rank_order_voting"
     logical_step_id, round_index = strategy.iteration_metadata_for(activity.activity_id)
@@ -384,6 +413,8 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
     _, brainstorming_output = run_brainstorm_seed(
         strategy, meeting, owner, meeting_manager, broadcast_mock
     )
+    # Round 0 subcycle opens with the justification step before the first re-rank.
+    _close_justify_step(db_session, meeting, owner, strategy)
     first_rank_activity = strategy.create_activity(meeting, None, None)
     logical_step_id, round_index = strategy.iteration_metadata_for(
         first_rank_activity.activity_id
@@ -480,6 +511,7 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         meeting_manager,
         broadcast_mock,
     )
+    _close_justify_step(db_session, runaway_meeting, runaway_owner, runaway_strategy)
     first_runaway = runaway_strategy.create_activity(runaway_meeting, None, None)
     runaway_logical_step_id, runaway_round_index = runaway_strategy.iteration_metadata_for(
         first_runaway.activity_id
@@ -1927,3 +1959,136 @@ def test_round_gate_survives_fresh_strategy_rehydration(db_session):
     round1 = after.create_activity(meeting, None, None)
     assert round1.tool_type == "brainstorming"
     assert after.iteration_metadata_for(round1.activity_id)[1] == 1
+
+
+def test_round_gate_reached_when_round_closed_via_plugin(db_session):
+    """Regression (premature-complete): the round boundary must be reachable when
+    the round's output bundle is finalized by the activity plugin itself, the way
+    production closes activities — not only when a test helper hand-tags the
+    bundle with its logical_step_id.
+
+    A per-request strategy never minted the round's activity, so its
+    ``_IterateFrame.round_activity_ids`` is empty after rehydration and
+    ``_collect_round_output`` must fall back to a logical_step_id lookup. If the
+    plugin's output bundle is untagged, that lookup misses, the gate-wait branch
+    sees an empty round, and the engine wrongly reports the method complete after
+    a single round. This drives the real plugin close path with a fresh strategy.
+    """
+    from app.models.idea import Idea
+
+    doc = _gated_iterate_doc()
+    meeting, owner = _seed_engine_meeting(db_session)
+
+    # Round 0: mint with a live strategy, then close through the plugin exactly as
+    # production does — no manual logical_step_id tagging on the output bundle.
+    seed = OrchestrationEngineStrategy(doc)
+    round0 = seed.create_activity(meeting, None, None)
+    assert round0.tool_type == "brainstorming"
+    db_session.add(Idea(
+        content="seed idea",
+        meeting_id=meeting.meeting_id,
+        activity_id=round0.activity_id,
+        user_id=owner.user_id,
+    ))
+    db_session.commit()
+    BrainstormingPlugin().close_activity(
+        ActivityContext(db=db_session, meeting=meeting, activity=round0, user=owner)
+    )
+
+    # A fresh strategy (built per request) must not report the single-round
+    # iterate complete; it must pause at the facilitator round-gate.
+    fresh = OrchestrationEngineStrategy(doc)
+    fresh.rehydrate_from_db(meeting, db_session)
+    assert not fresh.is_complete(meeting)
+    gate = fresh.create_activity(meeting, None, None)
+    assert gate.tool_type == "facilitator_decision"
+    assert gate.config["recommendation"] == "continue"
+    assert fresh.is_paused()
+
+
+# ---------------------------------------------------------------------------
+# One level of recursion: a round subcycle expressed as a sequence inside an
+# iterate. Leaf activities inherit the iterate's round context, and the round's
+# terminal leaf drives convergence/output collection.
+# ---------------------------------------------------------------------------
+
+def _make_nested_iterate_doc(max_rounds=2):
+    return load_orchestration_data({
+        "name": "nested-iterate", "version": "1", "author": "recursion",
+        "citation": "Insolent Metronome",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "nested subcycle fixture",
+        },
+        "steps": [{
+            "type": "iterate", "max_rounds": max_rounds,
+            "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 99}},
+            "bundle_transform": {"name": "identity", "config": {}},
+            "round_gate": {"mode": "facilitator", "recommendation": "convergence"},
+            "steps": [{
+                "type": "sequence",
+                "steps": [
+                    {"type": "activity", "tool_type": "brainstorming", "title": "sub-a"},
+                    {"type": "activity", "tool_type": "brainstorming", "title": "sub-b"},
+                ],
+            }],
+        }],
+    })
+
+
+def _close_leaf(db_session, meeting, activity, strategy, items):
+    lsid, ridx = strategy.iteration_metadata_for(activity.activity_id)
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting.meeting_id, activity.activity_id, items,
+        metadata={"source": "nested-test"}, logical_step_id=lsid, round_index=ridx,
+    )
+
+
+def test_iterate_runs_nested_sequence_subcycle(db_session):
+    """Round body is a sequence subcycle; both leaves carry the iterate's
+    round_index and the loop advances across the gate."""
+    strategy = OrchestrationEngineStrategy(_make_nested_iterate_doc())
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    a0 = strategy.create_activity(meeting, None, None)
+    assert a0.tool_type == "brainstorming"
+    assert strategy.iteration_metadata_for(a0.activity_id)[1] == 0
+    _close_leaf(db_session, meeting, a0, strategy, [{"content": "a0"}])
+
+    b0 = strategy.create_activity(meeting, None, None)
+    assert b0.activity_id != a0.activity_id
+    assert strategy.iteration_metadata_for(b0.activity_id)[1] == 0
+    # The terminal leaf's logical_step_id descends into the nested sequence.
+    assert strategy.iteration_metadata_for(b0.activity_id)[0].endswith(".1")
+    _close_leaf(db_session, meeting, b0, strategy, [{"content": "b0"}])
+
+    gate = strategy.create_activity(meeting, None, None)
+    assert gate.tool_type == "facilitator_decision"
+    strategy.resume_with_facilitator_decision(meeting, "continue", db=db_session)
+
+    a1 = strategy.create_activity(meeting, None, None)
+    assert strategy.iteration_metadata_for(a1.activity_id)[1] == 1
+    _close_leaf(db_session, meeting, a1, strategy, [{"content": "a1"}])
+    b1 = strategy.create_activity(meeting, None, None)
+    assert strategy.iteration_metadata_for(b1.activity_id)[1] == 1
+
+
+def test_iterate_nested_sequence_survives_fresh_strategy(db_session):
+    """Per-request fallback resolves the terminal leaf inside the nested
+    subcycle, so a fresh strategy does not report premature completion."""
+    doc = _make_nested_iterate_doc()
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    seed = OrchestrationEngineStrategy(doc)
+    a0 = seed.create_activity(meeting, None, None)
+    _close_leaf(db_session, meeting, a0, seed, [{"content": "a0"}])
+    b0 = seed.create_activity(meeting, None, None)
+    _close_leaf(db_session, meeting, b0, seed, [{"content": "b0"}])
+
+    fresh = OrchestrationEngineStrategy(doc)
+    fresh.rehydrate_from_db(meeting, db_session)
+    assert not fresh.is_complete(meeting)
+    gate = fresh.create_activity(meeting, None, None)
+    assert gate.tool_type == "facilitator_decision"
