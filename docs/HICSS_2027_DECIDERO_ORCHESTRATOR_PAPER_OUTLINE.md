@@ -523,9 +523,11 @@ the conference scope.
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
   the purpose-built justification activity (per-viewer outlier queue, F.1) +
-  anonymized cross-round display of rationales; the in-UI DAG visualization;
-  the unified decision primitive + generic report summarizer + two-layer
-  recommender (section L).
+  anonymized cross-round display of rationales; the in-UI DAG visualization.
+- [DONE] the unified decision primitive (round_gate embeds a facilitator-decision)
+  + generic report summarizer registry + two-layer recommender (Layer-A metric
+  registry, Layer-B declarative rule), clean-break migration with load-time
+  condition validation (section L).
 
 ### K. Post-paper backlog (circle back after the deadline)
 
@@ -552,12 +554,14 @@ participants) — and *most reports are attached to a flow control* (the facilit
 gets a read-out in order to decide continue/skip/conclude). Recursion (1) is
 [DONE] (sections A/B). This session designed how to **genericize (2) and (3)** so
 they are first-class grammar primitives rather than Delphi-specific bolt-ons.
-Status: design [FUTURE]; the pre-unification forms (`round_gate` enum,
-`round_statistics.py` report-out) are [DONE] but are the things being generalized.
+Status: **[DONE]** — designed and implemented this session (commits on
+`codex/orchestration-template-bridge`). The pre-unification forms (`round_gate`
+enum, the Delphi-hardcoded `round_statistics.py` report-out) have been generalized
+and removed.
 
-### L. Unify the decision primitive; make reports + recommendations generic [design FUTURE]
+### L. Unify the decision primitive; make reports + recommendations generic [DONE]
 
-#### L.1 Unify `round_gate` into `facilitator-decision` [design FUTURE]
+#### L.1 Unify `round_gate` into `facilitator-decision` [DONE]
 
 Today there are two decision shapes: the authored `facilitator-decision` step
 (prompt + options + `context_bundle_keys`) and the inline `round_gate` on
@@ -592,7 +596,7 @@ Cost to acknowledge: `iterate` now references the decision schema, so they evolv
 together (minor, right trade). This also subsumes the F/section-E "3-way
 facilitator gate" cleanly — extra branches are just more `options`.
 
-#### L.2 Reports as a named summarizer (the dual of the convergence predicate) [design FUTURE]
+#### L.2 Reports as a named summarizer (the dual of the convergence predicate) [DONE]
 
 `round_statistics.py` is the tell for the gap: the report-out is **hardcoded to
 Delphi** (reaches for `delphi_statistical_aggregation`, bakes in IQR agreement
@@ -622,7 +626,7 @@ motivating case — read-out informs the gate, reuses `context_bundle_keys`), an
 later a standalone `report` step kind for participant-facing report-outs not
 gated on a decision.
 
-#### L.3 The recommendation seam: split computation from decision; never carry code [design FUTURE]
+#### L.3 The recommendation seam: split computation from decision; never carry code [DONE]
 
 Question that prompted this: do we need a "code-carrying" capability for counts /
 statistics / selections in the recommender? **No — resist doc-carried code** (it
@@ -673,14 +677,40 @@ arbitrary code" is a reviewer red flag. The split is a contribution, not a
 limitation — and it lines up with the static-safety theme (section E): bounded,
 inspectable composition over executable payloads.
 
-#### L.4 Build order when this is picked up [FUTURE]
+#### L.4 What was built [DONE]
 
-Schema + loader (`orchestration.schema.json`, `orchestration_loader.py`): add the
-`report` and `recommender` sub-objects to `facilitator-decision`; make
-`round_gate` embed the decision shape + `recommended_option`; retire the
-`recommendation` enum. Engine: resolve `recommended_option` from the recommender
-at the iterate boundary; render the `report` to its `audience`. Registries: a
-summarizer registry (seed with `delphi_round_agreement`, migrating the logic out
-of `round_statistics.py`) and the Layer-A metric-namespace contract. Diagram
-exporter (section H): draw report/decision nodes. All activity/engine-layer; no
-new recursion machinery.
+Implemented across five slices on `codex/orchestration-template-bridge`:
+- **Summarizer registry** (`app/services/report_summarizers.py`): a
+  `ReportSummarizer` registry mirroring the convergence-predicate registry;
+  `delphi_round_agreement` emits the flat scalar namespace. `round_statistics.py`
+  delegates to it (the Delphi hardcoding is gone).
+- **Recommender** (`app/services/recommenders.py`): the Layer-B `evaluate_rule`
+  over the scalar namespace, with conditions parsed to a Python AST and accepted
+  only if every node is a comparison/boolean/name/literal (the L.3 guardrail,
+  enforced structurally; unknown metric names error).
+- **Grammar + loader**: `report` + `recommender` on `facilitator-decision`;
+  `round_gate` embeds a shared decision body; the old enum is rejected.
+- **Engine** (`agenda_strategy.py`): at the iterate boundary,
+  `_resolve_gate_recommendation` builds the namespace (`converged` + named
+  summarizer metrics from the round output) and evaluates the rule; the runtime
+  payload keys (`recommendation`/`evidence`) were kept so the UI + rehydration
+  contract did not move.
+- **Diagram exporter** (section H): the gate caption and decision nodes surface
+  the report summarizer→audience and the recommender rule; figures regenerated.
+
+**Migration choice — clean break, and why it is worth a sentence in the paper.**
+We removed the old `{mode, recommendation}` gate form outright rather than
+shipping a back-compat shim. Two reasons, both instructive: (1) a research
+artifact with *one* canonical grammar is easier to reason about and to present
+than one carrying a deprecated alternate shape and a translation path; (2) the
+loader turns the removal into a *teaching* error — encountering the old form
+yields a message that names the new `round_gate.decision` + `recommender`
+structure, so the document format documents its own evolution. This also lets us
+push validation earlier: recommender `when` conditions are syntax-checked **at
+load/save time** (not just at the round boundary), so an unsafe or malformed rule
+is rejected when authored. That dovetails with the section E **static-safety**
+theme — bounded, inspectable composition validated before execution, never
+executable payloads carried in the document. The cost we accept: every
+orchestration document and producer migrates in lockstep (here, only
+`delphi.json` and the authoring layer), which is tractable precisely because the
+method lives in Layer-2 data, not code.
