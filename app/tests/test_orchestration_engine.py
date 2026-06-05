@@ -1930,9 +1930,13 @@ def test_round_gate_report_and_summarizer_metrics_resolve(db_session):
 
     gate = strategy.create_activity(meeting, None, None)
     assert gate.tool_type == "facilitator_decision"
-    assert gate.config["report"] == {
-        "summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"
-    }
+    # The declared report spec is carried through and augmented with the
+    # summarizer's computed `data` (the flat scalar namespace).
+    report = gate.config["report"]
+    assert report["summarizer"] == "delphi_round_agreement"
+    assert report["audience"] == "facilitator"
+    assert isinstance(report["data"], dict)
+    assert "agreement_label" in report["data"]
     # fixed_n(99) never fires -> rule falls to default -> continue.
     assert gate.config["recommendation"] == "continue"
     assert gate.config["evidence"]["recommendation_source"] == "recommender"

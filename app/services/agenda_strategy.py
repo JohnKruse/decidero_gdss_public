@@ -320,8 +320,12 @@ class _GateContext:
     max_rounds: int
     converged: bool
     # Plainspoken Marmot: the document's facilitator-decision body for this gate
-    # (round_gate.decision) — supplies prompt/options/report when materializing.
+    # (round_gate.decision) — supplies prompt/options when materializing.
     decision_spec: Dict[str, Any] = field(default_factory=dict)
+    # The declared report with its computed `data` (the summarizer run over the
+    # round output), or None when the gate declares no report. Computed at the
+    # boundary while the round output is in hand; rendered by the gate UI.
+    report: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -499,6 +503,7 @@ class _PlanWalker:
                             max_rounds=frame.step.max_rounds,
                             converged=fired,
                             decision_spec=decision_spec,
+                            report=self._compute_gate_report(decision_spec, round_output),
                         )
                         return None
 
@@ -575,6 +580,35 @@ class _PlanWalker:
                 return recommended, "recommender"
 
         return ("conclude" if converged else "continue"), "convergence"
+
+    @staticmethod
+    def _compute_gate_report(
+        decision_spec: Dict[str, Any],
+        round_output: Optional[Dict[str, Any]],
+    ) -> Optional[Dict[str, Any]]:
+        """Plainspoken Marmot: compute the gate's declared report (L.2).
+
+        Runs the declared summarizer over the round output and returns the report
+        spec augmented with a `data` field (the flat scalar namespace), so the
+        gate UI renders a grammar-declared report rather than a Delphi-specific
+        endpoint. Returns the bare spec (no data) when there is no report, no
+        round output yet, or the summarizer is unregistered/misbehaving.
+        """
+        report_spec = decision_spec.get("report")
+        if not report_spec or not round_output:
+            return report_spec
+        from app.services.report_summarizers import get_report_summarizer_registry
+
+        summarizer = get_report_summarizer_registry().get_summarizer(
+            report_spec.get("summarizer", "")
+        )
+        if summarizer is None:
+            return report_spec
+        try:
+            data = summarizer.summarize(round_output, report_spec.get("config") or {})
+        except Exception:  # a misbehaving summarizer must not break the gate
+            return report_spec
+        return {**report_spec, "data": data}
 
     @staticmethod
     def _lookup_gate_decision(
@@ -829,6 +863,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                     "gate": bool(orchestration.get("gate", False)),
                     "recommendation": config.get("recommendation"),
                     "evidence": config.get("evidence"),
+                    "report": config.get("report"),
                 }
                 break
 
@@ -1171,8 +1206,8 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 "gate": True,
             },
         }
-        if spec.get("report") is not None:
-            config["report"] = spec["report"]
+        if gate.report is not None:
+            config["report"] = gate.report
 
         activity = AgendaActivity(
             activity_id=activity_id,
@@ -1197,6 +1232,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "gate": True,
             "recommendation": gate.recommendation,
             "evidence": evidence,
+            "report": gate.report,
         }
         return activity
 

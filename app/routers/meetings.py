@@ -2257,50 +2257,12 @@ async def get_facilitator_decision_state(
         "options": list(config.get("options") or []),
         "context_bundle_keys": list(config.get("context_bundle_keys") or []),
         "ai_decision": _latest_ai_decision_before(meeting_manager, meeting, activity),
-        # Deliberate Heron: round-gate recommendation/evidence for the gate UI.
+        # Round-gate recommendation/evidence + the grammar-declared report.
         "is_round_gate": bool(orchestration.get("gate")),
         "recommendation": config.get("recommendation"),
         "evidence": config.get("evidence"),
+        "report": config.get("report"),
     }
-
-
-@router.get("/{meeting_id}/orchestration/round-statistics/{activity_id}")
-async def get_round_statistics(
-    meeting_id: str,
-    activity_id: str,
-    current_user: str = Depends(get_current_user),
-    user_manager: UserManager = Depends(get_user_manager),
-    meeting_manager: MeetingManager = Depends(get_meeting_manager),
-):
-    """Aggregated ranking statistics for the round an activity sits in.
-
-    Powers the facilitator report-out dialog at the justification step: counts and
-    an agreement summary (not per-idea detail), computed on demand from the round's
-    ranking output. Facilitator-only.
-    """
-    from app.services.round_statistics import compute_round_statistics
-
-    user = user_manager.get_user_by_login(current_user)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    meeting = meeting_manager.get_meeting(meeting_id)
-    if not meeting:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
-    capabilities = resolve_meeting_capabilities(meeting, user)
-    if not capabilities["can_manage"]:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only facilitators can view round statistics.",
-        )
-    activity = next(
-        (a for a in getattr(meeting, "agenda_activities", []) if a.activity_id == activity_id),
-        None,
-    )
-    if activity is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agenda activity not found")
-
-    summary = compute_round_statistics(meeting_manager.db, meeting, activity)
-    return {"meeting_id": meeting_id, "activity_id": activity_id, **summary}
 
 
 @router.post("/{meeting_id}/orchestration/facilitator-decisions/{activity_id}/responses")
@@ -2445,6 +2407,7 @@ async def advance_orchestration(
                 "is_round_gate": bool(pending.get("gate")),
                 "recommendation": pending.get("recommendation"),
                 "evidence": pending.get("evidence"),
+                "report": pending.get("report"),
             },
         }
 
@@ -2482,6 +2445,7 @@ async def advance_orchestration(
                 "is_round_gate": bool(pending_after.get("gate")),
                 "recommendation": pending_after.get("recommendation"),
                 "evidence": pending_after.get("evidence"),
+                "report": pending_after.get("report"),
             },
             "state": realtime.get("state"),
         }
