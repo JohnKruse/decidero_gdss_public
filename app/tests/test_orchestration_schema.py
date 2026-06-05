@@ -292,6 +292,44 @@ CORRESPONDENCE_CORPUS = [
     ("metadata_range_min_gt_max",
      None,  # handled inline below
      False, "cannot exceed"),
+    # Plainspoken Marmot: unified gate + report/recommender (L.1/L.2/L.3).
+    ("round_gate_old_enum_rejected",
+     [{"type": "iterate", "steps": [], "max_rounds": 2,
+       "convergence_predicate": {"name": "fixed_n", "config": {}},
+       "bundle_transform": {"name": "identity", "config": {}},
+       "round_gate": {"mode": "facilitator", "recommendation": "convergence"}}],
+     False, "now embeds a 'decision'"),
+    ("round_gate_embedded_decision_accepted",
+     [{"type": "iterate", "steps": [], "max_rounds": 2,
+       "convergence_predicate": {"name": "fixed_n", "config": {}},
+       "bundle_transform": {"name": "identity", "config": {}},
+       "round_gate": {"decision": {
+           "prompt": "?", "options": ["continue", "conclude"],
+           "recommender": {"rule": [
+               {"when": "converged", "recommend": "conclude"},
+               {"default": "continue"}]}}}}],
+     True, None),
+    ("round_gate_missing_decision",
+     [{"type": "iterate", "steps": [], "max_rounds": 2,
+       "convergence_predicate": {"name": "fixed_n", "config": {}},
+       "bundle_transform": {"name": "identity", "config": {}},
+       "round_gate": {}}],
+     False, "Missing required 'decision'"),
+    ("facilitator_decision_bad_report_audience",
+     [{"type": "facilitator-decision", "prompt": "?", "options": ["a"],
+       "report": {"summarizer": "x", "audience": "nobody"}}],
+     False, "audience"),
+    ("facilitator_decision_unsafe_recommender_condition",
+     [{"type": "facilitator-decision", "prompt": "?", "options": ["a"],
+       "recommender": {"rule": [{"when": "len(items) > 0", "recommend": "a"}]}}],
+     False, "unsafe or invalid"),
+    ("facilitator_decision_report_recommender_accepted",
+     [{"type": "facilitator-decision", "prompt": "?", "options": ["continue", "conclude"],
+       "report": {"summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"},
+       "recommender": {"metrics": ["delphi_round_agreement"], "rule": [
+           {"when": "median_iqr <= 1.0", "recommend": "conclude"},
+           {"default": "continue"}]}}],
+     True, None),
 ]
 
 

@@ -103,7 +103,19 @@ def apply_tuning(
             config["threshold"] = float(convergence_threshold)
         if who_decides is not None:
             if who_decides == "facilitator":
-                iterate["round_gate"] = {"mode": "facilitator", "recommendation": "convergence"}
+                iterate["round_gate"] = {
+                    "decision": {
+                        "prompt": "Run another round, or conclude the method?",
+                        "options": ["continue", "conclude"],
+                        "recommender": {
+                            "metrics": [],
+                            "rule": [
+                                {"when": "converged", "recommend": "conclude"},
+                                {"default": "continue"},
+                            ],
+                        },
+                    }
+                }
             elif who_decides == "automatic":
                 iterate.pop("round_gate", None)
             else:
@@ -146,7 +158,7 @@ def summarize_orchestration(document: Dict[str, Any]) -> List[str]:
             f"Then repeat {inner_title} {cap}, stopping when {_stop_condition_phrase(iterate)}."
         )
         gate = iterate.get("round_gate")
-        if isinstance(gate, dict) and gate.get("mode") == "facilitator":
+        if isinstance(gate, dict) and isinstance(gate.get("decision"), dict):
             lines.append("After each round you decide whether to run another round or conclude.")
         else:
             lines.append("Rounds continue automatically until the stop condition or the round limit.")

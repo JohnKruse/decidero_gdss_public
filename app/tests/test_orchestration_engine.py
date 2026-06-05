@@ -1828,7 +1828,24 @@ def test_rehydrate_restores_pending_facilitator_decision(db_session):
 # Deliberate Heron — Phase 8 Step 3: facilitator round-gate at iterate boundary
 # ---------------------------------------------------------------------------
 
-def _gated_iterate_doc(max_rounds=4, predicate_config=None, recommendation="convergence"):
+def _facilitator_gate(prompt="Run another round, or conclude?"):
+    """Plainspoken Marmot: the unified round_gate embedded-decision shape."""
+    return {
+        "decision": {
+            "prompt": prompt,
+            "options": ["continue", "conclude"],
+            "recommender": {
+                "metrics": [],
+                "rule": [
+                    {"when": "converged", "recommend": "conclude"},
+                    {"default": "continue"},
+                ],
+            },
+        }
+    }
+
+
+def _gated_iterate_doc(max_rounds=4, predicate_config=None):
     """Deliberate Heron: a gated iterate of brainstorming rounds."""
     return load_orchestration_data({
         "name": "gated-iterate", "version": "1", "author": "phase8step3",
@@ -1843,7 +1860,7 @@ def _gated_iterate_doc(max_rounds=4, predicate_config=None, recommendation="conv
             "type": "iterate", "max_rounds": max_rounds,
             "convergence_predicate": {"name": "fixed_n", "config": predicate_config or {"max_rounds": 99}},
             "bundle_transform": {"name": "identity", "config": {}},
-            "round_gate": {"mode": "facilitator", "recommendation": recommendation},
+            "round_gate": _facilitator_gate(),
             "steps": [{"type": "activity", "tool_type": "brainstorming", "title": "round-step"}],
         }],
     })
@@ -1875,6 +1892,50 @@ def test_round_gate_pauses_with_recommendation(db_session):
     assert gate.config["recommendation"] == "continue"
     assert gate.config["evidence"]["round_number"] == 1
     assert strategy.is_paused()
+
+
+def test_round_gate_report_and_summarizer_metrics_resolve(db_session):
+    """Plainspoken Marmot: a gate carrying a report + a recommender that names a
+    report summarizer passes the report spec through to the activity config and
+    resolves a recommendation without the summarizer-metric gathering crashing."""
+    doc = load_orchestration_data({
+        "name": "reporting-gate", "version": "1", "author": "marmot",
+        "citation": "Plainspoken Marmot",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "report-bearing gate fixture",
+        },
+        "steps": [{
+            "type": "iterate", "max_rounds": 4,
+            "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 99}},
+            "bundle_transform": {"name": "identity", "config": {}},
+            "round_gate": {"decision": {
+                "prompt": "Continue?",
+                "options": ["continue", "conclude"],
+                "report": {"summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"},
+                "recommender": {"metrics": ["delphi_round_agreement"], "rule": [
+                    {"when": "converged", "recommend": "conclude"},
+                    {"default": "continue"}]},
+            }},
+            "steps": [{"type": "activity", "tool_type": "brainstorming", "title": "round-step"}],
+        }],
+    })
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    round0 = strategy.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, round0, strategy)
+
+    gate = strategy.create_activity(meeting, None, None)
+    assert gate.tool_type == "facilitator_decision"
+    assert gate.config["report"] == {
+        "summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"
+    }
+    # fixed_n(99) never fires -> rule falls to default -> continue.
+    assert gate.config["recommendation"] == "continue"
+    assert gate.config["evidence"]["recommendation_source"] == "recommender"
 
 
 def test_round_gate_continue_steers_to_next_round(db_session):
@@ -2025,7 +2086,7 @@ def _make_nested_iterate_doc(max_rounds=2):
             "type": "iterate", "max_rounds": max_rounds,
             "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 99}},
             "bundle_transform": {"name": "identity", "config": {}},
-            "round_gate": {"mode": "facilitator", "recommendation": "convergence"},
+            "round_gate": _facilitator_gate(),
             "steps": [{
                 "type": "sequence",
                 "steps": [

@@ -33,7 +33,11 @@ def test_apply_tuning_who_decides_toggles_round_gate():
 
     facilitator = apply_tuning(automatic, who_decides="facilitator")
     gate = facilitator["steps"][0]["steps"][1]["round_gate"]
-    assert gate == {"mode": "facilitator", "recommendation": "convergence"}
+    # Plainspoken Marmot: the gate embeds a facilitator-decision; the suggestion
+    # is a recommender rule over the convergence verdict, not a mode/enum.
+    decision = gate["decision"]
+    assert decision["options"] == ["continue", "conclude"]
+    assert decision["recommender"]["rule"][0] == {"when": "converged", "recommend": "conclude"}
 
 
 def test_apply_tuning_rejects_invalid_round_limit():

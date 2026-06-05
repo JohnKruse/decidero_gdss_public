@@ -66,6 +66,24 @@ def _validate_node(node: ast.AST) -> None:
         _validate_node(child)
 
 
+def validate_condition_syntax(expr: str) -> None:
+    """Author-time check: the condition parses and uses only whitelisted nodes.
+
+    Unlike `evaluate_condition`, this does not resolve metric names (the scalar
+    namespace is unknown at authoring/load time) — it only enforces that the
+    condition is a safe comparison/boolean expression. Raises
+    `RecommenderRuleError` otherwise. Used by the orchestration loader so an
+    unsafe rule is rejected when the document is saved, not at runtime.
+    """
+    if not isinstance(expr, str) or not expr.strip():
+        raise RecommenderRuleError("condition must be a non-empty string")
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except SyntaxError as exc:
+        raise RecommenderRuleError(f"could not parse condition {expr!r}: {exc}") from exc
+    _validate_node(tree)
+
+
 def evaluate_condition(expr: str, namespace: Dict[str, Any]) -> bool:
     """Evaluate a single boolean condition against the scalar namespace.
 

@@ -314,11 +314,14 @@ class _GateContext:
 
     gate_logical_step_id: str
     round_index: int
-    recommendation: str  # "continue" or "conclude"
-    recommendation_source: str  # "convergence" or "ai"
+    recommendation: Optional[str]  # the resolved recommended option, or None
+    recommendation_source: str  # "recommender" (rule-resolved) or "convergence" (default)
     round_number: int
     max_rounds: int
     converged: bool
+    # Plainspoken Marmot: the document's facilitator-decision body for this gate
+    # (round_gate.decision) — supplies prompt/options/report when materializing.
+    decision_spec: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -483,14 +486,19 @@ class _PlanWalker:
                             frame.pointer = 0
                             frame.round_activity_ids = []
                             continue
+                        decision_spec = dict(gate.get("decision") or {})
+                        recommended, source = self._resolve_gate_recommendation(
+                            decision_spec, fired, round_output
+                        )
                         self.needs_gate = _GateContext(
                             gate_logical_step_id=gate_lsid,
                             round_index=frame.round_index,
-                            recommendation=("conclude" if fired else "continue"),
-                            recommendation_source=str(gate.get("recommendation", "convergence")),
+                            recommendation=recommended,
+                            recommendation_source=source,
                             round_number=frame.round_index + 1,
                             max_rounds=frame.step.max_rounds,
                             converged=fired,
+                            decision_spec=decision_spec,
                         )
                         return None
 
@@ -523,6 +531,50 @@ class _PlanWalker:
                     "subcycle may be a sequence of activities."
                 )
         return None
+
+    @staticmethod
+    def _resolve_gate_recommendation(
+        decision_spec: Dict[str, Any],
+        converged: bool,
+        round_output: Optional[Dict[str, Any]],
+    ) -> Tuple[Optional[str], str]:
+        """Plainspoken Marmot: resolve the gate's recommended option (L.3).
+
+        Builds the Layer-A scalar namespace — `converged` (the convergence
+        verdict the walker just computed) is always present; any report
+        summarizers named in the recommender's `metrics` are run over the round
+        output (when available) and merged — then evaluates the Layer-B
+        declarative rule against it. Falls back to the convergence verdict
+        ("conclude" if converged else "continue") when no recommender is
+        declared or the rule yields nothing. Returns (option, source).
+        """
+        recommender = decision_spec.get("recommender") or {}
+        namespace: Dict[str, Any] = {"converged": bool(converged)}
+
+        if round_output:
+            from app.services.report_summarizers import get_report_summarizer_registry
+
+            registry = get_report_summarizer_registry()
+            for name in recommender.get("metrics") or []:
+                summarizer = registry.get_summarizer(name)
+                if summarizer is not None:
+                    try:
+                        namespace.update(summarizer.summarize(round_output, {}))
+                    except Exception:  # a misbehaving summarizer must not break the gate
+                        pass
+
+        rule = recommender.get("rule")
+        if rule:
+            from app.services.recommenders import RecommenderRuleError, evaluate_rule
+
+            try:
+                recommended = evaluate_rule(rule, namespace)
+            except RecommenderRuleError:
+                recommended = None
+            if recommended is not None:
+                return recommended, "recommender"
+
+        return ("conclude" if converged else "continue"), "convergence"
 
     @staticmethod
     def _lookup_gate_decision(
@@ -1091,11 +1143,16 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         activity_id = generate_activity_id(db, meeting.meeting_id, tool_type)
         tool_config_id = generate_tool_config_id(activity_id, meeting.meeting_id)
 
-        prompt = (
+        # Plainspoken Marmot: prompt/options/report come from the document's
+        # gate decision (round_gate.decision); fall back to the dynamic default
+        # prompt and continue/conclude verbs when a field is absent. The dynamic
+        # "round N of M" context still rides in `evidence` for the gate UI.
+        spec = gate.decision_spec or {}
+        prompt = spec.get("prompt") or (
             f"Round {gate.round_number} of up to {gate.max_rounds} complete. "
             "Run another round or conclude the method?"
         )
-        options = ["continue", "conclude"]
+        options = list(spec.get("options") or ["continue", "conclude"])
         evidence = {
             "round_number": gate.round_number,
             "max_rounds": gate.max_rounds,
@@ -1105,7 +1162,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         config: Dict[str, Any] = {
             "prompt": prompt,
             "options": options,
-            "context_bundle_keys": [],
+            "context_bundle_keys": list(spec.get("context_bundle_keys") or []),
             "recommendation": gate.recommendation,
             "evidence": evidence,
             "_orchestration": {
@@ -1114,6 +1171,8 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 "gate": True,
             },
         }
+        if spec.get("report") is not None:
+            config["report"] = spec["report"]
 
         activity = AgendaActivity(
             activity_id=activity_id,

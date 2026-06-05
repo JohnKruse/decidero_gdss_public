@@ -57,8 +57,22 @@
             "config": {}
           },
           "round_gate": {
-            "mode": "facilitator",
-            "recommendation": "convergence"
+            "decision": {
+              "prompt": "Run another round, or conclude the method?",
+              "options": ["continue", "conclude"],
+              "report": {
+                "summarizer": "delphi_round_agreement",
+                "config": {},
+                "audience": "facilitator"
+              },
+              "recommender": {
+                "metrics": ["delphi_round_agreement"],
+                "rule": [
+                  { "when": "converged", "recommend": "conclude" },
+                  { "default": "continue" }
+                ]
+              }
+            }
           },
           "steps": [
             {

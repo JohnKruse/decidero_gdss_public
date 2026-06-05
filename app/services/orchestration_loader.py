@@ -107,6 +107,12 @@ class FacilitatorDecisionStep(OrchestrationStep):
     prompt: str
     options: List[str]
     context_bundle_keys: List[str]
+    # Plainspoken Marmot: optional report (a named summarizer + audience rendered
+    # to inform the choice) and recommender (Layer-A metric refs + a Layer-B
+    # declarative rule that resolves a recommended option). Kept as raw dicts,
+    # matching the convergence_predicate / bundle_transform registry-spec style.
+    report: Optional[Dict[str, Any]] = None
+    recommender: Optional[Dict[str, Any]] = None
     type: Literal["facilitator-decision"] = "facilitator-decision"
 
 
@@ -127,6 +133,110 @@ class OrchestrationDocument:
     citation: str
     metadata: OrchestrationMetadata
     steps: List[OrchestrationStep]
+
+
+def _validate_report(report: Any, path: str, errors: List[OrchestrationFieldError]) -> None:
+    """Plainspoken Marmot: validate a report sub-object (summarizer + audience)."""
+    if not isinstance(report, dict):
+        errors.append(OrchestrationFieldError(field=path, message=f"'{path}' must be a dictionary."))
+        return
+    summ = report.get("summarizer")
+    if not isinstance(summ, str) or not summ.strip():
+        errors.append(OrchestrationFieldError(field=f"{path}.summarizer", message=f"'{path}.summarizer' must be a non-empty string."))
+    if "config" in report and not isinstance(report["config"], dict):
+        errors.append(OrchestrationFieldError(field=f"{path}.config", message=f"'{path}.config' must be a dictionary."))
+    if report.get("audience") not in ("facilitator", "participants"):
+        errors.append(OrchestrationFieldError(field=f"{path}.audience", message=f"'{path}.audience' must be 'facilitator' or 'participants'."))
+
+
+def _validate_recommender(rec: Any, path: str, errors: List[OrchestrationFieldError]) -> None:
+    """Plainspoken Marmot: validate a recommender sub-object.
+
+    Layer-A `metrics` are registry name references; the Layer-B `rule` is an
+    ordered list of guards. Each `when` condition is checked for safe syntax at
+    load time (the namespace is unknown until runtime), so an unsafe rule is
+    rejected on save rather than at the round boundary.
+    """
+    from app.services.recommenders import RecommenderRuleError, validate_condition_syntax
+
+    if not isinstance(rec, dict):
+        errors.append(OrchestrationFieldError(field=path, message=f"'{path}' must be a dictionary."))
+        return
+    if "metrics" in rec:
+        metrics = rec["metrics"]
+        if not isinstance(metrics, list):
+            errors.append(OrchestrationFieldError(field=f"{path}.metrics", message=f"'{path}.metrics' must be a list of strings."))
+        else:
+            for i, m in enumerate(metrics):
+                if not isinstance(m, str) or not m.strip():
+                    errors.append(OrchestrationFieldError(field=f"{path}.metrics[{i}]", message=f"'{path}.metrics[{i}]' must be a non-empty string."))
+    rule = rec.get("rule")
+    if not isinstance(rule, list) or not rule:
+        errors.append(OrchestrationFieldError(field=f"{path}.rule", message=f"'{path}.rule' must be a non-empty list of guards."))
+        return
+    for i, guard in enumerate(rule):
+        gpath = f"{path}.rule[{i}]"
+        if not isinstance(guard, dict):
+            errors.append(OrchestrationFieldError(field=gpath, message=f"Guard at '{gpath}' must be an object."))
+            continue
+        if "default" in guard:
+            if set(guard) != {"default"}:
+                errors.append(OrchestrationFieldError(field=gpath, message=f"A 'default' guard at '{gpath}' must contain only 'default'."))
+            elif not isinstance(guard["default"], str) or not guard["default"].strip():
+                errors.append(OrchestrationFieldError(field=f"{gpath}.default", message=f"'{gpath}.default' must be a non-empty string."))
+            continue
+        if "when" not in guard or "recommend" not in guard:
+            errors.append(OrchestrationFieldError(field=gpath, message=f"Guard at '{gpath}' must have 'when' + 'recommend', or be a 'default' guard."))
+            continue
+        when = guard["when"]
+        if not isinstance(when, str) or not when.strip():
+            errors.append(OrchestrationFieldError(field=f"{gpath}.when", message=f"'{gpath}.when' must be a non-empty string."))
+        else:
+            try:
+                validate_condition_syntax(when)
+            except RecommenderRuleError as exc:
+                errors.append(OrchestrationFieldError(field=f"{gpath}.when", message=f"'{gpath}.when' is unsafe or invalid: {exc}"))
+        if not isinstance(guard["recommend"], str) or not guard["recommend"].strip():
+            errors.append(OrchestrationFieldError(field=f"{gpath}.recommend", message=f"'{gpath}.recommend' must be a non-empty string."))
+
+
+def _validate_decision_body(body: Dict[str, Any], path: str, errors: List[OrchestrationFieldError]) -> None:
+    """Plainspoken Marmot: validate a facilitator-decision body.
+
+    Shared by the `facilitator-decision` step and the `round_gate.decision`
+    embedded in an iterate, so the two cannot drift (the unification in HICSS
+    outline section L.1). Requires a non-empty prompt and a non-empty options
+    list; context_bundle_keys, report, and recommender are optional.
+    """
+    if "prompt" not in body:
+        errors.append(OrchestrationFieldError(field=f"{path}.prompt", message=f"Missing required 'prompt' in '{path}'."))
+    elif not isinstance(body["prompt"], str) or not body["prompt"].strip():
+        errors.append(OrchestrationFieldError(field=f"{path}.prompt", message=f"'{path}.prompt' must be a non-empty string."))
+
+    if "options" not in body:
+        errors.append(OrchestrationFieldError(field=f"{path}.options", message=f"Missing required 'options' list in '{path}'."))
+    else:
+        opts = body["options"]
+        if not isinstance(opts, list) or not opts:
+            errors.append(OrchestrationFieldError(field=f"{path}.options", message=f"'{path}.options' must be a non-empty list of strings."))
+        else:
+            for oi, opt in enumerate(opts):
+                if not isinstance(opt, str) or not opt.strip():
+                    errors.append(OrchestrationFieldError(field=f"{path}.options[{oi}]", message=f"Option at '{path}.options[{oi}]' must be a non-empty string."))
+
+    if "context_bundle_keys" in body:
+        cbk = body["context_bundle_keys"]
+        if not isinstance(cbk, list):
+            errors.append(OrchestrationFieldError(field=f"{path}.context_bundle_keys", message=f"'{path}.context_bundle_keys' must be a list of strings."))
+        else:
+            for ci, key in enumerate(cbk):
+                if not isinstance(key, str) or not key.strip():
+                    errors.append(OrchestrationFieldError(field=f"{path}.context_bundle_keys[{ci}]", message=f"Context bundle key at '{path}.context_bundle_keys[{ci}]' must be a non-empty string."))
+
+    if "report" in body:
+        _validate_report(body["report"], f"{path}.report", errors)
+    if "recommender" in body:
+        _validate_recommender(body["recommender"], f"{path}.recommender", errors)
 
 
 def validate_orchestration(data: Any) -> OrchestrationValidationResult:
@@ -270,16 +380,31 @@ def validate_orchestration(data: Any) -> OrchestrationValidationResult:
                                     elif not isinstance(obj["config"], dict):
                                         errors.append(OrchestrationFieldError(field=f"{path}.{pred_field}.config", message=f"'{pred_field}' config must be a dictionary."))
 
-                        # Deliberate Heron: optional facilitator round-gate.
+                        # Plainspoken Marmot: optional facilitator round-gate. The
+                        # gate now embeds a full facilitator-decision (unification,
+                        # HICSS outline L.1); the old {mode, recommendation} enum
+                        # form was removed (clean break). The recommended option is
+                        # resolved at runtime from the decision's recommender rule,
+                        # so it is not authored here.
                         if "round_gate" in step:
                             gate = step["round_gate"]
                             if not isinstance(gate, dict):
                                 errors.append(OrchestrationFieldError(field=f"{path}.round_gate", message="'round_gate' must be a dictionary."))
+                            elif "mode" in gate or "recommendation" in gate:
+                                errors.append(OrchestrationFieldError(
+                                    field=f"{path}.round_gate",
+                                    message=(
+                                        "'round_gate' now embeds a 'decision' (a facilitator-decision body); "
+                                        "the {'mode','recommendation'} form was removed. Wrap the decision in "
+                                        "'round_gate.decision' and express the suggestion as a 'recommender' rule."
+                                    ),
+                                ))
+                            elif "decision" not in gate:
+                                errors.append(OrchestrationFieldError(field=f"{path}.round_gate.decision", message="Missing required 'decision' in 'round_gate'."))
+                            elif not isinstance(gate["decision"], dict):
+                                errors.append(OrchestrationFieldError(field=f"{path}.round_gate.decision", message="'round_gate.decision' must be a dictionary."))
                             else:
-                                if gate.get("mode") != "facilitator":
-                                    errors.append(OrchestrationFieldError(field=f"{path}.round_gate.mode", message="'round_gate.mode' must be 'facilitator'."))
-                                if gate.get("recommendation") not in ("convergence", "ai"):
-                                    errors.append(OrchestrationFieldError(field=f"{path}.round_gate.recommendation", message="'round_gate.recommendation' must be 'convergence' or 'ai'."))
+                                _validate_decision_body(gate["decision"], f"{path}.round_gate.decision", errors)
 
                     elif stype == "conditional":
                         errors.append(OrchestrationFieldError(
@@ -317,32 +442,7 @@ def validate_orchestration(data: Any) -> OrchestrationValidationResult:
                                 errors.append(OrchestrationFieldError(field=f"{path}.transform_input", message="'transform_input' in activity step must be a non-empty string."))
 
                     elif stype == "facilitator-decision":
-                        if "prompt" not in step:
-                            errors.append(OrchestrationFieldError(field=f"{path}.prompt", message="Missing required 'prompt' in facilitator-decision step."))
-                        else:
-                            p = step["prompt"]
-                            if not isinstance(p, str) or not p.strip():
-                                errors.append(OrchestrationFieldError(field=f"{path}.prompt", message="'prompt' in facilitator-decision step must be a non-empty string."))
-
-                        if "options" not in step:
-                            errors.append(OrchestrationFieldError(field=f"{path}.options", message="Missing required 'options' list in facilitator-decision step."))
-                        else:
-                            opts = step["options"]
-                            if not isinstance(opts, list) or not opts:
-                                errors.append(OrchestrationFieldError(field=f"{path}.options", message="'options' in facilitator-decision step must be a non-empty list of strings."))
-                            else:
-                                for oidx, opt in enumerate(opts):
-                                    if not isinstance(opt, str) or not opt.strip():
-                                        errors.append(OrchestrationFieldError(field=f"{path}.options[{oidx}]", message=f"Option at '{path}.options[{oidx}]' must be a non-empty string."))
-
-                        if "context_bundle_keys" in step:
-                            cbk = step["context_bundle_keys"]
-                            if not isinstance(cbk, list):
-                                errors.append(OrchestrationFieldError(field=f"{path}.context_bundle_keys", message="'context_bundle_keys' must be a list of strings."))
-                            else:
-                                for cidx, key in enumerate(cbk):
-                                    if not isinstance(key, str) or not key.strip():
-                                        errors.append(OrchestrationFieldError(field=f"{path}.context_bundle_keys[{cidx}]", message=f"Context bundle key at '{path}.context_bundle_keys[{cidx}]' must be a non-empty string."))
+                        _validate_decision_body(step, path, errors)
 
                     elif stype == "ai-decision":
                         if "prompt_template" not in step:
@@ -420,7 +520,9 @@ def _parse_step(data: Dict[str, Any]) -> OrchestrationStep:
         return FacilitatorDecisionStep(
             prompt=data["prompt"],
             options=data["options"],
-            context_bundle_keys=data.get("context_bundle_keys", [])
+            context_bundle_keys=data.get("context_bundle_keys", []),
+            report=data.get("report"),
+            recommender=data.get("recommender"),
         )
     elif stype == "ai-decision":
         return AIDecisionStep(
