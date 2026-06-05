@@ -429,7 +429,7 @@ contribution.
   justification" needs per-round branching = the deferred `conditional` step /
   dynamic dispatch. Current gate is binary continue/conclude.
 
-#### F.1 Justification activity — design spec [FUTURE; current step is a placeholder]
+#### F.1 Justification activity — design spec [IN PROGRESS; backend built, UI pending]
 
 Decided 2026-06-04: the shipped Delphi's justification step currently *reuses the
 brainstorming tool* as a thin placeholder (a free-text "Explain Your Ranking" box
@@ -463,6 +463,57 @@ subcycle where the placeholder sits — **no engine change needed**):
   small table), a new UI panel with the per-viewer queue, outlier derivation from
   the input bundle, and the next-round anonymized display. The recursion engine
   already hosts it; this is activity-layer + UI work, not engine work.
+
+##### F.1.1 The collection mechanic — decision + build status [2026-06-05]
+
+The live question that drove this was *how* participants supply rationales, with
+three candidate mechanics: (1) one activity per participant (N activities); (2) a
+shared list everyone sifts to find their own flagged items; (3) a filter. The
+decision is **(3), sharpened to a server-side, identity-aware projection** — and
+it is worth stating cleanly in the paper because the other two are instructive
+failures:
+
+- **Not N activities.** It explodes the agenda, breaks the engine's one-activity-
+  per-step model (N parallel steps the grammar can't cleanly express), and
+  fragments rationales across N bundles to re-merge. The per-viewer pattern gets
+  the same effect with one activity.
+- **Not self-find.** Sifting a full list is friction exactly when you want a fast
+  drive-to-action, and — more importantly — if everyone sees every item's flags
+  they can infer *whose* rankings were outliers, breaking the peer-anonymity
+  classical Delphi requires.
+- **Server-side per-viewer queue.** When P opens the single activity, the server
+  returns only P's flagged items (the `outlier_flags[P]` lookup), each with P's
+  *own* rank and the group median/IQR — never anyone else's rank or flags. There
+  is nothing to sift and nothing to leak.
+
+**Performance + simplicity (the maintainer's concern):** the outlier flags are
+computed once per round by the same Delphi aggregation that already feeds the
+next round (Layer-A reuse, section L), so the per-participant queue is an
+O(items) dict lookup — trivial for a Delphi panel. Storage is one short row per
+(participant, flagged item), not an N-activity fan-out. It reuses the existing
+per-user-ballot infrastructure, so there is no new control-flow primitive.
+
+**Two filters, kept separate:** *collection* this round is identity-aware and
+per-viewer (the server must know who P is to route the queue); *display* next
+round is aggregated and unattributed ("others who ranked this differently
+said…"), never per-person — and the small-N leak means only ever show aggregate
+text. Collection and cross-round display are separate increments.
+
+**Build status [2026-06-05]:**
+- **[DONE] Backend foundation.** `OutlierRationale` model (one row per
+  meeting/activity/user/option, unique-constrained → idempotent upsert);
+  `OutlierJustificationManager` (per-viewer `queue_for`, `build_state`,
+  comment-only `submit_rationale` that rejects non-queued options, and
+  `collected_by_option` for the unattributed next-round seed);
+  `OutlierJustificationPlugin` (`outlier_justification` tool_type — open seeds the
+  queue by running the Delphi aggregation over the ranking output, close finalizes
+  the unattributed rationale bundle). Registered in the plugin loader, so the
+  orchestration grammar accepts the tool_type. Tested.
+- **[FUTURE] API endpoints** (per-viewer GET state + comment-only POST, mirroring
+  rank_order_voting), **the UI panel**, and **swapping `delphi.json`'s "Explain
+  Your Ranking" brainstorming placeholder to the new tool_type** (deferred until
+  the UI exists, so the running Delphi keeps a working step in the meantime).
+- **[FUTURE] Cross-round anonymized display** of the collected rationales.
 
 ### G. Per-phase interstitials [DONE]
 

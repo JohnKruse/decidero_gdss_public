@@ -11,6 +11,7 @@ from .meeting import (
 from .idea import Idea
 from .voting import VotingVote
 from .rank_order_voting import RankOrderVote
+from .outlier_rationale import OutlierRationale
 from .activity_bundle import ActivityBundle
 from .idempotency import BrainstormingIdempotencyKey
 from .categorization import (
@@ -36,6 +37,7 @@ __all__ = [
     "AgendaActivity",
     "VotingVote",
     "RankOrderVote",
+    "OutlierRationale",
     "ActivityBundle",
     "BrainstormingIdempotencyKey",
     "CategorizationItem",
