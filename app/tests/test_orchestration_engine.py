@@ -25,6 +25,7 @@ from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
+from app.plugins.builtin.outlier_justification_plugin import OutlierJustificationPlugin
 from app.plugins.builtin.rank_order_voting_plugin import RankOrderVotingPlugin
 from app.plugins.builtin.voting_plugin import VotingPlugin
 from app.plugins.context import ActivityContext
@@ -115,16 +116,16 @@ def test_phase6_delphi_orchestration_loads_and_resolves_registries():
     iterate = sequence.steps[1]
     assert iterate.max_rounds == 4
     # The round body is a nested subcycle (one level of recursion): a sequence of
-    # [re-rank (rank_order_voting) -> justify (brainstorming)]. The ranking comes
-    # first (nothing to justify before a ranking exists); the engine reads the
-    # ranking as the round's convergence output even though it is not last.
+    # [re-rank (rank_order_voting) -> justify (outlier_justification)]. The
+    # ranking comes first (nothing to justify before a ranking exists); the engine
+    # reads the ranking as the round's convergence output even though it is not last.
     assert isinstance(iterate.steps[0], SequenceStep)
     subcycle = iterate.steps[0].steps
     assert isinstance(subcycle[0], ActivityStep)
     assert subcycle[0].tool_type == "rank_order_voting"
     assert subcycle[0].transform_input == "previous_round_feedback"
     assert isinstance(subcycle[1], ActivityStep)
-    assert subcycle[1].tool_type == "brainstorming"
+    assert subcycle[1].tool_type == "outlier_justification"
 
     transform = get_bundle_transform_registry().get_transform(
         iterate.bundle_transform["name"]
@@ -292,18 +293,19 @@ def _close_rank_round(db_session, meeting, activity, owner, logical_step_id, rou
     return bundle
 
 
-def _close_justify_step(db_session, meeting, owner, strategy):
+def _close_justify_step(db_session, meeting, owner, strategy, input_bundle):
     """Delphi subcycle: each round closes with a post-ranking justification step
-    (brainstorming).
+    (outlier_justification).
 
     Materialize and close it. Convergence reads the re-rank output that precedes
     it, so the justify step's output does not affect the IQR path.
     """
     activity = strategy.create_activity(meeting, None, None)
-    assert activity.tool_type == "brainstorming"
-    BrainstormingPlugin().close_activity(
-        ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
-    )
+    assert activity.tool_type == "outlier_justification"
+    context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
+    plugin = OutlierJustificationPlugin()
+    plugin.open_activity(context, input_bundle=input_bundle)
+    plugin.close_activity(context)
     return activity
 
 
@@ -354,7 +356,7 @@ def _run_delphi_rank_round(
         db_session, meeting, activity, owner, logical_step_id, round_index
     )
     # Delphi subcycle: the round closes with a post-ranking justification step.
-    _close_justify_step(db_session, meeting, owner, strategy)
+    _close_justify_step(db_session, meeting, owner, strategy, output_bundle)
     return activity, input_bundle, output_bundle
 
 
@@ -443,7 +445,7 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
     )
     assert len(first_output.items or []) == len(IDEAS)
     # Round 0 closes with the post-ranking justification step.
-    _close_justify_step(db_session, meeting, owner, strategy)
+    _close_justify_step(db_session, meeting, owner, strategy, first_output)
 
     _, second_input, second_output = _run_delphi_rank_round(
         db_session=db_session,
@@ -531,7 +533,7 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         runaway_participants,
         NON_STABILIZING_ROUNDS[0],
     )
-    _close_rank_round(
+    first_runaway_output = _close_rank_round(
         db_session,
         runaway_meeting,
         first_runaway,
@@ -539,7 +541,13 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         runaway_logical_step_id,
         runaway_round_index,
     )
-    _close_justify_step(db_session, runaway_meeting, runaway_owner, runaway_strategy)
+    _close_justify_step(
+        db_session,
+        runaway_meeting,
+        runaway_owner,
+        runaway_strategy,
+        first_runaway_output,
+    )
 
     runaway_rounds = [first_runaway]
     for expected_round_index, rankings in enumerate(NON_STABILIZING_ROUNDS[1:], start=1):

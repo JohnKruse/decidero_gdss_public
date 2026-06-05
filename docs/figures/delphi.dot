@@ -10,7 +10,7 @@ digraph "Classical Delphi" {
             subgraph cluster_c0_1_0 {
                 label="sequence (subcycle)"; style="rounded"; color="#888888";
                 "n0_1_0_0" [label="Rank Delphi Items\n(rank_order_voting)\n↩ feedback"];
-                "n0_1_0_1" [label="Explain Your Ranking\n(brainstorming)"];
+                "n0_1_0_1" [label="Justify Outlier Rankings\n(outlier_justification)"];
             }
         }
     }

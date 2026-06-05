@@ -29,8 +29,9 @@ def test_mermaid_renders_delphi_nested_subcycle():
     assert "Sequence (subcycle)" in mermaid
     # Both leaf activities, in rank-first order.
     assert "Rank Delphi Items" in mermaid
-    assert "Explain Your Ranking" in mermaid
+    assert "Justify Outlier Rankings" in mermaid
     assert "rank_order_voting" in mermaid
+    assert "outlier_justification" in mermaid
     # The ranking carries the feedback annotation and is the loop-back target.
     assert "feedback" in mermaid
     assert ".-> n0_1_0_0" in mermaid  # dashed loop-back to the ranking step

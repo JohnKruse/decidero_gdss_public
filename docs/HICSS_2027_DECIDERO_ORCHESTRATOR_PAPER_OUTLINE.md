@@ -416,7 +416,7 @@ contribution.
   to participants: rounds after the first now show the prior round's group median
   rank + spread (IQR) beside each item in the re-rank UI. This is the visible
   feedback loop that makes it behave like real Delphi.
-- **Outlier rationales [FUTURE, justification step is DONE structurally]:** in
+- **Outlier rationales [DONE for collection; cross-round display FUTURE]:** in
   classical Delphi the *outlier participants themselves* write the rationales
   (not the facilitator, not AI). Anonymity is **peer-anonymity, not
   system-anonymity** — the system must know identities to route the "please
@@ -424,20 +424,18 @@ contribution.
   Caveat to state in the paper: **small-N panels leak** (with ~6 participants and
   one outlier, peers can infer identity) — mitigate by only ever showing
   aggregates + unattributed text. The structural justification step exists; the
-  anonymized cross-round display of rationales is the next increment.
+  anonymized cross-round display of rationales remains the next increment.
 - **Facilitator 3-way gate [FUTURE]:** "conclude / revote / revote-with-
   justification" needs per-round branching = the deferred `conditional` step /
   dynamic dispatch. Current gate is binary continue/conclude.
 
-#### F.1 Justification activity — design spec [IN PROGRESS; backend built, UI pending]
+#### F.1 Justification activity — design spec [DONE for collection UI/API]
 
-Decided 2026-06-04: the shipped Delphi's justification step currently *reuses the
-brainstorming tool* as a thin placeholder (a free-text "Explain Your Ranking" box
-that follows the ranking). That is not the real thing and must not be presented
-as the finished method — it is a stand-in so the round subcycle exists and the
-recursion engine is exercised. The proper step is a **purpose-built justification
-activity**, specified here so it can be built later (it slots into the existing
-subcycle where the placeholder sits — **no engine change needed**):
+Decided 2026-06-04 and implemented 2026-06-05: the shipped Delphi justification
+step now uses a **purpose-built justification activity** rather than the former
+brainstorming placeholder. It slots into the existing round subcycle where the
+placeholder sat — **no engine change needed** — and keeps method logic in the
+Layer-2 orchestration document plus the Layer-1 activity implementation:
 
 - **Per-viewer content, one activity (not N activities).** A single activity that
   renders different content per participant — the same pattern `rank_order_voting`
@@ -509,10 +507,15 @@ text. Collection and cross-round display are separate increments.
   queue by running the Delphi aggregation over the ranking output, close finalizes
   the unattributed rationale bundle). Registered in the plugin loader, so the
   orchestration grammar accepts the tool_type. Tested.
-- **[FUTURE] API endpoints** (per-viewer GET state + comment-only POST, mirroring
-  rank_order_voting), **the UI panel**, and **swapping `delphi.json`'s "Explain
-  Your Ranking" brainstorming placeholder to the new tool_type** (deferred until
-  the UI exists, so the running Delphi keeps a working step in the meantime).
+- **[DONE] API + UI + Delphi swap.** `app/routers/justification.py` exposes
+  per-viewer GET state and comment-only POST, with facilitator progress as
+  count-only metadata. `meeting.js` renders the per-viewer queue and saves
+  rationales. `orchestrations/delphi.json` now materializes
+  `outlier_justification` / "Justify Outlier Rankings" in the round subcycle.
+  The implementation was verified by targeted API/manager/orchestration/frontend
+  tests and a live localhost run of a seeded active justification step: one
+  outlier participant saw one queued item, saved a rationale, and facilitator
+  progress advanced to 1 of 1.
 - **[FUTURE] Cross-round anonymized display** of the collected rationales.
 
 ### G. Per-phase interstitials [DONE]

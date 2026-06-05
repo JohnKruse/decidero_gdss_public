@@ -406,6 +406,16 @@
             closeResultsModal: document.getElementById("closeRankOrderResultsModal"),
         };
 
+        const justification = {
+            root: document.querySelector("[data-justification-root]"),
+            instructions: document.getElementById("justificationInstructions"),
+            progress: document.getElementById("justificationProgress"),
+            error: document.getElementById("justificationError"),
+            empty: document.getElementById("justificationEmpty"),
+            queue: document.getElementById("justificationQueue"),
+            status: document.getElementById("justificationStatus"),
+        };
+
         const categorization = {
             root: document.querySelector("[data-categorization-root]"),
             instructions: document.getElementById("categorizationInstructions"),
@@ -798,6 +808,12 @@
         let rankOrderDropTarget = null;
         let rankOrderDragImageEl = null;
         let activeRankOrderConfig = {};
+        let justificationState = null;
+        let justificationActivityId = null;
+        let justificationRequestInFlight = false;
+        let justificationStateInFlight = false;
+        let justificationIsActive = false;
+        const justificationSavingOptions = new Set();
         const votingTiming = (() => {
             const params = new URLSearchParams(window.location.search || "");
             const enabledFromQuery = params.get("votingTiming") === "1";
@@ -5161,6 +5177,196 @@
             }
         }
 
+        function setJustificationError(message) {
+            if (!justification.error) {
+                return;
+            }
+            if (!message) {
+                justification.error.textContent = "";
+                justification.error.hidden = true;
+                return;
+            }
+            justification.error.textContent = message;
+            justification.error.hidden = false;
+        }
+
+        function setJustificationStatus(message, variant = "") {
+            if (!justification.status) {
+                return;
+            }
+            justification.status.textContent = message || "";
+            justification.status.dataset.variant = variant || "";
+        }
+
+        function formatJustificationNumber(value, fallback = "—") {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed.toFixed(1) : fallback;
+        }
+
+        function renderJustificationState(summary) {
+            justificationState = summary || null;
+
+            if (justification.progress) {
+                const progress = summary?.progress || null;
+                if (progress) {
+                    const outlierCount = Number.parseInt(progress.outlier_count, 10);
+                    const submittedCount = Number.parseInt(progress.submitted_count, 10);
+                    const safeOutliers = Number.isFinite(outlierCount) ? outlierCount : 0;
+                    const safeSubmitted = Number.isFinite(submittedCount) ? submittedCount : 0;
+                    justification.progress.textContent =
+                        `${safeSubmitted} of ${safeOutliers} outlier participant${safeOutliers === 1 ? "" : "s"} have explained.`;
+                } else {
+                    justification.progress.textContent = "";
+                }
+            }
+
+            if (!justification.queue) {
+                return;
+            }
+
+            const items = Array.isArray(summary?.items) ? summary.items : [];
+            const nothingToJustify = Boolean(summary?.nothing_to_justify);
+            if (justification.empty) {
+                justification.empty.hidden = !(summary && nothingToJustify);
+            }
+
+            if (!summary) {
+                const empty = document.createElement("li");
+                empty.className = "justification-card justification-card-empty";
+                empty.textContent = "Justification is not active.";
+                justification.queue.replaceChildren(empty);
+                return;
+            }
+
+            if (!items.length) {
+                justification.queue.replaceChildren();
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            items.forEach((item) => {
+                const optionId = String(item.option_id || "");
+                const saved = String(item.rationale || "");
+                const li = document.createElement("li");
+                li.className = "justification-card";
+                li.dataset.optionId = optionId;
+
+                const content = document.createElement("div");
+                content.className = "justification-card-content";
+                content.textContent = item.content || optionId || "Untitled item";
+
+                const meta = document.createElement("div");
+                meta.className = "justification-card-meta";
+                meta.textContent =
+                    `You ranked ${item.your_rank ?? "—"} · group median ${formatJustificationNumber(item.group_median)} · spread ${formatJustificationNumber(item.group_iqr)}`;
+
+                const textarea = document.createElement("textarea");
+                textarea.className = "justification-rationale";
+                textarea.rows = 4;
+                textarea.value = saved;
+                textarea.dataset.optionId = optionId;
+                textarea.dataset.savedRationale = saved;
+                textarea.placeholder = "Explain what led you to rank this item differently.";
+                textarea.disabled = !justificationIsActive || justificationSavingOptions.has(optionId);
+
+                const actions = document.createElement("div");
+                actions.className = "justification-card-actions";
+                const saveButton = document.createElement("button");
+                saveButton.type = "button";
+                saveButton.className = "control-btn sm";
+                saveButton.textContent = justificationSavingOptions.has(optionId) ? "Saving..." : "Save";
+                saveButton.disabled = textarea.disabled;
+                saveButton.addEventListener("click", () => {
+                    submitJustificationRationale(optionId, textarea.value);
+                });
+                textarea.addEventListener("blur", () => {
+                    if (textarea.value !== textarea.dataset.savedRationale) {
+                        submitJustificationRationale(optionId, textarea.value);
+                    }
+                });
+                actions.appendChild(saveButton);
+
+                li.append(content, meta, textarea, actions);
+                fragment.appendChild(li);
+            });
+
+            justification.queue.replaceChildren(fragment);
+        }
+
+        async function loadJustificationState(activityId, { force = false } = {}) {
+            if (!justification.root || !activityId) {
+                return;
+            }
+            if (justificationStateInFlight && !force) {
+                return;
+            }
+            justificationStateInFlight = true;
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/justification/state?activity_id=${encodeURIComponent(activityId)}`,
+                    { credentials: "include" },
+                );
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || "Unable to load justification queue.");
+                }
+                const summary = await response.json();
+                justificationActivityId = summary?.activity_id || activityId;
+                setJustificationError(null);
+                setJustificationStatus("");
+                renderJustificationState(summary);
+            } catch (error) {
+                setJustificationError(error.message || "Unable to load justification queue.");
+                renderJustificationState(null);
+            } finally {
+                justificationStateInFlight = false;
+            }
+        }
+
+        async function submitJustificationRationale(optionId, rationale) {
+            if (!justificationActivityId || !optionId || !justificationIsActive) {
+                return;
+            }
+            const key = String(optionId);
+            if (justificationSavingOptions.has(key)) {
+                return;
+            }
+            justificationSavingOptions.add(key);
+            justificationRequestInFlight = true;
+            renderJustificationState(justificationState);
+            setJustificationError(null);
+            setJustificationStatus("Saving explanation...", "info");
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/justification/rationale`,
+                    {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            activity_id: justificationActivityId,
+                            option_id: key,
+                            rationale: String(rationale || ""),
+                        }),
+                    },
+                );
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.detail || "Unable to save explanation.");
+                }
+                const latest = await response.json();
+                renderJustificationState(latest);
+                setJustificationStatus("Explanation saved.", "success");
+            } catch (error) {
+                setJustificationError(error.message || "Unable to save explanation.");
+                setJustificationStatus("", "");
+            } finally {
+                justificationSavingOptions.delete(key);
+                justificationRequestInFlight = justificationSavingOptions.size > 0;
+                renderJustificationState(justificationState);
+            }
+        }
+
         function setCategorizationError(message) {
             if (!categorization.error) {
                 return;
@@ -6876,6 +7082,7 @@
             let showBrainstorming = showTool && toolType === "brainstorming";
             let showVoting = showTool && toolType === "voting";
             let showRankOrder = showTool && toolType === "rank_order_voting";
+            let showJustification = showTool && toolType === "outlier_justification";
             let showCategorization = showTool && toolType === "categorization";
             const showFacilitatorDecision = showTool && toolType === "facilitator_decision" && state.isFacilitator;
             const showTransfer = transferState.active && state.isFacilitator;
@@ -6883,6 +7090,7 @@
                 showBrainstorming = false;
                 showVoting = false;
                 showRankOrder = false;
+                showJustification = false;
                 showCategorization = false;
             }
 
@@ -7054,6 +7262,51 @@
                 }
             }
 
+            if (justification.root) {
+                justification.root.hidden = !showJustification;
+                if (showJustification) {
+                    justificationIsActive = Boolean(isActive && canEnter);
+                    const newActivityId = eligibility?.activityId || null;
+                    if (justificationActivityId !== newActivityId) {
+                        justificationActivityId = newActivityId;
+                        justificationState = null;
+                        justificationSavingOptions.clear();
+                    }
+                    if (justification.instructions) {
+                        justification.instructions.textContent =
+                            instructions ||
+                            (isActive
+                                ? "Explain the item(s) where your rank diverged from the group pattern."
+                                : "This justification activity is closed.");
+                    }
+                    if (justificationActivityId && !justificationState) {
+                        loadJustificationState(justificationActivityId);
+                    }
+                    renderJustificationState(justificationState);
+                } else {
+                    const waitingCopy = !hasTool
+                        ? "The facilitator will open justification when ready."
+                        : eligibility?.restricted
+                            ? "You are not assigned to this justification step."
+                            : state.isFacilitator
+                                ? "This justification activity is closed. Select another agenda item to continue."
+                                : "The facilitator will open justification when ready.";
+                    justificationState = null;
+                    justificationActivityId = null;
+                    justificationIsActive = false;
+                    justificationSavingOptions.clear();
+                    setJustificationError(null);
+                    setJustificationStatus("");
+                    if (justification.instructions) {
+                        justification.instructions.textContent = waitingCopy;
+                    }
+                    if (justification.progress) {
+                        justification.progress.textContent = "";
+                    }
+                    renderJustificationState(null);
+                }
+            }
+
             if (categorization.root) {
                 categorization.root.hidden = !showCategorization;
                 if (showCategorization) {
@@ -7109,7 +7362,7 @@
                 }
             }
 
-            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showCategorization && !showTransfer && !showFacilitatorDecision && toolType;
+            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showJustification && !showCategorization && !showTransfer && !showFacilitatorDecision && toolType;
             showActiveToolPanel(
                 showGeneric ? toolType : null,
                 showGeneric ? activeActivity : null,
@@ -7297,14 +7550,16 @@
                 ).toLowerCase();
                 if (
                     activityId &&
-                    (requestedTool === "voting" || requestedTool === "rank_order_voting") &&
+                    (requestedTool === "voting" || requestedTool === "rank_order_voting" || requestedTool === "outlier_justification") &&
                     (action === "start_tool" || action === "resume_tool")
                 ) {
                     if (requestedTool === "voting") {
                         votingTiming.mark("control_forced_refresh", { action, activity_id: activityId });
                         loadVotingOptions(activityId, state.agendaMap.get(activityId)?.config || activeVotingConfig || {});
-                    } else {
+                    } else if (requestedTool === "rank_order_voting") {
                         loadRankOrderSummary(activityId, state.agendaMap.get(activityId)?.config || activeRankOrderConfig || {}, { force: true });
+                    } else {
+                        loadJustificationState(activityId, { force: true });
                     }
                 }
                 setFacilitatorFeedback(actionLabel, "success");
@@ -7459,6 +7714,11 @@
                         loadRankOrderSummary(payload.activity_id, activeRankOrderConfig, { force: true });
                     }
                     break;
+                case "justification_update":
+                    if (payload && justificationActivityId === payload.activity_id) {
+                        loadJustificationState(payload.activity_id, { force: true });
+                    }
+                    break;
                 case "categorization_update":
                     if (payload && categorizationActivityId === payload.activity_id) {
                         loadCategorizationState(payload.activity_id, activeCategorizationConfig, { force: true });
@@ -7589,7 +7849,7 @@
             if (meetingRefreshInFlight || !meetingRefreshConfig.enabled) {
                 return;
             }
-            if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight) {
+            if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight || justificationRequestInFlight) {
                 // Prioritise writes during clumpy bursts.
                 startMeetingRefresh();
                 return;
@@ -7639,6 +7899,9 @@
                 if (rankOrder.root && !rankOrder.root.hidden && rankOrderActivityId) {
                     loadRankOrderSummary(rankOrderActivityId, activeRankOrderConfig, { force: true });
                 }
+                if (justification.root && !justification.root.hidden && justificationActivityId) {
+                    loadJustificationState(justificationActivityId, { force: true });
+                }
                 meetingRefreshFailures = 0;
             } catch (error) {
                 meetingRefreshFailures += 1;
@@ -7657,7 +7920,7 @@
             if (meetingRefreshBackpressureUntil > now) {
                 return withRefreshJitter(meetingRefreshConfig.overloadBackoffMs);
             }
-            if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight) {
+            if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight || justificationRequestInFlight) {
                 return withRefreshJitter(meetingRefreshConfig.writePriorityBackoffMs);
             }
             return withRefreshJitter(

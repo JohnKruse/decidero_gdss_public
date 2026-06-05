@@ -382,6 +382,26 @@
             </section>
             {% endgrab %}
 
+            {% grab id="meeting-justification-panel" %}
+            <section class="content-card activity-panel justification-panel" data-justification-root hidden>
+                {{ section_header('Justify Outlier Rankings', 'Explain only the rankings where your view diverged from the group pattern.') }}
+                <div class="section-body">
+                    <p id="justificationInstructions" class="voting-description">
+                        The facilitator will open justification when ready.
+                    </p>
+                    <p id="justificationProgress" class="voting-notice"></p>
+                    <div id="justificationError" class="brainstorming-error" hidden></div>
+                    <div id="justificationEmpty" class="justification-empty" hidden>
+                        Nothing needs your justification this round.
+                    </div>
+                    <ul class="justification-queue" id="justificationQueue">
+                        <li class="justification-card justification-card-empty">Justification is not active.</li>
+                    </ul>
+                    <div id="justificationStatus" class="control-feedback" aria-live="polite"></div>
+                </div>
+            </section>
+            {% endgrab %}
+
             {% grab id="meeting-categorization-panel" %}
             <section class="content-card activity-panel categorization-panel" data-categorization-root hidden>
                 {{ section_header('Bucketing - Facilitator', 'Group ideas into buckets and refine categories in real time.') }}

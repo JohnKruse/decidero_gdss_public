@@ -92,13 +92,8 @@
                 },
                 {
                   "type": "activity",
-                  "tool_type": "brainstorming",
-                  "title": "Explain Your Ranking",
-                  "config": {
-                    "allow_anonymous": true,
-                    "allow_subcomments": false,
-                    "auto_jump_new_ideas": false
-                  }
+                  "tool_type": "outlier_justification",
+                  "title": "Justify Outlier Rankings"
                 }
               ]
             }

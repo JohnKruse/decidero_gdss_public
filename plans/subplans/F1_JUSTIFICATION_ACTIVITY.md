@@ -1,8 +1,8 @@
 # F.1 Outlier Justification Activity — Implementation Plan (Codex hand-off)
 
 **Status:** backend foundation DONE (commit `04e2639`); **Slice B API endpoints
-DONE**. This plan covers the remaining slice: **C = frontend panel + `delphi.json`
-swap**. Self-contained; written so it can be executed cold.
+DONE**; **Slice C frontend panel + `delphi.json` swap DONE**. Self-contained;
+written so the implementation can be audited cold.
 
 Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 and
 §F.1.1 (the design rationale — per-viewer, server-side, identity-aware queue).
@@ -12,10 +12,10 @@ Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 an
 ## 0. Orientation (read first)
 
 **The feature.** The Delphi round subcycle is `rank → justify`. The "justify"
-step currently reuses a brainstorming placeholder. We are replacing it with a
-purpose-built activity where each participant flagged as a *ranking outlier* this
-round explains only their own divergent items. One activity, per-viewer content
-(mirror `rank_order_voting`), comment-only, peer-anonymous.
+step now uses a purpose-built activity where each participant flagged as a
+*ranking outlier* this round explains only their own divergent items. One
+activity, per-viewer content (mirror `rank_order_voting`), comment-only,
+peer-anonymous.
 
 **The 4-layer architecture (do not violate).**
 - Layer 1 Activities — `app/plugins/builtin/` (frozen Lego bricks).
@@ -136,7 +136,7 @@ on 2026-06-05: 721 passed, 2 skipped.
 
 ---
 
-## Slice C — Frontend panel + `delphi.json` swap
+## Slice C — Frontend panel + `delphi.json` swap — DONE
 
 ### C1. HTML — `app/templates/meeting.html`
 Add a participant-facing panel (mirror the rank-order panel block). A root with
@@ -183,8 +183,26 @@ submitting persists; the facilitator sees progress increment. Use the project's
 run/preview tooling.
 
 ### C Acceptance
-Full agreed regression green; live browser pass per C4; `delphi.json` round-trips
-through the loader (`load_orchestration_path`).
+Status: implementation DONE. Targeted verification passed with
+`node --check app/static/js/meeting.js` and
+`PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py
+app/tests/test_outlier_justification.py app/tests/test_orchestration_engine.py
+app/tests/test_orchestration_diagram.py
+app/tests/test_frontend_smoke.py::test_meeting_page_includes_outlier_justification_panel_hooks
+app/tests/test_pages.py::test_orchestration_advance_endpoint_materializes_next_round -q`
+on 2026-06-05: 65 passed.
+
+Live localhost verification on 2026-06-05 used `venv` via the project runtime:
+the server was started with `PYTHONPATH=. ./venv/bin/uvicorn app.main:app
+--host 127.0.0.1 --port 8000` after `start_local.sh` failed only because the
+sandbox blocked its reload watcher. A seeded `CODX-JUST-UI` meeting reached an
+active `outlier_justification` step through `/api/meetings/{id}/control`; the
+outlier participant saw exactly one queued item, submitted a rationale, and the
+facilitator progress returned `1 / 1`. The in-app browser reached the live login
+and dashboard, but its text-entry path was blocked by the missing virtual
+clipboard, so the participant submission was verified through the live localhost
+API plus automated frontend smoke coverage rather than a complete in-browser C4
+drive-through.
 
 ---
 

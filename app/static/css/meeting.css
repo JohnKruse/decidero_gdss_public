@@ -1410,6 +1410,70 @@
   line-height: 1.3;
 }
 
+.justification-queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.justification-card {
+  border: 1px solid rgba(11, 61, 145, 0.14);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.85rem;
+}
+
+.justification-card-empty,
+.justification-empty {
+  color: #4f5d75;
+  background: rgba(11, 61, 145, 0.04);
+}
+
+.justification-empty {
+  border: 1px solid rgba(11, 61, 145, 0.12);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem;
+}
+
+.justification-card-content {
+  color: var(--text-color);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.justification-card-meta {
+  color: #4f5d75;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+}
+
+.justification-rationale {
+  width: 100%;
+  margin-top: 0.65rem;
+  resize: vertical;
+  min-height: 6rem;
+  border: 1px solid rgba(11, 61, 145, 0.18);
+  border-radius: 6px;
+  padding: 0.65rem;
+  font: inherit;
+  line-height: 1.35;
+}
+
+.justification-rationale:focus {
+  outline: 2px solid rgba(11, 61, 145, 0.24);
+  border-color: rgba(11, 61, 145, 0.45);
+}
+
+.justification-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.55rem;
+}
+
 .voting-footer {
   position: sticky;
   bottom: 0;

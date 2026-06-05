@@ -269,18 +269,18 @@ def test_orchestration_advance_endpoint_materializes_next_round(
 
     def _advance_close_justify(expected_round):
         # Delphi subcycle: each round closes with a post-ranking justification
-        # step (brainstorming). Advance into it and finalize it.
+        # step. Advance into it and finalize it.
         adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
         assert adv.status_code == 200, adv.text
         jbody = adv.json()
         assert jbody["status"] == "advanced"
         jact = jbody["activity"]
-        assert jact["tool_type"] == "brainstorming"
+        assert jact["tool_type"] == "outlier_justification"
         assert jact["config"]["_orchestration"]["round_index"] == expected_round
         jorch = jact["config"]["_orchestration"]
         bm.finalize_output_bundle(
             meeting_id, jact["activity_id"], [],
-            metadata={"source": "test-justify"},
+            metadata={"source": "outlier_justification"},
             logical_step_id=jorch["logical_step_id"], round_index=expected_round,
         )
 

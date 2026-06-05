@@ -37,7 +37,7 @@ flowchart TD
             subgraph c0_1_0["Sequence (subcycle)"]
                 direction TB
                 n0_1_0_0["Rank Delphi Items<br/><small>rank_order_voting</small><br/>↩ feedback"]
-                n0_1_0_1["Explain Your Ranking<br/><small>brainstorming</small>"]
+                n0_1_0_1["Justify Outlier Rankings<br/><small>outlier_justification</small>"]
             end
         end
     end
