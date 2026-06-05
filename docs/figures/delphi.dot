@@ -6,7 +6,7 @@ digraph "Classical Delphi" {
         label="sequence"; style="rounded"; color="#888888";
         "n0_0" [label="Round 1: Generate Delphi Items\n(brainstorming)"];
         subgraph cluster_c0_1 {
-            label="iterate · ≤4 rounds · converge: iqr_stability · transform: delphi_statistical_aggregation · gate: facilitator"; style="dashed"; color="#888888";
+            label="iterate · ≤4 rounds · converge: iqr_stability · transform: delphi_statistical_aggregation · gate: facilitator decision / report: delphi_round_agreement→facilitator / recommends via rule"; style="dashed"; color="#888888";
             subgraph cluster_c0_1_0 {
                 label="sequence (subcycle)"; style="rounded"; color="#888888";
                 "n0_1_0_0" [label="Rank Delphi Items\n(rank_order_voting)\n↩ feedback"];

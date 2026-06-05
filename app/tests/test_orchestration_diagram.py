@@ -36,6 +36,17 @@ def test_mermaid_renders_delphi_nested_subcycle():
     assert ".-> n0_1_0_0" in mermaid  # dashed loop-back to the ranking step
 
 
+def test_mermaid_gate_caption_shows_report_and_recommender():
+    """Plainspoken Marmot: the iterate caption surfaces the embedded gate's
+    report summarizer/audience and that a recommender rule drives the suggestion."""
+    document = load_orchestration_path(_DELPHI_PATH)
+    mermaid = to_mermaid(document)
+
+    assert "gate: facilitator decision" in mermaid
+    assert "report: delphi_round_agreement→facilitator" in mermaid
+    assert "recommends via rule" in mermaid
+
+
 def test_graphviz_renders_delphi_clusters_and_loopback():
     document = load_orchestration_path(_DELPHI_PATH)
     dot = to_graphviz(document)

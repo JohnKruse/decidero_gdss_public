@@ -40,6 +40,28 @@ def _cluster_id(path: str) -> str:
     return "c" + (path.replace(".", "_") if path else "root")
 
 
+def _decision_annotations(report: Optional[dict], recommender: Optional[dict]) -> List[str]:
+    """Short annotations for a facilitator-decision's report + recommender.
+
+    Shared by the standalone facilitator-decision node and the iterate round-gate
+    caption so the figure shows the report summarizer/audience and that a
+    recommender rule supplies the suggestion (HICSS outline L.1–L.3).
+    """
+    parts: List[str] = []
+    if report and report.get("summarizer"):
+        parts.append(f"report: {report['summarizer']}→{report.get('audience', '?')}")
+    if recommender and recommender.get("rule"):
+        parts.append("recommends via rule")
+    return parts
+
+
+def _gate_summary(gate: dict) -> str:
+    decision = (gate or {}).get("decision") or {}
+    bits = ["facilitator decision"]
+    bits.extend(_decision_annotations(decision.get("report"), decision.get("recommender")))
+    return " / ".join(bits)
+
+
 def _iterate_caption(step: IterateStep) -> str:
     bits: List[str] = []
     bits.append(f"≤{step.max_rounds} rounds")
@@ -50,7 +72,7 @@ def _iterate_caption(step: IterateStep) -> str:
     if transform and transform != "identity":
         bits.append(f"transform: {transform}")
     if step.round_gate:
-        bits.append(f"gate: {step.round_gate.get('mode', 'facilitator')}")
+        bits.append(f"gate: {_gate_summary(step.round_gate)}")
     return " · ".join(bits)
 
 
@@ -89,7 +111,11 @@ def to_mermaid(document: OrchestrationDocument) -> str:
             return nid, nid
         if isinstance(step, FacilitatorDecisionStep):
             nid = _node_id(path)
-            emit(level, f'{nid}{{"{_mermaid_escape(step.prompt)}<br/><small>facilitator decision</small>"}}')
+            extra = "".join(
+                f"<br/><small>{_mermaid_escape(p)}</small>"
+                for p in _decision_annotations(step.report, step.recommender)
+            )
+            emit(level, f'{nid}{{"{_mermaid_escape(step.prompt)}<br/><small>facilitator decision</small>{extra}"}}')
             return nid, nid
         if isinstance(step, AIDecisionStep):
             nid = _node_id(path)
@@ -162,7 +188,11 @@ def to_graphviz(document: OrchestrationDocument) -> str:
             return nid, nid
         if isinstance(step, FacilitatorDecisionStep):
             nid = _node_id(path)
-            emit(level, f'"{nid}" [shape=diamond, label="{_dot_escape(step.prompt)}\\n(facilitator decision)"];')
+            extra = "".join(
+                f"\\n{_dot_escape(p)}"
+                for p in _decision_annotations(step.report, step.recommender)
+            )
+            emit(level, f'"{nid}" [shape=diamond, label="{_dot_escape(step.prompt)}\\n(facilitator decision){extra}"];')
             return nid, nid
         if isinstance(step, AIDecisionStep):
             nid = _node_id(path)
