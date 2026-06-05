@@ -2,24 +2,21 @@
 
 When the facilitator reaches the per-round justification step, this produces an
 *aggregated* sense of where the group landed — counts and an agreement summary,
-not per-idea detail — by running the Delphi statistical aggregation on the
-round's ranking output on demand (the transform that normally feeds the next
-round's feedback). Used by the round-statistics endpoint behind the facilitator
-report-out dialog.
+not per-idea detail. The aggregation itself is delegated to the
+`delphi_round_agreement` report summarizer
+(`app/services/report_summarizers.py`); this module only locates the round's
+ranking bundle and wraps the summarizer output with availability + round number.
+Used by the round-statistics endpoint behind the facilitator report-out dialog.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
 from app.models.activity_bundle import ActivityBundle
 from app.models.meeting import AgendaActivity, Meeting
-
-# IQR thresholds (in rank positions) for the qualitative agreement summary.
-_STRONG_AGREEMENT_IQR = 1.0
-_CONTESTED_IQR = 2.0
 
 
 def _round_index_for(activity: AgendaActivity) -> int:
@@ -61,7 +58,7 @@ def compute_round_statistics(
          median_iqr, strong_agreement_items, contested_items, outlier_instances,
          participants_with_outliers, agreement_label}
     """
-    from app.services.bundle_transforms import get_bundle_transform_registry
+    from app.services.report_summarizers import get_report_summarizer_registry
 
     round_index = _round_index_for(activity)
     bundle = _find_round_ranking_bundle(db, meeting, round_index)
@@ -72,63 +69,16 @@ def compute_round_statistics(
             "detail": "No ranking results for this round yet.",
         }
 
-    transform = get_bundle_transform_registry().get_transform(
-        "delphi_statistical_aggregation"
+    summarizer = get_report_summarizer_registry().get_summarizer(
+        "delphi_round_agreement"
     )
-    aggregated = transform.transform(
+    summary = summarizer.summarize(
         {"items": list(bundle.items or []), "metadata": dict(bundle.bundle_metadata or {})},
         {},
     )
-    items: List[Dict[str, Any]] = aggregated.get("items") or []
-
-    votes = dict(bundle.bundle_metadata or {}).get("votes") or []
-    participant_ids = {v.get("user_id") for v in votes if v.get("user_id")}
-
-    iqrs: List[float] = []
-    strong = 0
-    contested = 0
-    outlier_instances = 0
-    flagged_participants: set = set()
-    for item in items:
-        delphi = (item.get("metadata") or {}).get("delphi") or {}
-        iqr = float(delphi.get("iqr", 0.0) or 0.0)
-        iqrs.append(iqr)
-        if iqr <= _STRONG_AGREEMENT_IQR:
-            strong += 1
-        if iqr > _CONTESTED_IQR:
-            contested += 1
-        outliers = delphi.get("outliers") or []
-        outlier_instances += len(outliers)
-        flagged_participants.update(outliers)
-
-    median_iqr = 0.0
-    if iqrs:
-        ordered = sorted(iqrs)
-        mid = len(ordered) // 2
-        median_iqr = (
-            ordered[mid]
-            if len(ordered) % 2 == 1
-            else (ordered[mid - 1] + ordered[mid]) / 2.0
-        )
-
-    if not items:
-        agreement_label = "No items"
-    elif median_iqr <= _STRONG_AGREEMENT_IQR:
-        agreement_label = "Strong agreement"
-    elif median_iqr <= _CONTESTED_IQR:
-        agreement_label = "Moderate agreement"
-    else:
-        agreement_label = "Divergent — several items contested"
 
     return {
         "available": True,
         "round_number": round_index + 1,
-        "item_count": len(items),
-        "participant_count": len(participant_ids),
-        "median_iqr": round(median_iqr, 2),
-        "strong_agreement_items": strong,
-        "contested_items": contested,
-        "outlier_instances": outlier_instances,
-        "participants_with_outliers": len(flagged_participants),
-        "agreement_label": agreement_label,
+        **summary,
     }
