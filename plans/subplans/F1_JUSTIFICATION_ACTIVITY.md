@@ -1,11 +1,18 @@
-# F.1 Outlier Justification Activity — Implementation Plan (Codex hand-off)
+# F.1 Outlier Justification Activity — Implementation Record (agent hand-off)
 
 **Status:** backend foundation DONE (commit `04e2639`); **Slice B API endpoints
-DONE**; **Slice C frontend panel + `delphi.json` swap DONE**. Self-contained;
-written so the implementation can be audited cold.
+DONE** (commit `f8aeb1e`); **Slice C frontend panel + `delphi.json` swap DONE**
+(commit `20af3bd`). Self-contained; written so the implementation can be audited
+cold.
 
 Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 and
 §F.1.1 (the design rationale — per-viewer, server-side, identity-aware queue).
+
+**Next hand-off:** do not rebuild the collection activity. The next paper-useful
+increment is cross-round anonymized display: consume the unattributed rationale
+bundle produced by `OutlierJustificationPlugin.close_activity` and surface those
+texts in the following `rank_order_voting` round without exposing user IDs or
+per-person flags.
 
 ---
 
@@ -70,8 +77,8 @@ queued outlier items and aggregate group statistics; facilitator progress is a
 count-only optional field on the same state response, preserving the identity-aware
 queue without adding a second shared activity view.
 
-Create `app/routers/justification.py`, mirroring `rank_order_voting.py` but
-simpler (no custom participant-scope: the "scope" is implicitly the flagged
+Implemented in `app/routers/justification.py`, mirroring `rank_order_voting.py`
+but simpler (no custom participant-scope: the "scope" is implicitly the flagged
 outliers; non-outliers legitimately get an empty queue).
 
 ### B1. Schemas — `app/schemas/justification.py`
@@ -132,7 +139,7 @@ app/tests/test_outlier_justification.py app/tests/test_orchestration_engine.py -
 on 2026-06-05: 59 passed.
 
 Full app regression also passed with `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q`
-on 2026-06-05: 721 passed, 2 skipped.
+on 2026-06-05 before the API commit: 721 passed, 2 skipped.
 
 ---
 
@@ -176,11 +183,14 @@ Keep it the terminal-but-one step so the re-rank stays last and the convergence
 predicate still reads the ranking output. Update any test/fixture that asserts the
 old brainstorming justify step (search `Explain Your Ranking`).
 
-### C4. Browser verification (required for this slice)
-Drive a live Delphi to the justify step and confirm: an outlier sees only their
-flagged item(s) with their rank vs the group; a non-outlier sees the empty state;
-submitting persists; the facilitator sees progress increment. Use the project's
-run/preview tooling.
+### C4. Verification record
+Original verification target: drive a live Delphi to the justify step and
+confirm that an outlier sees only their flagged item(s) with their rank vs the
+group, a non-outlier sees the empty state, submitting persists, and the
+facilitator sees progress increment. The committed code is covered by automated
+API/frontend/orchestration tests and by the live localhost seeded-step check
+recorded below. A complete in-app browser drive-through was blocked by the
+browser text-entry limitation, not by the Decidero runtime.
 
 ### C Acceptance
 Status: implementation DONE. Targeted verification passed with
@@ -204,6 +214,10 @@ clipboard, so the participant submission was verified through the live localhost
 API plus automated frontend smoke coverage rather than a complete in-browser C4
 drive-through.
 
+Final full app regression after Slice C passed with
+`PYTHONPATH=. ./venv/bin/pytest app/tests/ -q` on 2026-06-05: 722 passed,
+2 skipped.
+
 ---
 
 ## Guardrails (what NOT to do)
@@ -220,12 +234,15 @@ drive-through.
 
 ## Test / verify commands
 - Targeted: `PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py
-  app/tests/test_outlier_justification.py app/tests/test_orchestration_engine.py -q`
-- Full agreed regression: the command block in
-  `~/.claude/.../memory/project_context.md` (add the two justification test files).
+  app/tests/test_outlier_justification.py app/tests/test_orchestration_engine.py
+  app/tests/test_orchestration_diagram.py
+  app/tests/test_frontend_smoke.py::test_meeting_page_includes_outlier_justification_panel_hooks
+  app/tests/test_pages.py::test_orchestration_advance_endpoint_materializes_next_round -q`
+- Full agreed regression: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q`.
 - JS syntax: `node --check app/static/js/meeting.js`.
 
-## Commit boundaries (suggested)
-1. Slice B (schemas + manager progress + router + registration + API tests).
-2. Slice C frontend (HTML + JS + CSS).
-3. `delphi.json` swap + fixture updates (separate, after C verified).
+## Commit record
+1. `f8aeb1e` — Slice B: schemas, manager progress, router, registration, and API
+   tests.
+2. `20af3bd` — Slice C: frontend panel, `delphi.json` swap, diagram/test updates,
+   and paper/plan notes.

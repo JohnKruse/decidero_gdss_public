@@ -26,9 +26,11 @@ engine**. Delphi is just one data file; everything coded is generic.
   — the working design log; "implemented vs future" status lives here.
 - **Active master plan:** `plans/01_MASTER_PLAN.md`; current phase subplan:
   `plans/subplans/PHASE_9.md`.
-- **Open feature plan (hand-off ready):**
+- **Recent feature record / next hand-off:**
   `plans/subplans/F1_JUSTIFICATION_ACTIVITY.md` — the outlier justification
-  activity (backend done; API + UI slices specified for cold execution).
+  activity is implemented through collection API + meeting UI + Delphi
+  orchestration swap; next useful increment is anonymized cross-round display of
+  collected rationales.
 
 ## Key contracts / docs
 - Activity plugin contract: `docs/ACTIVITY_CONTRACT_SPEC.md` (+ `_GUIDE.md`),
