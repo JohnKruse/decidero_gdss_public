@@ -15,14 +15,18 @@ from app.services.outlier_justification_manager import (
 
 
 def _user(db, uid):
-    u = User(user_id=uid, login=uid, hashed_password="h", role=UserRole.PARTICIPANT.value)
+    u = User(
+        user_id=uid, login=uid, hashed_password="h", role=UserRole.PARTICIPANT.value
+    )
     db.add(u)
     db.commit()
     return u
 
 
 def _meeting(db, owner_id="owner"):
-    owner = User(user_id=owner_id, login=owner_id, hashed_password="h", role=UserRole.ADMIN.value)
+    owner = User(
+        user_id=owner_id, login=owner_id, hashed_password="h", role=UserRole.ADMIN.value
+    )
     meeting = Meeting(meeting_id="M-OJ-1", owner_id=owner_id, title="OJ")
     db.add_all([owner, meeting])
     db.commit()
@@ -39,7 +43,10 @@ def _activity(db, meeting, seed, activity_id="A-JUST", round_index=0):
         tool_config_id=f"tc-{activity_id}",
         config={
             "justification_seed": seed,
-            "_orchestration": {"logical_step_id": f"engine:{activity_id}", "round_index": round_index},
+            "_orchestration": {
+                "logical_step_id": f"engine:{activity_id}",
+                "round_index": round_index,
+            },
         },
     )
     db.add(activity)
@@ -50,12 +57,18 @@ def _activity(db, meeting, seed, activity_id="A-JUST", round_index=0):
 # A seed: option o1 has u3 flagged as an outlier; o2 has nobody flagged.
 _SEED = [
     {
-        "option_id": "o1", "content": "Idea A", "median": 1.0, "iqr": 0.0,
+        "option_id": "o1",
+        "content": "Idea A",
+        "median": 1.0,
+        "iqr": 0.0,
         "outlier_flags": {"u1": False, "u2": False, "u3": True},
         "ranks_by_user": {"u1": 1, "u2": 1, "u3": 9},
     },
     {
-        "option_id": "o2", "content": "Idea B", "median": 2.0, "iqr": 1.0,
+        "option_id": "o2",
+        "content": "Idea B",
+        "median": 2.0,
+        "iqr": 1.0,
         "outlier_flags": {"u1": False, "u2": False, "u3": False},
         "ranks_by_user": {"u1": 2, "u2": 2, "u3": 3},
     },
@@ -72,7 +85,13 @@ def test_queue_is_per_viewer_and_only_own_rank(db_session):
     assert flagged[0]["your_rank"] == 9
     assert flagged[0]["group_median"] == 1.0
     # No other participant's rank leaks into the payload.
-    assert set(flagged[0]) == {"option_id", "content", "your_rank", "group_median", "group_iqr"}
+    assert set(flagged[0]) == {
+        "option_id",
+        "content",
+        "your_rank",
+        "group_median",
+        "group_iqr",
+    }
 
     # A non-outlier participant has an empty queue.
     assert mgr.queue_for(activity, "u1") == []
@@ -128,11 +147,16 @@ def test_comment_only_rejects_non_queued_option(db_session):
 def test_collected_by_option_is_unattributed(db_session):
     meeting = _meeting(db_session)
     # Both u3 and u4 flagged on o1.
-    seed = [{
-        "option_id": "o1", "content": "Idea A", "median": 1.0, "iqr": 0.0,
-        "outlier_flags": {"u3": True, "u4": True},
-        "ranks_by_user": {"u3": 9, "u4": 8},
-    }]
+    seed = [
+        {
+            "option_id": "o1",
+            "content": "Idea A",
+            "median": 1.0,
+            "iqr": 0.0,
+            "outlier_flags": {"u3": True, "u4": True},
+            "ranks_by_user": {"u3": 9, "u4": 8},
+        }
+    ]
     activity = _activity(db_session, meeting, seed)
     u3, u4 = _user(db_session, "u3"), _user(db_session, "u4")
     mgr = OutlierJustificationManager(db_session)
@@ -143,7 +167,52 @@ def test_collected_by_option_is_unattributed(db_session):
     assert set(grouped["o1"]) == {"cost", "risk"}  # text only, no user_ids
 
 
+def test_facilitator_progress_counts_complete_outlier_queues(db_session):
+    meeting = _meeting(db_session)
+    seed = [
+        {
+            "option_id": "o1",
+            "content": "Idea A",
+            "median": 1.0,
+            "iqr": 0.0,
+            "outlier_flags": {"u3": True, "u4": True},
+            "ranks_by_user": {"u3": 9, "u4": 8},
+        },
+        {
+            "option_id": "o2",
+            "content": "Idea B",
+            "median": 2.0,
+            "iqr": 1.0,
+            "outlier_flags": {"u3": True, "u4": False},
+            "ranks_by_user": {"u3": 7, "u4": 2},
+        },
+    ]
+    activity = _activity(db_session, meeting, seed)
+    u3, u4 = _user(db_session, "u3"), _user(db_session, "u4")
+    mgr = OutlierJustificationManager(db_session)
+
+    assert mgr.facilitator_progress(meeting, activity) == {
+        "outlier_count": 2,
+        "submitted_count": 0,
+    }
+
+    mgr.submit_rationale(meeting, activity, u4, "o1", "risk")
+    assert mgr.facilitator_progress(meeting, activity) == {
+        "outlier_count": 2,
+        "submitted_count": 1,
+    }
+
+    mgr.submit_rationale(meeting, activity, u3, "o1", "cost")
+    assert mgr.facilitator_progress(meeting, activity)["submitted_count"] == 1
+    mgr.submit_rationale(meeting, activity, u3, "o2", "capacity")
+    assert mgr.facilitator_progress(meeting, activity) == {
+        "outlier_count": 2,
+        "submitted_count": 2,
+    }
+
+
 # --- plugin lifecycle -------------------------------------------------------
+
 
 class _StubBundle:
     def __init__(self, items, metadata):
@@ -171,7 +240,9 @@ def test_plugin_open_seeds_queue_from_ranking(db_session):
     db_session.commit()
 
     ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity)
-    OutlierJustificationPlugin().open_activity(ctx, input_bundle=_ranking_bundle_with_outlier())
+    OutlierJustificationPlugin().open_activity(
+        ctx, input_bundle=_ranking_bundle_with_outlier()
+    )
 
     seed = (activity.config or {}).get("justification_seed")
     by_option = {e["option_id"]: e for e in seed}
@@ -187,7 +258,9 @@ def test_plugin_open_is_idempotent(db_session):
     meeting = _meeting(db_session)
     activity = _activity(db_session, meeting, _SEED)  # already seeded
     ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity)
-    OutlierJustificationPlugin().open_activity(ctx, input_bundle=_ranking_bundle_with_outlier())
+    OutlierJustificationPlugin().open_activity(
+        ctx, input_bundle=_ranking_bundle_with_outlier()
+    )
     # Existing seed untouched (still the two-option fixture, not recomputed).
     assert len((activity.config or {}).get("justification_seed")) == 2
 
@@ -202,12 +275,15 @@ def test_plugin_close_finalizes_unattributed_rationale_bundle(db_session):
     ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity)
     result = OutlierJustificationPlugin().close_activity(ctx)
     items = result["items"]
-    o1 = next(i for i in items if i["metadata"]["outlier_justification"]["option_id"] == "o1")
+    o1 = next(
+        i for i in items if i["metadata"]["outlier_justification"]["option_id"] == "o1"
+    )
     assert o1["metadata"]["outlier_justification"]["rationales"] == ["long-term cost"]
     assert o1["metadata"]["outlier_justification"]["rationale_count"] == 1
 
 
 # --- registration -----------------------------------------------------------
+
 
 def test_tool_type_registered_in_catalog_and_loader():
     from app.services.activity_catalog import get_enriched_activity_catalog

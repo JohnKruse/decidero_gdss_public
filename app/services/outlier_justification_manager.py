@@ -79,13 +79,50 @@ class OutlierJustificationManager:
         """The per-viewer payload: the user's queue with any saved rationales,
         whether they have nothing to do, and whether every item is answered."""
         queue = self.queue_for(activity, user.user_id)
-        saved = {r.option_id: r.rationale for r in self._rationales(meeting, activity, user.user_id)}
-        items = [{**entry, "rationale": saved.get(entry["option_id"], "")} for entry in queue]
+        saved = {
+            r.option_id: r.rationale
+            for r in self._rationales(meeting, activity, user.user_id)
+        }
+        items = [
+            {**entry, "rationale": saved.get(entry["option_id"], "")} for entry in queue
+        ]
         return {
             "activity_id": activity.activity_id,
             "items": items,
             "nothing_to_justify": len(items) == 0,
-            "submitted": bool(items) and all((i["rationale"] or "").strip() for i in items),
+            "submitted": bool(items)
+            and all((i["rationale"] or "").strip() for i in items),
+        }
+
+    def facilitator_progress(
+        self, meeting: Meeting, activity: AgendaActivity
+    ) -> Dict[str, int]:
+        """Return facilitator-facing completion counts without exposing identities.
+
+        `outlier_count` is the number of distinct participants with at least one
+        queued outlier. `submitted_count` counts how many of those participants
+        have non-empty rationales for every item in their own queue.
+        """
+        outlier_user_ids = {
+            str(user_id)
+            for entry in self._seed(activity)
+            for user_id, flagged in (entry.get("outlier_flags") or {}).items()
+            if flagged and str(user_id).strip()
+        }
+        saved = {
+            (row.user_id, row.option_id): (row.rationale or "").strip()
+            for row in self._rationales(meeting, activity)
+        }
+        submitted_count = 0
+        for user_id in outlier_user_ids:
+            queue = self.queue_for(activity, user_id)
+            if queue and all(
+                saved.get((user_id, entry["option_id"])) for entry in queue
+            ):
+                submitted_count += 1
+        return {
+            "outlier_count": len(outlier_user_ids),
+            "submitted_count": submitted_count,
         }
 
     def submit_rationale(
@@ -101,7 +138,9 @@ class OutlierJustificationManager:
         Comment-only: the option must be in the user's queue — there is no way to
         justify an item not flagged for them, and no way to introduce a new item.
         """
-        allowed = {entry["option_id"] for entry in self.queue_for(activity, user.user_id)}
+        allowed = {
+            entry["option_id"] for entry in self.queue_for(activity, user.user_id)
+        }
         if option_id not in allowed:
             raise JustificationError(
                 "This item is not in your justification queue; you can only explain "

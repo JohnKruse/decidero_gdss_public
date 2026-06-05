@@ -1,7 +1,7 @@
 # F.1 Outlier Justification Activity — Implementation Plan (Codex hand-off)
 
-**Status:** backend foundation DONE (commit `04e2639`). This plan covers the two
-remaining slices: **B = API endpoints**, **C = frontend panel + `delphi.json`
+**Status:** backend foundation DONE (commit `04e2639`); **Slice B API endpoints
+DONE**. This plan covers the remaining slice: **C = frontend panel + `delphi.json`
 swap**. Self-contained; written so it can be executed cold.
 
 Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 and
@@ -62,7 +62,13 @@ method with an unrenderable step.
 
 ---
 
-## Slice B — API endpoints
+## Slice B — API endpoints — DONE
+
+Implementation note: the API keeps the activity as one server-projected,
+per-viewer surface. The participant state endpoint returns only the requester's
+queued outlier items and aggregate group statistics; facilitator progress is a
+count-only optional field on the same state response, preserving the identity-aware
+queue without adding a second shared activity view.
 
 Create `app/routers/justification.py`, mirroring `rank_order_voting.py` but
 simpler (no custom participant-scope: the "scope" is implicitly the flagged
@@ -119,8 +125,14 @@ non-queued option → 400; POST when inactive → 403; facilitator GET returns
 `progress`.
 
 ### B Acceptance
+
+Status: DONE for Slice B. Verified with
 `PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py
-app/tests/test_outlier_justification.py -q` green; full agreed regression green.
+app/tests/test_outlier_justification.py app/tests/test_orchestration_engine.py -q`
+on 2026-06-05: 59 passed.
+
+Full app regression also passed with `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q`
+on 2026-06-05: 721 passed, 2 skipped.
 
 ---
 
