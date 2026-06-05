@@ -523,7 +523,9 @@ the conference scope.
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
   the purpose-built justification activity (per-viewer outlier queue, F.1) +
-  anonymized cross-round display of rationales; the in-UI DAG visualization.
+  anonymized cross-round display of rationales; the in-UI DAG visualization;
+  the unified decision primitive + generic report summarizer + two-layer
+  recommender (section L).
 
 ### K. Post-paper backlog (circle back after the deadline)
 
@@ -540,3 +542,145 @@ Explicit "do later" list captured 2026-06-04 so it is not lost:
   (F.1). Defer.
 - **Justification activity itself** beyond the MVP — richer review surface,
   optional comments on non-outlier items, etc. (F.1 is the spec.)
+
+## Session Design Notes — 2026-06-05 (genericizing flow controls + reports)
+
+Continuation of the 2026-06-04 notes. Working frame from this session: the
+orchestration has **three load-bearing features** — (1) recursiveness, (2)
+control/flow controls, (3) flow reports back to the facilitator (and sometimes
+participants) — and *most reports are attached to a flow control* (the facilitator
+gets a read-out in order to decide continue/skip/conclude). Recursion (1) is
+[DONE] (sections A/B). This session designed how to **genericize (2) and (3)** so
+they are first-class grammar primitives rather than Delphi-specific bolt-ons.
+Status: design [FUTURE]; the pre-unification forms (`round_gate` enum,
+`round_statistics.py` report-out) are [DONE] but are the things being generalized.
+
+### L. Unify the decision primitive; make reports + recommendations generic [design FUTURE]
+
+#### L.1 Unify `round_gate` into `facilitator-decision` [design FUTURE]
+
+Today there are two decision shapes: the authored `facilitator-decision` step
+(prompt + options + `context_bundle_keys`) and the inline `round_gate` on
+`iterate` (an enum `recommendation: convergence|ai`). These are the *same
+primitive* — a branch point where a human chooses — in two shapes. Unify so the
+`facilitator-decision` schema is the single decision shape, and `round_gate`
+**embeds** it rather than being a parallel enum:
+
+```jsonc
+// iterate node
+"round_gate": {
+  "decision": {                          // ← the shared facilitator-decision shape
+    "prompt": "Continue to another round, or conclude?",
+    "options": ["continue", "conclude"],
+    "context_bundle_keys": ["round_ranking"],
+    "report": { ... },                   // L.2
+    "recommender": { ... }               // L.3
+  },
+  "recommended_option": "continue"       // resolved at runtime; references decision.options
+}
+```
+
+Important: unify ≠ flatten into the `steps` array. The gate keeps two properties
+an authored step lacks — it is **engine-injected at iterate boundaries** (fires
+each round below the cap), and `max_rounds` stays on `iterate` as the hard
+backstop. What moves is the *schema*: one decision shape, reused.
+
+**Paper story:** the grammar goes from "5 step kinds, one carrying a special gate
+field with its own recommendation enum" to **"4 orthogonal step kinds; iteration
+boundaries reuse the decision primitive."** Reviewers reward grammar minimality.
+Cost to acknowledge: `iterate` now references the decision schema, so they evolve
+together (minor, right trade). This also subsumes the F/section-E "3-way
+facilitator gate" cleanly — extra branches are just more `options`.
+
+#### L.2 Reports as a named summarizer (the dual of the convergence predicate) [design FUTURE]
+
+`round_statistics.py` is the tell for the gap: the report-out is **hardcoded to
+Delphi** (reaches for `delphi_statistical_aggregation`, bakes in IQR agreement
+labels) and **invisible to the grammar** — it's a side REST endpoint auto-opened
+"at the justification step" by frontend convention, so the AST and the diagram
+exporter (section H) can't see it.
+
+Genericize it with the registry pattern already used for `convergence_predicate`
+and `bundle_transform`: a **report = a named summarizer (registry) + config + an
+`audience`** (`facilitator | participants`).
+
+```jsonc
+"report": {
+  "summarizer": "delphi_round_agreement",   // registry name
+  "config": { "strong_iqr": 1.0, "contested_iqr": 2.0 },
+  "audience": "facilitator"
+}
+```
+
+Framing sentence for the paper: a report is the **human-facing dual of a
+convergence predicate** — both are read-only projections over the same round
+bundle; the predicate reads it → verdict, the report reads it → display. This
+pulls the Delphi specifics out of core code into a registered summarizer, and
+makes the report first-class to the AST (so the diagram exporter draws it).
+Placement: an optional `report` on the unified `facilitator-decision` (the
+motivating case — read-out informs the gate, reuses `context_bundle_keys`), and
+later a standalone `report` step kind for participant-facing report-outs not
+gated on a decision.
+
+#### L.3 The recommendation seam: split computation from decision; never carry code [design FUTURE]
+
+Question that prompted this: do we need a "code-carrying" capability for counts /
+statistics / selections in the recommender? **No — resist doc-carried code** (it
+wrecks reproducibility, muddies provenance, forces sandboxing). Instead recognize
+two layers wanting two mechanisms:
+
+- **Layer A — metrics (statistics, counts, outlier detection).** Genuinely
+  methodological and *citable* (median/IQR, IQR-stability, tallies). Keep as a
+  **registry of named, cited, config-parameterized Python primitives** — same seam
+  as `convergence_predicate`/`bundle_transform`. New statistical method = reviewed
+  registry entry with a citation (rare, *should* require rigor). The one contract
+  change: primitives emit a **flat namespace of named scalar facts**
+  (`median_iqr`, `contested_items`, `participant_count`, `converged: bool`) —
+  which `round_statistics.py` already computes; we just name the outputs.
+- **Layer B — selection/recommendation.** "Given those facts, which option do I
+  suggest?" Safe to make **declarative** *because it operates on scalars, not raw
+  data*. A small ordered guard rule, no code:
+
+```jsonc
+"recommender": {
+  "metrics": ["delphi_round_agreement", "iqr_stability"],   // Layer A refs
+  "rule": [
+    { "when": "converged",         "recommend": "conclude" },
+    { "when": "median_iqr <= 1.0", "recommend": "conclude" },
+    { "default":                    "continue" }
+  ]
+}
+```
+
+This produces the `recommended_option` on the unified decision (L.1). Two
+payoffs: (a) it **absorbs `convergence_predicate`** — the verdict (`converged`)
+is just one fact in the namespace, so the old `recommendation: convergence|ai`
+enum becomes a generic `recommended_option` pointer suppliable by *any*
+recommender (convergence rule today, AI later — same seam, no special case);
+(b) authors compose new *policies* in pure JSON while new *methods* extend a
+reviewed library.
+
+**Guardrail to write down (scope-creep defense):** Layer B is **ordered
+`when`/`default` guards, comparisons and booleans over scalar metrics only — no
+arithmetic, no loops, no data access.** When an author wants more than the rule
+can express, that is the signal to add a **registered Layer-A metric**, not to
+grow the DSL. This keeps the expressiveness ceiling fixed and the mini-language
+tiny (the only way it stays maintainable).
+
+**Paper framing:** "a curated, literature-grounded library of metrics + a thin
+declarative recommendation rule" is reproducible and citable; "documents carry
+arbitrary code" is a reviewer red flag. The split is a contribution, not a
+limitation — and it lines up with the static-safety theme (section E): bounded,
+inspectable composition over executable payloads.
+
+#### L.4 Build order when this is picked up [FUTURE]
+
+Schema + loader (`orchestration.schema.json`, `orchestration_loader.py`): add the
+`report` and `recommender` sub-objects to `facilitator-decision`; make
+`round_gate` embed the decision shape + `recommended_option`; retire the
+`recommendation` enum. Engine: resolve `recommended_option` from the recommender
+at the iterate boundary; render the `report` to its `audience`. Registries: a
+summarizer registry (seed with `delphi_round_agreement`, migrating the logic out
+of `round_statistics.py`) and the Layer-A metric-namespace contract. Diagram
+exporter (section H): draw report/decision nodes. All activity/engine-layer; no
+new recursion machinery.
