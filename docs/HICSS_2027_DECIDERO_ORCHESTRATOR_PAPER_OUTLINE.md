@@ -626,6 +626,18 @@ motivating case — read-out informs the gate, reuses `context_bundle_keys`), an
 later a standalone `report` step kind for participant-facing report-outs not
 gated on a decision.
 
+**Rendered end-to-end [DONE].** The engine now computes the declared report at
+the round boundary (runs the summarizer over the round output) and the gate panel
+renders it inline at the decision point — so the report literally sits where the
+facilitator decides continue/conclude. With this in place we **removed the
+interim Delphi-specific path entirely** (no back-compat): the
+`/orchestration/round-statistics` endpoint, the `round_statistics.py` service, the
+report-out modal, the justify-step auto-open, and the reopen button are gone. The
+shipped behavior is the same read-out, but now it is grammar-declared, computed by
+the generic engine, and visible to the AST/diagram — the interim bolt-on
+(commit `cbd2ebd`) is fully subsumed. Still future: rendering `audience:
+participants` reports and the standalone `report` step.
+
 #### L.3 The recommendation seam: split computation from decision; never carry code [DONE]
 
 Question that prompted this: do we need a "code-carrying" capability for counts /
