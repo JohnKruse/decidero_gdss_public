@@ -1,0 +1,201 @@
+# F.1 Outlier Justification Activity — Implementation Plan (Codex hand-off)
+
+**Status:** backend foundation DONE (commit `04e2639`). This plan covers the two
+remaining slices: **B = API endpoints**, **C = frontend panel + `delphi.json`
+swap**. Self-contained; written so it can be executed cold.
+
+Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 and
+§F.1.1 (the design rationale — per-viewer, server-side, identity-aware queue).
+
+---
+
+## 0. Orientation (read first)
+
+**The feature.** The Delphi round subcycle is `rank → justify`. The "justify"
+step currently reuses a brainstorming placeholder. We are replacing it with a
+purpose-built activity where each participant flagged as a *ranking outlier* this
+round explains only their own divergent items. One activity, per-viewer content
+(mirror `rank_order_voting`), comment-only, peer-anonymous.
+
+**The 4-layer architecture (do not violate).**
+- Layer 1 Activities — `app/plugins/builtin/` (frozen Lego bricks).
+- Layer 2 Orchestration document — `orchestrations/*.json` (the method as DATA).
+- Layer 3 Engine + shared primitives — `agenda_strategy.py`, registries.
+- Layer 4 Bundles.
+**This work is Layer-1 (activity) + API + UI only. Do NOT touch the engine
+(`agenda_strategy.py`) or add orchestration primitives.** The justification step
+already slots into the existing subcycle; no engine change is needed.
+
+**What already exists (DONE — do not rebuild, mirror/consume):**
+- Model: `app/models/outlier_rationale.py` — `OutlierRationale`
+  (meeting_id, activity_id, user_id, option_id, rationale; unique on the 4-tuple).
+- Manager: `app/services/outlier_justification_manager.py` —
+  `OutlierJustificationManager(db)` with:
+  - `build_state(meeting, activity, user) -> {activity_id, items:[{option_id,
+    content, your_rank, group_median, group_iqr, rationale}], nothing_to_justify,
+    submitted}` — the per-viewer payload.
+  - `submit_rationale(meeting, activity, user, option_id, rationale) ->
+    OutlierRationale` — comment-only upsert; raises `JustificationError` if the
+    option is not in the user's queue.
+  - `queue_for(activity, user_id)`, `collected_by_option(meeting, activity)`.
+  - `JustificationError` is exported from the same module.
+- Plugin: `app/plugins/builtin/outlier_justification_plugin.py` — tool_type
+  `outlier_justification`, registered in `app/plugins/loader.py`. `open_activity`
+  seeds the per-item queue (runs the Delphi aggregation over the ranking output);
+  `close_activity` finalizes the unattributed rationale bundle.
+- Tests: `app/tests/test_outlier_justification.py` (9 passing).
+
+**Reference implementation to mirror throughout:** rank-order voting.
+- Router: `app/routers/rank_order_voting.py` (prefix
+  `/api/meetings/{meeting_id}/rank-order-voting`, GET `/summary`, POST
+  `/rankings`; auth via `get_current_user` + `resolve_meeting_capabilities`;
+  active-state gating via `meeting_state_manager.snapshot`; broadcast via
+  `websocket_manager`).
+- Schemas: `app/schemas/rank_order_voting.py`.
+- Frontend: `app/static/js/meeting.js` (tool dispatch ~lines 6876–7016; the
+  `showRankOrder` block), `app/templates/meeting.html`, `app/static/css/meeting.css`.
+
+**Hard safety rule:** do **Slice C's `delphi.json` swap LAST**, only after the UI
+works end-to-end. Until then the running Delphi keeps the brainstorming
+placeholder. Swapping the orchestration before the UI exists would leave the live
+method with an unrenderable step.
+
+---
+
+## Slice B — API endpoints
+
+Create `app/routers/justification.py`, mirroring `rank_order_voting.py` but
+simpler (no custom participant-scope: the "scope" is implicitly the flagged
+outliers; non-outliers legitimately get an empty queue).
+
+### B1. Schemas — `app/schemas/justification.py`
+- `JustificationStateResponse`: `activity_id: str`, `items: list[JustificationItem]`,
+  `nothing_to_justify: bool`, `submitted: bool`, and for facilitators an optional
+  `progress: {outlier_count: int, submitted_count: int} | None`.
+- `JustificationItem`: `option_id: str`, `content: str | None`, `your_rank: int | None`,
+  `group_median: float | None`, `group_iqr: float | None`, `rationale: str`.
+- `JustificationSubmitRequest`: `activity_id: str`, `option_id: str`,
+  `rationale: str` (allow empty string = clear).
+
+### B2. Manager addition (Layer-1 service, OK to extend)
+Add `facilitator_progress(meeting, activity) -> {outlier_count, submitted_count}`
+to `OutlierJustificationManager`:
+- `outlier_count` = number of distinct `user_id`s that appear with `True` in any
+  item's `outlier_flags` across the seed.
+- `submitted_count` = number of those users who have a non-empty rationale for
+  *every* item in their own queue (reuse `queue_for` + the rationale rows).
+Add a unit test in `app/tests/test_outlier_justification.py`.
+
+### B3. Endpoints (router prefix `/api/meetings/{meeting_id}/justification`)
+- **GET `/state?activity_id=...`** → `JustificationStateResponse`.
+  - Resolve user + meeting + activity (404s) exactly like rank_order's `/summary`.
+  - `resolve_meeting_capabilities` → `is_facilitator`, `is_participant`; 403 if not
+    a participant.
+  - Gate on active state: reuse the `meeting_state_manager.snapshot` active-activity
+    check (mirror rank_order's `_resolve_scope`, but you only need the boolean
+    `is_active` for tool `outlier_justification`). If not active and not
+    facilitator → 403 "This activity is not open for justification."
+  - Participant: return `manager.build_state(...)`.
+  - Facilitator: return `build_state` (their own queue is normally empty) **plus**
+    `progress = manager.facilitator_progress(...)`.
+- **POST `/rationale`** (body `JustificationSubmitRequest`) → `JustificationStateResponse`.
+  - Same resolution + active gate (must be active to submit).
+  - `try: manager.submit_rationale(...)` → on `JustificationError` raise
+    `HTTPException(400, detail=str(e))`.
+  - Broadcast `{"type": "justification_update", "payload": {"activity_id": ...},
+    "meta": {"initiatorId": user.user_id}}` via `websocket_manager` (so the
+    facilitator's progress refreshes).
+  - Return the submitter's fresh `build_state`.
+
+### B4. Register the router
+`app/main.py`: import alongside the others and
+`app.include_router(justification_router.router)` next to the rank_order line (~211).
+
+### B5. Tests — `app/tests/test_justification_api.py`
+Mirror `app/tests/test_rank_order_voting_api.py` (use its fixtures for an
+active activity + auth). Cover: GET returns a participant's queue; GET as a
+non-outlier returns `nothing_to_justify`; POST stores + is idempotent; POST for a
+non-queued option → 400; POST when inactive → 403; facilitator GET returns
+`progress`.
+
+### B Acceptance
+`PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py
+app/tests/test_outlier_justification.py -q` green; full agreed regression green.
+
+---
+
+## Slice C — Frontend panel + `delphi.json` swap
+
+### C1. HTML — `app/templates/meeting.html`
+Add a participant-facing panel (mirror the rank-order panel block). A root with
+`data-justification-root`, a list container `#justificationQueue`, an
+empty-state `#justificationEmpty` ("Nothing needs your justification this
+round."), and a facilitator progress line `#justificationProgress`.
+
+### C2. JS — `app/static/js/meeting.js`
+- Register the new DOM nodes in the `ui` object (mirror `ui.rankOrder` /
+  `ui.facilitatorDecision`).
+- **Tool dispatch:** at ~line 6876–6880 add `let showJustification = showTool &&
+  toolType === "outlier_justification";` and add it to the generic-fallback
+  exclusion list (line ~6562 and ~7112 list the known tool types — add
+  `"outlier_justification"`), so it does NOT fall through to the generic panel.
+- Add a render block (mirror `showRankOrder`, ~7015): when shown, fetch
+  `GET /api/meetings/{id}/justification/state?activity_id=...`, render each queue
+  item as a card — item content, "You ranked X · group median Y (spread Z)", and a
+  textarea bound to the saved rationale; render the empty-state when
+  `nothing_to_justify`; render `progress` for facilitators ("N of M outliers have
+  explained").
+- **Submit:** on blur / explicit save, `POST /justification/rationale` with
+  `{activity_id, option_id, rationale}`; on 400 show the detail inline.
+- **Realtime:** in the websocket message switch (~7457, alongside
+  `rank_order_voting_update`) handle `justification_update` by refetching state
+  (so a facilitator watching sees progress climb).
+- Reuse existing styles where possible; add minimal `.justification-*` rules to
+  `app/static/css/meeting.css`.
+
+### C3. Swap `delphi.json` (LAST)
+In `orchestrations/delphi.json`, change the round subcycle's second step from the
+brainstorming "Explain Your Ranking" to:
+```json
+{ "type": "activity", "tool_type": "outlier_justification",
+  "title": "Justify Outlier Rankings" }
+```
+Keep it the terminal-but-one step so the re-rank stays last and the convergence
+predicate still reads the ranking output. Update any test/fixture that asserts the
+old brainstorming justify step (search `Explain Your Ranking`).
+
+### C4. Browser verification (required for this slice)
+Drive a live Delphi to the justify step and confirm: an outlier sees only their
+flagged item(s) with their rank vs the group; a non-outlier sees the empty state;
+submitting persists; the facilitator sees progress increment. Use the project's
+run/preview tooling.
+
+### C Acceptance
+Full agreed regression green; live browser pass per C4; `delphi.json` round-trips
+through the loader (`load_orchestration_path`).
+
+---
+
+## Guardrails (what NOT to do)
+- Do not modify `app/services/agenda_strategy.py` or add orchestration grammar
+  primitives — this is activity + API + UI only.
+- Do not change the `OutlierJustificationManager` method contracts already used by
+  the passing tests (extend, don't rewrite).
+- Do not surface other participants' ranks/flags/rationales to a participant —
+  only the requesting user's own queue and aggregate, unattributed counts.
+- Do not swap `delphi.json` before the UI works (Slice C ordering).
+- Cross-round anonymized display of rationales is **out of scope** here (separate
+  future increment); `close_activity` already produces the unattributed bundle it
+  will consume.
+
+## Test / verify commands
+- Targeted: `PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py
+  app/tests/test_outlier_justification.py app/tests/test_orchestration_engine.py -q`
+- Full agreed regression: the command block in
+  `~/.claude/.../memory/project_context.md` (add the two justification test files).
+- JS syntax: `node --check app/static/js/meeting.js`.
+
+## Commit boundaries (suggested)
+1. Slice B (schemas + manager progress + router + registration + API tests).
+2. Slice C frontend (HTML + JS + CSS).
+3. `delphi.json` swap + fixture updates (separate, after C verified).
