@@ -214,7 +214,7 @@ Stage discipline:
    semantics. The round-gate report now carries `feedback_selection` from the
    authored policy, and the orchestration advance / facilitator-decision state
    endpoints expose that payload.
-4. [PARTIAL] Comment-only selected-ideas UI/API: add backend tests for selected
+4. [DONE] Comment-only selected-ideas UI/API: add backend tests for selected
    ideas only, no new ideas, anonymity, and user-owned comment labeling; add
    frontend smoke tests for hooks/rendering. The backend/API now supports
    `comment_scope: "selected_items"` with `selected_comment_items`, opens the
@@ -228,9 +228,15 @@ Stage discipline:
    comment" labeling is now done: the Round 2+ rank-order summary returns prior
    comments as `{text, mine}`, flagging the viewer's own comment from their
    private `OutlierRationale` rows without ever attributing peers in the bundle,
-   and the meeting UI renders a "Your comment" badge. Remaining work: move/apply
-   the selected-count decision before the comment activity opens, and
-   orchestration skip/advance wiring.
+   and the meeting UI renders a "Your comment" badge. The selected-count decision
+   is now applied before the comment activity opens: the next round's
+   `outlier_justification` plugin reads the prior gate's `selected_comment_count`,
+   scores the just-completed ranking, switches into `selected_items` mode, and
+   seeds the top-N most-disputed ideas for everyone (count 0 → empty queue, a soft
+   skip to reranking; no recorded decision → default outlier mode). This is
+   Layer-1 plugin logic reading bundles, not an engine change. A true auto-advance
+   past a zero-comment step remains future engine work; today the facilitator
+   advances past the empty step.
 5. [PARTIAL] Group-ordered reranking + visual feedback: add regression tests
    showing all participants receive the same group-ordered Round 2+ list; add JS
    syntax/smoke checks for feedback badges and progression display. The backend

@@ -114,9 +114,108 @@ class OutlierJustificationPlugin(ActivityPlugin):
             )
 
         config["justification_seed"] = seed
+
+        # Adaptive controlled feedback: if the facilitator chose how many
+        # least-converged ideas to open for comments at the prior round gate, apply
+        # that decision here so every participant comments on the same selected set
+        # rather than only their own outlier flags.
+        self._apply_selected_comment_decision(context, config, seed)
+
         context.activity.config = config
         context.db.add(context.activity)
         context.db.commit()
+        return None
+
+    def _apply_selected_comment_decision(
+        self, context, config: Dict[str, Any], seed: List[Dict[str, Any]]
+    ) -> None:
+        """Project the facilitator's selected-comment-count onto this activity.
+
+        Reads the prior round's facilitator-decision bundle for
+        `selected_comment_count` (the count chosen at the round gate). When set,
+        switches the activity into `selected_items` mode and seeds the top-N
+        least-converged ideas (count 0 → empty queue, a soft skip to reranking).
+        When no decision is recorded, the activity stays in its default
+        outlier-only mode.
+        """
+        policy = (config.get("feedback_policy") or {})
+        if not isinstance(policy, dict) or not policy:
+            return
+        orchestration = config.get("_orchestration") or {}
+        try:
+            round_index = int(orchestration.get("round_index", 0) or 0)
+        except (TypeError, ValueError):
+            round_index = 0
+        if round_index <= 0:
+            return
+
+        count = self._prior_selected_comment_count(context, round_index)
+        if count is None:
+            return
+
+        from app.services.delphi_feedback_policy import build_delphi_feedback_selection
+
+        # Score over the seed we just built (the just-ranked round output),
+        # ordering ideas by disagreement, then keep the facilitator's count.
+        ranked = build_delphi_feedback_selection(
+            {
+                "items": [
+                    {
+                        "content": entry.get("content"),
+                        "metadata": {
+                            "rank_order_voting": {"option_id": entry.get("option_id")},
+                            "delphi": {
+                                "median": entry.get("median"),
+                                "iqr": entry.get("iqr"),
+                            },
+                        },
+                    }
+                    for entry in seed
+                ]
+            },
+            policy,
+        )
+        max_selectable = int(ranked.get("max_selectable_count") or 0)
+        count = max(0, min(int(count), max_selectable))
+        ordered_keys = [row["item_key"] for row in ranked.get("items") or []]
+        chosen_keys = ordered_keys[:count]
+        seed_by_option = {entry.get("option_id"): entry for entry in seed}
+        selected_items = [
+            seed_by_option[key] for key in chosen_keys if key in seed_by_option
+        ]
+
+        config["comment_scope"] = "selected_items"
+        config["selected_comment_items"] = selected_items
+
+    @staticmethod
+    def _prior_selected_comment_count(context, round_index: int):
+        """The `selected_comment_count` chosen at the prior round gate, or None.
+
+        Mirrors the cross-round bundle lookup used by the rank-order manager: scan
+        the prior round's output bundles for the facilitator-decision bundle and
+        read its recorded count.
+        """
+        from app.models.activity_bundle import ActivityBundle
+
+        bundles = (
+            context.db.query(ActivityBundle)
+            .filter(
+                ActivityBundle.meeting_id == context.meeting.meeting_id,
+                ActivityBundle.round_index == round_index - 1,
+                ActivityBundle.kind == "output",
+            )
+            .order_by(ActivityBundle.id.desc())
+            .all()
+        )
+        for bundle in bundles:
+            metadata = dict(bundle.bundle_metadata or {})
+            if metadata.get("source") != "facilitator_decision":
+                continue
+            if "selected_comment_count" in metadata:
+                try:
+                    return int(metadata["selected_comment_count"])
+                except (TypeError, ValueError):
+                    return None
         return None
 
     def close_activity(self, context) -> Optional[Dict[str, Any]]:

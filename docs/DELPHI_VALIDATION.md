@@ -89,6 +89,20 @@ data, not engine logic:
   reranking
 - agreement bands start from IQR (`green_max = 1.0`, `yellow_max = 2.0`)
 
+### Applying the facilitator's count (selected-idea comment mode)
+
+The facilitator chooses how many least-converged ideas to open at the round gate
+(`selected_comment_count`, persisted on the facilitator-decision bundle). The
+next round's `outlier_justification` activity applies that decision when it opens:
+it reads the prior round's recorded count, scores the just-completed ranking by
+disagreement (`build_delphi_feedback_selection`), switches into
+`comment_scope = selected_items`, and seeds the top-N most-disputed ideas as
+`selected_comment_items` — the same queue for every participant. A count of `0`
+opens an empty queue (everyone sees "nothing to comment"), a soft skip straight
+to reranking. With no recorded gate decision (e.g. round 1) the activity keeps
+its default outlier-only mode. This is all Layer-1 plugin logic reading bundles;
+the engine is untouched.
+
 The policy records the testing-driven design revision: select ideas by
 disagreement band, not participants by outlier status. The shipped MVP still has
 the outlier-justification activity; this policy pins the configuration contract

@@ -349,6 +349,128 @@ def test_plugin_open_is_idempotent(db_session):
     assert len((activity.config or {}).get("justification_seed")) == 2
 
 
+_FEEDBACK_POLICY = {
+    "comment_selection": {
+        "strategy": "adaptive_least_converged",
+        "default_fraction": 0.25,
+        "max_fraction": 0.5,
+        "low_disagreement_fraction": 0.0,
+        "moderate_disagreement_fraction": 0.15,
+        "high_disagreement_fraction": 0.25,
+        "min_items_when_disputed": 1,
+        "allow_skip": True,
+    },
+    "agreement_bands": {"score_source": "iqr", "green_max": 1.0, "yellow_max": 2.0},
+}
+
+
+def _disputed_ranking_bundle():
+    """Three ideas with descending disagreement: o1 widest, o3 tightest."""
+    items = [
+        {"content": "Idea A", "metadata": {"rank_order_voting": {"option_id": "o1"}}},
+        {"content": "Idea B", "metadata": {"rank_order_voting": {"option_id": "o2"}}},
+        {"content": "Idea C", "metadata": {"rank_order_voting": {"option_id": "o3"}}},
+    ]
+    votes = []
+    o1_ranks = [1, 1, 9, 9]   # wide spread
+    o2_ranks = [2, 2, 5, 6]   # moderate spread
+    o3_ranks = [3, 3, 3, 3]   # converged
+    for uid, r1, r2, r3 in zip(["u1", "u2", "u3", "u4"], o1_ranks, o2_ranks, o3_ranks):
+        votes.append({"user_id": uid, "option_id": "o1", "rank_position": r1})
+        votes.append({"user_id": uid, "option_id": "o2", "rank_position": r2})
+        votes.append({"user_id": uid, "option_id": "o3", "rank_position": r3})
+    return _StubBundle(items, {"source": "rank_order_voting", "votes": votes})
+
+
+def _record_gate_decision(db, meeting, round_index, selected_comment_count):
+    from app.models.activity_bundle import ActivityBundle
+
+    db.add(
+        ActivityBundle(
+            bundle_id=f"gate-{round_index}",
+            meeting_id=meeting.meeting_id,
+            activity_id="GATE",
+            kind="output",
+            round_index=round_index,
+            items=[],
+            bundle_metadata={
+                "source": "facilitator_decision",
+                "chosen": "continue",
+                "selected_comment_count": selected_comment_count,
+            },
+        )
+    )
+    db.commit()
+
+
+def test_plugin_open_applies_facilitator_selected_count(db_session):
+    """A prior-round gate count of N opens the N most-disputed ideas to everyone."""
+    meeting = _meeting(db_session)
+    _record_gate_decision(db_session, meeting, round_index=0, selected_comment_count=2)
+    activity = _activity(
+        db_session,
+        meeting,
+        seed=[],
+        round_index=1,
+        config_extra={"feedback_policy": _FEEDBACK_POLICY},
+    )
+
+    ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity)
+    OutlierJustificationPlugin().open_activity(ctx, input_bundle=_disputed_ranking_bundle())
+
+    config = activity.config or {}
+    assert config["comment_scope"] == "selected_items"
+    selected = [e["option_id"] for e in config["selected_comment_items"]]
+    # The two widest-spread ideas, most-disputed first; the converged o3 stays out.
+    assert selected == ["o1", "o2"]
+
+    # Every participant — outlier or not — now sees the same selected queue.
+    mgr = OutlierJustificationManager(db_session)
+    assert [q["option_id"] for q in mgr.queue_for(activity, "u1")] == ["o1", "o2"]
+    assert [q["option_id"] for q in mgr.queue_for(activity, "u4")] == ["o1", "o2"]
+
+
+def test_plugin_open_count_zero_skips_comments(db_session):
+    """A gate count of 0 opens an empty selected queue (a soft skip to reranking)."""
+    meeting = _meeting(db_session)
+    _record_gate_decision(db_session, meeting, round_index=0, selected_comment_count=0)
+    activity = _activity(
+        db_session,
+        meeting,
+        seed=[],
+        round_index=1,
+        config_extra={"feedback_policy": _FEEDBACK_POLICY},
+    )
+
+    ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity)
+    OutlierJustificationPlugin().open_activity(ctx, input_bundle=_disputed_ranking_bundle())
+
+    config = activity.config or {}
+    assert config["comment_scope"] == "selected_items"
+    assert config["selected_comment_items"] == []
+    mgr = OutlierJustificationManager(db_session)
+    assert mgr.build_state(meeting, activity, _user(db_session, "u1"))["nothing_to_justify"] is True
+
+
+def test_plugin_open_without_gate_decision_stays_outlier_mode(db_session):
+    """With no recorded gate count, the activity keeps its default outlier mode."""
+    meeting = _meeting(db_session)
+    activity = _activity(
+        db_session,
+        meeting,
+        seed=[],
+        round_index=1,
+        config_extra={"feedback_policy": _FEEDBACK_POLICY},
+    )
+
+    ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity)
+    OutlierJustificationPlugin().open_activity(ctx, input_bundle=_disputed_ranking_bundle())
+
+    config = activity.config or {}
+    assert "selected_comment_items" not in config
+    assert config.get("comment_scope") in (None, "outliers_only")
+
+
 def test_plugin_close_finalizes_unattributed_rationale_bundle(db_session):
     meeting = _meeting(db_session)
     activity = _activity(db_session, meeting, _SEED)

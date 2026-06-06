@@ -18,13 +18,16 @@ MVP, not the long-term user-facing shape. The config/defaults, scoring service,
 facilitator report/API wiring, selected-idea comment backend/API, and
 group-ordered reranking foundation are in place. The rank-order summary backend
 now starts Round 2+ unsubmitted rankings from prior group median/IQR order; the
-UI now shows agreement color badges. Remaining slices are facilitator selection
-UI/orchestration skip wiring, participant-side "your comment" labeling, template
-instantiation controls, and the end-to-end Delphi regression. The participant
-comment panel now uses selected-item-aware wording when `comment_scope` is
-`selected_items`. The facilitator round-gate report now shows and persists the
-selected-comment count from the adaptive feedback recommendation; the next flow
-slice must apply that choice before opening the comment step.
+UI now shows agreement color badges. The participant comment panel uses
+selected-item-aware wording when `comment_scope` is `selected_items`. The
+facilitator round-gate report shows and persists the selected-comment count from
+the adaptive feedback recommendation, and the next round's comment activity now
+**applies** that choice on open (selects the top-N most-disputed ideas into
+`selected_items` mode; count 0 → empty soft-skip queue). Cross-round comment
+display now privately flags the viewer's own comment (`{text, mine}` + "Your
+comment" badge) while keeping the bundle unattributed. Remaining slices are
+template instantiation controls (Stage 6), a true engine-level auto-advance past
+a zero-comment step, and the end-to-end Delphi regression (Stage 7).
 
 ---
 
