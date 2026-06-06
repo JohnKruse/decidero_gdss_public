@@ -1470,8 +1470,28 @@
 
 .justification-card-actions {
   display: flex;
+  align-items: center;
+  gap: 0.65rem;
   justify-content: flex-end;
   margin-top: 0.55rem;
+}
+
+.justification-card-status {
+  color: #4f5d75;
+  font-size: 0.82rem;
+  min-height: 1rem;
+}
+
+.justification-card-status[data-variant="success"] {
+  color: #0f5132;
+}
+
+.justification-card-status[data-variant="dirty"] {
+  color: #8a5a00;
+}
+
+.justification-card-status[data-variant="info"] {
+  color: var(--navy-blue);
 }
 
 .voting-footer {
@@ -2370,4 +2390,34 @@
   100% {
     box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
   }
+}
+
+/* Delphi controlled feedback: prior-round outlier rationales list. */
+.rank-order-item .rank-order-prior-rationales {
+  margin-top: 4px;
+  border: 1px solid rgba(11, 61, 145, 0.12);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: rgba(11, 61, 145, 0.02);
+}
+
+.prior-rationales-title {
+  display: block;
+  font-weight: 700;
+  font-size: 0.76rem;
+  color: #4f5d75;
+  margin-bottom: 2px;
+}
+
+.prior-rationales-list {
+  list-style: disc;
+  margin: 0;
+  padding-left: 14px;
+}
+
+.prior-rationale-item {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: #33415c;
+  margin-top: 2px;
 }

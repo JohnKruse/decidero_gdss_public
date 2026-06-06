@@ -23,6 +23,8 @@ class RankOrderOptionSummary(BaseModel):
     top_choice_share: Optional[float] = None
     # Delphi: prior-round median/IQR for this item (None outside a Delphi loop).
     prior_round_feedback: Optional[RankOrderPriorRoundFeedback] = None
+    # Delphi: prior-round outlier rationales (None outside a Delphi loop / if empty).
+    prior_round_rationales: Optional[List[str]] = None
 
 
 class RankOrderVotingSummaryResponse(BaseModel):

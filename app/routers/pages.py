@@ -31,6 +31,8 @@ from ..data.meeting_template_manager import (
     get_meeting_template_manager,
 )
 from ..services.meeting_authorization import resolve_meeting_capabilities
+from ..services.activity_catalog import get_enriched_activity_catalog
+from ..services.orchestration_authoring import STOP_CONDITIONS
 from sqlalchemy.orm import Session
 from ..database import get_db
 
@@ -441,6 +443,18 @@ async def meeting_templates(
             }
         )
 
+    # Plainspoken Marmot: inject activity catalog and stop conditions for the
+    # control-point card form (Phase 9 Step 2).
+    activity_catalog = [
+        {"tool_type": e.get("tool_type"), "name": e.get("name") or e.get("tool_type")}
+        for e in get_enriched_activity_catalog()
+        if isinstance(e.get("tool_type"), str)
+    ]
+    stop_conditions = [
+        {"key": k, "label": v["label"], "common": v.get("common", False)}
+        for k, v in STOP_CONDITIONS.items()
+    ]
+
     return templates.TemplateResponse(
         request,
         "meeting_templates.html",
@@ -451,6 +465,8 @@ async def meeting_templates(
             "UserRole": UserRole,
             "template_cards": template_cards,
             "ui_refresh": get_ui_refresh_settings(),
+            "activity_catalog": activity_catalog,
+            "stop_conditions": stop_conditions,
         },
     )
 

@@ -317,6 +317,38 @@ class RankOrderVotingManager:
             len(options),
         )
 
+        # Delphi: load prior round outlier justification rationales if we are in an iterate loop.
+        rationales_by_stable_key: Dict[str, List[str]] = {}
+        from app.services.agenda_strategy import get_agenda_strategy, OrchestrationEngineStrategy
+        strategy = get_agenda_strategy(meeting)
+        if isinstance(strategy, OrchestrationEngineStrategy):
+            _, round_index = strategy.iteration_metadata_for(activity.activity_id)
+            if round_index > 0:
+                prior_bundles = (
+                    self.db.query(ActivityBundle)
+                    .filter(
+                        ActivityBundle.meeting_id == meeting.meeting_id,
+                        ActivityBundle.round_index == round_index - 1,
+                        ActivityBundle.kind == "output",
+                    )
+                    .all()
+                )
+                just_bundle = None
+                for bundle in prior_bundles:
+                    if dict(bundle.bundle_metadata or {}).get("source") == "outlier_justification":
+                        just_bundle = bundle
+                        break
+
+                if just_bundle and just_bundle.items:
+                    for item in just_bundle.items:
+                        item_meta = item.get("metadata") or {}
+                        just_meta = item_meta.get("outlier_justification") or {}
+                        prior_opt_id = just_meta.get("option_id")
+                        prior_rationales = just_meta.get("rationales")
+                        if prior_opt_id and prior_rationales:
+                            stable_key = self._stable_option_key(prior_opt_id)
+                            rationales_by_stable_key[stable_key] = list(prior_rationales)
+
         def prior_round_feedback(option: RankOrderOption) -> Optional[Dict[str, Any]]:
             # Delphi controlled feedback: the prior round's median/IQR ride along
             # on the input-bundle item metadata (see DelphiStatisticalAggregation).
@@ -330,6 +362,7 @@ class RankOrderVotingManager:
 
         def option_payload(option: RankOrderOption) -> Dict[str, Any]:
             metric = borda.get(option.option_id, {})
+            stable_key = self._stable_option_key(option.option_id)
             return {
                 "option_id": option.option_id,
                 "label": option.label,
@@ -339,6 +372,7 @@ class RankOrderVotingManager:
                 "rank_variance": metric.get("rank_variance") if can_view_results else None,
                 "top_choice_share": metric.get("top_choice_share") if can_view_results else None,
                 "prior_round_feedback": prior_round_feedback(option),
+                "prior_round_rationales": rationales_by_stable_key.get(stable_key),
             }
 
         serialized_options = [option_payload(option) for option in options]

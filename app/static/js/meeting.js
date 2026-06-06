@@ -813,6 +813,7 @@
         let justificationRequestInFlight = false;
         let justificationStateInFlight = false;
         let justificationIsActive = false;
+        const justificationDrafts = new Map();
         const justificationSavingOptions = new Set();
         const votingTiming = (() => {
             const params = new URLSearchParams(window.location.search || "");
@@ -5000,6 +5001,32 @@
                     main.appendChild(fb);
                 }
 
+                // Delphi controlled feedback: show the prior round's outlier justification
+                // rationales for this item so participants can see other perspectives.
+                const priorRationales = option.prior_round_rationales;
+                if (Array.isArray(priorRationales) && priorRationales.length > 0) {
+                    const pr = document.createElement("div");
+                    pr.className = "rank-order-prior-rationales";
+                    const title = document.createElement("span");
+                    title.className = "prior-rationales-title";
+                    title.textContent = "Other perspectives from last round:";
+                    pr.appendChild(title);
+                    const list = document.createElement("ul");
+                    list.className = "prior-rationales-list";
+                    priorRationales.forEach((text) => {
+                        if (text && text.trim()) {
+                            const item = document.createElement("li");
+                            item.className = "prior-rationale-item";
+                            item.textContent = text;
+                            list.appendChild(item);
+                        }
+                    });
+                    if (list.children.length > 0) {
+                        pr.appendChild(list);
+                        main.appendChild(pr);
+                    }
+                }
+
                 if (summary.can_view_results && option.borda_score !== null && option.borda_score !== undefined) {
                     const meta = document.createElement("div");
                     meta.className = "rank-order-meta";
@@ -5203,8 +5230,59 @@
             return Number.isFinite(parsed) ? parsed.toFixed(1) : fallback;
         }
 
+        function justificationDraftKey(activityId, optionId) {
+            return `${activityId || ""}::${optionId || ""}`;
+        }
+
+        function updateJustificationCardSaveState(textarea, saveButton, status, optionId) {
+            const isSaving = justificationSavingOptions.has(optionId);
+            const saved = textarea.dataset.savedRationale || "";
+            const isDirty = textarea.value !== saved;
+            if (isSaving) {
+                saveButton.textContent = "Save";
+                saveButton.disabled = true;
+                status.textContent = "Saving...";
+                status.dataset.variant = "info";
+                return;
+            }
+            if (isDirty) {
+                saveButton.textContent = "Save";
+                saveButton.disabled = !justificationIsActive;
+                status.textContent = "Unsaved changes";
+                status.dataset.variant = "dirty";
+                return;
+            }
+            if (saved.trim()) {
+                saveButton.textContent = "Save";
+                saveButton.disabled = true;
+                status.textContent = "Saved";
+                status.dataset.variant = "success";
+                return;
+            }
+            saveButton.textContent = "Save";
+            saveButton.disabled = true;
+            status.textContent = "";
+            status.dataset.variant = "";
+        }
+
         function renderJustificationState(summary) {
             justificationState = summary || null;
+            const activeElement = document.activeElement;
+            const activeTextarea =
+                activeElement && activeElement.classList?.contains("justification-rationale")
+                    ? activeElement
+                    : null;
+            const activeOptionId = activeTextarea?.dataset?.optionId || null;
+            const activeSelectionStart =
+                activeTextarea && typeof activeTextarea.selectionStart === "number"
+                    ? activeTextarea.selectionStart
+                    : null;
+            const activeSelectionEnd =
+                activeTextarea && typeof activeTextarea.selectionEnd === "number"
+                    ? activeTextarea.selectionEnd
+                    : null;
+            const scrollX = window.scrollX;
+            const scrollY = window.scrollY;
 
             if (justification.progress) {
                 const progress = summary?.progress || null;
@@ -5247,6 +5325,9 @@
             items.forEach((item) => {
                 const optionId = String(item.option_id || "");
                 const saved = String(item.rationale || "");
+                const draftKey = justificationDraftKey(justificationActivityId, optionId);
+                const hasDraft = justificationDrafts.has(draftKey);
+                const displayed = hasDraft ? justificationDrafts.get(draftKey) : saved;
                 const li = document.createElement("li");
                 li.className = "justification-card";
                 li.dataset.optionId = optionId;
@@ -5263,19 +5344,29 @@
                 const textarea = document.createElement("textarea");
                 textarea.className = "justification-rationale";
                 textarea.rows = 4;
-                textarea.value = saved;
+                textarea.value = displayed;
                 textarea.dataset.optionId = optionId;
                 textarea.dataset.savedRationale = saved;
                 textarea.placeholder = "Explain what led you to rank this item differently.";
                 textarea.disabled = !justificationIsActive || justificationSavingOptions.has(optionId);
+                textarea.addEventListener("input", () => {
+                    const nextValue = textarea.value;
+                    if (nextValue === textarea.dataset.savedRationale) {
+                        justificationDrafts.delete(draftKey);
+                    } else {
+                        justificationDrafts.set(draftKey, nextValue);
+                    }
+                    updateJustificationCardSaveState(textarea, saveButton, cardStatus, optionId);
+                });
 
                 const actions = document.createElement("div");
                 actions.className = "justification-card-actions";
+                const cardStatus = document.createElement("span");
+                cardStatus.className = "justification-card-status";
+                cardStatus.setAttribute("aria-live", "polite");
                 const saveButton = document.createElement("button");
                 saveButton.type = "button";
                 saveButton.className = "control-btn sm";
-                saveButton.textContent = justificationSavingOptions.has(optionId) ? "Saving..." : "Save";
-                saveButton.disabled = textarea.disabled;
                 saveButton.addEventListener("click", () => {
                     submitJustificationRationale(optionId, textarea.value);
                 });
@@ -5284,13 +5375,34 @@
                         submitJustificationRationale(optionId, textarea.value);
                     }
                 });
-                actions.appendChild(saveButton);
+                updateJustificationCardSaveState(textarea, saveButton, cardStatus, optionId);
+                actions.append(cardStatus, saveButton);
 
                 li.append(content, meta, textarea, actions);
                 fragment.appendChild(li);
             });
 
             justification.queue.replaceChildren(fragment);
+            if (activeOptionId) {
+                const nextTextarea = justification.queue.querySelector(
+                    `.justification-rationale[data-option-id="${CSS.escape(activeOptionId)}"]`,
+                );
+                if (nextTextarea && !nextTextarea.disabled) {
+                    nextTextarea.focus({ preventScroll: true });
+                    if (
+                        activeSelectionStart !== null &&
+                        activeSelectionEnd !== null &&
+                        typeof nextTextarea.setSelectionRange === "function"
+                    ) {
+                        const maxLength = nextTextarea.value.length;
+                        nextTextarea.setSelectionRange(
+                            Math.min(activeSelectionStart, maxLength),
+                            Math.min(activeSelectionEnd, maxLength),
+                        );
+                    }
+                    window.scrollTo(scrollX, scrollY);
+                }
+            }
         }
 
         async function loadJustificationState(activityId, { force = false } = {}) {
@@ -5328,6 +5440,7 @@
                 return;
             }
             const key = String(optionId);
+            const draftKey = justificationDraftKey(justificationActivityId, key);
             if (justificationSavingOptions.has(key)) {
                 return;
             }
@@ -5355,6 +5468,7 @@
                     throw new Error(err.detail || "Unable to save explanation.");
                 }
                 const latest = await response.json();
+                justificationDrafts.delete(draftKey);
                 renderJustificationState(latest);
                 setJustificationStatus("Explanation saved.", "success");
             } catch (error) {
@@ -7270,6 +7384,7 @@
                     if (justificationActivityId !== newActivityId) {
                         justificationActivityId = newActivityId;
                         justificationState = null;
+                        justificationDrafts.clear();
                         justificationSavingOptions.clear();
                     }
                     if (justification.instructions) {
@@ -7294,6 +7409,7 @@
                     justificationState = null;
                     justificationActivityId = null;
                     justificationIsActive = false;
+                    justificationDrafts.clear();
                     justificationSavingOptions.clear();
                     setJustificationError(null);
                     setJustificationStatus("");

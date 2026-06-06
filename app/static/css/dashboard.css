@@ -451,6 +451,217 @@ body {
     margin: 0;
 }
 
+/* Plainspoken Marmot: Phase 9 Step 2 — control-point card form */
+
+.control-point-card {
+    display: grid;
+    gap: 1.15rem;
+    padding: 1.25rem;
+    border: 1px solid rgba(11, 61, 145, 0.18);
+    border-radius: 8px;
+    background: var(--white);
+    box-shadow: 0 4px 16px rgba(11, 61, 145, 0.10);
+}
+
+.control-point-card[hidden] {
+    display: none;
+}
+
+.control-point-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.control-point-card__header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--navy-blue);
+}
+
+.control-point-card__close {
+    flex: 0 0 auto;
+    padding: 0.3rem 0.55rem;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(11, 61, 145, 0.55);
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.control-point-card__close:hover {
+    background: rgba(11, 61, 145, 0.08);
+    color: var(--navy-blue);
+}
+
+.control-point-field {
+    display: grid;
+    gap: 0.45rem;
+}
+
+.control-point-field label,
+.control-point-field > strong {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: rgba(11, 61, 145, 0.82);
+}
+
+.control-point-field select,
+.control-point-field input[type="number"],
+.control-point-field textarea {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid rgba(11, 61, 145, 0.22);
+    border-radius: 6px;
+    background: var(--white);
+    color: var(--navy-blue);
+    font-family: 'Jost', sans-serif;
+    font-size: 0.92rem;
+    box-shadow: inset 0 1px 3px rgba(11, 61, 145, 0.06);
+}
+
+.control-point-field select:focus,
+.control-point-field input[type="number"]:focus,
+.control-point-field textarea:focus {
+    outline: 2px solid rgba(11, 61, 145, 0.35);
+    outline-offset: 1px;
+}
+
+.control-point-field textarea {
+    resize: vertical;
+    min-height: 64px;
+}
+
+.control-point-field__inline {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.control-point-field__inline label {
+    white-space: nowrap;
+}
+
+.control-point-field__inline select,
+.control-point-field__inline input[type="number"] {
+    width: auto;
+    min-width: 80px;
+    max-width: 200px;
+}
+
+.control-point-radio-group {
+    display: grid;
+    gap: 0.35rem;
+    padding-left: 0.15rem;
+}
+
+.control-point-radio-group label {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    font-size: 0.92rem;
+    font-weight: 400;
+    color: var(--navy-blue);
+    cursor: pointer;
+    padding: 0.3rem 0;
+}
+
+.control-point-radio-group label:hover {
+    background: rgba(11, 61, 145, 0.04);
+    border-radius: 4px;
+}
+
+.control-point-radio-group input[type="radio"] {
+    accent-color: var(--navy-blue);
+}
+
+.control-point-radio-group .common-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: rgba(11, 61, 145, 0.52);
+    margin-left: 0.25rem;
+}
+
+.control-point-suggestion-section {
+    display: grid;
+    gap: 0.55rem;
+    padding: 0.85rem;
+    border-left: 3px solid rgba(126, 192, 238, 0.55);
+    background: rgba(126, 192, 238, 0.08);
+    border-radius: 0 6px 6px 0;
+}
+
+.control-point-suggestion-section[hidden] {
+    display: none;
+}
+
+.control-point-suggestion-section > strong {
+    font-size: 0.82rem;
+    color: rgba(11, 61, 145, 0.75);
+}
+
+.control-point-custom-text {
+    margin-top: 0.25rem;
+}
+
+.control-point-custom-text[hidden] {
+    display: none;
+}
+
+.control-point-summary {
+    display: grid;
+    gap: 0.35rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(11, 61, 145, 0.14);
+    border-radius: 8px;
+    background: rgba(11, 61, 145, 0.04);
+}
+
+.control-point-summary[hidden] {
+    display: none;
+}
+
+.control-point-summary strong {
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    color: rgba(11, 61, 145, 0.65);
+}
+
+.control-point-summary ol {
+    margin: 0;
+    padding-left: 1.15rem;
+    color: rgba(11, 61, 145, 0.82);
+    font-size: 0.92rem;
+}
+
+.control-point-summary li {
+    margin: 0.18rem 0;
+}
+
+.control-point-card__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+
+.control-point-validation {
+    color: #7f1d1d;
+    font-size: 0.82rem;
+    font-weight: 500;
+    padding: 0.35rem 0.55rem;
+    border-radius: 6px;
+    background: rgba(176, 0, 32, 0.07);
+}
+
+.control-point-validation[hidden] {
+    display: none;
+}
+
 .template-start-page {
     display: grid;
     gap: 1.25rem;

@@ -287,3 +287,94 @@ def test_rank_order_empty_config_does_not_break_meeting_payload(
     agenda = meeting_resp.json().get("agenda", [])
     rank_activity = next(item for item in agenda if item["activity_id"] == activity_id)
     assert rank_activity.get("transfer_count") == 0
+
+
+def test_rank_order_summary_includes_prior_round_rationales(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.models.meeting import AgendaActivity
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    # Create meeting with an orchestration config representing Round 2 (round_index = 1)
+    meeting, activity_id = _create_rank_order_meeting(
+        db_session,
+        admin_user,
+        config_override={
+            "_orchestration": {
+                "logical_step_id": "engine:steps.0.steps.1.steps.0.steps.0",
+                "round_index": 1,
+            }
+        }
+    )
+    meeting.agenda_strategy = "orchestration"
+    meeting.orchestration_path = "orchestrations/delphi.json"
+
+    # Create justification activity for round_index = 0
+    just_activity = AgendaActivity(
+        activity_id="prev_just_act_id",
+        meeting_id=meeting.meeting_id,
+        tool_type="outlier_justification",
+        title="Justify Outlier Rankings",
+        order_index=2,
+        tool_config_id="prev_just_config_id",
+        config={
+            "_orchestration": {
+                "logical_step_id": "engine:steps.0.steps.1.steps.0.steps.1",
+                "round_index": 0,
+            }
+        }
+    )
+    db_session.add(just_activity)
+    db_session.commit()
+    db_session.refresh(meeting)
+
+    # Seed an outlier justification output bundle for round_index = 0
+    bm = ActivityBundleManager(db_session)
+    justification_items = [
+        {
+            "content": "Improve UX",
+            "metadata": {
+                "outlier_justification": {
+                    "option_id": f"{activity_id}:improve-ux",  # matching stable key 'improve-ux'
+                    "rationales": ["Need better layout", "Confusing navigation"],
+                    "rationale_count": 2,
+                }
+            },
+            "source": {
+                "meeting_id": meeting.meeting_id,
+                "activity_id": "prev_just_act_id",
+                "tool_type": "outlier_justification",
+            }
+        }
+    ]
+    bm.create_bundle(
+        meeting_id=meeting.meeting_id,
+        activity_id="prev_just_act_id",
+        kind="output",
+        items=justification_items,
+        metadata={"source": "outlier_justification"},
+        logical_step_id="engine:steps.0.steps.1.steps.0.steps.1",
+        round_index=0,
+    )
+
+    # Request summary for the round 1 rank_order_voting activity
+    response = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+        params={"activity_id": activity_id},
+    )
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+
+    # Find the summary for the option "Improve UX" (which has stable key "improve-ux")
+    improve_ux_opt = next(opt for opt in payload["options"] if "improve-ux" in opt["option_id"])
+    assert improve_ux_opt["prior_round_rationales"] == ["Need better layout", "Confusing navigation"]
+
+    # Verify other options have no prior rationales
+    scale_infra_opt = next(opt for opt in payload["options"] if "scale-infra" in opt["option_id"])
+    assert scale_infra_opt["prior_round_rationales"] is None

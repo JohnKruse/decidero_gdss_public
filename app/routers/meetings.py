@@ -1033,6 +1033,64 @@ async def fork_meeting_template(
     }
 
 
+class ControlPointCompilePayload(BaseModel):
+    """Plainspoken Marmot: facilitator card form for a control-point iterate block."""
+
+    activity_tool_type: str = Field(..., min_length=1)
+    activity_title: Optional[str] = Field(None, max_length=200)
+    who_decides: Literal["facilitator", "assisted", "auto"] = "assisted"
+    stop_condition: Literal[
+        "responses_stabilize", "agreement", "fixed_rounds", "custom"
+    ] = "responses_stabilize"
+    stop_condition_text: Optional[str] = Field(None, max_length=2000)
+    max_rounds: int = Field(..., ge=1, le=50)
+    threshold: Optional[float] = Field(None, ge=0.0)
+
+
+@router.post("/templates/control-point/compile")
+async def compile_control_point(
+    payload: ControlPointCompilePayload,
+    current_user: str = Depends(get_current_user),
+    _: bool = Depends(check_permission(Permission.CREATE_MEETING)),
+):
+    """Plainspoken Marmot: compile a plain-language control-point card to an iterate step.
+
+    Stateless — does not persist anything. The facilitator uses the result to
+    embed the iterate step into a template's orchestration document.
+    """
+    from app.services.orchestration_authoring import (
+        compile_control_point_card,
+        summarize_control_point,
+    )
+
+    card = payload.model_dump()
+    try:
+        iterate_step = compile_control_point_card(card)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    summary = summarize_control_point(iterate_step)
+    return {"iterate_step": iterate_step, "summary": summary}
+
+
+@router.post("/templates/control-point/decompile")
+async def decompile_control_point(
+    iterate_step: dict,
+    current_user: str = Depends(get_current_user),
+    _: bool = Depends(check_permission(Permission.CREATE_MEETING)),
+):
+    """Plainspoken Marmot: reverse-engineer a card form payload from an iterate step.
+
+    Stateless — used to populate the edit form for an existing control point.
+    """
+    from app.services.orchestration_authoring import decompile_control_point_card
+
+    try:
+        card = decompile_control_point_card(iterate_step)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid iterate step: {exc}")
+    return card
+
+
 @router.put("/templates/{template_id}", response_model=MeetingTemplateResponse)
 async def update_meeting_template(
     template_id: str,
