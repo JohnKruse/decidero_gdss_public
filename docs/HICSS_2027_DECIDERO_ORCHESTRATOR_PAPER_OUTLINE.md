@@ -503,14 +503,17 @@ suggested counts, caps, and selected item keys. The round-gate report now carrie
 state expose it for the facilitator UI. The justification activity now has a
 selected-item backend/API mode (`comment_scope: "selected_items"`) that opens the
 same facilitator-selected ideas to every participant while preserving the
-outlier-only mode as a backward-compatible variant. The rank-order summary
+outlier-only mode as a backward-compatible variant. The facilitator round-gate
+report now renders and persists a selected-comment count control from the
+adaptive feedback recommendation, with max-count validation. The rank-order summary
 backend now implements the first part of group-ordered reranking: unsubmitted
 Round 2+ Delphi items are ordered by prior group median/IQR for all participants,
 rather than by each participant's private/random order. The ranking UI now
 replaces verbose prior stats with green/yellow/red agreement badges and compact
 group-rank text. Remaining implementation work is facilitator selection UI,
-zero-count skip/advance wiring, participant-side "your comment" labeling,
-template instantiation controls, and the end-to-end Delphi regression.
+applying the selected count before comments open, zero-count skip/advance wiring,
+participant-side "your comment" labeling, template instantiation controls, and
+the end-to-end Delphi regression.
 
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 

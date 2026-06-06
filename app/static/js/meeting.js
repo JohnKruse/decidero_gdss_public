@@ -452,6 +452,7 @@
             activityId: null,
             loading: false,
             responding: false,
+            selectedCommentCount: null,
         };
 
         const orchestrationAdvanceState = {
@@ -7032,8 +7033,10 @@
             if (!data || data.available === false) {
                 el.hidden = true;
                 el.innerHTML = "";
+                facilitatorDecisionState.selectedCommentCount = null;
                 return;
             }
+            const feedbackSelection = data.feedback_selection || null;
             const rows = [
                 ["Overall agreement", `${data.agreement_label} (median spread ${data.median_iqr})`],
                 ["Items ranked", String(data.item_count)],
@@ -7048,6 +7051,43 @@
                 rows
                     .map(([k, v]) => `<div class="round-stats-row"><span class="round-stats-key">${k}</span><span class="round-stats-val">${v}</span></div>`)
                     .join("");
+            if (feedbackSelection) {
+                const suggested = Number.parseInt(feedbackSelection.suggested_count, 10);
+                const max = Number.parseInt(feedbackSelection.max_selectable_count, 10);
+                const safeSuggested = Number.isFinite(suggested) ? suggested : 0;
+                const safeMax = Number.isFinite(max) ? max : safeSuggested;
+                const selectedCount = Number.isFinite(facilitatorDecisionState.selectedCommentCount)
+                    ? Math.min(Math.max(facilitatorDecisionState.selectedCommentCount, 0), safeMax)
+                    : safeSuggested;
+                facilitatorDecisionState.selectedCommentCount = selectedCount;
+                const control = document.createElement("div");
+                control.className = "decision-feedback-selector";
+                const label = document.createElement("label");
+                label.setAttribute("for", "facilitatorFeedbackCommentCount");
+                label.textContent = "Ideas to open for comments";
+                const input = document.createElement("input");
+                input.id = "facilitatorFeedbackCommentCount";
+                input.type = "number";
+                input.min = "0";
+                input.max = String(safeMax);
+                input.step = "1";
+                input.value = String(selectedCount);
+                input.disabled = facilitatorDecisionState.responding;
+                input.addEventListener("input", () => {
+                    const next = Number.parseInt(input.value, 10);
+                    facilitatorDecisionState.selectedCommentCount = Number.isFinite(next)
+                        ? Math.min(Math.max(next, 0), safeMax)
+                        : 0;
+                });
+                const hint = document.createElement("p");
+                hint.className = "decision-feedback-selector-hint";
+                hint.textContent =
+                    `Suggested ${safeSuggested}; choose 0 to skip comments, up to ${safeMax}.`;
+                control.append(label, input, hint);
+                el.appendChild(control);
+            } else {
+                facilitatorDecisionState.selectedCommentCount = null;
+            }
             el.hidden = false;
         }
 
@@ -7119,7 +7159,10 @@
                         method: "POST",
                         credentials: "include",
                         headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ chosen_option: option }),
+                        body: JSON.stringify({
+                            chosen_option: option,
+                            selected_comment_count: facilitatorDecisionState.selectedCommentCount,
+                        }),
                     },
                 );
                 const data = await response.json().catch(() => ({}));
@@ -7525,6 +7568,7 @@
                 if (showFacilitatorDecision && activeActivity) {
                     if (facilitatorDecisionState.activityId !== activeActivity.activity_id) {
                         facilitatorDecisionState.activityId = activeActivity.activity_id;
+                        facilitatorDecisionState.selectedCommentCount = null;
                         setFacilitatorDecisionStatus("");
                     }
                     renderFacilitatorDecisionPanel(activeActivity);

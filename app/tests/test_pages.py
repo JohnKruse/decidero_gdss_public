@@ -355,12 +355,27 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     state_selection = state_json["report"]["data"]["feedback_selection"]
     assert state_selection["max_selectable_count"] == 1
 
+    too_many = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}/responses",
+        json={"chosen_option": "continue", "selected_comment_count": 2},
+    )
+    assert too_many.status_code == 400
+    assert "exceeds the maximum" in too_many.json()["detail"]
+
     # Choose "continue" to run another round.
     resume = authenticated_client.post(
         f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}/responses",
-        json={"chosen_option": "continue"},
+        json={"chosen_option": "continue", "selected_comment_count": 1},
     )
     assert resume.status_code == 200, resume.text
+    assert resume.json()["selected_comment_count"] == 1
+    decision_bundle = (
+        db_session.query(ActivityBundle)
+        .filter(ActivityBundle.activity_id == gate_activity_id, ActivityBundle.kind == "output")
+        .order_by(ActivityBundle.id.desc())
+        .first()
+    )
+    assert decision_bundle.bundle_metadata["selected_comment_count"] == 1
 
     # Advance -> Round 2 subcycle: rank-order vote, carrying the prior round's
     # feedback. (Its post-ranking justification step would follow.)

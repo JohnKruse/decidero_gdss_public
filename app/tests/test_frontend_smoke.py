@@ -331,8 +331,13 @@ def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
 
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
     assert "advanceOrchestration" in js
     assert "renderRoundGate" in js
+    assert "facilitatorFeedbackCommentCount" in js
+    assert "selected_comment_count" in js
+    assert "decision-feedback-selector" in css
     # continue steers to the next round; conclude finishes the method.
     assert "Run another round." in js
     assert "Finish the method and stop here." in js

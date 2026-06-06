@@ -22,7 +22,9 @@ UI now shows agreement color badges. Remaining slices are facilitator selection
 UI/orchestration skip wiring, participant-side "your comment" labeling, template
 instantiation controls, and the end-to-end Delphi regression. The participant
 comment panel now uses selected-item-aware wording when `comment_scope` is
-`selected_items`.
+`selected_items`. The facilitator round-gate report now shows and persists the
+selected-comment count from the adaptive feedback recommendation; the next flow
+slice must apply that choice before opening the comment step.
 
 ---
 

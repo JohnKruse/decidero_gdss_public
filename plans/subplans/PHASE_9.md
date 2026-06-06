@@ -221,9 +221,12 @@ Stage discipline:
    same selected ideas to every participant, rejects non-selected submissions,
    reports selected-item progress to facilitators, and keeps the existing
    outlier-only mode intact. The meeting panel now uses selected-item-aware copy
-   for progress, empty state, instructions, and comment placeholders. Facilitator
-   selection UI, private "your comment" labeling, and orchestration skip/advance
-   wiring remain.
+   for progress, empty state, instructions, and comment placeholders. The
+   facilitator round-gate report now renders a numeric selected-comment count
+   control from `feedback_selection` and persists the chosen count in the
+   facilitator-decision bundle, including max-count validation. Remaining work:
+   move/apply that decision before the comment activity opens, private "your
+   comment" labeling, and orchestration skip/advance wiring.
 5. [PARTIAL] Group-ordered reranking + visual feedback: add regression tests
    showing all participants receive the same group-ordered Round 2+ list; add JS
    syntax/smoke checks for feedback badges and progression display. The backend

@@ -1367,6 +1367,37 @@
   text-align: right;
 }
 
+.decision-feedback-selector {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 12px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px 0 2px;
+  border-top: 1px solid #eef1f6;
+}
+
+.decision-feedback-selector label {
+  color: #33415c;
+  font-weight: 600;
+}
+
+.decision-feedback-selector input {
+  width: 5rem;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font: inherit;
+  text-align: right;
+}
+
+.decision-feedback-selector-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #5d6b82;
+  font-size: 0.82rem;
+}
+
 /* Per-phase guidance interstitial shown above the active activity. */
 .activity-interstitial {
   display: flex;

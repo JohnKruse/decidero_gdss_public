@@ -193,6 +193,7 @@ class ParticipantBulkUpdatePayload(BaseModel):
 
 class FacilitatorDecisionResponsePayload(BaseModel):
     chosen_option: str = Field(..., min_length=1)
+    selected_comment_count: Optional[int] = Field(default=None, ge=0)
 
 
 class ActivityParticipantUpdatePayload(BaseModel):
@@ -2361,35 +2362,57 @@ async def respond_facilitator_decision(
     orchestration = config.get("_orchestration") or {}
     decision_logical_step_id = orchestration.get("logical_step_id")
     decision_round_index = int(orchestration.get("round_index", 0) or 0)
+    feedback_selection = (
+        ((config.get("report") or {}).get("data") or {}).get("feedback_selection")
+        or {}
+    )
+    selected_comment_count = payload.selected_comment_count
+    if selected_comment_count is not None:
+        max_selectable = int(feedback_selection.get("max_selectable_count") or 0)
+        if selected_comment_count > max_selectable:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    "selected_comment_count exceeds the maximum allowed for this "
+                    f"feedback round ({max_selectable})."
+                ),
+            )
+    facilitator_decision_metadata = {
+        "prompt": config.get("prompt") or activity.title,
+        "options": options,
+        "chosen": chosen,
+        "actor_user_id": user.user_id,
+        "logical_step_id": decision_logical_step_id,
+    }
+    bundle_metadata = {
+        "source": "facilitator_decision",
+        "options": options,
+        "chosen": chosen,
+        "logical_step_id": decision_logical_step_id,
+    }
+    if selected_comment_count is not None:
+        facilitator_decision_metadata["selected_comment_count"] = selected_comment_count
+        bundle_metadata["selected_comment_count"] = selected_comment_count
 
     bundle = ActivityBundleManager(meeting_manager.db).finalize_output_bundle(
         meeting_id,
         activity.activity_id,
-        items=[{
-            "content": chosen,
-            "metadata": {
-                "facilitator_decision": {
-                    "prompt": config.get("prompt") or activity.title,
-                    "options": options,
-                    "chosen": chosen,
-                    "actor_user_id": user.user_id,
-                    "logical_step_id": decision_logical_step_id,
-                }
-            },
-            "source": {
-                "meeting_id": meeting_id,
+        items=[
+            {
+                "content": chosen,
+                "metadata": {
+                    "facilitator_decision": facilitator_decision_metadata
+                },
+                "source": {
+                    "meeting_id": meeting_id,
+                    "activity_id": activity.activity_id,
+                    "tool_type": "facilitator_decision",
+                },
                 "activity_id": activity.activity_id,
-                "tool_type": "facilitator_decision",
-            },
-            "activity_id": activity.activity_id,
-            "user_id": user.user_id,
-        }],
-        metadata={
-            "source": "facilitator_decision",
-            "options": options,
-            "chosen": chosen,
-            "logical_step_id": decision_logical_step_id,
-        },
+                "user_id": user.user_id,
+            }
+        ],
+        metadata=bundle_metadata,
         logical_step_id=decision_logical_step_id,
         round_index=decision_round_index,
     )
@@ -2411,6 +2434,7 @@ async def respond_facilitator_decision(
         "meeting_id": meeting_id,
         "activity_id": activity.activity_id,
         "chosen_option": chosen,
+        "selected_comment_count": selected_comment_count,
         "bundle_id": bundle.bundle_id,
         "state": realtime.get("state"),
     }
