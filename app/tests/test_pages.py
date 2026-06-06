@@ -267,9 +267,34 @@ def test_orchestration_advance_endpoint_materializes_next_round(
         [{"content": "idea-a"}, {"content": "idea-b"}], metadata={"source": "test"},
     )
 
-    def _advance_close_justify(expected_round):
-        # Delphi subcycle: each round closes with a post-ranking justification
-        # step. Advance into it and finalize it.
+    def _advance_close_justify(expected_round, *, assert_selector=False):
+        # Delphi subcycle: each round runs an in-round facilitator decision (how
+        # many disputed ideas to open for comment) and then the comment/justify
+        # step. Advance through the decision (skip comments) and finalize justify.
+        dec = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+        assert dec.status_code == 200, dec.text
+        dbody = dec.json()
+        assert dbody["status"] == "paused"
+        dec_id = dbody["pending_decision"]["activity_id"]
+        assert dbody["pending_decision"]["options"] == ["open_comments", "skip_comments"]
+        if assert_selector:
+            # The in-round decision (not the boundary gate) carries the selector.
+            sel = dbody["pending_decision"]["report"]["data"]["feedback_selection"]
+            assert sel["strategy"] == "adaptive_least_converged"
+            assert sel["suggested_count"] == 1
+            assert sel["max_selectable_count"] == 1
+            too_many = authenticated_client.post(
+                f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{dec_id}/responses",
+                json={"chosen_option": "open_comments", "selected_comment_count": 2},
+            )
+            assert too_many.status_code == 400
+            assert "exceeds the maximum" in too_many.json()["detail"]
+        resp = authenticated_client.post(
+            f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{dec_id}/responses",
+            json={"chosen_option": "skip_comments"},
+        )
+        assert resp.status_code == 200, resp.text
+
         adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
         assert adv.status_code == 200, adv.text
         jbody = adv.json()
@@ -325,10 +350,12 @@ def test_orchestration_advance_endpoint_materializes_next_round(
         logical_step_id=orch0["logical_step_id"], round_index=0,
     )
 
-    # ... then the post-ranking justification step closes the round.
-    _advance_close_justify(0)
+    # ... then the in-round decision (with the comment-count selector) and the
+    # comment/justify step close the round.
+    _advance_close_justify(0, assert_selector=True)
 
-    # Advance -> round-gate decision (facilitator continue/conclude).
+    # Advance -> round-gate decision (facilitator continue/conclude only; the
+    # comment-count selector now lives on the in-round decision, not the gate).
     gate_adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
     assert gate_adv.status_code == 200, gate_adv.text
     gate_body = gate_adv.json()
@@ -339,43 +366,15 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     assert gate_body["pending_decision"]["is_round_gate"] is True
     assert gate_body["pending_decision"]["recommendation"] in ("continue", "conclude")
     assert gate_body["pending_decision"]["evidence"]["round_number"] == 1
-    feedback_selection = gate_body["pending_decision"]["report"]["data"]["feedback_selection"]
-    assert feedback_selection["strategy"] == "adaptive_least_converged"
-    assert feedback_selection["suggested_count"] == 1
-    assert feedback_selection["allow_skip"] is True
-
-    # The decision-state endpoint exposes the same gate context for rendering.
-    state_resp = authenticated_client.get(
-        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}"
-    )
-    assert state_resp.status_code == 200, state_resp.text
-    state_json = state_resp.json()
-    assert state_json["is_round_gate"] is True
-    assert state_json["evidence"]["max_rounds"] == 4
-    state_selection = state_json["report"]["data"]["feedback_selection"]
-    assert state_selection["max_selectable_count"] == 1
-
-    too_many = authenticated_client.post(
-        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}/responses",
-        json={"chosen_option": "continue", "selected_comment_count": 2},
-    )
-    assert too_many.status_code == 400
-    assert "exceeds the maximum" in too_many.json()["detail"]
+    # The gate report no longer carries the comment-count selector.
+    assert "feedback_selection" not in (gate_body["pending_decision"]["report"]["data"])
 
     # Choose "continue" to run another round.
     resume = authenticated_client.post(
         f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_activity_id}/responses",
-        json={"chosen_option": "continue", "selected_comment_count": 1},
+        json={"chosen_option": "continue"},
     )
     assert resume.status_code == 200, resume.text
-    assert resume.json()["selected_comment_count"] == 1
-    decision_bundle = (
-        db_session.query(ActivityBundle)
-        .filter(ActivityBundle.activity_id == gate_activity_id, ActivityBundle.kind == "output")
-        .order_by(ActivityBundle.id.desc())
-        .first()
-    )
-    assert decision_bundle.bundle_metadata["selected_comment_count"] == 1
 
     # Advance -> Round 2 subcycle: rank-order vote, carrying the prior round's
     # feedback. (Its post-ranking justification step would follow.)
@@ -402,12 +401,13 @@ def test_adaptive_delphi_feedback_end_to_end(
     authenticated_client: TestClient,
     db_session,
 ):
-    """Plainspoken Marmot — Phase 9 Step 3A Stage 7 end-to-end:
+    """Plainspoken Marmot — Phase 9 Step 3A end-to-end (in-round decision):
 
-    Round 1 ranks with disagreement; the facilitator opens one least-converged
-    idea at the gate; the next round's comment step opens that selected idea to
-    everyone; a participant comments; and Round 2 reranking surfaces the
-    "Round N of M" progression. Drives the real HTTP advance/control flow.
+    A round ranks with disagreement; the facilitator opens one least-converged
+    idea at the *in-round* decision (between rank and comment); the comment step
+    then opens that selected idea to everyone; a participant comments; and the rank
+    summary surfaces the "Round N of M" progression. Drives the real HTTP
+    advance/control flow.
     """
     from app.data.activity_bundle_manager import ActivityBundleManager
     from app.data.meeting_template_manager import seed_builtin_meeting_templates
@@ -453,58 +453,46 @@ def test_adaptive_delphi_feedback_end_to_end(
         assert resp.status_code == 200, resp.text
         return resp.json()
 
-    # Round 1: rank (disagreement) -> justify (no comments yet).
-    rank1 = _advance()["activity"]
-    assert rank1["tool_type"] == "rank_order_voting"
-    _finalize_ranking(rank1["activity_id"], rank1["config"]["_orchestration"]["logical_step_id"], 0)
+    # Round 0: rank with disagreement.
+    rank0 = _advance()["activity"]
+    assert rank0["tool_type"] == "rank_order_voting"
+    _finalize_ranking(rank0["activity_id"], rank0["config"]["_orchestration"]["logical_step_id"], 0)
 
-    just1 = _advance()["activity"]
-    assert just1["tool_type"] == "outlier_justification"
-    bm.finalize_output_bundle(
-        meeting_id, just1["activity_id"], [],
-        metadata={"source": "outlier_justification"},
-        logical_step_id=just1["config"]["_orchestration"]["logical_step_id"], round_index=0,
-    )
-
-    # Gate: facilitator opens exactly one least-converged idea.
-    gate = _advance()
-    assert gate["status"] == "paused"
-    gate_id = gate["pending_decision"]["activity_id"]
+    # In-round decision: the facilitator opens exactly one least-converged idea.
+    decision = _advance()
+    assert decision["status"] == "paused"
+    dec = decision["pending_decision"]
+    assert dec["options"] == ["open_comments", "skip_comments"]
+    # The selector report rides on this in-round decision (computed from the rank).
+    assert dec["report"]["data"]["feedback_selection"]["suggested_count"] == 1
     decide = authenticated_client.post(
-        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_id}/responses",
-        json={"chosen_option": "continue", "selected_comment_count": 1},
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{dec['activity_id']}/responses",
+        json={"chosen_option": "open_comments", "selected_comment_count": 1},
     )
     assert decide.status_code == 200, decide.text
 
-    # Round 2: rank (carrying feedback) -> comment step.
-    rank2 = _advance()["activity"]
-    assert rank2["tool_type"] == "rank_order_voting"
-    assert rank2["config"]["_orchestration"]["round_index"] == 1
-    _finalize_ranking(rank2["activity_id"], rank2["config"]["_orchestration"]["logical_step_id"], 1)
-
-    just2 = _advance()["activity"]
-    assert just2["tool_type"] == "outlier_justification"
-    just2_id = just2["activity_id"]
-
-    # Starting the comment step applies the facilitator's count: selected-items mode
-    # opens the single most-disputed idea (idea-a) to everyone.
+    # Comment step materializes; starting it applies the count (selected_items mode
+    # opens the single most-disputed idea, idea-a, to everyone).
+    just0 = _advance()["activity"]
+    assert just0["tool_type"] == "outlier_justification"
+    just0_id = just0["activity_id"]
     start = authenticated_client.post(
         f"/api/meetings/{meeting_id}/control",
-        json={"action": "start_tool", "tool": "outlier_justification", "activityId": just2_id},
+        json={"action": "start_tool", "tool": "outlier_justification", "activityId": just0_id},
     )
     assert start.status_code == 200, start.text
     db_session.expire_all()
-    just2_row = db_session.query(AgendaActivity).filter(
-        AgendaActivity.activity_id == just2_id
+    just0_row = db_session.query(AgendaActivity).filter(
+        AgendaActivity.activity_id == just0_id
     ).one()
-    assert just2_row.config["comment_scope"] == "selected_items"
-    selected = [e["option_id"] for e in just2_row.config["selected_comment_items"]]
-    assert selected == [f"{rank2['activity_id']}:idea-a"]
+    assert just0_row.config["comment_scope"] == "selected_items"
+    selected = [e["option_id"] for e in just0_row.config["selected_comment_items"]]
+    assert selected == [f"{rank0['activity_id']}:idea-a"]
 
     # Every participant sees the same selected idea queued (not an outlier-only set).
     state = authenticated_client.get(
         f"/api/meetings/{meeting_id}/justification/state",
-        params={"activity_id": just2_id},
+        params={"activity_id": just0_id},
     )
     assert state.status_code == 200, state.text
     state_json = state.json()
@@ -514,19 +502,19 @@ def test_adaptive_delphi_feedback_end_to_end(
     # A comment persists through the API.
     comment = authenticated_client.post(
         f"/api/meetings/{meeting_id}/justification/rationale",
-        json={"activity_id": just2_id, "option_id": selected[0],
+        json={"activity_id": just0_id, "option_id": selected[0],
               "rationale": "Costs were underweighted."},
     )
     assert comment.status_code == 200, comment.text
     assert comment.json()["submitted"] is True
 
-    # Round 2 reranking surfaces the "Round 2 of 4" progression.
+    # The rank summary surfaces the "Round 1 of 4" progression.
     summary = authenticated_client.get(
         f"/api/meetings/{meeting_id}/rank-order-voting/summary",
-        params={"activity_id": rank2["activity_id"]},
+        params={"activity_id": rank0["activity_id"]},
     )
     assert summary.status_code == 200, summary.text
-    assert summary.json()["delphi_round"] == {"round_number": 2, "max_rounds": 4}
+    assert summary.json()["delphi_round"] == {"round_number": 1, "max_rounds": 4}
 
 
 def test_orchestration_advance_rejects_non_facilitator(

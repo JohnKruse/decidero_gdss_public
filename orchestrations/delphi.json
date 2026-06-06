@@ -91,6 +91,16 @@
                   }
                 },
                 {
+                  "type": "facilitator-decision",
+                  "prompt": "These items had the widest spread last round. How many of the least-agreed ideas do you want to open for comment before the group ranks again?",
+                  "options": ["open_comments", "skip_comments"],
+                  "report": {
+                    "summarizer": "delphi_round_agreement",
+                    "config": { "feedback_selection": true },
+                    "audience": "facilitator"
+                  }
+                },
+                {
                   "type": "activity",
                   "tool_type": "outlier_justification",
                   "title": "Justify Outlier Rankings",

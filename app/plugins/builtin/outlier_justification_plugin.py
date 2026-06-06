@@ -131,12 +131,12 @@ class OutlierJustificationPlugin(ActivityPlugin):
     ) -> None:
         """Project the facilitator's selected-comment-count onto this activity.
 
-        Reads the prior round's facilitator-decision bundle for
-        `selected_comment_count` (the count chosen at the round gate). When set,
-        switches the activity into `selected_items` mode and seeds the top-N
-        least-converged ideas (count 0 → empty queue, a soft skip to reranking).
-        When no decision is recorded, the activity stays in its default
-        outlier-only mode.
+        Reads the **same round's** in-round facilitator-decision bundle for
+        `selected_comment_count` (the count chosen between ranking and commenting).
+        When set, switches the activity into `selected_items` mode and seeds the
+        top-N least-converged ideas (count 0 / "skip_comments" → empty queue, a
+        soft skip to reranking). When no decision is recorded, the activity stays in
+        its default outlier-only mode.
         """
         policy = (config.get("feedback_policy") or {})
         if not isinstance(policy, dict) or not policy:
@@ -146,10 +146,8 @@ class OutlierJustificationPlugin(ActivityPlugin):
             round_index = int(orchestration.get("round_index", 0) or 0)
         except (TypeError, ValueError):
             round_index = 0
-        if round_index <= 0:
-            return
 
-        count = self._prior_selected_comment_count(context, round_index)
+        count = self._selected_comment_count_for_round(context, round_index)
         if count is None:
             return
 
@@ -188,12 +186,13 @@ class OutlierJustificationPlugin(ActivityPlugin):
         config["selected_comment_items"] = selected_items
 
     @staticmethod
-    def _prior_selected_comment_count(context, round_index: int):
-        """The `selected_comment_count` chosen at the prior round gate, or None.
+    def _selected_comment_count_for_round(context, round_index: int):
+        """The comment count from this round's in-round decision, or None.
 
-        Mirrors the cross-round bundle lookup used by the rank-order manager: scan
-        the prior round's output bundles for the facilitator-decision bundle and
-        read its recorded count.
+        Scans the round's facilitator-decision output bundles (newest first) for
+        the in-round "how many ideas to open?" choice: a `skip_comments` choice
+        means zero; otherwise the recorded `selected_comment_count`. The boundary
+        round-gate bundle (continue/conclude, no count) is ignored.
         """
         from app.models.activity_bundle import ActivityBundle
 
@@ -201,7 +200,7 @@ class OutlierJustificationPlugin(ActivityPlugin):
             context.db.query(ActivityBundle)
             .filter(
                 ActivityBundle.meeting_id == context.meeting.meeting_id,
-                ActivityBundle.round_index == round_index - 1,
+                ActivityBundle.round_index == round_index,
                 ActivityBundle.kind == "output",
             )
             .order_by(ActivityBundle.id.desc())
@@ -211,6 +210,8 @@ class OutlierJustificationPlugin(ActivityPlugin):
             metadata = dict(bundle.bundle_metadata or {})
             if metadata.get("source") != "facilitator_decision":
                 continue
+            if metadata.get("chosen") == "skip_comments":
+                return 0
             if "selected_comment_count" in metadata:
                 try:
                     return int(metadata["selected_comment_count"])

@@ -116,17 +116,22 @@ def test_phase6_delphi_orchestration_loads_and_resolves_registries():
     iterate = sequence.steps[1]
     assert iterate.max_rounds == 4
     # The round body is a nested subcycle (one level of recursion): a sequence of
-    # [re-rank (rank_order_voting) -> justify (outlier_justification)]. The
-    # ranking comes first (nothing to justify before a ranking exists); the engine
-    # reads the ranking as the round's convergence output even though it is not last.
+    # [re-rank (rank_order_voting) -> in-round facilitator-decision (how many ideas
+    # to open for comment) -> justify (outlier_justification)]. The ranking comes
+    # first (nothing to justify before a ranking exists); the engine reads the
+    # ranking as the round's convergence output even though it is not last.
+    from app.services.orchestration_loader import FacilitatorDecisionStep
+
     assert isinstance(iterate.steps[0], SequenceStep)
     subcycle = iterate.steps[0].steps
     assert isinstance(subcycle[0], ActivityStep)
     assert subcycle[0].tool_type == "rank_order_voting"
     assert subcycle[0].transform_input == "previous_round_feedback"
-    assert isinstance(subcycle[1], ActivityStep)
-    assert subcycle[1].tool_type == "outlier_justification"
-    feedback_policy = subcycle[1].config["feedback_policy"]
+    assert isinstance(subcycle[1], FacilitatorDecisionStep)
+    assert subcycle[1].report["config"]["feedback_selection"] is True
+    assert isinstance(subcycle[2], ActivityStep)
+    assert subcycle[2].tool_type == "outlier_justification"
+    feedback_policy = subcycle[2].config["feedback_policy"]
     comment_selection = feedback_policy["comment_selection"]
     assert comment_selection["strategy"] == "adaptive_least_converged"
     assert comment_selection["default_fraction"] == 0.25
@@ -301,12 +306,16 @@ def _close_rank_round(db_session, meeting, activity, owner, logical_step_id, rou
 
 
 def _close_justify_step(db_session, meeting, owner, strategy, input_bundle):
-    """Delphi subcycle: each round closes with a post-ranking justification step
-    (outlier_justification).
+    """Delphi subcycle: each round runs an in-round decision (how many ideas to
+    open for comment) and then a comment/justification step (outlier_justification).
 
-    Materialize and close it. Convergence reads the re-rank output that precedes
-    it, so the justify step's output does not affect the IQR path.
+    Materialize and close them. The synthetic path skips comments (skip_comments);
+    convergence reads the re-rank output that precedes this, so neither step's
+    output affects the IQR path.
     """
+    decision = strategy.create_activity(meeting, None, None)
+    assert decision.tool_type == "facilitator_decision"
+    strategy.resume_with_facilitator_decision(meeting, "skip_comments", db=db_session)
     activity = strategy.create_activity(meeting, None, None)
     assert activity.tool_type == "outlier_justification"
     context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
@@ -2007,7 +2016,11 @@ def test_round_gate_report_includes_adaptive_feedback_selection(db_session):
             "round_gate": {"decision": {
                 "prompt": "Continue?",
                 "options": ["continue", "conclude"],
-                "report": {"summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"},
+                "report": {
+                    "summarizer": "delphi_round_agreement",
+                    "config": {"feedback_selection": True},
+                    "audience": "facilitator",
+                },
             }},
             "steps": [{
                 "type": "activity",

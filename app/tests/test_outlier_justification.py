@@ -404,9 +404,9 @@ def _record_gate_decision(db, meeting, round_index, selected_comment_count):
 
 
 def test_plugin_open_applies_facilitator_selected_count(db_session):
-    """A prior-round gate count of N opens the N most-disputed ideas to everyone."""
+    """The same round's in-round decision count of N opens the N most-disputed ideas."""
     meeting = _meeting(db_session)
-    _record_gate_decision(db_session, meeting, round_index=0, selected_comment_count=2)
+    _record_gate_decision(db_session, meeting, round_index=1, selected_comment_count=2)
     activity = _activity(
         db_session,
         meeting,
@@ -431,9 +431,9 @@ def test_plugin_open_applies_facilitator_selected_count(db_session):
 
 
 def test_plugin_open_count_zero_skips_comments(db_session):
-    """A gate count of 0 opens an empty selected queue (a soft skip to reranking)."""
+    """An in-round count of 0 opens an empty selected queue (a soft skip to reranking)."""
     meeting = _meeting(db_session)
-    _record_gate_decision(db_session, meeting, round_index=0, selected_comment_count=0)
+    _record_gate_decision(db_session, meeting, round_index=1, selected_comment_count=0)
     activity = _activity(
         db_session,
         meeting,

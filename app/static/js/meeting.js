@@ -7033,6 +7033,10 @@
             const isGate = Boolean(detail && detail.is_round_gate);
             const evidence = (detail && detail.evidence) || {};
             const recommendation = detail && detail.recommendation;
+            // The grammar-declared report + comment-count selector renders for any
+            // decision that carries one (round gate OR in-round decision); only the
+            // gate-specific evidence/recommendation panel is gated on is_round_gate.
+            renderGateReport(detail && detail.report);
             if (!isGate) {
                 gate.hidden = true;
                 return;
@@ -7057,7 +7061,6 @@
                     ? `Suggestion: ${recommendation}.`
                     : "";
             }
-            renderGateReport(detail && detail.report);
         }
 
         // Render the grammar-declared report (the summarizer's computed `data`)

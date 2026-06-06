@@ -622,7 +622,12 @@ class _PlanWalker:
             data = summarizer.summarize(round_output, report_spec.get("config") or {})
         except Exception:  # a misbehaving summarizer must not break the gate
             return report_spec
-        if feedback_policy:
+        # The comment-count selector (feedback_selection) is attached only when the
+        # report opts in via `config.feedback_selection`. This keeps it on the
+        # in-round "how many ideas to open?" decision and off the boundary gate
+        # (which is just continue/conclude).
+        wants_feedback = bool((report_spec.get("config") or {}).get("feedback_selection"))
+        if wants_feedback and feedback_policy:
             try:
                 from app.services.delphi_feedback_policy import build_delphi_feedback_selection
 
@@ -930,7 +935,10 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                     )
             return None
 
-        # No explicit donor: resolve by plan order (previous activity feeds this one)
+        # No explicit donor: resolve by plan order (previous activity feeds this one).
+        # Facilitator-decision steps (round gates and in-round decisions) are control
+        # points, not content producers, so skip them when finding the donor — e.g. a
+        # comment step after `rank → in-round decision` still consumes the ranking.
         previous: Optional[AgendaActivity] = None
         for item in agenda:
             if item.activity_id == reference.consumer_activity_id:
@@ -943,7 +951,8 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                     round_index=iteration[1] if iteration else None,
                     handle=reference.handle,
                 )
-            previous = item
+            if item.tool_type != self.FACILITATOR_DECISION_TOOL_TYPE:
+                previous = item
         return None
 
     def list_agenda(self, meeting: Meeting) -> List[AgendaActivity]:
@@ -1070,7 +1079,8 @@ class OrchestrationEngineStrategy(AgendaStrategy):
 
         if isinstance(step, FacilitatorDecisionStep):
             return self._materialize_facilitator_decision(
-                meeting, db, step_index, logical_step_id, step
+                meeting, db, step_index, logical_step_id, step,
+                round_index=round_index, iterate_frame=iterate_frame,
             )
 
         if isinstance(step, AIDecisionStep):
@@ -1190,6 +1200,8 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         step_index: int,
         logical_step_id: str,
         step: Any,
+        round_index: int = 0,
+        iterate_frame: Optional["_IterateFrame"] = None,
     ) -> AgendaActivity:
         """Insolent Metronome: mint the placeholder row and enter pause state.
 
@@ -1197,6 +1209,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         configuration so callers can render the pause to a facilitator. The
         engine then refuses to advance until `resume_with_facilitator_decision`
         is called with one of the configured option names.
+
+        When the step sits inside an iterate and declares a `report`, the report is
+        computed from the round's just-completed output (the same machinery the
+        boundary gate uses), so an in-round decision can show the agreement report
+        and the comment-count selector before the comment step opens.
         """
         from app.utils.identifiers import generate_activity_id, generate_tool_config_id
 
@@ -1204,14 +1221,31 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         activity_id = generate_activity_id(db, meeting.meeting_id, tool_type)
         tool_config_id = generate_tool_config_id(activity_id, meeting.meeting_id)
 
+        report = None
+        report_spec = getattr(step, "report", None)
+        if report_spec and iterate_frame is not None:
+            round_output = _PlanWalker._collect_round_output(
+                iterate_frame, db, meeting.meeting_id
+            )
+            report = _PlanWalker._compute_gate_report(
+                {"report": report_spec},
+                round_output,
+                _PlanWalker._feedback_policy_for_step(iterate_frame.step),
+            )
+
         config: Dict[str, Any] = {
             "prompt": step.prompt,
             "options": list(step.options),
             "context_bundle_keys": list(step.context_bundle_keys or []),
             # Deliberate Heron: persist the step pointer so a per-request strategy
             # can rehydrate the pause state from this row alone.
-            "_orchestration": {"logical_step_id": logical_step_id, "round_index": 0},
+            "_orchestration": {
+                "logical_step_id": logical_step_id,
+                "round_index": round_index,
+            },
         }
+        if report is not None:
+            config["report"] = report
 
         activity = AgendaActivity(
             activity_id=activity_id,
@@ -1229,9 +1263,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         self._pending_decision = {
             "activity_id": activity.activity_id,
             "logical_step_id": logical_step_id,
+            "round_index": round_index,
             "prompt": step.prompt,
             "options": list(step.options),
             "context_bundle_keys": list(step.context_bundle_keys or []),
+            "report": report,
         }
         return activity
 

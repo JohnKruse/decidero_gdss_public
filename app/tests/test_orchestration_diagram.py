@@ -57,8 +57,9 @@ def test_graphviz_renders_delphi_clusters_and_loopback():
     assert dot.count("subgraph cluster_") >= 3
     assert "iterate ·" in dot
     assert "sequence (subcycle)" in dot
-    # Loop-back edge returns to the ranking node.
-    assert '"n0_1_0_1" -> "n0_1_0_0"' in dot
+    # Loop-back edge returns to the ranking node from the subcycle's last step
+    # (now [rank, in-round decision, justify]).
+    assert '"n0_1_0_2" -> "n0_1_0_0"' in dot
     assert "style=dashed" in dot
 
 

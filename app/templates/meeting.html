@@ -293,12 +293,14 @@
                 {{ section_header('Facilitator Decision', 'Review the pending orchestration decision and choose the next action.') }}
                 <div class="section-body">
                     <p id="facilitatorDecisionPrompt" class="decision-prompt"></p>
-                    <!-- Round-gate evidence + recommendation + grammar-declared report. -->
+                    <!-- Round-gate evidence + recommendation (gate decisions only). -->
                     <div id="facilitatorDecisionGate" class="decision-gate" hidden>
                         <p id="facilitatorDecisionGateEvidence" class="decision-gate-evidence"></p>
                         <p id="facilitatorDecisionGateRecommendation" class="decision-gate-recommendation"></p>
-                        <div id="facilitatorDecisionGateReport" class="decision-gate-report" hidden></div>
                     </div>
+                    <!-- Grammar-declared report + comment-count selector. Rendered for
+                         any decision that declares a report (round gate or in-round). -->
+                    <div id="facilitatorDecisionGateReport" class="decision-gate-report" hidden></div>
                     <div id="facilitatorDecisionAiReview" class="decision-review" hidden>
                         <span class="meeting-overview-label">AI proposal</span>
                         <pre id="facilitatorDecisionAiOutput"></pre>

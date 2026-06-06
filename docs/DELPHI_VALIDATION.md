@@ -89,19 +89,31 @@ data, not engine logic:
   reranking
 - agreement bands start from IQR (`green_max = 1.0`, `yellow_max = 2.0`)
 
+### The in-round decision point
+
+The "how many least-converged ideas to open for comment?" choice is an **in-round
+facilitator-decision** step, placed in the round subcycle between the ranking and
+the comment step (`rank → decide count → comment → rerank`). It reuses the generic
+`facilitator-decision` step the engine already pauses on mid-sequence — no
+Delphi-specific control. Its report (`delphi_round_agreement` with
+`config.feedback_selection: true`) is computed from the same round's just-completed
+ranking, so the facilitator sees the agreement bands and the count selector before
+the comment step opens. Options are `open_comments` / `skip_comments` (skip = zero,
+a soft pass straight to reranking). The boundary round-gate remains a plain
+continue/conclude decision and no longer carries the count selector.
+
 ### Applying the facilitator's count (selected-idea comment mode)
 
-The facilitator chooses how many least-converged ideas to open at the round gate
-(`selected_comment_count`, persisted on the facilitator-decision bundle). The
-next round's `outlier_justification` activity applies that decision when it opens:
-it reads the prior round's recorded count, scores the just-completed ranking by
+The facilitator chooses how many least-converged ideas to open at the in-round
+decision (`selected_comment_count`, persisted on the facilitator-decision bundle).
+The same round's comment activity applies that decision when it opens:
+it reads the same round's recorded count, scores the just-completed ranking by
 disagreement (`build_delphi_feedback_selection`), switches into
 `comment_scope = selected_items`, and seeds the top-N most-disputed ideas as
 `selected_comment_items` — the same queue for every participant. A count of `0`
-opens an empty queue (everyone sees "nothing to comment"), a soft skip straight
-to reranking. With no recorded gate decision (e.g. round 1) the activity keeps
-its default outlier-only mode. This is all Layer-1 plugin logic reading bundles;
-the engine is untouched.
+(or `skip_comments`) opens an empty queue (everyone sees "nothing to comment"), a
+soft skip straight to reranking. With no recorded decision the activity keeps its
+default outlier-only mode.
 
 ### Tuning the comment workload at fork time
 
