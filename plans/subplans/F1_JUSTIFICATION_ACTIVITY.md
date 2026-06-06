@@ -2,17 +2,17 @@
 
 **Status:** backend foundation DONE (commit `04e2639`); **Slice B API endpoints
 DONE** (commit `f8aeb1e`); **Slice C frontend panel + `delphi.json` swap DONE**
-(commit `20af3bd`). Self-contained; written so the implementation can be audited
+(commit `20af3bd`); **Slice D cross-round anonymized rationale display DONE**
+(commit `eaaf903`). Self-contained; written so the implementation can be audited
 cold.
 
 Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 and
 §F.1.1 (the design rationale — per-viewer, server-side, identity-aware queue).
 
-**Next hand-off:** do not rebuild the collection activity. The next paper-useful
-increment is cross-round anonymized display: consume the unattributed rationale
-bundle produced by `OutlierJustificationPlugin.close_activity` and surface those
-texts in the following `rank_order_voting` round without exposing user IDs or
-per-person flags.
+**Next hand-off:** do not rebuild the collection activity or the cross-round
+display path. The next paper-useful increments are live-method pilot evidence,
+plus optional post-MVP refinements such as richer review controls or comments on
+non-outlier items.
 
 ---
 
@@ -228,9 +228,9 @@ Final full app regression after Slice C passed with
 - Do not surface other participants' ranks/flags/rationales to a participant —
   only the requesting user's own queue and aggregate, unattributed counts.
 - Do not swap `delphi.json` before the UI works (Slice C ordering).
-- Cross-round anonymized display of rationales is **out of scope** here (separate
-  future increment); `close_activity` already produces the unattributed bundle it
-  will consume.
+- Cross-round anonymized display of rationales is implemented by consuming the
+  unattributed output bundle in the following `rank_order_voting` round. Keep that
+  display aggregate/unattributed; do not add user IDs or per-person flags.
 
 ## Test / verify commands
 - Targeted: `PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py
@@ -246,3 +246,5 @@ Final full app regression after Slice C passed with
    tests.
 2. `20af3bd` — Slice C: frontend panel, `delphi.json` swap, diagram/test updates,
    and paper/plan notes.
+3. `eaaf903` — Slice D: rank-order summary carries prior-round unattributed
+   rationales into the next round UI, plus control-point authoring backend.

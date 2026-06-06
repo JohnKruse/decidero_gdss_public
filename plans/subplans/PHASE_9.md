@@ -114,7 +114,7 @@ Technical deviations:
   than a live naive-user session (the agent cannot run a human pilot), mirroring the
   Phase 7/8 handling. A live fork-and-run session remains a recommended next pilot.
 
-### Step 2 — [PENDING] The Control-Point Card
+### Step 2 — [PARTIAL] The Control-Point Card
 
 Build the single plain-language card that instantiates a loop + decision gate +
 recommendation source, as designed:
@@ -133,15 +133,27 @@ After each round of  [ activity ▾ ] …
 
 Conclude this step by:
 
-- Mapping "who decides" to the Phase 8 gate mode; the "common" options to named
-  computational predicates with default configs; "describe it in your own words" to
-  an `ai-decision` rubric (prompt + output schema generated behind the scenes).
-- Compiling the card to the iterate + gate structure and round-tripping it back
-  into the card when editing an existing method.
-- Plain-language validation (e.g. unbounded loop without a stop condition) surfaced
-  inline.
+- [DONE] Mapping "who decides" to the Phase 8 gate mode and common stop-condition
+  options to named computational predicates for the v1 supported modes.
+- [PENDING] Mapping "describe it in your own words" to an `ai-decision` rubric
+  (prompt + output schema generated behind the scenes). Current implementation
+  preserves the custom text as metadata and still compiles through the existing
+  `iqr_stability` predicate.
+- [DONE] Compiling the card to the iterate + gate structure and round-tripping it
+  back into the card when editing an existing method, via
+  `app/services/orchestration_authoring.py` and the stateless template control
+  point API.
+- [PENDING] Full inline card UI and meeting-language validation surfaced on the
+  authoring page. The server-side compile/decompile path and schema tests exist;
+  the facilitator-facing edit surface remains to be completed.
 - A facilitator pilot pass on building one control point from the card, with
   findings recorded.
+
+Implementation record:
+- Commit `eaaf903` added the control-point card schema, compile/decompile service,
+  stateless API endpoints, validation through the orchestration loader, and focused
+  tests. It also injects the activity catalog and stop-condition labels needed by
+  the future UI.
 
 ### Step 3 — [PENDING] Show-It-Back Views
 

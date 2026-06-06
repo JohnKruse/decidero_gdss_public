@@ -416,15 +416,16 @@ contribution.
   to participants: rounds after the first now show the prior round's group median
   rank + spread (IQR) beside each item in the re-rank UI. This is the visible
   feedback loop that makes it behave like real Delphi.
-- **Outlier rationales [DONE for collection; cross-round display FUTURE]:** in
+- **Outlier rationales [DONE for collection + cross-round display]:** in
   classical Delphi the *outlier participants themselves* write the rationales
   (not the facilitator, not AI). Anonymity is **peer-anonymity, not
   system-anonymity** — the system must know identities to route the "please
   justify" prompt and compute outliers; peers see unattributed rationales.
   Caveat to state in the paper: **small-N panels leak** (with ~6 participants and
   one outlier, peers can infer identity) — mitigate by only ever showing
-  aggregates + unattributed text. The structural justification step exists; the
-  anonymized cross-round display of rationales remains the next increment.
+  aggregates + unattributed text. The structural justification step collects the
+  rationales, finalizes an unattributed output bundle, and the following
+  `rank_order_voting` round displays those texts beside the matching items.
 - **Facilitator 3-way gate [FUTURE]:** "conclude / revote / revote-with-
   justification" needs per-round branching = the deferred `conditional` step /
   dynamic dispatch. Current gate is binary continue/conclude.
@@ -497,7 +498,7 @@ round is aggregated and unattributed ("others who ranked this differently
 said…"), never per-person — and the small-N leak means only ever show aggregate
 text. Collection and cross-round display are separate increments.
 
-**Build status [2026-06-05]:**
+**Build status [2026-06-05 to 2026-06-06]:**
 - **[DONE] Backend foundation.** `OutlierRationale` model (one row per
   meeting/activity/user/option, unique-constrained → idempotent upsert);
   `OutlierJustificationManager` (per-viewer `queue_for`, `build_state`,
@@ -516,7 +517,13 @@ text. Collection and cross-round display are separate increments.
   tests and a live localhost run of a seeded active justification step: one
   outlier participant saw one queued item, saved a rationale, and facilitator
   progress advanced to 1 of 1.
-- **[FUTURE] Cross-round anonymized display** of the collected rationales.
+- **[DONE] Cross-round anonymized display.** The following
+  `rank_order_voting` round now reads the prior round's
+  `outlier_justification` output bundle, maps option IDs by stable option key,
+  and exposes `prior_round_rationales` in the summary payload. The meeting UI
+  renders those texts as "Other perspectives from last round" without user IDs
+  or per-person flags. Covered by `app/tests/test_rank_order_voting_api.py` and
+  `node --check app/static/js/meeting.js` in commit `eaaf903`.
 
 ### G. Per-phase interstitials [DONE]
 
@@ -569,15 +576,15 @@ the conference scope.
 ### J. Status summary for the paper's "implemented vs future" split
 
 - [DONE] Delphi round as a nested subcycle (rank → justify); one-level recursion
-  in the engine; prior-round median/IQR feedback shown to participants; per-phase
-  interstitials; premature-"complete" gate bug fixed; dashboard focus-refresh; the
+  in the engine; prior-round median/IQR feedback and anonymized prior-round
+  rationales shown to participants; per-phase interstitials;
+  premature-"complete" gate bug fixed; dashboard focus-refresh; the
   AST→Mermaid/Graphviz figure exporter (generates the recursion figure from the
   real document).
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
-  the purpose-built justification activity (per-viewer outlier queue, F.1) +
-  anonymized cross-round display of rationales; the in-UI DAG visualization.
+  the in-UI DAG visualization.
 - [DONE] the unified decision primitive (round_gate embeds a facilitator-decision)
   + generic report summarizer registry + two-layer recommender (Layer-A metric
   registry, Layer-B declarative rule), clean-break migration with load-time
@@ -592,10 +599,6 @@ Explicit "do later" list captured 2026-06-04 so it is not lost:
   directly). The decision surface is easy; making the engine actually *skip* an
   activity from a choice needs conditional/branching execution (the deferred
   `conditional` step / dynamic dispatch, section E/F). Defer.
-- **Anonymized cross-round display of rationales.** Collected justification text
-  shown back to the group, unattributed, on the next round's ranking screen
-  (peer-anonymous; mind the small-N leak). Pairs with the justification activity
-  (F.1). Defer.
 - **Justification activity itself** beyond the MVP — richer review surface,
   optional comments on non-outlier items, etc. (F.1 is the spec.)
 
