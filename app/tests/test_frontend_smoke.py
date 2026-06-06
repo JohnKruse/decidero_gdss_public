@@ -345,6 +345,9 @@ def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
     assert "prior-rationale-mine-badge" in js
     assert "Your comment" in js
     assert "prior-rationale-mine" in css
+    # Delphi rank-order panel shows "Round N of M" progression.
+    assert "delphi_round" in js
+    assert "Round ${round.round_number} of ${round.max_rounds}" in js
 
 
 def test_meeting_templates_page_has_fork_and_tune_hooks():

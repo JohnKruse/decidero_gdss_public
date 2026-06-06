@@ -974,6 +974,26 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         """
         return self._activity_iteration.get(activity_id, (None, 0))
 
+    def round_progress_for(
+        self, activity_id: str
+    ) -> Optional[Dict[str, int]]:
+        """Return `{round_number, max_rounds}` for an activity inside an iterate.
+
+        Read-only projection over the already-replayed plan: locate the plan entry
+        for this activity's logical_step_id and read its enclosing iterate frame's
+        `max_rounds`. Returns None for activities outside any iterate loop.
+        """
+        logical_step_id, round_index = self.iteration_metadata_for(activity_id)
+        if logical_step_id is None:
+            return None
+        for lsid, _step, _r, iterate_frame in self._plan:
+            if lsid == logical_step_id and iterate_frame is not None:
+                return {
+                    "round_number": round_index + 1,
+                    "max_rounds": int(iterate_frame.step.max_rounds),
+                }
+        return None
+
     def on_activity_close(self, meeting: Meeting, activity: AgendaActivity) -> None:
         return None
 

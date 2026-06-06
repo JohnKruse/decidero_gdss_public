@@ -4933,12 +4933,18 @@
             normalizeRankOrderDraftFromSummary(rankOrderSummary);
 
             if (rankOrder.notice) {
+                // Delphi: lead with "Round N of M" progression when inside a loop.
+                let roundPrefix = "";
+                const round = summary && summary.delphi_round;
+                if (round && round.round_number && round.max_rounds) {
+                    roundPrefix = `Round ${round.round_number} of ${round.max_rounds} · `;
+                }
                 if (!summary) {
                     rankOrder.notice.textContent = "";
                 } else if (summary.can_view_results) {
-                    rankOrder.notice.textContent = "Aggregate results update as participants submit.";
+                    rankOrder.notice.textContent = `${roundPrefix}Aggregate results update as participants submit.`;
                 } else {
-                    rankOrder.notice.textContent = "Results remain hidden until the facilitator reveals them.";
+                    rankOrder.notice.textContent = `${roundPrefix}Results remain hidden until the facilitator reveals them.`;
                 }
             }
 

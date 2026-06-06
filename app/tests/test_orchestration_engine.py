@@ -662,6 +662,25 @@ def test_engine_strategy_iterate_initial_plan_covers_round_zero():
     assert strategy.plan[0][0] == "engine:0.0"
 
 
+def test_round_progress_for_reports_round_and_max():
+    """round_progress_for resolves an activity to its iterate's Round N of M."""
+    doc = load_orchestration_path(_DELPHI_PATH)
+    strategy = OrchestrationEngineStrategy(doc)
+
+    # Find a round-0 leaf inside the Delphi iterate (it carries an iterate frame).
+    lsid = next(
+        entry_lsid
+        for (entry_lsid, _step, _round, frame) in strategy._plan
+        if frame is not None
+    )
+    strategy._activity_iteration["act-x"] = (lsid, 0)
+    progress = strategy.round_progress_for("act-x")
+    assert progress == {"round_number": 1, "max_rounds": 4}
+
+    # An activity outside any iterate (or unknown) has no round progress.
+    assert strategy.round_progress_for("unknown-act") is None
+
+
 # ---------------------------------------------------------------------------
 # Activity materialization tests
 # ---------------------------------------------------------------------------

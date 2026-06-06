@@ -237,12 +237,15 @@ Stage discipline:
    Layer-1 plugin logic reading bundles, not an engine change. A true auto-advance
    past a zero-comment step remains future engine work; today the facilitator
    advances past the empty step.
-5. [PARTIAL] Group-ordered reranking + visual feedback: add regression tests
+5. [DONE] Group-ordered reranking + visual feedback: add regression tests
    showing all participants receive the same group-ordered Round 2+ list; add JS
    syntax/smoke checks for feedback badges and progression display. The backend
    rank-order summary now orders unsubmitted Round 2+ Delphi items by prior group
-   median/IQR for every participant. The UI now renders green/yellow/red agreement
-   badges with compact group-rank text; round progression display remains.
+   median/IQR for every participant. The UI renders green/yellow/red agreement
+   badges with compact group-rank text. Round progression is now done: the
+   summary carries `delphi_round` ({round_number, max_rounds}) from the engine's
+   read-only `round_progress_for`, and the rank-order panel leads with
+   "Round N of M".
 6. Template instantiation controls: add fork/start-template tests proving selected
    defaults compile into the inline orchestration/template config; update
    facilitator-facing docs and Phase 9 status.

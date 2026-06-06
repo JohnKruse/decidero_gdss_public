@@ -35,6 +35,13 @@ class RankOrderOptionSummary(BaseModel):
     prior_round_rationales: Optional[List[RankOrderPriorRoundComment]] = None
 
 
+class RankOrderRoundProgress(BaseModel):
+    """Delphi loop progress for the round-progression display."""
+
+    round_number: int
+    max_rounds: int
+
+
 class RankOrderVotingSummaryResponse(BaseModel):
     activity_id: str
     tool_type: str
@@ -48,6 +55,8 @@ class RankOrderVotingSummaryResponse(BaseModel):
     active_participant_count: int = 0
     options: List[RankOrderOptionSummary] = Field(default_factory=list)
     results: List[RankOrderOptionSummary] = Field(default_factory=list)
+    # Delphi: "Round N of M" progression (None outside a Delphi iterate loop).
+    delphi_round: Optional[RankOrderRoundProgress] = None
 
 
 class RankOrderSubmitRequest(BaseModel):

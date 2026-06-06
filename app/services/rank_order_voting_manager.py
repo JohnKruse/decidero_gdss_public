@@ -366,9 +366,11 @@ class RankOrderVotingManager:
         # `mine` flag below is computed per-viewer from this user's own private
         # rationale rows and is never persisted, so no peer identity is exposed.
         rationales_by_stable_key: Dict[str, List[Dict[str, Any]]] = {}
+        delphi_round: Optional[Dict[str, int]] = None
         from app.services.agenda_strategy import get_agenda_strategy, OrchestrationEngineStrategy
         strategy = get_agenda_strategy(meeting)
         if isinstance(strategy, OrchestrationEngineStrategy):
+            delphi_round = strategy.round_progress_for(activity.activity_id)
             _, round_index = strategy.iteration_metadata_for(activity.activity_id)
             if round_index > 0:
                 prior_bundles = (
@@ -489,6 +491,7 @@ class RankOrderVotingManager:
             "active_participant_count": int(active_participant_count or 0),
             "options": serialized_options,
             "results": results,
+            "delphi_round": delphi_round,
         }
 
     def submit_ranking(
