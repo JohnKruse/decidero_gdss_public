@@ -498,8 +498,10 @@ Implementation status: the adaptive policy defaults now live in
 `orchestrations/delphi.json` as the comment activity's `feedback_policy`, the
 built-in Classical Delphi template exposes the strategy/default/cap as template
 parameters, and `app/services/delphi_feedback_policy.py` computes item bands,
-suggested counts, caps, and selected item keys. Facilitator report wiring,
-selected-idea comments, and group-ordered reranking remain next slices.
+suggested counts, caps, and selected item keys. The round-gate report now carries
+`feedback_selection`, and both orchestration advance plus facilitator-decision
+state expose it for the facilitator UI. Selected-idea comments and group-ordered
+reranking remain next slices.
 
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 

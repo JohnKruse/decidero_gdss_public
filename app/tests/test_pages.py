@@ -299,8 +299,29 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     orch0 = act1["config"]["_orchestration"]
     bm.finalize_output_bundle(
         meeting_id, act1["activity_id"],
-        [{"content": "idea-a", "metadata": {"delphi": {"iqr": 2.0, "median": 1.0}}}],
-        metadata={"source": "test"},
+        [
+            {
+                "content": "idea-a",
+                "metadata": {"rank_order_voting": {"option_id": f"{act1['activity_id']}:idea-a"}},
+            },
+            {
+                "content": "idea-b",
+                "metadata": {"rank_order_voting": {"option_id": f"{act1['activity_id']}:idea-b"}},
+            },
+        ],
+        metadata={
+            "source": "test",
+            "votes": [
+                {"user_id": "u1", "option_id": f"{act1['activity_id']}:idea-a", "rank_position": 1},
+                {"user_id": "u2", "option_id": f"{act1['activity_id']}:idea-a", "rank_position": 1},
+                {"user_id": "u3", "option_id": f"{act1['activity_id']}:idea-a", "rank_position": 5},
+                {"user_id": "u4", "option_id": f"{act1['activity_id']}:idea-a", "rank_position": 5},
+                {"user_id": "u1", "option_id": f"{act1['activity_id']}:idea-b", "rank_position": 2},
+                {"user_id": "u2", "option_id": f"{act1['activity_id']}:idea-b", "rank_position": 2},
+                {"user_id": "u3", "option_id": f"{act1['activity_id']}:idea-b", "rank_position": 2},
+                {"user_id": "u4", "option_id": f"{act1['activity_id']}:idea-b", "rank_position": 2},
+            ],
+        },
         logical_step_id=orch0["logical_step_id"], round_index=0,
     )
 
@@ -318,6 +339,10 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     assert gate_body["pending_decision"]["is_round_gate"] is True
     assert gate_body["pending_decision"]["recommendation"] in ("continue", "conclude")
     assert gate_body["pending_decision"]["evidence"]["round_number"] == 1
+    feedback_selection = gate_body["pending_decision"]["report"]["data"]["feedback_selection"]
+    assert feedback_selection["strategy"] == "adaptive_least_converged"
+    assert feedback_selection["suggested_count"] == 1
+    assert feedback_selection["allow_skip"] is True
 
     # The decision-state endpoint exposes the same gate context for rendering.
     state_resp = authenticated_client.get(
@@ -327,6 +352,8 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     state_json = state_resp.json()
     assert state_json["is_round_gate"] is True
     assert state_json["evidence"]["max_rounds"] == 4
+    state_selection = state_json["report"]["data"]["feedback_selection"]
+    assert state_selection["max_selectable_count"] == 1
 
     # Choose "continue" to run another round.
     resume = authenticated_client.post(

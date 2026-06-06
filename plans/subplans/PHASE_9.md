@@ -209,8 +209,11 @@ Stage discipline:
    in `docs/DELPHI_VALIDATION.md`.
 2. [DONE] Scoring service: add unit tests for band assignment, tie-breaking, small-N
    behavior, all-converged behavior, and adaptive suggested counts.
-3. Facilitator report/API: add API tests for agreement report payloads and skip /
-   selected-count decisions; update plan and paper notes with exact semantics.
+3. [DONE] Facilitator report/API: add API tests for agreement report payloads and
+   skip / selected-count decisions; update plan and paper notes with exact
+   semantics. The round-gate report now carries `feedback_selection` from the
+   authored policy, and the orchestration advance / facilitator-decision state
+   endpoints expose that payload.
 4. Comment-only selected-ideas UI/API: add backend tests for selected ideas only,
    no new ideas, anonymity, and user-owned comment labeling; add frontend smoke
    tests for hooks/rendering.

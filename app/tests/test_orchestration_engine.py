@@ -1957,6 +1957,73 @@ def test_round_gate_report_and_summarizer_metrics_resolve(db_session):
     assert gate.config["evidence"]["recommendation_source"] == "recommender"
 
 
+def test_round_gate_report_includes_adaptive_feedback_selection(db_session):
+    """Adaptive Delphi: the gate report can carry selected-idea comment guidance."""
+    feedback_policy = {
+        "comment_selection": {
+            "strategy": "adaptive_least_converged",
+            "default_fraction": 0.25,
+            "max_fraction": 0.5,
+            "high_disagreement_fraction": 0.25,
+            "moderate_disagreement_fraction": 0.15,
+            "low_disagreement_fraction": 0.0,
+            "min_items_when_disputed": 1,
+            "allow_skip": True,
+        },
+        "agreement_bands": {"score_source": "iqr", "green_max": 1.0, "yellow_max": 2.0},
+    }
+    doc = load_orchestration_data({
+        "name": "adaptive-reporting-gate", "version": "1", "author": "marmot",
+        "citation": "Plainspoken Marmot",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "adaptive report-bearing gate fixture",
+        },
+        "steps": [{
+            "type": "iterate", "max_rounds": 4,
+            "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 99}},
+            "bundle_transform": {"name": "identity", "config": {}},
+            "round_gate": {"decision": {
+                "prompt": "Continue?",
+                "options": ["continue", "conclude"],
+                "report": {"summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"},
+            }},
+            "steps": [{
+                "type": "activity",
+                "tool_type": "brainstorming",
+                "title": "round-step",
+                "config": {"feedback_policy": feedback_policy},
+            }],
+        }],
+    })
+    strategy = OrchestrationEngineStrategy(doc)
+    meeting, _ = _seed_engine_meeting(db_session)
+
+    round0 = strategy.create_activity(meeting, None, None)
+    logical_step_id, round_index = strategy.iteration_metadata_for(round0.activity_id)
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting.meeting_id,
+        round0.activity_id,
+        [
+            {"content": f"idea-{idx}", "metadata": {"delphi": {"iqr": 3.0, "dispersion": 1.0}}}
+            for idx in range(12)
+        ],
+        metadata={"source": "adaptive-gate-test"},
+        logical_step_id=logical_step_id,
+        round_index=round_index,
+    )
+
+    gate = strategy.create_activity(meeting, None, None)
+
+    selection = gate.config["report"]["data"]["feedback_selection"]
+    assert selection["strategy"] == "adaptive_least_converged"
+    assert selection["suggested_count"] == 3
+    assert selection["max_selectable_count"] == 6
+    assert selection["band_counts"] == {"green": 0, "yellow": 0, "red": 12}
+
+
 def test_round_gate_continue_steers_to_next_round(db_session):
     """Deliberate Heron: choosing continue materializes the next round."""
     strategy = OrchestrationEngineStrategy(_gated_iterate_doc())

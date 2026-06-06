@@ -462,6 +462,15 @@ class _PlanWalker:
                             else (round_output or {})
                         )
                         frame.bundle_history.append(transformed)
+                    report_output = (
+                        round_output
+                        if round_output is not None
+                        else (
+                            frame.bundle_history[frame.round_index]
+                            if already_recorded and len(frame.bundle_history) > frame.round_index
+                            else None
+                        )
+                    )
                     pred_spec = frame.step.convergence_predicate or {}
                     predicate = get_convergence_predicate_registry().get_predicate(
                         pred_spec.get("name", "")
@@ -492,7 +501,7 @@ class _PlanWalker:
                             continue
                         decision_spec = dict(gate.get("decision") or {})
                         recommended, source = self._resolve_gate_recommendation(
-                            decision_spec, fired, round_output
+                            decision_spec, fired, report_output
                         )
                         self.needs_gate = _GateContext(
                             gate_logical_step_id=gate_lsid,
@@ -503,7 +512,11 @@ class _PlanWalker:
                             max_rounds=frame.step.max_rounds,
                             converged=fired,
                             decision_spec=decision_spec,
-                            report=self._compute_gate_report(decision_spec, round_output),
+                            report=self._compute_gate_report(
+                                decision_spec,
+                                report_output,
+                                self._feedback_policy_for_step(frame.step),
+                            ),
                         )
                         return None
 
@@ -585,6 +598,7 @@ class _PlanWalker:
     def _compute_gate_report(
         decision_spec: Dict[str, Any],
         round_output: Optional[Dict[str, Any]],
+        feedback_policy: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Plainspoken Marmot: compute the gate's declared report (L.2).
 
@@ -608,7 +622,35 @@ class _PlanWalker:
             data = summarizer.summarize(round_output, report_spec.get("config") or {})
         except Exception:  # a misbehaving summarizer must not break the gate
             return report_spec
+        if feedback_policy:
+            try:
+                from app.services.delphi_feedback_policy import build_delphi_feedback_selection
+
+                data = {
+                    **data,
+                    "feedback_selection": build_delphi_feedback_selection(
+                        round_output,
+                        feedback_policy,
+                    ),
+                }
+            except Exception:
+                pass
         return {**report_spec, "data": data}
+
+    @staticmethod
+    def _feedback_policy_for_step(step: Any) -> Optional[Dict[str, Any]]:
+        """Return the first authored feedback policy in an iterate body."""
+        from app.services.orchestration_loader import ActivityStep
+
+        if isinstance(step, ActivityStep):
+            config = step.config if isinstance(step.config, dict) else {}
+            policy = config.get("feedback_policy")
+            return policy if isinstance(policy, dict) else None
+        for child in getattr(step, "steps", []) or []:
+            policy = _PlanWalker._feedback_policy_for_step(child)
+            if policy:
+                return policy
+        return None
 
     @staticmethod
     def _lookup_gate_decision(
