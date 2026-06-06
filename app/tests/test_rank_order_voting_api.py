@@ -289,6 +289,87 @@ def test_rank_order_empty_config_does_not_break_meeting_payload(
     assert rank_activity.get("transfer_count") == 0
 
 
+def test_rank_order_prior_feedback_uses_group_order_for_all_participants(
+    client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    participants = []
+    passwords = []
+    for index in range(2):
+        password = f"RankGroupOrder{index}!"
+        participant = user_manager_with_admin.add_user(
+            first_name="Rank",
+            last_name=f"GroupOrder{index}",
+            email=f"rank.group.order.{index}@example.com",
+            hashed_password=get_password_hash(password),
+            role=UserRole.PARTICIPANT.value,
+            login=f"rank_group_order_{index}",
+        )
+        participants.append(participant)
+        passwords.append(password)
+    db_session.commit()
+    for participant in participants:
+        db_session.refresh(participant)
+
+    meeting, activity_id = _create_rank_order_meeting(
+        db_session,
+        admin_user,
+        participant_ids=[participant.user_id for participant in participants],
+        config_override={
+            "_orchestration": {
+                "logical_step_id": "engine:steps.0.steps.1.steps.0.steps.0",
+                "round_index": 1,
+            },
+            "ideas": [
+                {"content": "Second by group", "metadata": {"delphi": {"median": 2.0, "iqr": 1.0}}},
+                {"content": "First by group", "metadata": {"delphi": {"median": 1.0, "iqr": 1.5}}},
+                {"content": "Tie but settled", "metadata": {"delphi": {"median": 2.0, "iqr": 0.0}}},
+            ],
+            "randomize_order": True,
+        },
+    )
+    meeting.agenda_strategy = "orchestration"
+    meeting.orchestration_path = "orchestrations/delphi.json"
+    db_session.commit()
+
+    asyncio.run(
+        meeting_state_manager.apply_patch(
+            meeting.meeting_id,
+            {
+                "currentActivity": activity_id,
+                "agendaItemId": activity_id,
+                "currentTool": "rank_order_voting",
+                "status": "in_progress",
+                "participants": [participant.user_id for participant in participants],
+            },
+        )
+    )
+
+    observed_orders = []
+    for participant, password in zip(participants, passwords):
+        login_response = client.post(
+            "/api/auth/token",
+            json={"username": participant.login, "password": password},
+        )
+        assert login_response.status_code == 200, login_response.json()
+        response = client.get(
+            f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+            params={"activity_id": activity_id},
+        )
+        assert response.status_code == 200, response.json()
+        observed_orders.append([entry["label"] for entry in response.json()["options"]])
+
+    assert observed_orders == [
+        ["First by group", "Tie but settled", "Second by group"],
+        ["First by group", "Tie but settled", "Second by group"],
+    ]
+
+
 def test_rank_order_summary_includes_prior_round_rationales(
     authenticated_client: TestClient,
     user_manager_with_admin: UserManager,

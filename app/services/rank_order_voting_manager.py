@@ -159,6 +159,24 @@ class RankOrderVotingManager:
         digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
         return int(digest, 16), stable_key
 
+    @staticmethod
+    def _prior_group_order_key(row: Dict[str, Any]) -> Tuple[float, float, str]:
+        """Sort Round 2+ Delphi items by the prior group result.
+
+        Median rank is the primary controlled-feedback signal; IQR is the
+        tie-breaker so equally ranked but more settled items appear first.
+        """
+        feedback = row.get("prior_round_feedback") or {}
+        try:
+            median = float(feedback.get("median"))
+        except (TypeError, ValueError):
+            median = 999999.0
+        try:
+            iqr = float(feedback.get("iqr"))
+        except (TypeError, ValueError):
+            iqr = 999999.0
+        return median, iqr, str(row.get("label") or "").casefold()
+
     def _resolve_activity(self, meeting: Meeting, activity_id: str) -> AgendaActivity:
         if not meeting.agenda_activities:
             raise HTTPException(status_code=404, detail="No agenda activities found for this meeting.")
@@ -377,6 +395,8 @@ class RankOrderVotingManager:
 
         serialized_options = [option_payload(option) for option in options]
 
+        has_prior_group_feedback = any(row.get("prior_round_feedback") for row in serialized_options)
+
         if submitted:
             serialized_options.sort(
                 key=lambda row: (
@@ -384,6 +404,8 @@ class RankOrderVotingManager:
                     str(row.get("label") or "").casefold(),
                 )
             )
+        elif has_prior_group_feedback:
+            serialized_options.sort(key=self._prior_group_order_key)
         elif randomize_order and not is_facilitator:
             serialized_options.sort(
                 key=lambda row: self._participant_order_key(

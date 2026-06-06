@@ -16,7 +16,9 @@ pass captured in `plans/subplans/PHASE_9.md` Step 3A: select least-converged
 by the prior group result. Treat participant outlier queues as the implemented
 MVP, not the long-term user-facing shape. The config/defaults and scoring service
 foundation are in place; next slices are facilitator report/API wiring,
-selected-idea comment UI/API, and group-ordered reranking.
+selected-idea comment UI/API, and group-ordered reranking. The rank-order summary
+backend now starts Round 2+ unsubmitted rankings from prior group median/IQR order;
+visual badges/progression remain.
 
 ---
 

@@ -217,9 +217,11 @@ Stage discipline:
 4. Comment-only selected-ideas UI/API: add backend tests for selected ideas only,
    no new ideas, anonymity, and user-owned comment labeling; add frontend smoke
    tests for hooks/rendering.
-5. Group-ordered reranking + visual feedback: add regression tests showing all
-   participants receive the same group-ordered Round 2+ list; add JS syntax/smoke
-   checks for feedback badges and progression display.
+5. [PARTIAL] Group-ordered reranking + visual feedback: add regression tests
+   showing all participants receive the same group-ordered Round 2+ list; add JS
+   syntax/smoke checks for feedback badges and progression display. The backend
+   rank-order summary now orders unsubmitted Round 2+ Delphi items by prior group
+   median/IQR for every participant; visual badges and progression display remain.
 6. Template instantiation controls: add fork/start-template tests proving selected
    defaults compile into the inline orchestration/template config; update
    facilitator-facing docs and Phase 9 status.

@@ -501,7 +501,11 @@ parameters, and `app/services/delphi_feedback_policy.py` computes item bands,
 suggested counts, caps, and selected item keys. The round-gate report now carries
 `feedback_selection`, and both orchestration advance plus facilitator-decision
 state expose it for the facilitator UI. Selected-idea comments and group-ordered
-reranking remain next slices.
+reranking remain next slices. The rank-order summary backend now implements the
+first part of group-ordered reranking: unsubmitted Round 2+ Delphi items are
+ordered by prior group median/IQR for all participants, rather than by each
+participant's private/random order. Visual feedback badges and progression
+display remain to be built.
 
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 

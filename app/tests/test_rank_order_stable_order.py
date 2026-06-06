@@ -29,3 +29,15 @@ def test_order_key_differs_by_item_and_user():
     c = M._participant_order_key("M1", "u2", "ACT:idea-5")
     assert a != b  # different items
     assert a != c  # different participants
+
+
+def test_prior_group_order_uses_median_then_iqr():
+    rows = [
+        {"label": "third", "prior_round_feedback": {"median": 3.0, "iqr": 0.0}},
+        {"label": "second", "prior_round_feedback": {"median": 2.0, "iqr": 2.0}},
+        {"label": "first", "prior_round_feedback": {"median": 2.0, "iqr": 0.5}},
+    ]
+
+    ordered = sorted(rows, key=M._prior_group_order_key)
+
+    assert [row["label"] for row in ordered] == ["first", "second", "third"]
