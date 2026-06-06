@@ -454,8 +454,111 @@ def test_rank_order_summary_includes_prior_round_rationales(
 
     # Find the summary for the option "Improve UX" (which has stable key "improve-ux")
     improve_ux_opt = next(opt for opt in payload["options"] if "improve-ux" in opt["option_id"])
-    assert improve_ux_opt["prior_round_rationales"] == ["Need better layout", "Confusing navigation"]
+    # Comments come back as {text, mine}; this viewer authored none, so mine is False.
+    assert improve_ux_opt["prior_round_rationales"] == [
+        {"text": "Need better layout", "mine": False},
+        {"text": "Confusing navigation", "mine": False},
+    ]
 
     # Verify other options have no prior rationales
     scale_infra_opt = next(opt for opt in payload["options"] if "scale-infra" in opt["option_id"])
     assert scale_infra_opt["prior_round_rationales"] is None
+
+
+def test_rank_order_summary_flags_viewers_own_prior_comment(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    """The viewer's own prior-round comment is privately flagged `mine: True`,
+    while peers' comments stay unattributed (`mine: False`)."""
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.models.meeting import AgendaActivity
+    from app.models.outlier_rationale import OutlierRationale
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    meeting, activity_id = _create_rank_order_meeting(
+        db_session,
+        admin_user,
+        config_override={
+            "_orchestration": {
+                "logical_step_id": "engine:steps.0.steps.1.steps.0.steps.0",
+                "round_index": 1,
+            }
+        },
+    )
+    meeting.agenda_strategy = "orchestration"
+    meeting.orchestration_path = "orchestrations/delphi.json"
+
+    just_activity = AgendaActivity(
+        activity_id="prev_just_act_id",
+        meeting_id=meeting.meeting_id,
+        tool_type="outlier_justification",
+        title="Justify Outlier Rankings",
+        order_index=2,
+        tool_config_id="prev_just_config_id",
+        config={
+            "_orchestration": {
+                "logical_step_id": "engine:steps.0.steps.1.steps.0.steps.1",
+                "round_index": 0,
+            }
+        },
+    )
+    db_session.add(just_activity)
+
+    # This viewer (admin) privately authored one of the two comments on improve-ux.
+    own_option_id = f"{activity_id}:improve-ux"
+    db_session.add(
+        OutlierRationale(
+            meeting_id=meeting.meeting_id,
+            activity_id="prev_just_act_id",
+            user_id=admin_user.user_id,
+            option_id=own_option_id,
+            rationale="Confusing navigation",
+        )
+    )
+    db_session.commit()
+    db_session.refresh(meeting)
+
+    bm = ActivityBundleManager(db_session)
+    bm.create_bundle(
+        meeting_id=meeting.meeting_id,
+        activity_id="prev_just_act_id",
+        kind="output",
+        items=[
+            {
+                "content": "Improve UX",
+                "metadata": {
+                    "outlier_justification": {
+                        "option_id": own_option_id,
+                        "rationales": ["Need better layout", "Confusing navigation"],
+                        "rationale_count": 2,
+                    }
+                },
+                "source": {
+                    "meeting_id": meeting.meeting_id,
+                    "activity_id": "prev_just_act_id",
+                    "tool_type": "outlier_justification",
+                },
+            }
+        ],
+        metadata={"source": "outlier_justification"},
+        logical_step_id="engine:steps.0.steps.1.steps.0.steps.1",
+        round_index=0,
+    )
+
+    response = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+        params={"activity_id": activity_id},
+    )
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+
+    improve_ux_opt = next(opt for opt in payload["options"] if "improve-ux" in opt["option_id"])
+    assert improve_ux_opt["prior_round_rationales"] == [
+        {"text": "Need better layout", "mine": False},
+        {"text": "Confusing navigation", "mine": True},
+    ]

@@ -5043,11 +5043,23 @@
                     pr.appendChild(title);
                     const list = document.createElement("ul");
                     list.className = "prior-rationales-list";
-                    priorRationales.forEach((text) => {
+                    priorRationales.forEach((entry) => {
+                        // Entries are {text, mine}; tolerate a bare string too.
+                        const text = typeof entry === "string" ? entry : (entry && entry.text);
+                        const mine = typeof entry === "object" && entry && entry.mine === true;
                         if (text && text.trim()) {
                             const item = document.createElement("li");
                             item.className = "prior-rationale-item";
-                            item.textContent = text;
+                            if (mine) {
+                                item.classList.add("prior-rationale-mine");
+                                const badge = document.createElement("span");
+                                badge.className = "prior-rationale-mine-badge";
+                                badge.textContent = "Your comment";
+                                item.appendChild(badge);
+                                item.appendChild(document.createTextNode(text));
+                            } else {
+                                item.textContent = text;
+                            }
                             list.appendChild(item);
                         }
                     });

@@ -94,6 +94,18 @@ disagreement band, not participants by outlier status. The shipped MVP still has
 the outlier-justification activity; this policy pins the configuration contract
 for the adaptive selected-idea feedback pass.
 
+### Cross-round comment display (peer-anonymous, own-comment aware)
+
+When a Round 2+ ranking opens, each item carries the prior round's collected
+comments via `prior_round_rationales`. The output bundle stays unattributed
+(comment text only — no user ids or per-person flags). The rank-order summary
+annotates each comment per-viewer as `{text, mine}`: `mine` is `True` only for
+the comment the requesting viewer privately authored, derived live from that
+user's own `OutlierRationale` rows and never persisted into the bundle. Peers
+therefore see one another's comments without authorship, while each participant
+can still spot their own. The meeting UI renders the viewer's own comment with a
+"Your comment" badge.
+
 ## Predicate Decisions
 
 `IQRStabilityPredicate` requires at least two transformed rounds before it can

@@ -13,6 +13,14 @@ class RankOrderPriorRoundFeedback(BaseModel):
     iqr: Optional[float] = None
 
 
+class RankOrderPriorRoundComment(BaseModel):
+    """A prior-round comment, peer-anonymous. `mine` privately flags the comment
+    the requesting viewer authored, computed per-viewer and never persisted."""
+
+    text: str
+    mine: bool = False
+
+
 class RankOrderOptionSummary(BaseModel):
     option_id: str
     label: str
@@ -24,7 +32,7 @@ class RankOrderOptionSummary(BaseModel):
     # Delphi: prior-round median/IQR for this item (None outside a Delphi loop).
     prior_round_feedback: Optional[RankOrderPriorRoundFeedback] = None
     # Delphi: prior-round outlier rationales (None outside a Delphi loop / if empty).
-    prior_round_rationales: Optional[List[str]] = None
+    prior_round_rationales: Optional[List[RankOrderPriorRoundComment]] = None
 
 
 class RankOrderVotingSummaryResponse(BaseModel):

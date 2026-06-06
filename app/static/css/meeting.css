@@ -2482,3 +2482,21 @@
   color: #33415c;
   margin-top: 2px;
 }
+
+.prior-rationale-item.prior-rationale-mine {
+  color: #1d3b6b;
+  font-weight: 500;
+}
+
+.prior-rationale-mine-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: #0b3d2e;
+  background: #c7f0dd;
+}

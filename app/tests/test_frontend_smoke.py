@@ -341,6 +341,10 @@ def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
     # continue steers to the next round; conclude finishes the method.
     assert "Run another round." in js
     assert "Finish the method and stop here." in js
+    # Cross-round comments privately flag the viewer's own comment.
+    assert "prior-rationale-mine-badge" in js
+    assert "Your comment" in js
+    assert "prior-rationale-mine" in css
 
 
 def test_meeting_templates_page_has_fork_and_tune_hooks():

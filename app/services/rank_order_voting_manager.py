@@ -147,6 +147,32 @@ class RankOrderVotingManager:
         text = str(option_id)
         return text.split(":", 1)[1] if ":" in text else text
 
+    def _own_rationale_texts(
+        self, meeting: Meeting, justification_activity_id: str, user_id: str
+    ) -> Dict[str, str]:
+        """The requesting user's own prior-round rationales, keyed by option id.
+
+        Read from this user's private `OutlierRationale` rows so the cross-round
+        comment display can privately flag a comment as the viewer's own without
+        the unattributed bundle ever carrying peer identities.
+        """
+        from app.models.outlier_rationale import OutlierRationale
+
+        rows = (
+            self.db.query(OutlierRationale)
+            .filter(
+                OutlierRationale.meeting_id == meeting.meeting_id,
+                OutlierRationale.activity_id == justification_activity_id,
+                OutlierRationale.user_id == user_id,
+            )
+            .all()
+        )
+        return {
+            row.option_id: (row.rationale or "").strip()
+            for row in rows
+            if (row.rationale or "").strip()
+        }
+
     @classmethod
     def _participant_order_key(
         cls,
@@ -336,7 +362,10 @@ class RankOrderVotingManager:
         )
 
         # Delphi: load prior round outlier justification rationales if we are in an iterate loop.
-        rationales_by_stable_key: Dict[str, List[str]] = {}
+        # Comments stay peer-anonymous in the bundle (unattributed text only); the
+        # `mine` flag below is computed per-viewer from this user's own private
+        # rationale rows and is never persisted, so no peer identity is exposed.
+        rationales_by_stable_key: Dict[str, List[Dict[str, Any]]] = {}
         from app.services.agenda_strategy import get_agenda_strategy, OrchestrationEngineStrategy
         strategy = get_agenda_strategy(meeting)
         if isinstance(strategy, OrchestrationEngineStrategy):
@@ -358,6 +387,9 @@ class RankOrderVotingManager:
                         break
 
                 if just_bundle and just_bundle.items:
+                    own_texts = self._own_rationale_texts(
+                        meeting, just_bundle.activity_id, user.user_id
+                    )
                     for item in just_bundle.items:
                         item_meta = item.get("metadata") or {}
                         just_meta = item_meta.get("outlier_justification") or {}
@@ -365,7 +397,19 @@ class RankOrderVotingManager:
                         prior_rationales = just_meta.get("rationales")
                         if prior_opt_id and prior_rationales:
                             stable_key = self._stable_option_key(prior_opt_id)
-                            rationales_by_stable_key[stable_key] = list(prior_rationales)
+                            mine_text = own_texts.get(prior_opt_id)
+                            marked_mine = False
+                            entries: List[Dict[str, Any]] = []
+                            for text in prior_rationales:
+                                is_mine = (
+                                    not marked_mine
+                                    and mine_text is not None
+                                    and (text or "").strip() == mine_text
+                                )
+                                if is_mine:
+                                    marked_mine = True
+                                entries.append({"text": text, "mine": is_mine})
+                            rationales_by_stable_key[stable_key] = entries
 
         def prior_round_feedback(option: RankOrderOption) -> Optional[Dict[str, Any]]:
             # Delphi controlled feedback: the prior round's median/IQR ride along

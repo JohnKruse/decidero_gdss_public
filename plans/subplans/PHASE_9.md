@@ -224,9 +224,13 @@ Stage discipline:
    for progress, empty state, instructions, and comment placeholders. The
    facilitator round-gate report now renders a numeric selected-comment count
    control from `feedback_selection` and persists the chosen count in the
-   facilitator-decision bundle, including max-count validation. Remaining work:
-   move/apply that decision before the comment activity opens, private "your
-   comment" labeling, and orchestration skip/advance wiring.
+   facilitator-decision bundle, including max-count validation. Private "your
+   comment" labeling is now done: the Round 2+ rank-order summary returns prior
+   comments as `{text, mine}`, flagging the viewer's own comment from their
+   private `OutlierRationale` rows without ever attributing peers in the bundle,
+   and the meeting UI renders a "Your comment" badge. Remaining work: move/apply
+   the selected-count decision before the comment activity opens, and
+   orchestration skip/advance wiring.
 5. [PARTIAL] Group-ordered reranking + visual feedback: add regression tests
    showing all participants receive the same group-ordered Round 2+ list; add JS
    syntax/smoke checks for feedback badges and progression display. The backend
