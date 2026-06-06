@@ -25,9 +25,11 @@ the adaptive feedback recommendation, and the next round's comment activity now
 **applies** that choice on open (selects the top-N most-disputed ideas into
 `selected_items` mode; count 0 → empty soft-skip queue). Cross-round comment
 display now privately flags the viewer's own comment (`{text, mine}` + "Your
-comment" badge) while keeping the bundle unattributed. Remaining slices are
-template instantiation controls (Stage 6), a true engine-level auto-advance past
-a zero-comment step, and the end-to-end Delphi regression (Stage 7).
+comment" badge) while keeping the bundle unattributed. Fork-time tuning of the
+comment workload (Stage 6) and the end-to-end Delphi regression (Stage 7,
+`test_adaptive_delphi_feedback_end_to_end`) are now done — **Phase 9 Step 3A is
+complete**. The only remaining (non-blocking, future engine) item is a true
+auto-advance past a zero-comment step instead of the current soft skip.
 
 ---
 

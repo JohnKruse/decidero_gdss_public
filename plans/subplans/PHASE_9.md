@@ -168,7 +168,7 @@ Conclude this step by:
   running a live meeting.
 - Wiring both views into Steps 1 and 2 as the confirmation surface.
 
-### Step 3A — [IN PROGRESS] Adaptive Delphi Controlled-Feedback Pass
+### Step 3A — [DONE] Adaptive Delphi Controlled-Feedback Pass
 
 Testing on 2026-06-06 changed the Delphi feedback direction. The next Delphi
 increment should stop targeting participants as "outliers" and instead target
@@ -255,10 +255,23 @@ Stage discipline:
    document carries the tuned fractions, and `summarize_orchestration` describes
    the comment workload in plain language ("the most-disputed ideas are opened for
    comment — about N% suggested, up to M%").
-7. End-to-end Delphi regression: rank Round 1 with disagreement, facilitator opens
-   N least-converged ideas, participants comment, reranking opens group-ordered
-   with visual feedback, and continue/conclude still works. Record verification in
-   the plan and paper notes.
+7. [DONE] End-to-end Delphi regression: rank Round 1 with disagreement, facilitator
+   opens N least-converged ideas, participants comment, reranking opens group-ordered
+   with visual feedback, and continue/conclude still works. Verified by
+   `app/tests/test_pages.py::test_adaptive_delphi_feedback_end_to_end`, which drives
+   the real HTTP advance/control flow: Round 1 ranks with disagreement; the
+   facilitator picks `selected_comment_count = 1` at the gate; starting the next
+   round's comment step applies that decision (selected_items mode opens the single
+   most-disputed idea to everyone); a participant comments through the justification
+   API; and the Round 2 rank summary returns `delphi_round = {round_number: 2,
+   max_rounds: 4}`. Full app regression green.
+
+**Step 3A is complete.** All seven stages are DONE; the adaptive least-converged
+controlled-feedback pass replaces the participant-outlier MVP end to end (config,
+scoring, facilitator report/API, selected-idea comment apply-on-open, private
+own-comment labeling, group-ordered reranking with round progression, fork-time
+workload tuning, and the e2e regression). Future engine work (not blocking): a
+true auto-advance past a zero-comment step instead of the current soft skip.
 
 ### Step 4 — [PENDING] Pattern Blocks on a Meeting-Flow Canvas (compose recognized patterns)
 

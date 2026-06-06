@@ -115,6 +115,18 @@ fractions, and the plain-language method summary describes the workload ("the
 most-disputed ideas are opened for comment — about N% suggested, up to M%"). The
 default Classical Delphi template still ships 25% suggested / 50% cap.
 
+### End-to-end verification
+
+`app/tests/test_pages.py::test_adaptive_delphi_feedback_end_to_end` drives the
+whole adaptive pass through the real HTTP advance/control flow: Round 1 ranks with
+disagreement; the facilitator chooses `selected_comment_count = 1` at the gate;
+starting the next round's comment step applies that decision (selected_items mode
+opens the single most-disputed idea to every participant); a participant comments
+through the justification API; and the Round 2 rank summary reports
+`delphi_round = {round_number: 2, max_rounds: 4}`. This confirms the adaptive
+least-converged controlled-feedback pass works in place of the participant-outlier
+MVP.
+
 The policy records the testing-driven design revision: select ideas by
 disagreement band, not participants by outlier status. The shipped MVP still has
 the outlier-justification activity; this policy pins the configuration contract

@@ -979,20 +979,37 @@ class OrchestrationEngineStrategy(AgendaStrategy):
     ) -> Optional[Dict[str, int]]:
         """Return `{round_number, max_rounds}` for an activity inside an iterate.
 
-        Read-only projection over the already-replayed plan: locate the plan entry
-        for this activity's logical_step_id and read its enclosing iterate frame's
-        `max_rounds`. Returns None for activities outside any iterate loop.
+        Read-only projection: walk the document along the activity's logical_step_id
+        path (`engine:<i>.<j>...`) to its enclosing iterate and read `max_rounds`.
+        Walking the document (rather than the eagerly-built plan) means this works
+        on a fresh per-request strategy that has only planned round 0. Returns None
+        for activities outside any iterate loop or with an unrecognized path.
         """
+        from app.services.orchestration_loader import IterateStep
+
         logical_step_id, round_index = self.iteration_metadata_for(activity_id)
-        if logical_step_id is None:
+        if not logical_step_id or not str(logical_step_id).startswith("engine:"):
             return None
-        for lsid, _step, _r, iterate_frame in self._plan:
-            if lsid == logical_step_id and iterate_frame is not None:
-                return {
-                    "round_number": round_index + 1,
-                    "max_rounds": int(iterate_frame.step.max_rounds),
-                }
-        return None
+        path = str(logical_step_id)[len("engine:"):]
+        nodes: Any = self._document.steps
+        enclosing_iterate: Optional[IterateStep] = None
+        for token in (tok for tok in path.split(".") if tok != ""):
+            try:
+                index = int(token)
+            except ValueError:
+                return None
+            if not isinstance(nodes, list) or index >= len(nodes):
+                return None
+            node = nodes[index]
+            if isinstance(node, IterateStep):
+                enclosing_iterate = node
+            nodes = getattr(node, "steps", None)
+        if enclosing_iterate is None:
+            return None
+        return {
+            "round_number": round_index + 1,
+            "max_rounds": int(enclosing_iterate.max_rounds),
+        }
 
     def on_activity_close(self, meeting: Meeting, activity: AgendaActivity) -> None:
         return None

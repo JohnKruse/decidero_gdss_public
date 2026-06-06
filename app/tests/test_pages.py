@@ -398,6 +398,137 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     assert len(input_bundle.items) >= 1
 
 
+def test_adaptive_delphi_feedback_end_to_end(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Plainspoken Marmot — Phase 9 Step 3A Stage 7 end-to-end:
+
+    Round 1 ranks with disagreement; the facilitator opens one least-converged
+    idea at the gate; the next round's comment step opens that selected idea to
+    everyone; a participant comments; and Round 2 reranking surfaces the
+    "Round N of M" progression. Drives the real HTTP advance/control flow.
+    """
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+    from app.models.activity_bundle import ActivityBundle
+    from app.models.meeting import AgendaActivity
+
+    [template] = seed_builtin_meeting_templates(db_session)
+    create = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={"title": "Adaptive Run", "description": "Drive adaptive Delphi.",
+              "participant_ids": []},
+    )
+    assert create.status_code == 200, create.text
+    meeting_id = create.json()["meeting_id"]
+    brainstorm_id = create.json()["agenda"][0]["activity_id"]
+
+    bm = ActivityBundleManager(db_session)
+    bm.finalize_output_bundle(
+        meeting_id, brainstorm_id,
+        [{"content": "idea-a"}, {"content": "idea-b"}], metadata={"source": "test"},
+    )
+
+    def _finalize_ranking(activity_id, logical_step_id, round_index):
+        # idea-a is hotly disputed (ranks 1,1,5,5); idea-b is converged (2,2,2,2).
+        opt_a = f"{activity_id}:idea-a"
+        opt_b = f"{activity_id}:idea-b"
+        votes = []
+        for uid, ra in zip(["u1", "u2", "u3", "u4"], [1, 1, 5, 5]):
+            votes.append({"user_id": uid, "option_id": opt_a, "rank_position": ra})
+            votes.append({"user_id": uid, "option_id": opt_b, "rank_position": 2})
+        bm.finalize_output_bundle(
+            meeting_id, activity_id,
+            [
+                {"content": "idea-a", "metadata": {"rank_order_voting": {"option_id": opt_a}}},
+                {"content": "idea-b", "metadata": {"rank_order_voting": {"option_id": opt_b}}},
+            ],
+            metadata={"source": "test", "votes": votes},
+            logical_step_id=logical_step_id, round_index=round_index,
+        )
+
+    def _advance():
+        resp = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+        assert resp.status_code == 200, resp.text
+        return resp.json()
+
+    # Round 1: rank (disagreement) -> justify (no comments yet).
+    rank1 = _advance()["activity"]
+    assert rank1["tool_type"] == "rank_order_voting"
+    _finalize_ranking(rank1["activity_id"], rank1["config"]["_orchestration"]["logical_step_id"], 0)
+
+    just1 = _advance()["activity"]
+    assert just1["tool_type"] == "outlier_justification"
+    bm.finalize_output_bundle(
+        meeting_id, just1["activity_id"], [],
+        metadata={"source": "outlier_justification"},
+        logical_step_id=just1["config"]["_orchestration"]["logical_step_id"], round_index=0,
+    )
+
+    # Gate: facilitator opens exactly one least-converged idea.
+    gate = _advance()
+    assert gate["status"] == "paused"
+    gate_id = gate["pending_decision"]["activity_id"]
+    decide = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate_id}/responses",
+        json={"chosen_option": "continue", "selected_comment_count": 1},
+    )
+    assert decide.status_code == 200, decide.text
+
+    # Round 2: rank (carrying feedback) -> comment step.
+    rank2 = _advance()["activity"]
+    assert rank2["tool_type"] == "rank_order_voting"
+    assert rank2["config"]["_orchestration"]["round_index"] == 1
+    _finalize_ranking(rank2["activity_id"], rank2["config"]["_orchestration"]["logical_step_id"], 1)
+
+    just2 = _advance()["activity"]
+    assert just2["tool_type"] == "outlier_justification"
+    just2_id = just2["activity_id"]
+
+    # Starting the comment step applies the facilitator's count: selected-items mode
+    # opens the single most-disputed idea (idea-a) to everyone.
+    start = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "start_tool", "tool": "outlier_justification", "activityId": just2_id},
+    )
+    assert start.status_code == 200, start.text
+    db_session.expire_all()
+    just2_row = db_session.query(AgendaActivity).filter(
+        AgendaActivity.activity_id == just2_id
+    ).one()
+    assert just2_row.config["comment_scope"] == "selected_items"
+    selected = [e["option_id"] for e in just2_row.config["selected_comment_items"]]
+    assert selected == [f"{rank2['activity_id']}:idea-a"]
+
+    # Every participant sees the same selected idea queued (not an outlier-only set).
+    state = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/justification/state",
+        params={"activity_id": just2_id},
+    )
+    assert state.status_code == 200, state.text
+    state_json = state.json()
+    assert state_json["nothing_to_justify"] is False
+    assert [item["option_id"] for item in state_json["items"]] == selected
+
+    # A comment persists through the API.
+    comment = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/justification/rationale",
+        json={"activity_id": just2_id, "option_id": selected[0],
+              "rationale": "Costs were underweighted."},
+    )
+    assert comment.status_code == 200, comment.text
+    assert comment.json()["submitted"] is True
+
+    # Round 2 reranking surfaces the "Round 2 of 4" progression.
+    summary = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/rank-order-voting/summary",
+        params={"activity_id": rank2["activity_id"]},
+    )
+    assert summary.status_code == 200, summary.text
+    assert summary.json()["delphi_round"] == {"round_number": 2, "max_rounds": 4}
+
+
 def test_orchestration_advance_rejects_non_facilitator(
     client: TestClient,
     user_manager_with_admin,
