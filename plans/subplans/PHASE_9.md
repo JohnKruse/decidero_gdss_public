@@ -168,6 +168,60 @@ Conclude this step by:
   running a live meeting.
 - Wiring both views into Steps 1 and 2 as the confirmation surface.
 
+### Step 3A — [PENDING] Adaptive Delphi Controlled-Feedback Pass
+
+Testing on 2026-06-06 changed the Delphi feedback direction. The next Delphi
+increment should stop targeting participants as "outliers" and instead target
+**least-converged ideas**. The facilitator chooses how many disputed ideas to open
+for comment before reranking; everyone sees the same selected ideas; choosing zero
+skips comments and moves directly to reranking.
+
+Conclude this step by:
+
+- Adding a Delphi feedback policy config to `orchestrations/delphi.json`, with
+  defaults for `adaptive_least_converged`, a 25% high-disagreement suggestion,
+  a 50% facilitator-selectable cap, and a zero-comments skip path.
+- Computing item-level disagreement bands after each ranking round:
+  green = low spread / high agreement, yellow = moderate disagreement, red = high
+  disagreement. Start with IQR/spread as the primary score and rank variance as a
+  tie-breaker.
+- Showing the facilitator a compact agreement report at the round decision point:
+  agreement trend, green/yellow/red counts, suggested number of ideas to open for
+  comments, and a numeric selector from 0 to the configured cap.
+- Reworking the comment phase into a comment-only selected-ideas activity:
+  no new ideas, everyone comments on the same selected ideas, comments remain
+  peer-anonymous, and each user can privately identify their own comments.
+- Ordering Round 2+ ranking by the prior **group** result rather than each
+  participant's private prior ranking. Show compact visual feedback instead of
+  verbose stats: agreement color, prior group rank/median, the user's prior rank,
+  round progression, and anonymized comments.
+- Exposing the default comment workload during Delphi template instantiation:
+  recommended adaptive mode, default suggestion fraction, and maximum comment cap,
+  all phrased in meeting language.
+
+Stage discipline:
+
+1. Config + docs: update `orchestrations/delphi.json`, schema/contract docs if new
+   config fields need documenting, this plan, and the HICSS outline. Add validation
+   tests proving the Delphi document still loads.
+2. Scoring service: add unit tests for band assignment, tie-breaking, small-N
+   behavior, all-converged behavior, and adaptive suggested counts.
+3. Facilitator report/API: add API tests for agreement report payloads and skip /
+   selected-count decisions; update plan and paper notes with exact semantics.
+4. Comment-only selected-ideas UI/API: add backend tests for selected ideas only,
+   no new ideas, anonymity, and user-owned comment labeling; add frontend smoke
+   tests for hooks/rendering.
+5. Group-ordered reranking + visual feedback: add regression tests showing all
+   participants receive the same group-ordered Round 2+ list; add JS syntax/smoke
+   checks for feedback badges and progression display.
+6. Template instantiation controls: add fork/start-template tests proving selected
+   defaults compile into the inline orchestration/template config; update
+   facilitator-facing docs and Phase 9 status.
+7. End-to-end Delphi regression: rank Round 1 with disagreement, facilitator opens
+   N least-converged ideas, participants comment, reranking opens group-ordered
+   with visual feedback, and continue/conclude still works. Record verification in
+   the plan and paper notes.
+
 ### Step 4 — [PENDING] Pattern Blocks on a Meeting-Flow Canvas (compose recognized patterns)
 
 For facilitators who want to compose rather than fork, provide a palette of named

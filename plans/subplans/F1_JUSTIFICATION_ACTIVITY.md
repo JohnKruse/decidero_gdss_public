@@ -10,9 +10,11 @@ Paper context: `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md` §F.1 an
 §F.1.1 (the design rationale — per-viewer, server-side, identity-aware queue).
 
 **Next hand-off:** do not rebuild the collection activity or the cross-round
-display path. The next paper-useful increments are live-method pilot evidence,
-plus optional post-MVP refinements such as richer review controls or comments on
-non-outlier items.
+display path. The next paper-useful increment is the adaptive controlled-feedback
+pass captured in `plans/subplans/PHASE_9.md` Step 3A: select least-converged
+**ideas** for comment, let the facilitator choose the count, and order reranking
+by the prior group result. Treat participant outlier queues as the implemented
+MVP, not the long-term user-facing shape.
 
 ---
 
@@ -231,6 +233,10 @@ Final full app regression after Slice C passed with
 - Cross-round anonymized display of rationales is implemented by consuming the
   unattributed output bundle in the following `rank_order_voting` round. Keep that
   display aggregate/unattributed; do not add user IDs or per-person flags.
+- For the next adaptive pass, do not target or label individual participants as
+  outliers in the main workflow. Select ideas by disagreement band, open the same
+  selected ideas for everyone, and let the facilitator choose zero to skip
+  comments.
 
 ## Test / verify commands
 - Targeted: `PYTHONPATH=. ./venv/bin/pytest app/tests/test_justification_api.py

@@ -430,6 +430,70 @@ contribution.
   justification" needs per-round branching = the deferred `conditional` step /
   dynamic dispatch. Current gate is binary continue/conclude.
 
+#### F.0 Testing-driven revision: item-level controlled feedback, not participant wrangling
+
+Design discussion during live testing (2026-06-06) sharpened the next Delphi
+iteration. The first implementation targeted *participants* whose ranks were
+outside the group band. That is methodologically defensible for classical Delphi,
+but it is brittle in small panels and hard to explain without making participants
+feel singled out. The next design should target **ideas/items**, not people:
+
+- After each ranking round, compute item-level disagreement from the prior round
+  (start with IQR/spread; use rank variance as a tie-breaker).
+- Present the facilitator with an agreement report and an adaptive recommendation:
+  how many least-converged ideas should be opened for comment before reranking.
+- Everyone sees the same selected ideas and may comment on them; no participant is
+  selected or exposed as an outlier. Individual participants may still privately
+  see "your prior rank" and later identify their own prior comments as "You."
+- If the facilitator selects zero ideas, the comment phase is skipped and the
+  method proceeds directly to reranking.
+- Reranking after Round 1 should be ordered by the **prior group result**, not by
+  each participant's private prior order. This is the core controlled-feedback
+  move: everyone reviews the same group signal, then revises or holds their view.
+
+The research story is stronger this way. Delphi literature commonly describes
+iteration as controlled feedback plus re-evaluation, with consensus/stability
+expected to increase over rounds but not guaranteed. Studies report trends such as
+increased agreement, convergence of rankings, and fewer comments as rounds
+progress; reviews also emphasize that consensus definitions vary and must be
+reported clearly. This supports an **adaptive banded comment policy** rather than
+a fixed "comment on 25%" rule:
+
+- **Green band:** high agreement / low spread. Recommend no comments; keep visible
+  but deemphasized in the next rank screen.
+- **Yellow band:** moderate disagreement. Recommend a small number of comments,
+  e.g. the most disputed 10-15% of ideas.
+- **Red band:** high disagreement. Recommend a broader comment pass, with 25% as
+  the default upper suggestion and 50% as a facilitator-selectable cap.
+
+Plain-language facilitator prompt:
+
+> The group disagreed most on 12 ideas. We suggest opening 3 for comments before
+> reranking. Choose 0 to skip comments, or choose up to 6 if the group needs more
+> explanation.
+
+Plain-language participant prompt:
+
+> These items had the widest spread in the last ranking. Add brief reasons or
+> considerations before the group ranks again.
+
+This gives Decidero a compelling paper claim: the orchestration engine is not only
+executing a Delphi loop, it is surfacing **method-level steering information** that
+lets a facilitator tune the burden of qualitative feedback as consensus emerges.
+The implementation remains explainable: "as the group gets closer, fewer ideas
+need comment."
+
+Literature anchors to cite:
+- Greatorex and Dexter's Delphi consensus/stability analysis reports trends toward
+  increased agreement, convergence of importance rankings, and fewer comments over
+  rounds while also distinguishing consensus from stability.
+- Barrios et al. show that controlled feedback about group agreement can change
+  later responses, and that convergence is related to the feedback participants
+  receive.
+- Delphi reporting reviews emphasize that consensus thresholds vary widely, which
+  argues for explicit, configurable, facilitator-visible thresholds rather than
+  hidden fixed constants.
+
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 
 Decided 2026-06-04 and implemented 2026-06-05: the shipped Delphi justification
@@ -584,7 +648,8 @@ the conference scope.
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
-  the in-UI DAG visualization.
+  the in-UI DAG visualization; adaptive controlled-feedback comments over
+  least-converged ideas (section F.0).
 - [DONE] the unified decision primitive (round_gate embeds a facilitator-decision)
   + generic report summarizer registry + two-layer recommender (Layer-A metric
   registry, Layer-B declarative rule), clean-break migration with load-time
@@ -594,11 +659,11 @@ the conference scope.
 
 Explicit "do later" list captured 2026-06-04 so it is not lost:
 
-- **Skip-the-justification control.** Let the facilitator choose, at the round
-  boundary, to *skip* the justification sub-step (run-justification vs continue
-  directly). The decision surface is easy; making the engine actually *skip* an
-  activity from a choice needs conditional/branching execution (the deferred
-  `conditional` step / dynamic dispatch, section E/F). Defer.
+- **Adaptive selected-idea comments.** Let the facilitator choose how many
+  least-converged ideas to open for comment before reranking. Choosing zero skips
+  comments; choosing a positive count opens the same selected ideas to everyone.
+  This should be modeled as a runtime option on the feedback/comment phase, not
+  as participant targeting.
 - **Justification activity itself** beyond the MVP — richer review surface,
   optional comments on non-outlier items, etc. (F.1 is the spec.)
 
