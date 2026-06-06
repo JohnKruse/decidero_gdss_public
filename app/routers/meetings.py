@@ -131,6 +131,9 @@ class ForkOrchestrationTemplatePayload(BaseModel):
     max_rounds: Optional[int] = Field(None, ge=1, le=50)
     convergence_threshold: Optional[float] = Field(None, ge=0.0)
     who_decides: Optional[Literal["facilitator", "automatic"]] = None
+    # Adaptive controlled-feedback comment workload (fractions of the ideas).
+    comment_default_fraction: Optional[float] = Field(None, ge=0.0, le=1.0)
+    comment_max_fraction: Optional[float] = Field(None, ge=0.0, le=1.0)
 
 
 class UpdateMeetingTemplatePayload(BaseModel):
@@ -1025,6 +1028,8 @@ async def fork_meeting_template(
         max_rounds=payload.max_rounds,
         convergence_threshold=payload.convergence_threshold,
         who_decides=payload.who_decides,
+        comment_default_fraction=payload.comment_default_fraction,
+        comment_max_fraction=payload.comment_max_fraction,
         purpose=payload.purpose,
         tags=payload.tags,
     )

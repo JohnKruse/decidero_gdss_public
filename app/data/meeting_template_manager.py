@@ -246,6 +246,8 @@ class MeetingTemplateManager:
         max_rounds: Optional[int] = None,
         convergence_threshold: Optional[float] = None,
         who_decides: Optional[str] = None,
+        comment_default_fraction: Optional[float] = None,
+        comment_max_fraction: Optional[float] = None,
         purpose: Optional[str] = None,
         tags: Optional[Iterable[str]] = None,
     ) -> tuple[MeetingTemplate, list[str]]:
@@ -280,6 +282,8 @@ class MeetingTemplateManager:
                 max_rounds=max_rounds,
                 convergence_threshold=convergence_threshold,
                 who_decides=who_decides,
+                comment_default_fraction=comment_default_fraction,
+                comment_max_fraction=comment_max_fraction,
             )
         except (ValueError, OrchestrationValidationError) as exc:
             raise HTTPException(

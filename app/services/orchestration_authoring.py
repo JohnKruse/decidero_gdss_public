@@ -89,12 +89,70 @@ _PREDICATE_TO_STOP_CONDITION: Dict[str, str] = {
 }
 
 
+def _feedback_policy_steps(document: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Activity steps whose config carries a feedback_policy (the comment step)."""
+    steps: List[Dict[str, Any]] = []
+    for step in _activity_steps(document):
+        config = step.get("config")
+        if isinstance(config, dict) and isinstance(config.get("feedback_policy"), dict):
+            steps.append(step)
+    return steps
+
+
+def _apply_comment_workload(
+    document: Dict[str, Any],
+    *,
+    default_fraction: Optional[float],
+    max_fraction: Optional[float],
+) -> None:
+    """Set the adaptive comment workload (suggested/maximum fractions) in place.
+
+    Validates that each fraction is within [0, 1] and that the suggested share
+    never exceeds the maximum, in meeting terms, before mutating the document.
+    """
+    steps = _feedback_policy_steps(document)
+    if not steps:
+        raise ValueError("This method has no comment step to tune.")
+
+    def _check(value: Optional[float], label: str) -> Optional[float]:
+        if value is None:
+            return None
+        frac = float(value)
+        if frac < 0.0 or frac > 1.0:
+            raise ValueError(f"{label} must be between 0% and 100% of the ideas.")
+        return frac
+
+    new_default = _check(default_fraction, "Suggested comment share")
+    new_max = _check(max_fraction, "Maximum comment share")
+
+    for step in steps:
+        selection = step["config"]["feedback_policy"].setdefault("comment_selection", {})
+        effective_default = (
+            new_default if new_default is not None
+            else float(selection.get("default_fraction", 0.25))
+        )
+        effective_max = (
+            new_max if new_max is not None
+            else float(selection.get("max_fraction", 0.5))
+        )
+        if effective_default > effective_max:
+            raise ValueError(
+                "The suggested comment share cannot exceed the maximum comment share."
+            )
+        if new_default is not None:
+            selection["default_fraction"] = new_default
+        if new_max is not None:
+            selection["max_fraction"] = new_max
+
+
 def apply_tuning(
     base_document: Dict[str, Any],
     *,
     max_rounds: Optional[int] = None,
     convergence_threshold: Optional[float] = None,
     who_decides: Optional[str] = None,
+    comment_default_fraction: Optional[float] = None,
+    comment_max_fraction: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Return a new orchestration document with plain tuning applied and validated.
 
@@ -102,6 +160,10 @@ def apply_tuning(
     - ``convergence_threshold``: stability threshold for the stop condition.
     - ``who_decides``: ``"facilitator"`` adds a continue/conclude round-gate;
       ``"automatic"`` removes it so the predicate decides.
+    - ``comment_default_fraction`` / ``comment_max_fraction``: the adaptive
+      controlled-feedback comment workload — the suggested and maximum share of
+      least-converged ideas opened for comment each round. Applied to every
+      activity carrying a ``feedback_policy`` (the Delphi comment step).
 
     Raises ``OrchestrationValidationError`` (via the loader) if the result is not a
     valid orchestration document.
@@ -110,8 +172,17 @@ def apply_tuning(
 
     document = copy.deepcopy(base_document)
     iterates = _iterate_steps(document)
+    tunes_comments = (
+        comment_default_fraction is not None or comment_max_fraction is not None
+    )
     if (max_rounds is not None or convergence_threshold is not None or who_decides is not None) and not iterates:
         raise ValueError("This method has no iterative loop to tune.")
+    if tunes_comments:
+        _apply_comment_workload(
+            document,
+            default_fraction=comment_default_fraction,
+            max_fraction=comment_max_fraction,
+        )
 
     for iterate in iterates:
         if max_rounds is not None:
@@ -184,6 +255,16 @@ def summarize_orchestration(document: Dict[str, Any]) -> List[str]:
             lines.append("After each round you decide whether to run another round or conclude.")
         else:
             lines.append("Rounds continue automatically until the stop condition or the round limit.")
+
+    for step in _feedback_policy_steps(document):
+        selection = step["config"]["feedback_policy"].get("comment_selection") or {}
+        suggested = round(float(selection.get("default_fraction", 0.25)) * 100)
+        cap = round(float(selection.get("max_fraction", 0.5)) * 100)
+        lines.append(
+            "Before re-ranking, the most-disputed ideas are opened for comment — "
+            f"about {suggested}% suggested, up to {cap}% of the ideas (you choose, "
+            "and zero skips comments)."
+        )
 
     if not lines:
         lines.append("This method runs its activities in order.")

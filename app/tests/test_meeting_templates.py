@@ -525,6 +525,35 @@ def test_fork_orchestration_template_persists_inline_tuned_document(db_session):
     assert isinstance(summary, list) and summary
 
 
+def test_fork_orchestration_template_tunes_comment_workload(db_session):
+    """Plainspoken Marmot: the adaptive comment workload chosen at fork time
+    compiles into the inline document's feedback policy and the summary."""
+    from app.services.orchestration_authoring import _feedback_policy_steps
+
+    owner = _user("forkcomments", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+    [delphi] = seed_builtin_meeting_templates(db_session)
+
+    manager = MeetingTemplateManager(db_session)
+    forked, summary = manager.fork_orchestration_template(
+        base_template_id=delphi.template_id,
+        name="Lighter-comment Delphi",
+        created_by_user_id=owner.user_id,
+        comment_default_fraction=0.2,
+        comment_max_fraction=0.4,
+    )
+
+    document = forked.template_payload["orchestration"]["document"]
+    selection = _feedback_policy_steps(document)[0]["config"]["feedback_policy"][
+        "comment_selection"
+    ]
+    assert selection["default_fraction"] == 0.2
+    assert selection["max_fraction"] == 0.4
+    text = " ".join(summary).lower()
+    assert "most-disputed ideas are opened for comment" in text
+
+
 def test_meeting_created_from_forked_template_resolves_inline_document(db_session):
     """Plainspoken Marmot: a meeting from a forked template binds to the inline
     document via a template:// path and the engine materializes its first step."""

@@ -103,6 +103,18 @@ to reranking. With no recorded gate decision (e.g. round 1) the activity keeps
 its default outlier-only mode. This is all Layer-1 plugin logic reading bundles;
 the engine is untouched.
 
+### Tuning the comment workload at fork time
+
+The adaptive comment workload is a fork-and-tune knob. `apply_tuning` accepts
+`comment_default_fraction` (the suggested share of least-converged ideas) and
+`comment_max_fraction` (the facilitator-selectable cap), validates them in meeting
+terms (each between 0% and 100%, and the suggested share never above the cap), and
+writes them onto every feedback-policy comment step. The fork API and template
+manager expose the same two knobs, the resulting inline document carries the tuned
+fractions, and the plain-language method summary describes the workload ("the
+most-disputed ideas are opened for comment — about N% suggested, up to M%"). The
+default Classical Delphi template still ships 25% suggested / 50% cap.
+
 The policy records the testing-driven design revision: select ideas by
 disagreement band, not participants by outlier status. The shipped MVP still has
 the outlier-justification activity; this policy pins the configuration contract

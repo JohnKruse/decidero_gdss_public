@@ -69,3 +69,42 @@ def test_summarize_reflects_automatic_when_gate_removed():
     automatic = apply_tuning(_delphi_dict(), who_decides="automatic")
     text = " ".join(summarize_orchestration(automatic)).lower()
     assert "automatically" in text
+
+
+def _comment_selection(document):
+    from app.services.orchestration_authoring import _feedback_policy_steps
+
+    steps = _feedback_policy_steps(document)
+    assert steps, "expected a comment step carrying a feedback_policy"
+    return steps[0]["config"]["feedback_policy"]["comment_selection"]
+
+
+def test_apply_tuning_sets_comment_workload_fractions():
+    tuned = apply_tuning(
+        _delphi_dict(),
+        comment_default_fraction=0.3,
+        comment_max_fraction=0.6,
+    )
+    selection = _comment_selection(tuned)
+    assert selection["default_fraction"] == 0.3
+    assert selection["max_fraction"] == 0.6
+
+
+def test_apply_tuning_rejects_suggested_above_maximum():
+    # Suggested 60% with the shipped 50% cap is incoherent in meeting terms.
+    with pytest.raises(ValueError):
+        apply_tuning(_delphi_dict(), comment_default_fraction=0.6)
+
+
+def test_apply_tuning_rejects_out_of_range_comment_fraction():
+    with pytest.raises(ValueError):
+        apply_tuning(_delphi_dict(), comment_max_fraction=1.5)
+
+
+def test_summarize_orchestration_describes_comment_workload():
+    lines = summarize_orchestration(
+        apply_tuning(_delphi_dict(), comment_default_fraction=0.25, comment_max_fraction=0.5)
+    )
+    text = " ".join(lines).lower()
+    assert "most-disputed ideas are opened for comment" in text
+    assert "25%" in text and "50%" in text

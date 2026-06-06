@@ -246,9 +246,15 @@ Stage discipline:
    summary carries `delphi_round` ({round_number, max_rounds}) from the engine's
    read-only `round_progress_for`, and the rank-order panel leads with
    "Round N of M".
-6. Template instantiation controls: add fork/start-template tests proving selected
-   defaults compile into the inline orchestration/template config; update
-   facilitator-facing docs and Phase 9 status.
+6. [DONE] Template instantiation controls: add fork/start-template tests proving
+   selected defaults compile into the inline orchestration/template config; update
+   facilitator-facing docs and Phase 9 status. `apply_tuning` now accepts
+   `comment_default_fraction` / `comment_max_fraction`, validates them in meeting
+   terms (0–100%, suggested ≤ maximum), and writes them onto every feedback-policy
+   comment step. The fork API/manager expose the same two knobs, the inline forked
+   document carries the tuned fractions, and `summarize_orchestration` describes
+   the comment workload in plain language ("the most-disputed ideas are opened for
+   comment — about N% suggested, up to M%").
 7. End-to-end Delphi regression: rank Round 1 with disagreement, facilitator opens
    N least-converged ideas, participants comment, reranking opens group-ordered
    with visual feedback, and continue/conclude still works. Record verification in
