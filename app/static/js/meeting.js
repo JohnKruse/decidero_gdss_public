@@ -5263,6 +5263,17 @@
             return `${activityId || ""}::${optionId || ""}`;
         }
 
+        function activeJustificationConfig() {
+            if (!justificationActivityId || !state.agendaMap) {
+                return {};
+            }
+            return state.agendaMap.get(justificationActivityId)?.config || {};
+        }
+
+        function justificationUsesSelectedItems() {
+            return activeJustificationConfig().comment_scope === "selected_items";
+        }
+
         function updateJustificationCardSaveState(textarea, saveButton, status, optionId) {
             const isSaving = justificationSavingOptions.has(optionId);
             const saved = textarea.dataset.savedRationale || "";
@@ -5316,12 +5327,18 @@
             if (justification.progress) {
                 const progress = summary?.progress || null;
                 if (progress) {
+                    const selectedItemCount = Number.parseInt(progress.selected_item_count, 10);
                     const outlierCount = Number.parseInt(progress.outlier_count, 10);
                     const submittedCount = Number.parseInt(progress.submitted_count, 10);
                     const safeOutliers = Number.isFinite(outlierCount) ? outlierCount : 0;
                     const safeSubmitted = Number.isFinite(submittedCount) ? submittedCount : 0;
-                    justification.progress.textContent =
-                        `${safeSubmitted} of ${safeOutliers} outlier participant${safeOutliers === 1 ? "" : "s"} have explained.`;
+                    if (Number.isFinite(selectedItemCount)) {
+                        justification.progress.textContent =
+                            `${safeSubmitted} of ${safeOutliers} participant${safeOutliers === 1 ? "" : "s"} have commented on ${selectedItemCount} selected item${selectedItemCount === 1 ? "" : "s"}.`;
+                    } else {
+                        justification.progress.textContent =
+                            `${safeSubmitted} of ${safeOutliers} outlier participant${safeOutliers === 1 ? "" : "s"} have explained.`;
+                    }
                 } else {
                     justification.progress.textContent = "";
                 }
@@ -5335,6 +5352,9 @@
             const nothingToJustify = Boolean(summary?.nothing_to_justify);
             if (justification.empty) {
                 justification.empty.hidden = !(summary && nothingToJustify);
+                justification.empty.textContent = justificationUsesSelectedItems()
+                    ? "No items were opened for comments this round."
+                    : "Nothing needs your justification this round.";
             }
 
             if (!summary) {
@@ -5376,7 +5396,9 @@
                 textarea.value = displayed;
                 textarea.dataset.optionId = optionId;
                 textarea.dataset.savedRationale = saved;
-                textarea.placeholder = "Explain what led you to rank this item differently.";
+                textarea.placeholder = justificationUsesSelectedItems()
+                    ? "Add a brief comment or consideration for the next ranking."
+                    : "Explain what led you to rank this item differently.";
                 textarea.disabled = !justificationIsActive || justificationSavingOptions.has(optionId);
                 textarea.addEventListener("input", () => {
                     const nextValue = textarea.value;
@@ -7417,10 +7439,13 @@
                         justificationSavingOptions.clear();
                     }
                     if (justification.instructions) {
+                        const selectedCommentMode = activityConfig.comment_scope === "selected_items";
                         justification.instructions.textContent =
                             instructions ||
                             (isActive
-                                ? "Explain the item(s) where your rank diverged from the group pattern."
+                                ? selectedCommentMode
+                                    ? "Comment on the selected items before the group ranks again."
+                                    : "Explain the item(s) where your rank diverged from the group pattern."
                                 : "This justification activity is closed.");
                     }
                     if (justificationActivityId && !justificationState) {
@@ -7434,7 +7459,7 @@
                             ? "You are not assigned to this justification step."
                             : state.isFacilitator
                                 ? "This justification activity is closed. Select another agenda item to continue."
-                                : "The facilitator will open justification when ready.";
+                                : "The facilitator will open comments when ready.";
                     justificationState = null;
                     justificationActivityId = null;
                     justificationIsActive = false;

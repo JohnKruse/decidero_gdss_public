@@ -40,12 +40,15 @@ def test_meeting_page_includes_outlier_justification_panel_hooks():
         html = handle.read()
     assert "data-justification-root" in html
     assert "justificationQueue" in html
-    assert "Nothing needs your justification this round." in html
+    assert "Comment on Delphi Feedback" in html
+    assert "Nothing needs your comment this round." in html
 
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
     assert 'toolType === "outlier_justification"' in js
     assert "loadJustificationState" in js
+    assert "justificationUsesSelectedItems" in js
+    assert "commented on" in js
     assert "justification_update" in js
 
 

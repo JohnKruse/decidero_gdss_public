@@ -19,9 +19,10 @@ facilitator report/API wiring, selected-idea comment backend/API, and
 group-ordered reranking foundation are in place. The rank-order summary backend
 now starts Round 2+ unsubmitted rankings from prior group median/IQR order; the
 UI now shows agreement color badges. Remaining slices are facilitator selection
-UI/orchestration skip wiring, participant-side selected-comment rendering polish
-("your comment" labeling), template instantiation controls, and the end-to-end
-Delphi regression.
+UI/orchestration skip wiring, participant-side "your comment" labeling, template
+instantiation controls, and the end-to-end Delphi regression. The participant
+comment panel now uses selected-item-aware wording when `comment_scope` is
+`selected_items`.
 
 ---
 

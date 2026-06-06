@@ -220,8 +220,10 @@ Stage discipline:
    `comment_scope: "selected_items"` with `selected_comment_items`, opens the
    same selected ideas to every participant, rejects non-selected submissions,
    reports selected-item progress to facilitators, and keeps the existing
-   outlier-only mode intact. Facilitator selection UI, private "your comment"
-   labeling, and orchestration skip/advance wiring remain.
+   outlier-only mode intact. The meeting panel now uses selected-item-aware copy
+   for progress, empty state, instructions, and comment placeholders. Facilitator
+   selection UI, private "your comment" labeling, and orchestration skip/advance
+   wiring remain.
 5. [PARTIAL] Group-ordered reranking + visual feedback: add regression tests
    showing all participants receive the same group-ordered Round 2+ list; add JS
    syntax/smoke checks for feedback badges and progression display. The backend
