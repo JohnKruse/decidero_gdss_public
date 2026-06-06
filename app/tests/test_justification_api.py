@@ -46,7 +46,9 @@ def _add_participant(_user_manager, db_session, *, user_id, login, password):
     return user
 
 
-def _create_justification_meeting(db_session, admin_user, participants):
+def _create_justification_meeting(
+    db_session, admin_user, participants, config_extra=None
+):
     suffix = uuid4().hex[:8]
     meeting_id = f"M-JUST-{suffix}"
     activity_id = f"A-JUST-{suffix}"
@@ -57,6 +59,9 @@ def _create_justification_meeting(db_session, admin_user, participants):
         description="Outlier justification API fixture",
     )
     meeting.participants.extend(participants)
+    config = {"justification_seed": _SEED}
+    if config_extra:
+        config.update(config_extra)
     activity = AgendaActivity(
         activity_id=activity_id,
         meeting_id=meeting.meeting_id,
@@ -64,7 +69,7 @@ def _create_justification_meeting(db_session, admin_user, participants):
         title="Justify Outlier Rankings",
         order_index=1,
         tool_config_id=f"tc-{activity_id}",
-        config={"justification_seed": _SEED},
+        config=config,
     )
     meeting.agenda_activities.append(activity)
     db_session.add(meeting)
@@ -177,6 +182,60 @@ def test_get_state_returns_empty_queue_for_non_outlier(
     assert response.json()["items"] == []
 
 
+def test_get_state_returns_selected_comment_items_for_any_participant(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    admin_user = user_manager_with_admin.get_user_by_email(
+        os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    )
+    outlier = _add_participant(
+        user_manager_with_admin,
+        db_session,
+        user_id="justify_outlier",
+        login="justify_outlier",
+        password="JustifyOutlier1!",
+    )
+    clear = _add_participant(
+        user_manager_with_admin,
+        db_session,
+        user_id="justify_clear",
+        login="justify_clear",
+        password="JustifyClear1!",
+    )
+    meeting, activity_id = _create_justification_meeting(
+        db_session,
+        admin_user,
+        [outlier, clear],
+        config_extra={
+            "comment_scope": "selected_items",
+            "selected_comment_items": [
+                {
+                    "option_id": "o2",
+                    "content": "Idea B",
+                    "median": 2.0,
+                    "iqr": 1.0,
+                    "ranks_by_user": {"justify_clear": 2},
+                }
+            ],
+        },
+    )
+    _open_activity(meeting.meeting_id, activity_id)
+    _login(client, "justify_clear", "JustifyClear1!")
+
+    response = client.get(
+        f"/api/meetings/{meeting.meeting_id}/justification/state",
+        params={"activity_id": activity_id},
+    )
+
+    assert response.status_code == 200, response.json()
+    payload = response.json()
+    assert payload["nothing_to_justify"] is False
+    assert [item["option_id"] for item in payload["items"]] == ["o2"]
+    assert payload["items"][0]["your_rank"] == 2
+
+
 def test_post_rationale_stores_and_is_idempotent(
     client: TestClient,
     user_manager_with_admin,
@@ -258,6 +317,57 @@ def test_post_non_queued_option_returns_400(
     assert "your own outlier rankings" in response.json()["detail"]
 
 
+def test_post_selected_comment_item_stores_for_non_outlier(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    admin_user = user_manager_with_admin.get_user_by_email(
+        os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    )
+    outlier = _add_participant(
+        user_manager_with_admin,
+        db_session,
+        user_id="justify_outlier",
+        login="justify_outlier",
+        password="JustifyOutlier1!",
+    )
+    clear = _add_participant(
+        user_manager_with_admin,
+        db_session,
+        user_id="justify_clear",
+        login="justify_clear",
+        password="JustifyClear1!",
+    )
+    meeting, activity_id = _create_justification_meeting(
+        db_session,
+        admin_user,
+        [outlier, clear],
+        config_extra={
+            "comment_scope": "selected_items",
+            "selected_comment_items": [
+                {"option_id": "o2", "content": "Idea B"},
+            ],
+        },
+    )
+    _open_activity(meeting.meeting_id, activity_id)
+    _login(client, "justify_clear", "JustifyClear1!")
+
+    accepted = client.post(
+        f"/api/meetings/{meeting.meeting_id}/justification/rationale",
+        json={"activity_id": activity_id, "option_id": "o2", "rationale": "context"},
+    )
+    rejected = client.post(
+        f"/api/meetings/{meeting.meeting_id}/justification/rationale",
+        json={"activity_id": activity_id, "option_id": "o1", "rationale": "nope"},
+    )
+
+    assert accepted.status_code == 200, accepted.json()
+    assert accepted.json()["submitted"] is True
+    assert rejected.status_code == 400
+    assert "not open for comments" in rejected.json()["detail"]
+
+
 def test_post_when_inactive_returns_403(
     client: TestClient,
     user_manager_with_admin,
@@ -328,4 +438,8 @@ def test_facilitator_get_returns_progress(
     assert response.status_code == 200, response.json()
     payload = response.json()
     assert payload["items"] == []
-    assert payload["progress"] == {"outlier_count": 1, "submitted_count": 0}
+    assert payload["progress"] == {
+        "outlier_count": 1,
+        "submitted_count": 0,
+        "selected_item_count": None,
+    }

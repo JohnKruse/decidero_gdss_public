@@ -17,6 +17,7 @@ class JustificationItem(BaseModel):
 class JustificationProgress(BaseModel):
     outlier_count: int = 0
     submitted_count: int = 0
+    selected_item_count: Optional[int] = None
 
 
 class JustificationStateResponse(BaseModel):

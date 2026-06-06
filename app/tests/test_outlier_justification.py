@@ -33,7 +33,23 @@ def _meeting(db, owner_id="owner"):
     return meeting
 
 
-def _activity(db, meeting, seed, activity_id="A-JUST", round_index=0):
+def _activity(
+    db,
+    meeting,
+    seed,
+    activity_id="A-JUST",
+    round_index=0,
+    config_extra=None,
+):
+    config = {
+        "justification_seed": seed,
+        "_orchestration": {
+            "logical_step_id": f"engine:{activity_id}",
+            "round_index": round_index,
+        },
+    }
+    if config_extra:
+        config.update(config_extra)
     activity = AgendaActivity(
         activity_id=activity_id,
         meeting_id=meeting.meeting_id,
@@ -41,13 +57,7 @@ def _activity(db, meeting, seed, activity_id="A-JUST", round_index=0):
         title="Justify",
         order_index=1,
         tool_config_id=f"tc-{activity_id}",
-        config={
-            "justification_seed": seed,
-            "_orchestration": {
-                "logical_step_id": f"engine:{activity_id}",
-                "round_index": round_index,
-            },
-        },
+        config=config,
     )
     db.add(activity)
     db.commit()
@@ -144,6 +154,45 @@ def test_comment_only_rejects_non_queued_option(db_session):
         mgr.submit_rationale(meeting, activity, u3, "o-new", "a new idea")
 
 
+def test_selected_items_mode_opens_same_comment_queue_to_all_participants(db_session):
+    meeting = _meeting(db_session)
+    selected_items = [
+        {
+            "option_id": "o2",
+            "content": "Idea B",
+            "median": 2.0,
+            "iqr": 1.0,
+            "ranks_by_user": {"u1": 2, "u2": 1},
+        },
+        {
+            "option_id": "o3",
+            "content": "Idea C",
+            "median": 3.0,
+            "iqr": 2.0,
+            "ranks_by_user": {"u1": 1, "u2": 3},
+        },
+    ]
+    activity = _activity(
+        db_session,
+        meeting,
+        _SEED,
+        config_extra={
+            "comment_scope": "selected_items",
+            "selected_comment_items": selected_items,
+        },
+    )
+    u1, u2 = _user(db_session, "u1"), _user(db_session, "u2")
+    mgr = OutlierJustificationManager(db_session)
+
+    assert [q["option_id"] for q in mgr.queue_for(activity, "u1")] == ["o2", "o3"]
+    assert [q["option_id"] for q in mgr.queue_for(activity, "u2")] == ["o2", "o3"]
+    assert mgr.queue_for(activity, "u1")[0]["your_rank"] == 2
+
+    mgr.submit_rationale(meeting, activity, u1, "o2", "Please clarify constraints.")
+    with pytest.raises(JustificationError, match="not open for comments"):
+        mgr.submit_rationale(meeting, activity, u1, "o1", "Not selected.")
+
+
 def test_collected_by_option_is_unattributed(db_session):
     meeting = _meeting(db_session)
     # Both u3 and u4 flagged on o1.
@@ -208,6 +257,41 @@ def test_facilitator_progress_counts_complete_outlier_queues(db_session):
     assert mgr.facilitator_progress(meeting, activity) == {
         "outlier_count": 2,
         "submitted_count": 2,
+    }
+
+
+def test_facilitator_progress_counts_selected_item_comment_assignees(db_session):
+    meeting = _meeting(db_session)
+    u1, u2 = _user(db_session, "u1"), _user(db_session, "u2")
+    meeting.participants.extend([u1, u2])
+    db_session.commit()
+    activity = _activity(
+        db_session,
+        meeting,
+        _SEED,
+        config_extra={
+            "comment_scope": "selected_items",
+            "selected_comment_items": [
+                {"option_id": "o1", "content": "Idea A"},
+                {"option_id": "o2", "content": "Idea B"},
+            ],
+        },
+    )
+    mgr = OutlierJustificationManager(db_session)
+
+    assert mgr.facilitator_progress(meeting, activity) == {
+        "outlier_count": 2,
+        "submitted_count": 0,
+        "selected_item_count": 2,
+    }
+
+    mgr.submit_rationale(meeting, activity, u1, "o1", "cost")
+    assert mgr.facilitator_progress(meeting, activity)["submitted_count"] == 0
+    mgr.submit_rationale(meeting, activity, u1, "o2", "risk")
+    assert mgr.facilitator_progress(meeting, activity) == {
+        "outlier_count": 2,
+        "submitted_count": 1,
+        "selected_item_count": 2,
     }
 
 

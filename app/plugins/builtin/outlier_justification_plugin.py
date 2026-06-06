@@ -127,7 +127,9 @@ class OutlierJustificationPlugin(ActivityPlugin):
         manager = OutlierJustificationManager(context.db)
         grouped = manager.collected_by_option(meeting, activity)
 
-        seed_by_option = {entry.get("option_id"): entry for entry in manager._seed(activity)}
+        seed_by_option = {
+            entry.get("option_id"): entry for entry in manager.comment_items(activity)
+        }
         items: List[Dict[str, Any]] = []
         for option_id, rationales in grouped.items():
             entry = seed_by_option.get(option_id) or {}

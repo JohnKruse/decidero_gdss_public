@@ -14,11 +14,14 @@ display path. The next paper-useful increment is the adaptive controlled-feedbac
 pass captured in `plans/subplans/PHASE_9.md` Step 3A: select least-converged
 **ideas** for comment, let the facilitator choose the count, and order reranking
 by the prior group result. Treat participant outlier queues as the implemented
-MVP, not the long-term user-facing shape. The config/defaults and scoring service
-foundation are in place; next slices are facilitator report/API wiring,
-selected-idea comment UI/API, and group-ordered reranking. The rank-order summary
-backend now starts Round 2+ unsubmitted rankings from prior group median/IQR order;
-the UI now shows agreement color badges. Round progression remains.
+MVP, not the long-term user-facing shape. The config/defaults, scoring service,
+facilitator report/API wiring, selected-idea comment backend/API, and
+group-ordered reranking foundation are in place. The rank-order summary backend
+now starts Round 2+ unsubmitted rankings from prior group median/IQR order; the
+UI now shows agreement color badges. Remaining slices are facilitator selection
+UI/orchestration skip wiring, participant-side selected-comment rendering polish
+("your comment" labeling), template instantiation controls, and the end-to-end
+Delphi regression.
 
 ---
 
@@ -47,6 +50,8 @@ already slots into the existing subcycle; no engine change is needed.
   - `build_state(meeting, activity, user) -> {activity_id, items:[{option_id,
     content, your_rank, group_median, group_iqr, rationale}], nothing_to_justify,
     submitted}` — the per-viewer payload.
+  - `comment_scope: "selected_items"` support via `selected_comment_items`; in
+    this mode every participant receives the same selected comment-only queue.
   - `submit_rationale(meeting, activity, user, option_id, rationale) ->
     OutlierRationale` — comment-only upsert; raises `JustificationError` if the
     option is not in the user's queue.
@@ -56,7 +61,9 @@ already slots into the existing subcycle; no engine change is needed.
   `outlier_justification`, registered in `app/plugins/loader.py`. `open_activity`
   seeds the per-item queue (runs the Delphi aggregation over the ranking output);
   `close_activity` finalizes the unattributed rationale bundle.
-- Tests: `app/tests/test_outlier_justification.py` (9 passing).
+- Tests: `app/tests/test_outlier_justification.py` and
+  `app/tests/test_justification_api.py` cover outlier-only queues plus the
+  selected-item mode (20 focused tests passing).
 
 **Reference implementation to mirror throughout:** rank-order voting.
 - Router: `app/routers/rank_order_voting.py` (prefix

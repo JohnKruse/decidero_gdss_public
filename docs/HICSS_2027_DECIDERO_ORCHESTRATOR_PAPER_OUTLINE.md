@@ -500,13 +500,17 @@ built-in Classical Delphi template exposes the strategy/default/cap as template
 parameters, and `app/services/delphi_feedback_policy.py` computes item bands,
 suggested counts, caps, and selected item keys. The round-gate report now carries
 `feedback_selection`, and both orchestration advance plus facilitator-decision
-state expose it for the facilitator UI. Selected-idea comments and group-ordered
-reranking remain next slices. The rank-order summary backend now implements the
-first part of group-ordered reranking: unsubmitted Round 2+ Delphi items are
-ordered by prior group median/IQR for all participants, rather than by each
-participant's private/random order. The ranking UI now replaces verbose prior
-stats with green/yellow/red agreement badges and compact group-rank text.
-Round progression display remains to be built.
+state expose it for the facilitator UI. The justification activity now has a
+selected-item backend/API mode (`comment_scope: "selected_items"`) that opens the
+same facilitator-selected ideas to every participant while preserving the
+outlier-only mode as a backward-compatible variant. The rank-order summary
+backend now implements the first part of group-ordered reranking: unsubmitted
+Round 2+ Delphi items are ordered by prior group median/IQR for all participants,
+rather than by each participant's private/random order. The ranking UI now
+replaces verbose prior stats with green/yellow/red agreement badges and compact
+group-rank text. Remaining implementation work is facilitator selection UI,
+zero-count skip/advance wiring, participant-side "your comment" labeling,
+template instantiation controls, and the end-to-end Delphi regression.
 
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 
@@ -662,8 +666,12 @@ the conference scope.
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
-  the in-UI DAG visualization; adaptive controlled-feedback comments over
-  least-converged ideas (section F.0).
+  the in-UI DAG visualization.
+- [PARTIAL] adaptive controlled-feedback comments over least-converged ideas
+  (section F.0): policy scoring, facilitator report payloads, selected-item
+  comment backend/API, group-ordered reranking, and agreement badges are in place;
+  facilitator selection UI, skip wiring, template controls, and the end-to-end
+  regression remain.
 - [DONE] the unified decision primitive (round_gate embeds a facilitator-decision)
   + generic report summarizer registry + two-layer recommender (Layer-A metric
   registry, Layer-B declarative rule), clean-break migration with load-time
