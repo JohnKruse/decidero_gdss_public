@@ -11,6 +11,9 @@ class RankOrderPriorRoundFeedback(BaseModel):
 
     median: Optional[float] = None
     iqr: Optional[float] = None
+    dispersion: Optional[float] = None
+    # The viewer's own rank for this item last round (None if they didn't rank it).
+    your_prior_rank: Optional[int] = None
 
 
 class RankOrderPriorRoundComment(BaseModel):

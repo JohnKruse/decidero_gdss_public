@@ -147,6 +147,35 @@ class RankOrderVotingManager:
         text = str(option_id)
         return text.split(":", 1)[1] if ":" in text else text
 
+    def _own_prior_ranks(
+        self, meeting: Meeting, round_index: int, user_id: str
+    ) -> Dict[str, int]:
+        """The viewer's own rank for each item in the prior round, keyed by stable
+        option key, so re-ranking can show "you ranked it N last round".
+
+        Reads the previous round's rank_order_voting activity and this user's votes
+        on it; the stable key bridges the per-round option-id prefix change.
+        """
+        prior_rank_activity = None
+        for activity in getattr(meeting, "agenda_activities", []) or []:
+            if activity.tool_type != "rank_order_voting":
+                continue
+            orchestration = (activity.config or {}).get("_orchestration") or {}
+            try:
+                if int(orchestration.get("round_index", -1)) == round_index - 1:
+                    prior_rank_activity = activity
+            except (TypeError, ValueError):
+                continue
+        if prior_rank_activity is None:
+            return {}
+        ranks = self._aggregate_user_ranking(
+            meeting.meeting_id, prior_rank_activity.activity_id, user_id
+        )
+        return {
+            self._stable_option_key(option_id): rank
+            for option_id, rank in ranks.items()
+        }
+
     def _own_rationale_texts(
         self, meeting: Meeting, justification_activity_id: str, user_id: str
     ) -> Dict[str, str]:
@@ -378,9 +407,13 @@ class RankOrderVotingManager:
 
         # Delphi: load prior round outlier justification rationales if we are in an
         # iterate loop (strategy + delphi_round were resolved above).
+        own_prior_ranks: Dict[str, int] = {}
         if isinstance(strategy, OrchestrationEngineStrategy):
             _, round_index = strategy.iteration_metadata_for(activity.activity_id)
             if round_index > 0:
+                own_prior_ranks = self._own_prior_ranks(
+                    meeting, round_index, user.user_id
+                )
                 prior_bundles = (
                     self.db.query(ActivityBundle)
                     .filter(
@@ -430,7 +463,14 @@ class RankOrderVotingManager:
             delphi = meta.get("delphi") if isinstance(meta.get("delphi"), dict) else {}
             if not delphi:
                 return None
-            return {"median": delphi.get("median"), "iqr": delphi.get("iqr")}
+            return {
+                "median": delphi.get("median"),
+                "iqr": delphi.get("iqr"),
+                "dispersion": delphi.get("dispersion"),
+                "your_prior_rank": own_prior_ranks.get(
+                    self._stable_option_key(option.option_id)
+                ),
+            }
 
         def option_payload(option: RankOrderOption) -> Dict[str, Any]:
             metric = borda.get(option.option_id, {})

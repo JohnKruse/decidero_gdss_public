@@ -562,3 +562,77 @@ def test_rank_order_summary_flags_viewers_own_prior_comment(
         {"text": "Need better layout", "mine": False},
         {"text": "Confusing navigation", "mine": True},
     ]
+
+
+def test_rank_order_summary_prior_feedback_carries_spread_and_own_rank(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    """Round 2 prior feedback exposes the numeric spread and the viewer's own
+    prior rank, so the panel can show "Group median ... spread ... You ranked it"."""
+    from app.models.meeting import AgendaActivity
+    from app.models.rank_order_voting import RankOrderVote
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    # Current (Round 2) rank activity: ideas carry the prior round's delphi stats.
+    meeting, activity_id = _create_rank_order_meeting(
+        db_session,
+        admin_user,
+        config_override={
+            "_orchestration": {
+                "logical_step_id": "engine:0.1.0.0",
+                "round_index": 1,
+            },
+            "ideas": [
+                {
+                    "content": "Improve UX",
+                    "metadata": {
+                        "rank_order_voting": {"option_id": "ignored:improve-ux"},
+                        "delphi": {"median": 2.0, "iqr": 3.0, "dispersion": 1.5},
+                    },
+                },
+            ],
+        },
+    )
+    meeting.agenda_strategy = "orchestration"
+    meeting.orchestration_path = "orchestrations/delphi.json"
+
+    # Prior (Round 1) rank activity + this viewer's own ranking on it.
+    prior_rank = AgendaActivity(
+        activity_id="prev_rank_act",
+        meeting_id=meeting.meeting_id,
+        tool_type="rank_order_voting",
+        title="Rank Delphi Items",
+        order_index=0,
+        tool_config_id="prev_rank_cfg",
+        config={"_orchestration": {"logical_step_id": "engine:0.1.0.0", "round_index": 0}},
+    )
+    db_session.add(prior_rank)
+    db_session.add(
+        RankOrderVote(
+            meeting_id=meeting.meeting_id,
+            activity_id="prev_rank_act",
+            user_id=admin_user.user_id,
+            option_id="prev_rank_act:improve-ux",
+            option_label="Improve UX",
+            rank_position=5,
+        )
+    )
+    db_session.commit()
+
+    response = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+        params={"activity_id": activity_id},
+    )
+    assert response.status_code == 200, response.json()
+    opt = next(o for o in response.json()["options"] if "improve-ux" in o["option_id"])
+    feedback = opt["prior_round_feedback"]
+    assert feedback["median"] == 2.0
+    assert feedback["iqr"] == 3.0
+    assert feedback["dispersion"] == 1.5
+    # The viewer ranked this item 5th last round (matched by stable key).
+    assert feedback["your_prior_rank"] == 5

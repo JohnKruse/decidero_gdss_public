@@ -144,6 +144,16 @@ therefore see one another's comments without authorship, while each participant
 can still spot their own. The meeting UI renders the viewer's own comment with a
 "Your comment" badge.
 
+Each Round 2+ item also carries `prior_round_feedback` with the group's
+`median`, `iqr`, and `dispersion`, plus `your_prior_rank` — the viewer's own rank
+for that item last round (from their `RankOrderVote` rows on the prior round's
+rank activity, matched across rounds by stable option key). The panel shows
+"Group median rank M · spread S" alongside the agreement color band (so the
+facilitator sees the numbers behind the band, not just the color) and "You ranked
+it N" so each participant can compare their position against the group. The
+current round's live Borda/avg tally is suppressed until at least one ranking is
+submitted, since before that it is all zeros.
+
 ## Predicate Decisions
 
 `IQRStabilityPredicate` requires at least two transformed rounds before it can

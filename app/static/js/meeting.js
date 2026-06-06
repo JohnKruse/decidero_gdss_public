@@ -5029,11 +5029,22 @@
                     const badge = document.createElement("span");
                     badge.className = "rank-order-agreement-badge";
                     badge.textContent = rankOrderAgreementLabel(band);
+                    // "Median rank" (the group's middle position for this item), plus
+                    // the numeric spread, so the facilitator sees the agreement math
+                    // behind the color band — not just the band itself.
                     const detail = document.createElement("span");
                     detail.className = "rank-order-prior-detail";
-                    detail.textContent = `Group rank ${median.toFixed(1)}`;
-                    fb.title = `Last round: group median rank ${median.toFixed(1)}; spread (IQR) ${iqr.toFixed(1)}. A smaller spread means more agreement.`;
+                    detail.textContent = `Group median rank ${median.toFixed(1)} · spread ${iqr.toFixed(1)}`;
                     fb.append(badge, detail);
+                    // Show the viewer their own prior rank against the group.
+                    const yourRank = priorFeedback.your_prior_rank;
+                    if (yourRank !== null && yourRank !== undefined) {
+                        const yours = document.createElement("span");
+                        yours.className = "rank-order-prior-yours";
+                        yours.textContent = `You ranked it ${Number(yourRank)}`;
+                        fb.append(yours);
+                    }
+                    fb.title = `Last round: group median rank ${median.toFixed(1)}; spread (IQR) ${iqr.toFixed(1)}. A smaller spread means more agreement.`;
                     main.appendChild(fb);
                 }
 
@@ -5075,7 +5086,16 @@
                     }
                 }
 
-                if (summary.can_view_results && option.borda_score !== null && option.borda_score !== undefined) {
+                // Live tally for the current round — only meaningful once someone
+                // has submitted. Before that it is all zeros, so suppress it and let
+                // the prior-round feedback above carry the numbers.
+                const submissionCount = Number.parseInt(summary.submission_count, 10) || 0;
+                if (
+                    summary.can_view_results
+                    && submissionCount > 0
+                    && option.borda_score !== null
+                    && option.borda_score !== undefined
+                ) {
                     const meta = document.createElement("div");
                     meta.className = "rank-order-meta";
                     const avg = Number(option.avg_rank || 0);

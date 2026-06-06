@@ -348,6 +348,11 @@ def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
     # Delphi rank-order panel shows "Round N of M" progression.
     assert "delphi_round" in js
     assert "Round ${round.round_number} of ${round.max_rounds}" in js
+    # Prior feedback shows median rank, numeric spread, and the viewer's own rank.
+    assert "Group median rank" in js
+    assert "spread" in js
+    assert "your_prior_rank" in js
+    assert "You ranked it" in js
 
 
 def test_meeting_templates_page_has_fork_and_tune_hooks():
