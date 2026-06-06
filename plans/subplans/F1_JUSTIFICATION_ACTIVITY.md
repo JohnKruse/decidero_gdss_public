@@ -18,7 +18,7 @@ MVP, not the long-term user-facing shape. The config/defaults and scoring servic
 foundation are in place; next slices are facilitator report/API wiring,
 selected-idea comment UI/API, and group-ordered reranking. The rank-order summary
 backend now starts Round 2+ unsubmitted rankings from prior group median/IQR order;
-visual badges/progression remain.
+the UI now shows agreement color badges. Round progression remains.
 
 ---
 

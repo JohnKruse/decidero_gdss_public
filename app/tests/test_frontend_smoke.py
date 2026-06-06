@@ -49,6 +49,22 @@ def test_meeting_page_includes_outlier_justification_panel_hooks():
     assert "justification_update" in js
 
 
+def test_rank_order_prior_feedback_uses_agreement_badges():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+
+    assert "rankOrderAgreementBand" in js
+    assert "rankOrderAgreementLabel" in js
+    assert "rank-order-agreement-badge" in js
+    assert 'fb.dataset.band = band' in js
+    assert "Last round: group median rank" in js
+    assert '.rank-order-prior-feedback[data-band="green"]' in css
+    assert '.rank-order-prior-feedback[data-band="yellow"]' in css
+    assert '.rank-order-prior-feedback[data-band="red"]' in css
+
+
 def test_transfer_panel_uses_new_activity_target_only():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()

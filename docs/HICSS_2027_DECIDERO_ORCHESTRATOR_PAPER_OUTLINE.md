@@ -504,8 +504,9 @@ state expose it for the facilitator UI. Selected-idea comments and group-ordered
 reranking remain next slices. The rank-order summary backend now implements the
 first part of group-ordered reranking: unsubmitted Round 2+ Delphi items are
 ordered by prior group median/IQR for all participants, rather than by each
-participant's private/random order. Visual feedback badges and progression
-display remain to be built.
+participant's private/random order. The ranking UI now replaces verbose prior
+stats with green/yellow/red agreement badges and compact group-rank text.
+Round progression display remains to be built.
 
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 

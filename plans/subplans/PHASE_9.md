@@ -221,7 +221,8 @@ Stage discipline:
    showing all participants receive the same group-ordered Round 2+ list; add JS
    syntax/smoke checks for feedback badges and progression display. The backend
    rank-order summary now orders unsubmitted Round 2+ Delphi items by prior group
-   median/IQR for every participant; visual badges and progression display remain.
+   median/IQR for every participant. The UI now renders green/yellow/red agreement
+   badges with compact group-rank text; round progression display remains.
 6. Template instantiation controls: add fork/start-template tests proving selected
    defaults compile into the inline orchestration/template config; update
    facilitator-facing docs and Phase 9 status.

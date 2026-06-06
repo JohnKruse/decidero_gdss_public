@@ -4906,6 +4906,27 @@
             rankOrder.resultsModal.hidden = true;
         }
 
+        function rankOrderAgreementBand(iqr) {
+            const value = Number(iqr);
+            if (!Number.isFinite(value)) {
+                return "unknown";
+            }
+            if (value <= 1.0) {
+                return "green";
+            }
+            if (value <= 2.0) {
+                return "yellow";
+            }
+            return "red";
+        }
+
+        function rankOrderAgreementLabel(band) {
+            if (band === "green") return "High agreement";
+            if (band === "yellow") return "Some disagreement";
+            if (band === "red") return "High disagreement";
+            return "Agreement unknown";
+        }
+
         function renderRankOrderSummary(summary) {
             rankOrderSummary = summary || null;
             normalizeRankOrderDraftFromSummary(rankOrderSummary);
@@ -4996,8 +5017,16 @@
                     fb.className = "rank-order-prior-feedback";
                     const median = Number(priorFeedback.median);
                     const iqr = Number(priorFeedback.iqr || 0);
-                    fb.textContent = `Last round — group median rank ${median.toFixed(1)} • spread (IQR) ${iqr.toFixed(1)}`;
-                    fb.title = "The group's result for this item in the previous round. A smaller spread means more agreement.";
+                    const band = rankOrderAgreementBand(iqr);
+                    fb.dataset.band = band;
+                    const badge = document.createElement("span");
+                    badge.className = "rank-order-agreement-badge";
+                    badge.textContent = rankOrderAgreementLabel(band);
+                    const detail = document.createElement("span");
+                    detail.className = "rank-order-prior-detail";
+                    detail.textContent = `Group rank ${median.toFixed(1)}`;
+                    fb.title = `Last round: group median rank ${median.toFixed(1)}; spread (IQR) ${iqr.toFixed(1)}. A smaller spread means more agreement.`;
+                    fb.append(badge, detail);
                     main.appendChild(fb);
                 }
 

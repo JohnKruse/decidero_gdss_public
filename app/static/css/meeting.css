@@ -1400,14 +1400,44 @@
 
 /* Delphi controlled feedback: prior-round group median/spread per item. */
 .rank-order-item .rank-order-prior-feedback {
-  margin-top: 2px;
-  color: #1b5e20;
-  background: #e8f5e9;
-  border-radius: 4px;
-  padding: 1px 6px;
-  display: inline-block;
+  margin-top: 4px;
+  color: #33415c;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-size: 0.74rem;
   line-height: 1.3;
+}
+
+.rank-order-agreement-badge {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-weight: 700;
+}
+
+.rank-order-prior-feedback[data-band="green"] .rank-order-agreement-badge {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.rank-order-prior-feedback[data-band="yellow"] .rank-order-agreement-badge {
+  background: #fff7d6;
+  color: #7c5a00;
+}
+
+.rank-order-prior-feedback[data-band="red"] .rank-order-agreement-badge {
+  background: #fde7e7;
+  color: #8a1f1f;
+}
+
+.rank-order-prior-feedback[data-band="unknown"] .rank-order-agreement-badge {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+}
+
+.rank-order-prior-detail {
+  color: #4f5d75;
+  font-weight: 600;
 }
 
 .justification-queue {
