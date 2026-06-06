@@ -639,6 +639,26 @@ def _load_delphi_orchestration_metadata() -> Dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         raw = {}
     metadata = raw.get("metadata") if isinstance(raw.get("metadata"), dict) else {}
+    feedback_policy: Dict[str, Any] = {}
+    for step in raw.get("steps") or []:
+        for inner in step.get("steps", []) if isinstance(step, dict) else []:
+            for sequence in inner.get("steps", []) if isinstance(inner, dict) else []:
+                for activity in sequence.get("steps", []) if isinstance(sequence, dict) else []:
+                    if (
+                        isinstance(activity, dict)
+                        and activity.get("tool_type") == "outlier_justification"
+                    ):
+                        config = activity.get("config") if isinstance(activity.get("config"), dict) else {}
+                        candidate = config.get("feedback_policy")
+                        if isinstance(candidate, dict):
+                            feedback_policy = deepcopy(candidate)
+                            break
+                if feedback_policy:
+                    break
+            if feedback_policy:
+                break
+        if feedback_policy:
+            break
     return {
         "name": raw.get("name") or "Classical Delphi",
         "version": raw.get("version") or "1.0",
@@ -648,6 +668,7 @@ def _load_delphi_orchestration_metadata() -> Dict[str, Any]:
         "thinklets": metadata.get("thinklets") or [],
         "collaboration_patterns": metadata.get("collaboration_patterns") or [],
         "deliverables": metadata.get("deliverables") or [],
+        "feedback_policy": feedback_policy,
     }
 
 
@@ -657,6 +678,12 @@ def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
     delphi = _load_delphi_orchestration_metadata()
     group_size = delphi["group_size_range"]
     duration = delphi["typical_duration_minutes"]
+    feedback_policy = delphi.get("feedback_policy") or {}
+    comment_selection = (
+        feedback_policy.get("comment_selection")
+        if isinstance(feedback_policy.get("comment_selection"), dict)
+        else {}
+    )
     classical_delphi = manager.upsert_builtin_template(
         built_in_key="classical-delphi",
         name=str(delphi["name"]),
@@ -687,6 +714,18 @@ def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
                     "default": 0.15,
                     "source": "orchestration.iqr_stability.threshold",
                 },
+                "comment_selection_strategy": {
+                    "default": comment_selection.get("strategy", "adaptive_least_converged"),
+                    "source": "orchestration.outlier_justification.feedback_policy.comment_selection.strategy",
+                },
+                "comment_default_fraction": {
+                    "default": float(comment_selection.get("default_fraction", 0.25)),
+                    "source": "orchestration.outlier_justification.feedback_policy.comment_selection.default_fraction",
+                },
+                "comment_max_fraction": {
+                    "default": float(comment_selection.get("max_fraction", 0.5)),
+                    "source": "orchestration.outlier_justification.feedback_policy.comment_selection.max_fraction",
+                },
             },
             orchestration={
                 "kind": "orchestration_document",
@@ -706,6 +745,7 @@ def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
                     "The process stops when IQR stability fires or the maximum-round bound is reached.",
                     "Future facilitator or AI review steps can add explicit continue/stop decisions.",
                 ],
+                "feedback_policy": feedback_policy,
             },
             metadata={
                 "phase_canary": "Copper Compass",

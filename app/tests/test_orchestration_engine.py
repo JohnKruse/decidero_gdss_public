@@ -126,6 +126,13 @@ def test_phase6_delphi_orchestration_loads_and_resolves_registries():
     assert subcycle[0].transform_input == "previous_round_feedback"
     assert isinstance(subcycle[1], ActivityStep)
     assert subcycle[1].tool_type == "outlier_justification"
+    feedback_policy = subcycle[1].config["feedback_policy"]
+    comment_selection = feedback_policy["comment_selection"]
+    assert comment_selection["strategy"] == "adaptive_least_converged"
+    assert comment_selection["default_fraction"] == 0.25
+    assert comment_selection["max_fraction"] == 0.5
+    assert comment_selection["allow_skip"] is True
+    assert feedback_policy["agreement_bands"]["score_source"] == "iqr"
 
     transform = get_bundle_transform_registry().get_transform(
         iterate.bundle_transform["name"]

@@ -76,6 +76,24 @@ The terminal round repeats the contracted ranking fixture, so the transformed
 round-3 median IQR remains 0.0. `IQRStabilityPredicate` therefore fires because
 the change from the prior transformed round is 0.0.
 
+## Adaptive Controlled-Feedback Policy
+
+The Delphi orchestration also carries the default policy for the next adaptive
+feedback pass on its comment/justification activity. This is declarative Layer-2
+data, not engine logic:
+
+- `comment_selection.strategy = adaptive_least_converged`
+- default comment suggestion = 25% of ideas when disagreement is high
+- facilitator-selectable cap = 50% of ideas
+- `allow_skip = true`, so selecting zero ideas can skip comments and proceed to
+  reranking
+- agreement bands start from IQR (`green_max = 1.0`, `yellow_max = 2.0`)
+
+The policy records the testing-driven design revision: select ideas by
+disagreement band, not participants by outlier status. The shipped MVP still has
+the outlier-justification activity; this policy pins the configuration contract
+for the adaptive selected-idea feedback pass.
+
 ## Predicate Decisions
 
 `IQRStabilityPredicate` requires at least two transformed rounds before it can

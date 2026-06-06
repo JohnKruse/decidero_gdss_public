@@ -93,7 +93,28 @@
                 {
                   "type": "activity",
                   "tool_type": "outlier_justification",
-                  "title": "Justify Outlier Rankings"
+                  "title": "Justify Outlier Rankings",
+                  "config": {
+                    "feedback_policy": {
+                      "comment_selection": {
+                        "strategy": "adaptive_least_converged",
+                        "default_fraction": 0.25,
+                        "max_fraction": 0.5,
+                        "low_disagreement_fraction": 0.0,
+                        "moderate_disagreement_fraction": 0.15,
+                        "high_disagreement_fraction": 0.25,
+                        "min_items_when_disputed": 1,
+                        "allow_skip": true
+                      },
+                      "agreement_bands": {
+                        "score_source": "iqr",
+                        "green_max": 1.0,
+                        "yellow_max": 2.0
+                      },
+                      "participant_prompt": "These items had the widest spread in the last ranking. Add brief reasons or considerations before the group ranks again.",
+                      "facilitator_prompt": "Choose how many of the least-agreed items to open for comments before reranking."
+                    }
+                  }
                 }
               ]
             }

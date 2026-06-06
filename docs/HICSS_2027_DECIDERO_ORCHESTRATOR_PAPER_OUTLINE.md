@@ -494,6 +494,13 @@ Literature anchors to cite:
   argues for explicit, configurable, facilitator-visible thresholds rather than
   hidden fixed constants.
 
+Implementation status: the adaptive policy defaults now live in
+`orchestrations/delphi.json` as the comment activity's `feedback_policy`, the
+built-in Classical Delphi template exposes the strategy/default/cap as template
+parameters, and `app/services/delphi_feedback_policy.py` computes item bands,
+suggested counts, caps, and selected item keys. Facilitator report wiring,
+selected-idea comments, and group-ordered reranking remain next slices.
+
 #### F.1 Justification activity — design spec [DONE for collection UI/API]
 
 Decided 2026-06-04 and implemented 2026-06-05: the shipped Delphi justification

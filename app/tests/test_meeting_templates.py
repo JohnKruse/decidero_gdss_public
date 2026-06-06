@@ -314,7 +314,50 @@ def test_seed_builtin_delphi_template_references_packaged_orchestration(db_sessi
     [template] = seed_builtin_meeting_templates(db_session)
 
     payload = template.template_payload
+    feedback_policy = {
+        "comment_selection": {
+            "strategy": "adaptive_least_converged",
+            "default_fraction": 0.25,
+            "max_fraction": 0.5,
+            "low_disagreement_fraction": 0.0,
+            "moderate_disagreement_fraction": 0.15,
+            "high_disagreement_fraction": 0.25,
+            "min_items_when_disputed": 1,
+            "allow_skip": True,
+        },
+        "agreement_bands": {
+            "score_source": "iqr",
+            "green_max": 1.0,
+            "yellow_max": 2.0,
+        },
+        "participant_prompt": (
+            "These items had the widest spread in the last ranking. Add brief "
+            "reasons or considerations before the group ranks again."
+        ),
+        "facilitator_prompt": (
+            "Choose how many of the least-agreed items to open for comments before "
+            "reranking."
+        ),
+    }
     assert payload["agenda"] == []
+    assert payload["parameters"]["comment_selection_strategy"] == {
+        "default": "adaptive_least_converged",
+        "source": (
+            "orchestration.outlier_justification.feedback_policy.comment_selection.strategy"
+        ),
+    }
+    assert payload["parameters"]["comment_default_fraction"] == {
+        "default": 0.25,
+        "source": (
+            "orchestration.outlier_justification.feedback_policy.comment_selection.default_fraction"
+        ),
+    }
+    assert payload["parameters"]["comment_max_fraction"] == {
+        "default": 0.5,
+        "source": (
+            "orchestration.outlier_justification.feedback_policy.comment_selection.max_fraction"
+        ),
+    }
     assert payload["orchestration"] == {
         "kind": "orchestration_document",
         "document_path": "orchestrations/delphi.json",
@@ -336,6 +379,7 @@ def test_seed_builtin_delphi_template_references_packaged_orchestration(db_sessi
             "The process stops when IQR stability fires or the maximum-round bound is reached.",
             "Future facilitator or AI review steps can add explicit continue/stop decisions.",
         ],
+        "feedback_policy": feedback_policy,
     }
     assert "Strong agreement" not in json.dumps(payload)
     assert "Divergent view" not in json.dumps(payload)

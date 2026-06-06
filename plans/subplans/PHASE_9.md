@@ -168,7 +168,7 @@ Conclude this step by:
   running a live meeting.
 - Wiring both views into Steps 1 and 2 as the confirmation surface.
 
-### Step 3A — [PENDING] Adaptive Delphi Controlled-Feedback Pass
+### Step 3A — [IN PROGRESS] Adaptive Delphi Controlled-Feedback Pass
 
 Testing on 2026-06-06 changed the Delphi feedback direction. The next Delphi
 increment should stop targeting participants as "outliers" and instead target
@@ -201,10 +201,13 @@ Conclude this step by:
 
 Stage discipline:
 
-1. Config + docs: update `orchestrations/delphi.json`, schema/contract docs if new
+1. [DONE] Config + docs: update `orchestrations/delphi.json`, schema/contract docs if new
    config fields need documenting, this plan, and the HICSS outline. Add validation
-   tests proving the Delphi document still loads.
-2. Scoring service: add unit tests for band assignment, tie-breaking, small-N
+   tests proving the Delphi document still loads. Implemented by adding the
+   `feedback_policy` config to the Delphi comment activity, exposing the defaults
+   in the built-in Classical Delphi template metadata, and documenting the policy
+   in `docs/DELPHI_VALIDATION.md`.
+2. [DONE] Scoring service: add unit tests for band assignment, tie-breaking, small-N
    behavior, all-converged behavior, and adaptive suggested counts.
 3. Facilitator report/API: add API tests for agreement report payloads and skip /
    selected-count decisions; update plan and paper notes with exact semantics.

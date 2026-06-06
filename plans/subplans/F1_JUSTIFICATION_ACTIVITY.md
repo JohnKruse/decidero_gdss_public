@@ -14,7 +14,9 @@ display path. The next paper-useful increment is the adaptive controlled-feedbac
 pass captured in `plans/subplans/PHASE_9.md` Step 3A: select least-converged
 **ideas** for comment, let the facilitator choose the count, and order reranking
 by the prior group result. Treat participant outlier queues as the implemented
-MVP, not the long-term user-facing shape.
+MVP, not the long-term user-facing shape. The config/defaults and scoring service
+foundation are in place; next slices are facilitator report/API wiring,
+selected-idea comment UI/API, and group-ordered reranking.
 
 ---
 
