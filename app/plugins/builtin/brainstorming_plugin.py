@@ -84,7 +84,117 @@ class BrainstormingPlugin(ActivityPlugin):
     )
 
     def open_activity(self, context, input_bundle=None) -> None:
-        # Brainstorming does not require setup; input bundles are optional.
+        """Brainstorming needs no setup by default. When configured with
+        ``seed_from_input`` it instead seeds its idea list from the input bundle —
+        a generic capability any method can use (here: a Delphi comment step that
+        shows the ranked ideas and opens a facilitator-chosen subset for comment).
+
+        All behavior is config-driven; there is no method-specific logic here.
+        """
+        config = dict(context.activity.config or {})
+        if not config.get("seed_from_input"):
+            return None
+        if input_bundle is None:
+            return None
+        self._seed_from_input(context, config, input_bundle)
+        return None
+
+    @staticmethod
+    def _seed_from_input(context, config, input_bundle) -> None:
+        """Seed idea rows from the input bundle, in group-vote order, annotated for
+        display (group median/IQR/agreement band/rank) and flagged ``commentable``.
+
+        The commentable subset is the facilitator's in-round choice (count of
+        least-converged items). The Delphi scoring lives in
+        ``app/services/delphi_feedback_policy.py`` — a configured selection
+        strategy — not in this activity.
+        """
+        from app.models.idea import Idea
+        from app.services.delphi_feedback_policy import (
+            DEFAULT_FEEDBACK_POLICY,
+            build_delphi_feedback_selection,
+            selected_comment_count_for_round,
+        )
+
+        db = context.db
+        activity = context.activity
+        meeting = context.meeting
+
+        # Idempotent: do not re-seed if this activity already has ideas.
+        existing = (
+            db.query(Idea)
+            .filter(Idea.meeting_id == meeting.meeting_id, Idea.activity_id == activity.activity_id)
+            .first()
+        )
+        if existing is not None:
+            return None
+
+        items = list(getattr(input_bundle, "items", None) or [])
+        if not items:
+            return None
+
+        policy = config.get("feedback_policy")
+        if not isinstance(policy, dict) or not policy:
+            policy = DEFAULT_FEEDBACK_POLICY
+
+        # Disagreement scoring (for agreement bands + the commentable subset).
+        selection = build_delphi_feedback_selection({"items": items}, policy)
+        rows_by_key = {row["item_key"]: row for row in selection.get("items") or []}
+        ordered_by_dispute = [row["item_key"] for row in selection.get("items") or []]
+
+        # The facilitator's in-round count picks how many disputed items to open.
+        orchestration = config.get("_orchestration") or {}
+        try:
+            round_index = int(orchestration.get("round_index", 0) or 0)
+        except (TypeError, ValueError):
+            round_index = 0
+        count = selected_comment_count_for_round(db, meeting.meeting_id, round_index)
+        if count is None:
+            # No recorded decision: fall back to the policy's suggested count.
+            count = int(selection.get("suggested_count") or 0)
+        max_selectable = int(selection.get("max_selectable_count") or 0)
+        count = max(0, min(count, max_selectable))
+        commentable_keys = set(ordered_by_dispute[:count])
+
+        def _option_id(item):
+            meta = item.get("metadata") if isinstance(item, dict) else {}
+            ro = (meta or {}).get("rank_order_voting") if isinstance(meta, dict) else {}
+            return (ro or {}).get("option_id") or item.get("id") or item.get("content")
+
+        def _median(item):
+            meta = item.get("metadata") if isinstance(item, dict) else {}
+            delphi = (meta or {}).get("delphi") if isinstance(meta, dict) else {}
+            try:
+                return float((delphi or {}).get("median"))
+            except (TypeError, ValueError):
+                return float("inf")
+
+        # Display order = group vote order (best group median first).
+        display = sorted(
+            items,
+            key=lambda it: (_median(it), str(it.get("content") or "").casefold()),
+        )
+        for position, item in enumerate(display, start=1):
+            key = _option_id(item)
+            row = rows_by_key.get(key, {})
+            db.add(
+                Idea(
+                    content=item.get("content") or str(key),
+                    meeting_id=meeting.meeting_id,
+                    activity_id=activity.activity_id,
+                    user_id=None,
+                    idea_metadata={
+                        "seeded": True,
+                        "stable_key": str(key).split(":", 1)[1] if ":" in str(key) else str(key),
+                        "group_rank": position,
+                        "group_median": row.get("median"),
+                        "group_iqr": row.get("iqr"),
+                        "agreement_band": row.get("band"),
+                        "commentable": key in commentable_keys,
+                    },
+                )
+            )
+        db.commit()
         return None
 
     def close_activity(self, context) -> Optional[Dict[str, Any]]:

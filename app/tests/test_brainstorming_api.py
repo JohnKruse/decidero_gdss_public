@@ -836,3 +836,105 @@ def test_brainstorming_comment_only_and_eligibility_enforced(
         assert "not open for comments" in blocked.json()["detail"]
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_brainstorming_seeds_ranked_items_with_commentable_subset(
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    """seed_from_input makes brainstorming render the ranked items in group-vote
+    order and open the facilitator-chosen disputed subset for comment — generic
+    config + incoming data, no method code in the activity."""
+    from app.models.activity_bundle import ActivityBundle
+    from app.models.idea import Idea
+    from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
+    from app.plugins.context import ActivityContext
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    facilitator = user_manager_with_admin.get_user_by_email(admin_email)
+    assert facilitator is not None
+
+    policy = {
+        "comment_selection": {
+            "strategy": "adaptive_least_converged", "default_fraction": 0.25,
+            "max_fraction": 0.5, "high_disagreement_fraction": 0.25,
+            "moderate_disagreement_fraction": 0.15, "low_disagreement_fraction": 0.0,
+            "min_items_when_disputed": 1, "allow_skip": True,
+        },
+        "agreement_bands": {"score_source": "iqr", "green_max": 1.0, "yellow_max": 2.0},
+    }
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Seeded comment step", description="Seed ranked items.",
+            start_time=start_time, end_time=start_time + timedelta(minutes=60),
+            duration_minutes=60, publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id, participant_ids=[], additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming", title="Comment on disputed ideas",
+                config={
+                    "seed_from_input": True, "allow_new_ideas": False,
+                    "comment_scope": "selected", "feedback_policy": policy,
+                    "_orchestration": {"logical_step_id": "engine:x", "round_index": 0},
+                },
+            ),
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+
+    # The in-round decision opened exactly one disputed idea.
+    db_session.add(
+        ActivityBundle(
+            bundle_id="dec-0", meeting_id=meeting.meeting_id, activity_id="DEC",
+            kind="output", round_index=0, items=[],
+            bundle_metadata={"source": "facilitator_decision", "chosen": "open_comments",
+                             "selected_comment_count": 1},
+        )
+    )
+    db_session.commit()
+
+    class _Stub:
+        items = [
+            {"content": "o3 best", "metadata": {"rank_order_voting": {"option_id": "r:o3"},
+                                                 "delphi": {"median": 1.0, "iqr": 2.0}}},
+            {"content": "o1 disputed", "metadata": {"rank_order_voting": {"option_id": "r:o1"},
+                                                     "delphi": {"median": 2.0, "iqr": 3.0}}},
+            {"content": "o2 agreed", "metadata": {"rank_order_voting": {"option_id": "r:o2"},
+                                                   "delphi": {"median": 3.0, "iqr": 0.5}}},
+        ]
+        bundle_metadata = {}
+
+    ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=facilitator)
+    BrainstormingPlugin().open_activity(ctx, input_bundle=_Stub())
+
+    ideas = (
+        db_session.query(Idea)
+        .filter(Idea.meeting_id == meeting.meeting_id, Idea.activity_id == activity.activity_id)
+        .all()
+    )
+    by_rank = {i.idea_metadata["group_rank"]: i for i in ideas}
+    # Display is group-vote order (median asc): o3, o1, o2.
+    assert by_rank[1].content == "o3 best"
+    assert by_rank[2].content == "o1 disputed"
+    assert by_rank[3].content == "o2 agreed"
+    # Only the single most-disputed idea (o1, highest IQR) is commentable.
+    assert by_rank[2].idea_metadata["commentable"] is True
+    assert by_rank[1].idea_metadata["commentable"] is False
+    assert by_rank[3].idea_metadata["commentable"] is False
+    # Display annotations ride along for the panel.
+    assert by_rank[2].idea_metadata["agreement_band"] == "red"
+    assert by_rank[2].idea_metadata["group_median"] == 2.0
+
+    # Idempotent: a second open does not double-seed.
+    BrainstormingPlugin().open_activity(ctx, input_bundle=_Stub())
+    again = (
+        db_session.query(Idea)
+        .filter(Idea.meeting_id == meeting.meeting_id, Idea.activity_id == activity.activity_id)
+        .count()
+    )
+    assert again == 3

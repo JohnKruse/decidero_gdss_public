@@ -100,6 +100,41 @@ def _ensure_aggregated(bundle: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def selected_comment_count_for_round(db: Any, meeting_id: str, round_index: int):
+    """The comment count from a round's in-round facilitator-decision, or None.
+
+    Scans the round's facilitator-decision output bundles (newest first): a
+    `skip_comments` choice means zero, otherwise the recorded
+    `selected_comment_count`. The boundary round-gate (continue/conclude, no count)
+    is ignored. Shared by any comment activity that opens a facilitator-chosen
+    subset (so the activity itself carries no Delphi scoring).
+    """
+    from app.models.activity_bundle import ActivityBundle
+
+    bundles = (
+        db.query(ActivityBundle)
+        .filter(
+            ActivityBundle.meeting_id == meeting_id,
+            ActivityBundle.round_index == round_index,
+            ActivityBundle.kind == "output",
+        )
+        .order_by(ActivityBundle.id.desc())
+        .all()
+    )
+    for bundle in bundles:
+        metadata = dict(bundle.bundle_metadata or {})
+        if metadata.get("source") != "facilitator_decision":
+            continue
+        if metadata.get("chosen") == "skip_comments":
+            return 0
+        if "selected_comment_count" in metadata:
+            try:
+                return int(metadata["selected_comment_count"])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
 def build_delphi_feedback_selection(
     bundle: Dict[str, Any],
     policy: Dict[str, Any] | None = None,
