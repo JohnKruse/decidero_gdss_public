@@ -291,6 +291,37 @@ def _round_output_logical_step_id(step: Any, path: str) -> str:
     return leaves[-1][0]
 
 
+def fetch_round_history(
+    db: Session, meeting_id: str, logical_step_id: str
+) -> List[Dict[str, Any]]:
+    """All output bundles for a logical_step_id, ascending by round_index.
+
+    Convergent Yak: the multi-bundle read for a consuming activity. Every round of
+    an iterated step finalizes its output bundle under the same logical_step_id
+    with an incrementing round_index, so this returns the full convergence history
+    as `[{items, metadata, round_index}, ...]`. One bundle per round (the latest id
+    wins on ties), so re-entrant materialization never double-counts a round.
+    """
+    rows = (
+        db.query(ActivityBundle)
+        .filter(
+            ActivityBundle.meeting_id == meeting_id,
+            ActivityBundle.kind == "output",
+            ActivityBundle.logical_step_id == logical_step_id,
+        )
+        .order_by(ActivityBundle.round_index.asc(), ActivityBundle.id.asc())
+        .all()
+    )
+    by_round: Dict[int, Dict[str, Any]] = {}
+    for row in rows:
+        by_round[int(row.round_index or 0)] = {
+            "items": list(row.items or []),
+            "metadata": dict(row.bundle_metadata or {}),
+            "round_index": int(row.round_index or 0),
+        }
+    return [by_round[k] for k in sorted(by_round)]
+
+
 @dataclass
 class _SequenceFrame:
     """Insolent Metronome walker frame: a sequence step in progress.
@@ -1019,6 +1050,48 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "round_number": round_index + 1,
             "max_rounds": int(enclosing_iterate.max_rounds),
         }
+
+    def _find_iterates(self) -> List[Tuple[Any, str]]:
+        """Return [(IterateStep, path), ...] for every iterate in the document.
+
+        Paths use the same scheme the walker emits (top-level index as a string,
+        nested children joined by '.'), so `_round_output_logical_step_id(node,
+        path)` yields the exact logical_step_id the round bundles were finalized
+        with.
+        """
+        from app.services.orchestration_loader import IterateStep
+
+        found: List[Tuple[Any, str]] = []
+
+        def walk(nodes: Any, prefix: str) -> None:
+            if not isinstance(nodes, list):
+                return
+            for i, node in enumerate(nodes):
+                path = f"{prefix}.{i}" if prefix else str(i)
+                if isinstance(node, IterateStep):
+                    found.append((node, path))
+                walk(getattr(node, "steps", None), path)
+
+        walk(self._document.steps, "")
+        return found
+
+    def round_history(self, meeting: Meeting, db: Session) -> List[Dict[str, Any]]:
+        """Ordered per-round output bundles of the document's iterate convergence
+        series (Convergent Yak → report input).
+
+        Returns `[{items, metadata, round_index}, ...]` ascending by round_index
+        for the round-output step of the document's iterate (the last one, when a
+        document has more than one). Empty list when the document has no iterate
+        or no round bundles yet. This is the multi-bundle input a terminal
+        consuming activity (e.g. `report`) reads — the whole history, not just the
+        immediately-prior bundle.
+        """
+        iterates = self._find_iterates()
+        if not iterates:
+            return []
+        iterate_node, path = iterates[-1]
+        logical_step_id = _round_output_logical_step_id(iterate_node, path)
+        return fetch_round_history(db, meeting.meeting_id, logical_step_id)
 
     def on_activity_close(self, meeting: Meeting, activity: AgendaActivity) -> None:
         return None

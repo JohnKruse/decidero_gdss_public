@@ -233,9 +233,19 @@ Original spec:
 - Tests: each format endpoint returns correct content-type + headers; auth gating;
   frontend smoke for the panel + buttons; `node --check`.
 
-### Step 4 — Engine: multi-bundle input for consuming activities
-- The contract extension above. Resolve a config-declared bundle set for the
-  report step. Tests for lineage resolution across rounds.
+### Step 4 — [DONE] Engine: multi-bundle input for consuming activities
+- `agenda_strategy.fetch_round_history(db, meeting_id, logical_step_id)`: all
+  output bundles for a logical_step_id, ascending by round_index, deduped per round
+  (latest id wins — re-entrant materialization never double-counts).
+- `OrchestrationEngineStrategy.round_history(meeting, db)`: locates the document's
+  iterate round-output series (`_find_iterates` + `_round_output_logical_step_id`,
+  paths matching the walker) and returns its full per-round history. This is the
+  multi-bundle input the report builder consumes — the whole history, not just the
+  prior bundle. Tests: `test_round_history.py` (ordering/dedup; engine driven two
+  rounds returns the ranking series in order; empty before any round).
+- Note: kept as an engine read-side helper (no new grammar field needed for the
+  single-iterate Delphi case). If a future report must target a *specific* one of
+  several iterates, add a grammar-visible selector then.
 
 ### Step 5 — Wire Delphi's terminal report
 - Add a terminal `{"type":"activity","tool_type":"report", "config": {…spec…}}`
