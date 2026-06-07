@@ -898,3 +898,77 @@ executable payloads carried in the document. The cost we accept: every
 orchestration document and producer migrates in lockstep (here, only
 `delphi.json` and the authoring layer), which is tractable precisely because the
 method lives in Layer-2 data, not code.
+
+## Session Design Notes — 2026-06-07 (terminal report as a deliverable)
+
+Status: **PLAN / FUTURE.** Designed this session; not yet built. Full plan:
+[plans/subplans/REPORT_ACTIVITY.md](../../plans/subplans/REPORT_ACTIVITY.md). Data
+shape pinned first: [docs/schemas/report_payload.schema.json](schemas/report_payload.schema.json).
+
+### M. The method's ending is a configured step, and its output is a structured artifact
+
+Two gaps surfaced. (1) Decidero has no general **report/deliverable** activity —
+a facilitator cannot yet hand participants something useful to carry forward.
+(2) The Delphi reference method has **no designed ending**: when the facilitator
+concludes (or the round cap hits), the iterate loop simply exhausts and the
+meeting is "complete"; the de-facto deliverable is the last ranking bundle, with
+no consolidated results surface. Both are the same missing piece.
+
+The fix is a single generic **`report` activity (Layer 1), configured by Layer-2**
+— not a Delphi-specific results screen, and not engine code. It is a
+*consume-and-synthesize* activity (no participant input): it reads upstream output
+bundles and emits a report. Delphi gets a terminal `report` step appended to its
+document, so **the method's conclusion becomes another configured step rather than
+the steps happening to run out.** This is worth stating plainly in the paper: it
+extends the central claim past the body of the method to its terminus — the whole
+arc, including how it ends and what it produces, is Layer-2 data.
+
+**Distinguish from §L.2/L.3.** Those genericized the *in-method facilitator
+read-out* (the round-gate report that informs continue/conclude). This is the
+*terminal, exportable deliverable*. Same "read-only projection over bundles"
+spirit, different role: the gate report drives a decision mid-run; the terminal
+report is the artifact the group keeps.
+
+### N. JSON is canonical; human formats are derived — a structured-output claim
+
+The report is built **once** into a structured model conforming to
+`report_payload.schema.json`, finalized as the activity's output bundle, and
+**re-rendered on demand from the stored model** (never recomputed). The export
+tiers are deliberately ordered:
+
+- **JSON** is **canonical and primary** — the payload verbatim: lossless, schema'd,
+  and Decidero's own data type (bundles and orchestrations are already JSON). It
+  round-trips: re-ingestable, diffable across runs, machine-addressable.
+- **Markdown / DOCX** are human renderings of that model; **CSV** is its tabular
+  slice (ranked list + stats). Each is a pure function of the canonical model.
+
+Paper framing: Decidero's outputs are **structured, schema-governed artifacts with
+derived human renderings**, not ad-hoc documents. This is a small but real
+contribution — it makes results reproducible and reviewable, lets the same model
+drive every format, and mirrors the document-as-data discipline applied to the
+method itself. It also lines up with the static-safety / inspectability theme
+(§E, §L.3): another canonical, schema-validated shape rather than free-form output.
+
+Cost to acknowledge: a report often needs **more than the immediately-prior
+bundle** (Delphi wants the whole round history), so it motivates one generic
+engine extension — letting a consuming activity read a config-declared *set* of
+upstream bundles. Kept grammar-visible so the AST/diagram exporter can see the
+report's inputs, consistent with the §L.2 "first-class to the AST" move.
+
+**Deterministic, and it tells the consensus story.** The report is template-driven,
+no AI — same data always yields the same report (the reproducibility story stays
+clean). It serves two audiences from one model: a headline (the final converged
+ranking) and a deep-dive into the *movement toward consensus* — a rank-trajectory
+table (per-round positions + net movement), a per-round narrative, and three
+charts (an IQR/Kendall's-W convergence curve, a rank-trajectory bump chart, an
+agreement-band stacked bar). Charts are stored as **data series in the canonical
+model** (`chart` section type) and rendered to images, so the reproducible artifact
+is the data, not the pixels.
+
+Two reporting statistics are added as **registered, cited metrics** on the §L.3
+summarizer seam rather than as bespoke code: **Kendall's W** (the canonical Delphi
+coefficient of concordance, rising toward consensus) and a round-to-round rank
+stability correlation. This is a small contribution worth a sentence: consensus is
+reported with a literature-standard measure introduced through the same
+metric-registry discipline used for convergence — methods extend a reviewed,
+citable library; documents compose it.

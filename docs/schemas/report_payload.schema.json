@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://decidero.local/schemas/report_payload.schema.json",
+  "title": "Meeting Report Payload",
+  "description": "Canonical, lossless structured model for a Decidero meeting report. This payload is the single source of truth: the JSON export is this object verbatim, and every human-facing rendering (Markdown, DOCX, the tabular CSV slice, the on-screen preview) is a pure function of it. Produced by the generic `report` activity (Layer 1) from upstream output bundles, finalized as that activity's output bundle, and re-rendered on demand from the stored model rather than recomputed. Method-specific shaping (which bundle feeds which section, which columns) lives in Layer-2 orchestration config, never in the activity.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["report_version", "meeting", "generated_at", "sections"],
+  "properties": {
+    "report_version": {
+      "description": "Schema/contract version of this report payload, so downstream tools can depend on the shape.",
+      "type": "string"
+    },
+    "title": {
+      "description": "Human title for the report. Defaults to the meeting title when absent.",
+      "type": "string"
+    },
+    "meeting": {
+      "description": "Identifying context for the meeting the report summarizes.",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["meeting_id", "title"],
+      "properties": {
+        "meeting_id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": ["string", "null"] },
+        "method": {
+          "description": "Orchestration method name + version when the meeting was method-driven (e.g. Classical Delphi 1.0). Absent for ordinary linear meetings.",
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": ["string", "null"] },
+            "citation": { "type": ["string", "null"] }
+          }
+        },
+        "facilitator": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "properties": {
+            "user_id": { "type": ["string", "null"] },
+            "display_name": { "type": ["string", "null"] }
+          }
+        },
+        "participant_count": { "type": ["integer", "null"], "minimum": 0 },
+        "round_count": {
+          "description": "Number of materialized rounds for iterate-based methods; null/absent otherwise.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "started_at": { "type": ["string", "null"] },
+        "ended_at": { "type": ["string", "null"] }
+      }
+    },
+    "generated_at": {
+      "description": "ISO-8601 timestamp the report model was produced.",
+      "type": "string"
+    },
+    "generated_by": {
+      "description": "Who/what produced the report (facilitator user id, or an engine/system marker).",
+      "type": ["string", "null"]
+    },
+    "sections": {
+      "description": "Ordered report body. Each section carries a generic, renderer-known type so all output formats render from the same shapes. Method-specific meaning is expressed by choosing/configuring these generic sections in Layer-2, not by adding method-specific section types.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/section" }
+    },
+    "metadata": {
+      "description": "Open extension slot (mirrors the bundle payload's metadata slot). Reserved for non-rendered provenance/diagnostics.",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "source": {
+      "description": "Provenance for a section: which upstream bundle/activity it was derived from. Mirrors the bundle payload source block so reports stay traceable to their inputs.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "meeting_id": { "type": "string" },
+        "activity_id": { "type": "string" },
+        "tool_type": { "type": "string" },
+        "bundle_id": { "type": "string" },
+        "round_index": { "type": ["integer", "null"], "minimum": 0 }
+      }
+    },
+    "section": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "title", "body"],
+      "properties": {
+        "id": { "type": "string" },
+        "type": {
+          "description": "Generic section kind. Renderers switch on this. CSV export covers only the tabular kinds (`table`, `ranked_list`, and a `chart`'s underlying series). A `chart` stores its data series in the canonical model; renderers draw it (matplotlib PNG for DOCX/HTML) and always emit the underlying series as a table alongside.",
+          "type": "string",
+          "enum": ["narrative", "key_value", "table", "ranked_list", "comment_thread", "rounds", "chart"]
+        },
+        "title": { "type": "string" },
+        "description": { "type": ["string", "null"] },
+        "source": { "$ref": "#/$defs/source" },
+        "body": {
+          "description": "Section payload; shape is governed by `type` via the allOf below.",
+          "type": "object"
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "narrative" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_narrative" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "key_value" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_key_value" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "table" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_table" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "ranked_list" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_ranked_list" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "comment_thread" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_comment_thread" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "rounds" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_rounds" } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "chart" } } },
+          "then": { "properties": { "body": { "$ref": "#/$defs/body_chart" } } }
+        }
+      ]
+    },
+    "body_narrative": {
+      "description": "Prose. `markdown` is the canonical text; renderers may downgrade to plain text. May carry an AI-drafted flag when produced by an ai-decision synthesis step (facilitator-confirmed before publish).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["markdown"],
+      "properties": {
+        "markdown": { "type": "string" },
+        "ai_drafted": { "type": "boolean" }
+      }
+    },
+    "body_key_value": {
+      "description": "Flat list of labeled values (summary statistics, run parameters).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pairs"],
+      "properties": {
+        "pairs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["label", "value"],
+            "properties": {
+              "label": { "type": "string" },
+              "value": {}
+            }
+          }
+        }
+      }
+    },
+    "body_table": {
+      "description": "Generic tabular data. The CSV export serializes these directly.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["columns", "rows"],
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["key", "label"],
+            "properties": {
+              "key": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "description": "Object keyed by column `key`.",
+            "type": "object"
+          }
+        }
+      }
+    },
+    "body_ranked_list": {
+      "description": "Ordered list of items with optional per-item statistics. The Delphi converged list (rank + median + IQR + agreement band) is this shape. CSV-exportable.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["rank", "label"],
+            "properties": {
+              "rank": { "type": "integer", "minimum": 1 },
+              "label": { "type": "string" },
+              "stable_key": { "type": ["string", "null"] },
+              "stats": {
+                "description": "Optional per-item statistics (e.g. median, iqr, dispersion, agreement_band).",
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "body_comment_thread": {
+      "description": "Grouped, peer-anonymous comments (e.g. cross-round Delphi feedback). Identity is never persisted here; `mine` is computed per-viewer at render time and is NOT part of the canonical model.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groups"],
+      "properties": {
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["heading", "comments"],
+            "properties": {
+              "heading": { "type": "string" },
+              "stable_key": { "type": ["string", "null"] },
+              "comments": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["text"],
+                  "properties": { "text": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "body_rounds": {
+      "description": "Round-by-round trace for iterate-based methods (the convergence story). Each round references the generic section shapes for its own body.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rounds"],
+      "properties": {
+        "rounds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["round_number"],
+            "properties": {
+              "round_number": { "type": "integer", "minimum": 1 },
+              "summary": { "type": ["string", "null"] },
+              "stats": { "type": "object" },
+              "sections": {
+                "description": "Nested generic sections scoped to this round (e.g. the round's ranked_list).",
+                "type": "array",
+                "items": { "$ref": "#/$defs/section" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "body_chart": {
+      "description": "Chart as data, not pixels: the canonical model stores the series; renderers draw it (matplotlib PNG for DOCX/HTML) and also emit the series as a table. Standard report charts: a convergence curve (line: median IQR and/or Kendall's W per round), a rank-trajectory bump chart (one series per idea, y=rank with invert=true), and an agreement-band stacked bar (green/yellow/red counts per round).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chart_kind", "x_axis", "series"],
+      "properties": {
+        "chart_kind": {
+          "type": "string",
+          "enum": ["line", "bump", "stacked_bar"]
+        },
+        "x_axis": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["categories"],
+          "properties": {
+            "label": { "type": ["string", "null"] },
+            "categories": {
+              "description": "Ordered x positions, e.g. round labels [\"Round 1\", \"Round 2\", ...]. Series point arrays align to this length.",
+              "type": "array",
+              "items": { "type": ["string", "number"] }
+            }
+          }
+        },
+        "y_axis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "label": { "type": ["string", "null"] },
+            "invert": {
+              "description": "Render with the axis inverted (rank 1 at top). Used by the rank-trajectory bump chart.",
+              "type": "boolean"
+            }
+          }
+        },
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "points"],
+            "properties": {
+              "name": { "type": "string" },
+              "stable_key": { "type": ["string", "null"] },
+              "points": {
+                "description": "Values aligned to x_axis.categories; null = no datum for that x (e.g. item absent that round).",
+                "type": "array",
+                "items": { "type": ["number", "null"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
