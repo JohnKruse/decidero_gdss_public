@@ -53,9 +53,8 @@ Schema: `docs/schemas/report_payload.schema.json`. Paper: HICSS outline §M/§N.
   round-cap paths.
 
 **Left to do:**
-- **Live HTTP delphi→report e2e.** Backend downloads and the meeting-page preview
-  panel are implemented. A real conclude-Delphi-through-HTTP-then-download pass is
-  still belt-and-suspenders.
+- No planned Report Step 3 work remains. Backend downloads, preview UI, and the
+  live HTTP Delphi conclude-to-report-download pass are implemented and tested.
 
 ## Guardrails / decisions (hold these)
 

@@ -6,9 +6,9 @@
 **Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 (see the 2026-06-07 report note)
 
-Status: **IMPLEMENTED THROUGH STEP 5.** Steps 0, 1, 2, 3, 4, and 5 are done.
-Remaining belt-and-suspenders work: a live HTTP Delphi conclude-to-report-download
-pass and an optional synthetic in-repo example payload.
+Status: **IMPLEMENTED THROUGH STEP 5.** Steps 0, 1, 2, 3, 4, and 5 are done,
+including the live HTTP Delphi conclude-to-report-download pass. Remaining
+optional cleanup: a synthetic in-repo example payload.
 
 ## Why
 
@@ -269,10 +269,11 @@ output bundle exists. Added the terminal `report` step to `orchestrations/delphi
 (after the iterate). Updated `test_phase6_delphi_synthetic_cohort_end_to_end` for
 both the conclude path and the round-cap (runaway) path to the new
 `conclude/cap → report materializes → report closes → complete` flow. Full suite:
-800 passed, 2 skipped after Step 3 UI/API work. (A live HTTP delphi-to-report e2e and the round-history
-build through the real plugin in a delphi meeting would be a nice follow-up; the
-pieces are covered by `test_report_activity` + `test_round_history` + the engine
-completion tests.)
+800 passed, 2 skipped after Step 3 UI/API work. The live HTTP Delphi
+conclude-to-report-download path is now covered by
+`test_delphi_http_conclude_materializes_report_and_downloads`; the round-history
+pieces remain covered by `test_report_activity` + `test_round_history` + the
+engine completion tests.
 
 #### History (the blocker, now resolved)
 

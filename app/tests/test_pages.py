@@ -398,6 +398,153 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     assert len(input_bundle.items) >= 1
 
 
+def test_delphi_http_conclude_materializes_report_and_downloads(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Plainspoken Marmot: real HTTP advance/control flow reaches terminal report.
+
+    This is the belt-and-suspenders pass over the report endpoint: create Delphi
+    from the packaged template, finalize a ranking round, conclude at the round
+    gate, start the real report activity plugin, then download the stored report.
+    """
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+    create = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={
+            "title": "HTTP Delphi Report Run",
+            "description": "Drive Delphi to its terminal report.",
+            "participant_ids": [],
+        },
+    )
+    assert create.status_code == 200, create.text
+    meeting_id = create.json()["meeting_id"]
+    brainstorm_id = create.json()["agenda"][0]["activity_id"]
+
+    bm = ActivityBundleManager(db_session)
+    bm.finalize_output_bundle(
+        meeting_id,
+        brainstorm_id,
+        [{"content": "Idea A"}, {"content": "Idea B"}],
+        metadata={"source": "test"},
+    )
+
+    rank_resp = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert rank_resp.status_code == 200, rank_resp.text
+    rank = rank_resp.json()["activity"]
+    assert rank["tool_type"] == "rank_order_voting"
+    orch = rank["config"]["_orchestration"]
+    opt_a = f"{rank['activity_id']}:idea-a"
+    opt_b = f"{rank['activity_id']}:idea-b"
+    bm.finalize_output_bundle(
+        meeting_id,
+        rank["activity_id"],
+        [
+            {
+                "content": "Idea A",
+                "metadata": {"rank_order_voting": {"option_id": opt_a}},
+            },
+            {
+                "content": "Idea B",
+                "metadata": {"rank_order_voting": {"option_id": opt_b}},
+            },
+        ],
+        metadata={
+            "source": "test",
+            "votes": [
+                {"user_id": "u1", "option_id": opt_a, "rank_position": 1},
+                {"user_id": "u1", "option_id": opt_b, "rank_position": 2},
+                {"user_id": "u2", "option_id": opt_a, "rank_position": 1},
+                {"user_id": "u2", "option_id": opt_b, "rank_position": 2},
+                {"user_id": "u3", "option_id": opt_a, "rank_position": 1},
+                {"user_id": "u3", "option_id": opt_b, "rank_position": 2},
+            ],
+        },
+        logical_step_id=orch["logical_step_id"],
+        round_index=orch["round_index"],
+    )
+
+    in_round = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert in_round.status_code == 200, in_round.text
+    decision = in_round.json()["pending_decision"]
+    assert decision["options"] == ["open_comments", "skip_comments"]
+    skip = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{decision['activity_id']}/responses",
+        json={"chosen_option": "skip_comments"},
+    )
+    assert skip.status_code == 200, skip.text
+
+    comment_resp = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert comment_resp.status_code == 200, comment_resp.text
+    comment = comment_resp.json()["activity"]
+    assert comment["tool_type"] == "brainstorming"
+    comment_orch = comment["config"]["_orchestration"]
+    bm.finalize_output_bundle(
+        meeting_id,
+        comment["activity_id"],
+        [],
+        metadata={"source": "brainstorming", "comment_surface": True},
+        logical_step_id=comment_orch["logical_step_id"],
+        round_index=comment_orch["round_index"],
+    )
+
+    gate_resp = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert gate_resp.status_code == 200, gate_resp.text
+    gate = gate_resp.json()["pending_decision"]
+    assert gate["options"] == ["continue", "conclude"]
+    conclude = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/orchestration/facilitator-decisions/{gate['activity_id']}/responses",
+        json={"chosen_option": "conclude"},
+    )
+    assert conclude.status_code == 200, conclude.text
+
+    report_resp = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert report_resp.status_code == 200, report_resp.text
+    report_activity = report_resp.json()["activity"]
+    assert report_activity["tool_type"] == "report"
+
+    start = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={
+            "action": "start_tool",
+            "tool": "report",
+            "activityId": report_activity["activity_id"],
+        },
+    )
+    assert start.status_code == 200, start.text
+
+    json_report = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/activities/{report_activity['activity_id']}/report.json"
+    )
+    assert json_report.status_code == 200, json_report.text
+    payload = json_report.json()
+    assert payload["meeting"]["method"]["name"] == "Classical Delphi"
+    assert payload["meeting"]["round_count"] == 1
+    assert payload["sections"]
+
+    preview = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/activities/{report_activity['activity_id']}/report/preview"
+    )
+    assert preview.status_code == 200, preview.text
+    assert "HTTP Delphi Report Run" in preview.text
+
+    complete = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert complete.status_code == 409
+    assert "Stop the open activity" in complete.json()["detail"]
+
+    stop = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "stop_tool", "activityId": report_activity["activity_id"]},
+    )
+    assert stop.status_code == 200, stop.text
+    complete = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert complete.status_code == 200, complete.text
+    assert complete.json()["status"] == "complete"
+
+
 def test_adaptive_delphi_feedback_end_to_end(
     authenticated_client: TestClient,
     db_session,
