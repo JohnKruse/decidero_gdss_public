@@ -269,7 +269,7 @@ output bundle exists. Added the terminal `report` step to `orchestrations/delphi
 (after the iterate). Updated `test_phase6_delphi_synthetic_cohort_end_to_end` for
 both the conclude path and the round-cap (runaway) path to the new
 `conclude/cap → report materializes → report closes → complete` flow. Full suite:
-800 passed, 2 skipped after Step 3 UI/API work. The live HTTP Delphi
+801 passed, 2 skipped after Step 3 UI/API work. The live HTTP Delphi
 conclude-to-report-download path is now covered by
 `test_delphi_http_conclude_materializes_report_and_downloads`; the round-history
 pieces remain covered by `test_report_activity` + `test_round_history` + the

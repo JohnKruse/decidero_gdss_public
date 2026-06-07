@@ -8,7 +8,7 @@ round-history input).
 
 ## TL;DR — what shipped this session
 
-Two things, both green (latest full suite **800 passed, 2 skipped**;
+Two things, both green (latest full suite **801 passed, 2 skipped**;
 `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q`):
 
 1. **Single-threaded orchestration runtime + archive notice** (commit `192de98`).
