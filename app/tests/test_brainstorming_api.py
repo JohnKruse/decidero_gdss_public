@@ -938,3 +938,114 @@ def test_brainstorming_seeds_ranked_items_with_commentable_subset(
         .count()
     )
     assert again == 3
+
+
+def test_brainstorming_selected_count_three_marks_top_three_disputed_items(
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    """A facilitator-selected count creates one shared ordered list where the top
+    N disagreement-ranked items are commentable and all other rows are context."""
+    from app.models.activity_bundle import ActivityBundle
+    from app.models.idea import Idea
+    from app.plugins.builtin.brainstorming_plugin import BrainstormingPlugin
+    from app.plugins.context import ActivityContext
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    facilitator = user_manager_with_admin.get_user_by_email(admin_email)
+    assert facilitator is not None
+
+    policy = {
+        "comment_selection": {
+            "strategy": "adaptive_least_converged",
+            "default_fraction": 0.25,
+            "max_fraction": 0.6,
+            "high_disagreement_fraction": 0.25,
+            "moderate_disagreement_fraction": 0.15,
+            "low_disagreement_fraction": 0.0,
+            "min_items_when_disputed": 1,
+            "allow_skip": True,
+        },
+        "agreement_bands": {"score_source": "iqr", "green_max": 1.0, "yellow_max": 2.0},
+    }
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Seeded comment step count 3",
+            description="Seed ranked items with three open comments.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=60),
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Comment on disputed ideas",
+                config={
+                    "seed_from_input": True,
+                    "allow_new_ideas": False,
+                    "allow_subcomments": True,
+                    "comment_scope": "selected",
+                    "feedback_policy": policy,
+                    "_orchestration": {"logical_step_id": "engine:y", "round_index": 0},
+                },
+            ),
+        ],
+    )
+    activity = meeting.agenda_activities[0]
+
+    db_session.add(
+        ActivityBundle(
+            bundle_id="dec-count-3",
+            meeting_id=meeting.meeting_id,
+            activity_id="DEC",
+            kind="output",
+            round_index=0,
+            items=[],
+            bundle_metadata={
+                "source": "facilitator_decision",
+                "chosen": "open_comments",
+                "selected_comment_count": 3,
+            },
+        )
+    )
+    db_session.commit()
+
+    class _Stub:
+        items = [
+            {"content": "top group rank, low spread", "metadata": {"rank_order_voting": {"option_id": "r:a"}, "delphi": {"median": 1.0, "iqr": 0.0, "dispersion": 0.0}}},
+            {"content": "highest spread", "metadata": {"rank_order_voting": {"option_id": "r:b"}, "delphi": {"median": 2.0, "iqr": 4.0, "dispersion": 0.2}}},
+            {"content": "third spread", "metadata": {"rank_order_voting": {"option_id": "r:c"}, "delphi": {"median": 3.0, "iqr": 2.0, "dispersion": 0.1}}},
+            {"content": "second spread", "metadata": {"rank_order_voting": {"option_id": "r:d"}, "delphi": {"median": 4.0, "iqr": 3.0, "dispersion": 0.1}}},
+            {"content": "lowest spread", "metadata": {"rank_order_voting": {"option_id": "r:e"}, "delphi": {"median": 5.0, "iqr": 0.5, "dispersion": 0.0}}},
+        ]
+        bundle_metadata = {}
+
+    ctx = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=facilitator)
+    BrainstormingPlugin().open_activity(ctx, input_bundle=_Stub())
+
+    ideas = (
+        db_session.query(Idea)
+        .filter(Idea.meeting_id == meeting.meeting_id, Idea.activity_id == activity.activity_id)
+        .all()
+    )
+    by_content = {idea.content: idea.idea_metadata for idea in ideas}
+    assert [idea.content for idea in sorted(ideas, key=lambda idea: idea.idea_metadata["group_rank"])] == [
+        "top group rank, low spread",
+        "highest spread",
+        "third spread",
+        "second spread",
+        "lowest spread",
+    ]
+    assert {
+        content
+        for content, metadata in by_content.items()
+        if metadata["commentable"] is True
+    } == {"highest spread", "second spread", "third spread"}

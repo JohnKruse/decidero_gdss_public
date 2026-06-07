@@ -143,6 +143,14 @@
   color: #7f1d1d;
 }
 
+.meeting-access-archived {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
 .orchestration-guidance-card .section-header {
   align-items: flex-start;
 }
@@ -346,6 +354,26 @@
   font-weight: 600;
 }
 
+.orchestration-decision-inline {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding: 0.85rem;
+  border: 1px solid #d8e2f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.orchestration-decision-inline[hidden] {
+  display: none;
+}
+
+.orchestration-decision-inline h3 {
+  margin: 0;
+  color: var(--navy-blue);
+  font-size: 0.98rem;
+}
+
 .decision-review {
   display: grid;
   gap: 0.4rem;
@@ -367,6 +395,18 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.decision-option {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 10rem;
+}
+
+.decision-option-hint {
+  color: #5d6b82;
+  font-size: 0.78rem;
+  line-height: 1.25;
 }
 
 .meeting-activity-card .activity-details-grid {
@@ -1334,9 +1374,13 @@
 
 /* Grammar-declared report rendered inline in the facilitator round-gate panel. */
 .decision-gate-report {
-  margin-top: 12px;
-  padding-top: 8px;
-  border-top: 1px solid #eef1f6;
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0;
+  padding: 0.65rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 .decision-gate-report-intro {
@@ -1349,7 +1393,7 @@
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 0;
+  padding: 5px 0;
   border-bottom: 1px solid #eef1f6;
 }
 
@@ -1372,7 +1416,7 @@
   grid-template-columns: 1fr auto;
   gap: 6px 12px;
   align-items: center;
-  margin-top: 12px;
+  margin-top: 4px;
   padding: 10px 0 2px;
   border-top: 1px solid #eef1f6;
 }

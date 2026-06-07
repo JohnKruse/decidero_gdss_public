@@ -65,6 +65,10 @@ def test_brainstorming_comment_surface_hooks():
     assert "brainstorming-agreement" in js
     assert "brainstorming-idea-subdued" in js
     assert "brainstorming-idea-subdued" in css
+    assert 'Object.prototype.hasOwnProperty.call(meta, "commentable")' in js
+    assert 'container.dataset.commentSurface = "true"' in js
+    assert 'row.dataset.commentSurface === "true"' in js
+    assert "mergeSnapshotAgenda" in js
 
 
 def test_rank_order_prior_feedback_uses_agreement_badges():
@@ -217,6 +221,45 @@ def test_meeting_js_redirects_on_unauth():
     with open("app/static/js/page_utils.js", "r", encoding="utf-8") as handle:
         contents = handle.read()
     assert "login_required" in contents
+
+
+def test_meeting_js_handles_archive_notice_without_auto_redirect():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert 'case "meeting_archived"' in js
+    assert "showArchivedMeetingNotice" in js
+    assert "Return to Dashboard" in js
+    archive_handler = js.split('case "meeting_archived":', 1)[1].split('case "agenda_update":', 1)[0]
+    assert "window.location.href" not in archive_handler
+    assert "window.location.assign" not in archive_handler
+
+
+def test_facilitator_decision_panel_only_enterable_while_active():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert 'const isFacilitatorDecision = toolType === "facilitator_decision"' in js
+    assert "canEnter: isFacilitatorDecision ? Boolean(isActive) : true" in js
+
+
+def test_orchestrated_controls_require_stop_before_advance():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "function updateOrchestrationAdvanceAvailability()" in js
+    assert "Stop ${label} before advancing to the next step." in js
+    assert "function isPastOrchestratedActivity(item)" in js
+    assert "This orchestrated step is in the past and cannot be restarted." in js
+    assert "hasOpenOtherActivity" in js
+    assert "gateReportSignature" in js
+
+
+def test_facilitator_feedback_decision_panel_stays_open_while_editing():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "function hasStickyFacilitatorDecisionPanel()" in js
+    assert "const keepDecisionVisible = hasStickyFacilitatorDecisionPanel()" in js
+    assert "userEditingFeedbackCount" in js
+    assert "input.addEventListener(\"focus\"" in js
+    assert "if (!facilitatorDecisionState.userEditingFeedbackCount)" in js
 
 
 def test_dashboard_js_uses_viewer_capabilities_for_meeting_actions():

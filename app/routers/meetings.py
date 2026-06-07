@@ -592,6 +592,79 @@ async def _broadcast_agenda_update(
     )
 
 
+async def _broadcast_meeting_archived(
+    meeting_id: str,
+    initiator_id: str,
+    archived: Meeting,
+    meeting_manager: MeetingManager,
+) -> None:
+    """Record archived state and notify connected clients to leave the meeting.
+
+    The state patch keeps reconnecting/rehydrating clients aware the meeting is
+    archived; the broadcast drives the live `meeting_archived` notice (a popup
+    with a return-to-dashboard button) so participants sitting inside an
+    archived meeting are not stranded in a dead session.
+    """
+    archived_at = datetime.now(timezone.utc).isoformat()
+    await meeting_state_manager.apply_patch(
+        meeting_id,
+        {
+            "status": "archived",
+            "metadata": {
+                "meetingStatus": "archived",
+                "archived": True,
+                "archivedAt": archived_at,
+                "archivedBy": initiator_id,
+            },
+        },
+    )
+    await websocket_manager.broadcast(
+        meeting_id,
+        {
+            "type": "meeting_archived",
+            "payload": {
+                "meetingId": meeting_id,
+                "archivedAt": archived_at,
+                "archivedBy": initiator_id,
+            },
+            "meta": {
+                "initiatorId": initiator_id,
+            },
+        },
+    )
+
+
+def _active_runtime_entries(snapshot: Optional[dict]) -> List[dict]:
+    """Return active/paused activity entries from a meeting-state snapshot."""
+    if not snapshot:
+        return []
+    entries = snapshot.get("activeActivities") or []
+    if isinstance(entries, dict):
+        entries = entries.values()
+    active: List[dict] = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        status_text = str(entry.get("status") or "").lower()
+        if status_text in {"in_progress", "paused"}:
+            active.append(entry)
+    return active
+
+
+def _activity_is_orchestrated(activity: Optional[AgendaActivity]) -> bool:
+    config = dict(getattr(activity, "config", {}) or {})
+    return isinstance(config.get("_orchestration"), dict)
+
+
+def _latest_orchestrated_order(meeting: Meeting) -> Optional[int]:
+    orders = [
+        int(activity.order_index)
+        for activity in meeting.agenda_activities
+        if _activity_is_orchestrated(activity) and activity.order_index is not None
+    ]
+    return max(orders) if orders else None
+
+
 def _apply_transfer_counts(
     meeting_id: str,
     meeting_manager: MeetingManager,
@@ -2481,6 +2554,13 @@ async def advance_orchestration(
             detail="This meeting is not orchestration-backed.",
         )
 
+    current_meeting_state = await meeting_state_manager.snapshot(meeting_id)
+    if _active_runtime_entries(current_meeting_state):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Stop the open activity before advancing the orchestrated method.",
+        )
+
     # Already paused on a decision (restored by rehydration): surface, do not advance.
     pending = strategy.pending_decision()
     if pending is not None:
@@ -2653,6 +2733,24 @@ async def control_meeting(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="activityId must be provided to start a tool.",
             )
+        if isinstance(get_agenda_strategy(meeting), OrchestrationEngineStrategy):
+            if _active_runtime_entries(current_meeting_state):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Stop the open activity before starting another orchestrated activity.",
+                )
+            latest_order = _latest_orchestrated_order(meeting)
+            target_order = getattr(activity_to_control, "order_index", None)
+            if (
+                _activity_is_orchestrated(activity_to_control)
+                and latest_order is not None
+                and target_order is not None
+                and int(target_order) < latest_order
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This orchestrated activity is in the past and cannot be restarted.",
+                )
 
         # Determine participants for the activity being started
         activity_config = activity_to_control.config or {}
@@ -3063,6 +3161,7 @@ async def archive_meeting_endpoint(
             meeting_id,
             exc,
         )
+    await _broadcast_meeting_archived(meeting_id, user.user_id, archived, meeting_manager)
 
     return _serialize_meeting_response(archived, user)
 
@@ -3093,6 +3192,7 @@ async def restore_meeting_endpoint(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to restore meeting",
         )
+    await meeting_state_manager.reset(meeting_id)
 
     return _serialize_meeting_response(updated, user)
 

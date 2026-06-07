@@ -453,6 +453,14 @@
             loading: false,
             responding: false,
             selectedCommentCount: null,
+            selectedOption: null,
+            isRoundGate: false,
+            isFeedbackSelectionDecision: false,
+            feedbackSuggestedCount: 0,
+            feedbackMaxCount: 0,
+            gateReportSignature: null,
+            userEditingFeedbackCount: false,
+            options: [],
         };
 
         const orchestrationAdvanceState = {
@@ -564,6 +572,53 @@
                 active.push({ id: currentId, status: currentStatus });
             }
             return active;
+        }
+
+        function getOpenActivities(excludeActivityId = null) {
+            return getActiveActivities(excludeActivityId).filter((entry) => {
+                const status = String(entry.status || "").toLowerCase();
+                return status === "in_progress" || status === "paused";
+            });
+        }
+
+        function isOrchestratedActivity(item) {
+            return Boolean(item?.config && typeof item.config._orchestration === "object");
+        }
+
+        function latestOrchestratedOrder() {
+            const orders = state.agenda
+                .filter((item) => isOrchestratedActivity(item))
+                .map((item) => Number(item.order_index))
+                .filter((order) => Number.isFinite(order));
+            return orders.length ? Math.max(...orders) : null;
+        }
+
+        function isPastOrchestratedActivity(item) {
+            const latestOrder = latestOrchestratedOrder();
+            const order = Number(item?.order_index);
+            return isOrchestratedActivity(item) && Number.isFinite(order) && latestOrder !== null && order < latestOrder;
+        }
+
+        function updateOrchestrationAdvanceAvailability() {
+            if (!ui.orchestrationAdvance.button) {
+                return;
+            }
+            if (orchestrationAdvanceState.busy) {
+                ui.orchestrationAdvance.button.disabled = true;
+                return;
+            }
+            const openActivities = getOpenActivities();
+            if (openActivities.length > 0) {
+                const open = openActivities[0];
+                const activity = state.agendaMap.get(open.id);
+                const label = activity?.title || open.id || "the open activity";
+                ui.orchestrationAdvance.button.disabled = true;
+                ui.orchestrationAdvance.button.title = `Stop ${label} before advancing.`;
+                setOrchestrationAdvanceStatus(`Stop ${label} before advancing to the next step.`, "info");
+                return;
+            }
+            ui.orchestrationAdvance.button.disabled = false;
+            ui.orchestrationAdvance.button.title = "";
         }
 
         function resolveViewerCapabilities(meeting) {
@@ -726,9 +781,11 @@
 
         function getActivityAccessState(item, activityState, isActive) {
             if (state.isFacilitator) {
+                const toolType = String(item?.tool_type || item?.tool || "").toLowerCase();
+                const isFacilitatorDecision = toolType === "facilitator_decision";
                 return {
                     isOpen: Boolean(isActive),
-                    canEnter: true,
+                    canEnter: isFacilitatorDecision ? Boolean(isActive) : true,
                     title: isActive ? "Open to participants now" : "Not running yet",
                 };
             }
@@ -1049,10 +1106,30 @@
             if (!message) {
                 ui.accessNotice.hidden = true;
                 ui.accessNotice.textContent = "";
+                ui.accessNotice.classList.remove("meeting-access-archived");
                 return;
             }
             ui.accessNotice.hidden = false;
             ui.accessNotice.textContent = message;
+        }
+
+        function showArchivedMeetingNotice(message = "This meeting has been archived.") {
+            if (!ui.accessNotice) {
+                return;
+            }
+            ui.accessNotice.hidden = false;
+            ui.accessNotice.classList.add("meeting-access-archived");
+            ui.accessNotice.innerHTML = "";
+            const text = document.createElement("span");
+            text.textContent = message;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "control-btn sm";
+            button.textContent = "Return to Dashboard";
+            button.addEventListener("click", () => {
+                window.location.assign("/dashboard");
+            });
+            ui.accessNotice.append(text, button);
         }
 
         function setAgendaCollapsed(collapsed, { persist = true } = {}) {
@@ -1104,6 +1181,13 @@
 
         function normalizeAgendaItem(item, previous = null) {
             const normalized = { ...(item || {}) };
+            if (
+                previous &&
+                (!normalized.config || Object.keys(normalized.config || {}).length === 0) &&
+                previous.config
+            ) {
+                normalized.config = previous.config;
+            }
             const info = getOrchestrationInfo(normalized);
             if (info) {
                 normalized.orchestration = {
@@ -1125,6 +1209,28 @@
                 normalized.transfer_reason = normalized.transfer_reason ?? previous.transfer_reason;
             }
             return normalized;
+        }
+
+        function mergeSnapshotAgenda(snapshotAgenda) {
+            if (!Array.isArray(snapshotAgenda)) {
+                return state.latestState?.agenda || state.agenda || [];
+            }
+            const merged = new Map();
+            (state.agenda || []).forEach((item) => {
+                if (item?.activity_id) {
+                    merged.set(item.activity_id, item);
+                }
+            });
+            snapshotAgenda.forEach((item) => {
+                if (!item?.activity_id) {
+                    return;
+                }
+                merged.set(
+                    item.activity_id,
+                    normalizeAgendaItem(item, merged.get(item.activity_id) || null),
+                );
+            });
+            return Array.from(merged.values()).sort((a, b) => (a.order_index || 0) - (b.order_index || 0));
         }
 
         function logEvent(message) {
@@ -2565,6 +2671,19 @@
 
             // Separate top-level ideas and subcomments
             const topLevelIdeas = ideas.filter((idea) => !idea.parent_id);
+            const seededCommentSurface = topLevelIdeas.some((idea) => {
+                const meta = idea?.metadata || {};
+                return meta.seeded === true || Object.prototype.hasOwnProperty.call(meta, "commentable");
+            });
+            if (seededCommentSurface) {
+                activeBrainstormingConfig = {
+                    ...activeBrainstormingConfig,
+                    allow_new_ideas: false,
+                    allow_subcomments: true,
+                    comment_scope: "selected",
+                };
+                setBrainstormingFormEnabled(brainstormingActive, activeBrainstormingConfig);
+            }
             const subcommentsByParent = new Map();
             ideas.forEach((idea) => {
                 if (idea.parent_id) {
@@ -2726,6 +2845,7 @@
             }
             const shouldShow =
                 coerceConfigBool(activeBrainstormingConfig.allow_subcomments) && brainstormingActive;
+            const commentScope = String(activeBrainstormingConfig.comment_scope || "all").toLowerCase();
             const rows = brainstorming.ideasBody.querySelectorAll(".brainstorming-idea-row");
             rows.forEach((row) => {
                 const ideaId = row.dataset.ideaId;
@@ -2734,12 +2854,17 @@
                     return;
                 }
                 const existing = textCell.querySelector(".brainstorming-reply-btn");
-                if (shouldShow) {
+                const rowCommentable = row.dataset.commentSurface === "true"
+                    ? row.dataset.commentable === "true"
+                    : commentScope !== "selected" || row.dataset.commentable === "true";
+                if (shouldShow && rowCommentable) {
                     if (!existing) {
                         const replyBtn = document.createElement("button");
                         replyBtn.type = "button";
                         replyBtn.className = "control-btn brainstorming-reply-btn";
-                        replyBtn.textContent = "Reply";
+                        replyBtn.textContent = row.dataset.commentSurface === "true" || commentScope === "selected"
+                            ? "Comment"
+                            : "Reply";
                         replyBtn.addEventListener("click", (e) => {
                             e.stopPropagation();
                             showSubcommentForm(ideaId, row);
@@ -2755,6 +2880,12 @@
         let activeSubcommentForm = null;
 
         function showSubcommentForm(parentId, containerEl) {
+            const commentScope = String(activeBrainstormingConfig.comment_scope || "all").toLowerCase();
+            const commentSurface = containerEl?.dataset?.commentSurface === "true";
+            if ((commentSurface || commentScope === "selected") && containerEl?.dataset?.commentable !== "true") {
+                setBrainstormingError("This item is shown for context only and is not open for comments.");
+                return;
+            }
             // Remove any existing subcomment form
             if (activeSubcommentForm) {
                 activeSubcommentForm.remove();
@@ -2974,7 +3105,15 @@
             // stats; subdue items not opened for comment this round.
             const meta = idea.metadata || {};
             const commentScope = String(activeBrainstormingConfig.comment_scope || "all").toLowerCase();
-            const isCommentable = commentScope !== "selected" || meta.commentable === true;
+            const hasExplicitCommentable = Object.prototype.hasOwnProperty.call(meta, "commentable");
+            const isSeededCommentSurface = hasExplicitCommentable || meta.seeded === true;
+            const isCommentable = hasExplicitCommentable
+                ? meta.commentable === true
+                : commentScope !== "selected";
+            container.dataset.commentable = isCommentable ? "true" : "false";
+            if (isSeededCommentSurface) {
+                container.dataset.commentSurface = "true";
+            }
             if (meta.agreement_band || meta.group_median !== undefined) {
                 const fb = document.createElement("div");
                 fb.className = "brainstorming-agreement";
@@ -2992,7 +3131,7 @@
                     fb.appendChild(detail);
                 }
                 textCell.appendChild(fb);
-                if (commentScope === "selected" && !isCommentable) {
+                if (isSeededCommentSurface && !isCommentable) {
                     container.classList.add("brainstorming-idea-subdued");
                 }
             }
@@ -3092,6 +3231,13 @@
 
         function updateSubmitButtonState() {
             if (!brainstorming.submit) {
+                return;
+            }
+            const allowNewIdeas = activeBrainstormingConfig.allow_new_ideas === undefined
+                ? true
+                : coerceConfigBool(activeBrainstormingConfig.allow_new_ideas);
+            if (!allowNewIdeas) {
+                brainstorming.submit.disabled = true;
                 return;
             }
             const content = (brainstorming.textarea && brainstorming.textarea.value) || "";
@@ -6157,6 +6303,10 @@
                 : coerceConfigBool(activeBrainstormingConfig.allow_new_ideas);
             brainstorming.form.hidden = !allowNewIdeas;
             if (!allowNewIdeas) {
+                if (brainstorming.textarea) {
+                    brainstorming.textarea.disabled = true;
+                    brainstorming.textarea.value = "";
+                }
                 updateSubmitButtonState();
                 return;
             }
@@ -6625,6 +6775,9 @@
                 const isPaused = status === "paused";
                 const isActive = isRunning || isPaused || state.latestState?.currentActivity === item.activity_id;
                 const elapsed = activityState?.elapsedTime || item.elapsed_duration || 0;
+                const isOrchestrated = isOrchestratedActivity(item);
+                const isPastOrchestrated = isPastOrchestratedActivity(item);
+                const hasOpenOtherActivity = getOpenActivities(item.activity_id).length > 0;
 
                 const statusContainer = document.createElement("div");
                 statusContainer.className = "agenda-item-status-container";
@@ -6687,11 +6840,22 @@
                     startBtn.type = "button";
                     startBtn.className = "control-btn primary sm";
                     startBtn.textContent = "Start";
-                    startBtn.disabled = isRunning; // Disabled if already running
+                    startBtn.disabled =
+                        isRunning ||
+                        hasOpenOtherActivity ||
+                        (isOrchestrated && isPastOrchestrated);
                     startBtn.title = isPaused ? "Resume Activity" : "Start Activity";
+                    if (hasOpenOtherActivity) {
+                        startBtn.title = "Stop the open activity before starting another.";
+                    } else if (isOrchestrated && isPastOrchestrated) {
+                        startBtn.title = "This orchestrated step is in the past and cannot be restarted.";
+                    }
 
                     startBtn.addEventListener("click", async (e) => {
                         e.stopPropagation();
+                        if (startBtn.disabled) {
+                            return;
+                        }
                         // Resume if paused, otherwise start
                         const action = isPaused ? "resume_tool" : "start_tool";
                         try {
@@ -6807,6 +6971,7 @@
 
             highlightAgenda();
             updateAgendaSummary();
+            updateOrchestrationAdvanceAvailability();
         }
 
         function getDragAfterElement(container, y) {
@@ -7056,6 +7221,63 @@
             conclude: "Finish the method and stop here.",
         };
 
+        const FEEDBACK_OPTION_LABELS = {
+            open_comments: "Open comments",
+            skip_comments: "Skip comments",
+        };
+
+        const FEEDBACK_OPTION_HINTS = {
+            open_comments: "Create the comment activity for the selected disputed ideas.",
+            skip_comments: "Skip the comment activity and move directly to the next ranking step.",
+        };
+
+        function normalizeDecisionLabel(option) {
+            const key = String(option || "").toLowerCase();
+            if (facilitatorDecisionState.isFeedbackSelectionDecision && FEEDBACK_OPTION_LABELS[key]) {
+                return FEEDBACK_OPTION_LABELS[key];
+            }
+            return String(option || "");
+        }
+
+        function hasStickyFacilitatorDecisionPanel() {
+            return Boolean(
+                state.isFacilitator &&
+                ui.facilitatorDecision.root &&
+                !ui.facilitatorDecision.root.hidden &&
+                facilitatorDecisionState.activityId &&
+                facilitatorDecisionState.options.length > 0 &&
+                !facilitatorDecisionState.responding
+            );
+        }
+
+        function selectFacilitatorDecisionOption(option) {
+            facilitatorDecisionState.selectedOption = option;
+            const choice = String(option || "").toLowerCase();
+            if (facilitatorDecisionState.isFeedbackSelectionDecision) {
+                if (choice === "skip_comments") {
+                    facilitatorDecisionState.selectedCommentCount = 0;
+                } else if (choice === "open_comments") {
+                    const fallback = facilitatorDecisionState.feedbackSuggestedCount || 1;
+                    facilitatorDecisionState.selectedCommentCount = Math.min(
+                        Math.max(facilitatorDecisionState.selectedCommentCount || fallback, 1),
+                        facilitatorDecisionState.feedbackMaxCount,
+                    );
+                }
+            }
+            renderFacilitatorDecisionOptions(
+                facilitatorDecisionState.activityId,
+                facilitatorDecisionState.options,
+                { isGate: facilitatorDecisionState.isRoundGate },
+            );
+            if (ui.facilitatorDecision.gateReport) {
+                const input = ui.facilitatorDecision.gateReport.querySelector("#facilitatorFeedbackCommentCount");
+                if (input) {
+                    input.value = String(facilitatorDecisionState.selectedCommentCount || 0);
+                }
+            }
+            setFacilitatorDecisionStatus("", "");
+        }
+
         function renderFacilitatorDecisionOptions(activityId, options, { isGate = false } = {}) {
             if (!ui.facilitatorDecision.options) {
                 return;
@@ -7066,12 +7288,25 @@
                 wrapper.className = "decision-option";
                 const button = document.createElement("button");
                 button.type = "button";
-                button.className = "control-btn primary sm";
-                button.textContent = option;
+                const selected = facilitatorDecisionState.selectedOption === option;
+                button.className = selected ? "control-btn primary sm" : "control-btn sm";
+                button.textContent = normalizeDecisionLabel(option);
                 button.disabled = facilitatorDecisionState.responding;
-                button.addEventListener("click", () => submitFacilitatorDecision(activityId, option));
+                button.setAttribute("aria-pressed", selected ? "true" : "false");
+                button.addEventListener("click", () => {
+                    if (facilitatorDecisionState.isFeedbackSelectionDecision && !isGate) {
+                        selectFacilitatorDecisionOption(option);
+                    } else {
+                        submitFacilitatorDecision(activityId, option);
+                    }
+                });
                 wrapper.appendChild(button);
-                const hint = isGate ? GATE_OPTION_HINTS[String(option).toLowerCase()] : null;
+                const optionKey = String(option).toLowerCase();
+                const hint = isGate
+                    ? GATE_OPTION_HINTS[optionKey]
+                    : facilitatorDecisionState.isFeedbackSelectionDecision
+                        ? FEEDBACK_OPTION_HINTS[optionKey]
+                        : null;
                 if (hint) {
                     const note = document.createElement("span");
                     note.className = "decision-option-hint";
@@ -7132,21 +7367,48 @@
                 el.hidden = true;
                 el.innerHTML = "";
                 facilitatorDecisionState.selectedCommentCount = null;
+                facilitatorDecisionState.isFeedbackSelectionDecision = false;
+                facilitatorDecisionState.feedbackSuggestedCount = 0;
+                facilitatorDecisionState.feedbackMaxCount = 0;
+                facilitatorDecisionState.gateReportSignature = null;
                 return;
             }
             const feedbackSelection = data.feedback_selection || null;
-            const rows = [
-                ["Overall agreement", `${data.agreement_label} (median spread ${data.median_iqr})`],
-                ["Items ranked", String(data.item_count)],
-                ["Participants", String(data.participant_count)],
-                ["Items in strong agreement", String(data.strong_agreement_items)],
-                ["Contested items", String(data.contested_items)],
-                ["Participants with outlier rankings", String(data.participants_with_outliers)],
-                ["Total outlier positions", String(data.outlier_instances)],
-            ].filter(([, v]) => v !== "undefined" && v !== "null");
+            facilitatorDecisionState.isFeedbackSelectionDecision = Boolean(feedbackSelection);
+            const reportSignature = JSON.stringify({
+                agreement_label: data.agreement_label,
+                median_iqr: data.median_iqr,
+                item_count: data.item_count,
+                contested_items: data.contested_items,
+                participant_count: data.participant_count,
+                strong_agreement_items: data.strong_agreement_items,
+                participants_with_outliers: data.participants_with_outliers,
+                outlier_instances: data.outlier_instances,
+                feedback_selection: feedbackSelection,
+            });
+            const rows = feedbackSelection
+                ? [
+                    ["Agreement", `${data.agreement_label} · median spread ${data.median_iqr}`],
+                    ["Ideas", `${data.item_count} ranked · ${data.contested_items} contested`],
+                    ["Participants", String(data.participant_count)],
+                ]
+                : [
+                    ["Overall agreement", `${data.agreement_label} (median spread ${data.median_iqr})`],
+                    ["Items ranked", String(data.item_count)],
+                    ["Participants", String(data.participant_count)],
+                    ["Items in strong agreement", String(data.strong_agreement_items)],
+                    ["Contested items", String(data.contested_items)],
+                    ["Participants with outlier rankings", String(data.participants_with_outliers)],
+                    ["Total outlier positions", String(data.outlier_instances)],
+                ];
+            const safeRows = rows.filter(([, v]) => v !== "undefined" && v !== "null");
+            if (el.contains(document.activeElement) && facilitatorDecisionState.gateReportSignature === reportSignature) {
+                return;
+            }
+            facilitatorDecisionState.gateReportSignature = reportSignature;
             el.innerHTML =
                 '<p class="decision-gate-report-intro">Where the group landed this round:</p>' +
-                rows
+                safeRows
                     .map(([k, v]) => `<div class="round-stats-row"><span class="round-stats-key">${k}</span><span class="round-stats-val">${v}</span></div>`)
                     .join("");
             if (feedbackSelection) {
@@ -7154,15 +7416,21 @@
                 const max = Number.parseInt(feedbackSelection.max_selectable_count, 10);
                 const safeSuggested = Number.isFinite(suggested) ? suggested : 0;
                 const safeMax = Number.isFinite(max) ? max : safeSuggested;
+                facilitatorDecisionState.feedbackSuggestedCount = safeSuggested;
+                facilitatorDecisionState.feedbackMaxCount = safeMax;
                 const selectedCount = Number.isFinite(facilitatorDecisionState.selectedCommentCount)
                     ? Math.min(Math.max(facilitatorDecisionState.selectedCommentCount, 0), safeMax)
                     : safeSuggested;
                 facilitatorDecisionState.selectedCommentCount = selectedCount;
+                if (!facilitatorDecisionState.selectedOption) {
+                    facilitatorDecisionState.selectedOption =
+                        selectedCount > 0 ? "open_comments" : "skip_comments";
+                }
                 const control = document.createElement("div");
                 control.className = "decision-feedback-selector";
                 const label = document.createElement("label");
                 label.setAttribute("for", "facilitatorFeedbackCommentCount");
-                label.textContent = "Ideas to open for comments";
+                label.textContent = "Number of ideas to open";
                 const input = document.createElement("input");
                 input.id = "facilitatorFeedbackCommentCount";
                 input.type = "number";
@@ -7171,20 +7439,37 @@
                 input.step = "1";
                 input.value = String(selectedCount);
                 input.disabled = facilitatorDecisionState.responding;
+                input.addEventListener("focus", () => {
+                    facilitatorDecisionState.userEditingFeedbackCount = true;
+                });
+                input.addEventListener("blur", () => {
+                    facilitatorDecisionState.userEditingFeedbackCount = false;
+                });
                 input.addEventListener("input", () => {
+                    facilitatorDecisionState.userEditingFeedbackCount = true;
                     const next = Number.parseInt(input.value, 10);
                     facilitatorDecisionState.selectedCommentCount = Number.isFinite(next)
                         ? Math.min(Math.max(next, 0), safeMax)
                         : 0;
+                    facilitatorDecisionState.selectedOption =
+                        facilitatorDecisionState.selectedCommentCount > 0 ? "open_comments" : "skip_comments";
+                    renderFacilitatorDecisionOptions(
+                        facilitatorDecisionState.activityId,
+                        facilitatorDecisionState.options,
+                        { isGate: facilitatorDecisionState.isRoundGate },
+                    );
                 });
                 const hint = document.createElement("p");
                 hint.className = "decision-feedback-selector-hint";
                 hint.textContent =
-                    `Suggested ${safeSuggested}; choose 0 to skip comments, up to ${safeMax}.`;
+                    `Suggested ${safeSuggested}. Choose 0 to skip comments, or choose 1-${safeMax} to create the comment activity. Then click Advance to next step.`;
                 control.append(label, input, hint);
                 el.appendChild(control);
             } else {
                 facilitatorDecisionState.selectedCommentCount = null;
+                facilitatorDecisionState.selectedOption = null;
+                facilitatorDecisionState.feedbackSuggestedCount = 0;
+                facilitatorDecisionState.feedbackMaxCount = 0;
             }
             el.hidden = false;
         }
@@ -7196,6 +7481,12 @@
             const config = activity?.config || {};
             const prompt = detail?.prompt || config.prompt || activity?.title || "Decision required.";
             const options = detail?.options || config.options || [];
+            if (facilitatorDecisionState.activityId !== (activity?.activity_id || null)) {
+                facilitatorDecisionState.selectedOption = null;
+                facilitatorDecisionState.selectedCommentCount = null;
+            }
+            facilitatorDecisionState.activityId = activity?.activity_id || null;
+            facilitatorDecisionState.options = Array.isArray(options) ? options : [];
             ui.facilitatorDecision.root.hidden = false;
             if (ui.facilitatorDecision.prompt) {
                 ui.facilitatorDecision.prompt.textContent = prompt;
@@ -7214,6 +7505,7 @@
                 }
             }
             const isGate = Boolean(detail && detail.is_round_gate);
+            facilitatorDecisionState.isRoundGate = isGate;
             renderRoundGate(detail);
             renderFacilitatorDecisionOptions(activity.activity_id, options, { isGate });
         }
@@ -7243,11 +7535,12 @@
             }
         }
 
-        async function submitFacilitatorDecision(activityId, option) {
+        async function submitFacilitatorDecision(activityId, option, { advanceAfter = false } = {}) {
             if (!activityId || facilitatorDecisionState.responding) {
                 return;
             }
             facilitatorDecisionState.responding = true;
+            facilitatorDecisionState.userEditingFeedbackCount = false;
             setFacilitatorDecisionStatus("Submitting decision...", "info");
             renderFacilitatorDecisionOptions(activityId, state.agendaMap.get(activityId)?.config?.options || []);
             try {
@@ -7276,7 +7569,8 @@
                     ui.facilitatorDecision.root.hidden = true;
                 }
                 const choice = String(option).toLowerCase();
-                if (choice === "continue") {
+                facilitatorDecisionState.selectedOption = null;
+                if (advanceAfter || choice === "continue") {
                     await advanceOrchestration({ silent: true });
                 } else if (choice === "conclude") {
                     await refreshAgendaFromServer();
@@ -7325,6 +7619,22 @@
         }
 
         async function advanceOrchestration({ silent = false } = {}) {
+            if (
+                facilitatorDecisionState.activityId &&
+                facilitatorDecisionState.isFeedbackSelectionDecision &&
+                facilitatorDecisionState.selectedOption &&
+                ui.facilitatorDecision.root &&
+                !ui.facilitatorDecision.root.hidden
+            ) {
+                const selected = facilitatorDecisionState.selectedOption;
+                if (!silent) {
+                    setOrchestrationAdvanceStatus("Recording comment decision...", "info");
+                }
+                await submitFacilitatorDecision(facilitatorDecisionState.activityId, selected, {
+                    advanceAfter: true,
+                });
+                return;
+            }
             if (orchestrationAdvanceState.busy) {
                 return;
             }
@@ -7369,7 +7679,7 @@
             } finally {
                 orchestrationAdvanceState.busy = false;
                 if (ui.orchestrationAdvance.button) {
-                    ui.orchestrationAdvance.button.disabled = false;
+                    updateOrchestrationAdvanceAvailability();
                 }
             }
         }
@@ -7662,7 +7972,8 @@
             }
 
             if (ui.facilitatorDecision.root) {
-                ui.facilitatorDecision.root.hidden = !showFacilitatorDecision;
+                const keepDecisionVisible = hasStickyFacilitatorDecisionPanel();
+                ui.facilitatorDecision.root.hidden = !(showFacilitatorDecision || keepDecisionVisible);
                 if (showFacilitatorDecision && activeActivity) {
                     if (facilitatorDecisionState.activityId !== activeActivity.activity_id) {
                         facilitatorDecisionState.activityId = activeActivity.activity_id;
@@ -7670,7 +7981,9 @@
                         setFacilitatorDecisionStatus("");
                     }
                     renderFacilitatorDecisionPanel(activeActivity);
-                    loadFacilitatorDecisionDetail(activeActivity);
+                    if (!facilitatorDecisionState.userEditingFeedbackCount) {
+                        loadFacilitatorDecisionDetail(activeActivity);
+                    }
                 }
             }
 
@@ -7912,6 +8225,7 @@
                 });
             }
 
+            const mergedAgenda = mergeSnapshotAgenda(snapshot.agenda);
             state.latestState = {
                 status: snapshot.status ?? state.latestState?.status ?? null,
                 currentActivity: snapshot.currentActivity ?? snapshot.agendaItemId ?? null,
@@ -7919,7 +8233,7 @@
                 agendaItemId: snapshot.agendaItemId ?? null,
                 metadata: snapshot.metadata || {},
                 participants: Array.isArray(snapshot.participants) ? snapshot.participants : [],
-                agenda: Array.isArray(snapshot.agenda) ? snapshot.agenda : state.latestState?.agenda || [],
+                agenda: mergedAgenda,
                 updatedAt: snapshot.updatedAt || new Date().toISOString(),
             };
             state.activeActivities = activeActivities;
@@ -8008,6 +8322,11 @@
                 case "meeting_state":
                     // If it's a full meeting state snapshot, update everything
                     handleStateSnapshot(payload, true);
+                    break;
+                case "meeting_archived":
+                    logEvent("Meeting archived.");
+                    showArchivedMeetingNotice("This meeting has been archived.");
+                    setStatus("Meeting archived", "warning");
                     break;
                 case "agenda_update":
                     // If it's an agenda-specific update, only re-render the agenda
@@ -8145,6 +8464,12 @@
                 return false;
             }
             applyViewerCapabilities(resolveViewerCapabilities(meeting));
+            const meetingStatus = String(meeting.status || meeting.raw_status || "").toLowerCase();
+            if (meetingStatus === "archived") {
+                showArchivedMeetingNotice("This meeting has been archived.");
+                setStatus("Meeting archived", "warning");
+                return true;
+            }
 
             if (!state.isParticipant && !state.canViewMeeting) {
                 showAccessMessage("Your access to this meeting has been revoked.");
@@ -8233,6 +8558,9 @@
                 return withRefreshJitter(meetingRefreshConfig.overloadBackoffMs);
             }
             if (brainstormingSubmitInFlight || votingRequestInFlight || rankOrderRequestInFlight || justificationRequestInFlight) {
+                return withRefreshJitter(meetingRefreshConfig.writePriorityBackoffMs);
+            }
+            if (facilitatorDecisionState.userEditingFeedbackCount) {
                 return withRefreshJitter(meetingRefreshConfig.writePriorityBackoffMs);
             }
             return withRefreshJitter(

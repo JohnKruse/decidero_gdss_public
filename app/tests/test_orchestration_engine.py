@@ -1683,6 +1683,18 @@ def test_phase5_coherence_witness_drives_engine_broadcast_ui_and_resume(
             "summary": "Promote the stable option."
         }
 
+        # The facilitator-decision surface renders inside the orchestration
+        # "Next step" panel, which is gated on the meeting being template-linked
+        # (real orchestrated meetings always carry a source_template_id; see
+        # meeting_template_manager instantiation). Mirror that here so the page
+        # renders as a production orchestrated meeting would.
+        from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+        [orchestration_template] = seed_builtin_meeting_templates(db_session)
+        meeting.source_template_id = orchestration_template.template_id
+        db_session.add(meeting)
+        db_session.commit()
+
         page = authenticated_client.get(f"/meeting/{meeting.meeting_id}")
         assert page.status_code == 200
         assert "data-facilitator-decision-root" in page.text

@@ -167,6 +167,29 @@
                         continue/conclude decision at a round boundary.</div>
                 </div>
                 <div class="section-body orchestration-advance-body">
+                    {% if can_manage_meeting %}
+                    <!-- In-round orchestration decisions are part of advancing the
+                         method, so render them directly above the advance button. -->
+                    <div class="facilitator-decision-panel orchestration-decision-inline"
+                        data-facilitator-decision-root hidden>
+                        <h3>Facilitator Decision</h3>
+                        <p id="facilitatorDecisionPrompt" class="decision-prompt"></p>
+                        <!-- Round-gate evidence + recommendation (gate decisions only). -->
+                        <div id="facilitatorDecisionGate" class="decision-gate" hidden>
+                            <p id="facilitatorDecisionGateEvidence" class="decision-gate-evidence"></p>
+                            <p id="facilitatorDecisionGateRecommendation" class="decision-gate-recommendation"></p>
+                        </div>
+                        <!-- Grammar-declared report + comment-count selector. Rendered for
+                             any decision that declares a report (round gate or in-round). -->
+                        <div id="facilitatorDecisionGateReport" class="decision-gate-report" hidden></div>
+                        <div id="facilitatorDecisionAiReview" class="decision-review" hidden>
+                            <span class="meeting-overview-label">AI proposal</span>
+                            <pre id="facilitatorDecisionAiOutput"></pre>
+                        </div>
+                        <div id="facilitatorDecisionOptions" class="decision-options"></div>
+                        <div id="facilitatorDecisionStatus" class="control-feedback" aria-live="polite"></div>
+                    </div>
+                    {% endif %}
                     <button type="button" class="control-btn primary" id="orchestrationAdvanceButton"
                         data-orchestration-advance>Advance to next step</button>
                     <div class="control-feedback" id="orchestrationAdvanceStatus" aria-live="polite"></div>
@@ -285,32 +308,6 @@
                 </div>
             </section>
             {% endgrab %}
-
-            {% if can_manage_meeting %}
-            {% grab id="meeting-facilitator-decision-panel" %}
-            <!-- Loquacious Pelican: facilitator decision/review surface for orchestration pauses. -->
-            <section class="content-card activity-panel facilitator-decision-panel" data-facilitator-decision-root hidden>
-                {{ section_header('Facilitator Decision', 'Review the pending orchestration decision and choose the next action.') }}
-                <div class="section-body">
-                    <p id="facilitatorDecisionPrompt" class="decision-prompt"></p>
-                    <!-- Round-gate evidence + recommendation (gate decisions only). -->
-                    <div id="facilitatorDecisionGate" class="decision-gate" hidden>
-                        <p id="facilitatorDecisionGateEvidence" class="decision-gate-evidence"></p>
-                        <p id="facilitatorDecisionGateRecommendation" class="decision-gate-recommendation"></p>
-                    </div>
-                    <!-- Grammar-declared report + comment-count selector. Rendered for
-                         any decision that declares a report (round gate or in-round). -->
-                    <div id="facilitatorDecisionGateReport" class="decision-gate-report" hidden></div>
-                    <div id="facilitatorDecisionAiReview" class="decision-review" hidden>
-                        <span class="meeting-overview-label">AI proposal</span>
-                        <pre id="facilitatorDecisionAiOutput"></pre>
-                    </div>
-                    <div id="facilitatorDecisionOptions" class="decision-options"></div>
-                    <div id="facilitatorDecisionStatus" class="control-feedback" aria-live="polite"></div>
-                </div>
-            </section>
-            {% endgrab %}
-            {% endif %}
 
             {% grab id="meeting-voting-panel" %}
             <section class="content-card activity-panel voting-panel" data-voting-root hidden>
@@ -685,5 +682,5 @@
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260604c"></script>
+<script src="/static/js/meeting.js?v=20260607d"></script>
 {% endblock %}

@@ -482,6 +482,9 @@ def test_adaptive_delphi_feedback_end_to_end(
         json={"action": "start_tool", "tool": "brainstorming", "activityId": comment_id},
     )
     assert start.status_code == 200, start.text
+    blocked_advance = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert blocked_advance.status_code == 409
+    assert "Stop the open activity" in blocked_advance.json()["detail"]
 
     # Both ranked ideas are seeded in vote order; only idea-a is commentable.
     ideas_resp = authenticated_client.get(
@@ -512,6 +515,35 @@ def test_adaptive_delphi_feedback_end_to_end(
         json={"content": "a new idea"},
     )
     assert new_idea.status_code == 400
+    stop = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "stop_tool", "activityId": comment_id},
+    )
+    assert stop.status_code == 200, stop.text
+    restart_comment = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "start_tool", "tool": "brainstorming", "activityId": comment_id},
+    )
+    assert restart_comment.status_code == 200, restart_comment.text
+    stop_again = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "stop_tool", "activityId": comment_id},
+    )
+    assert stop_again.status_code == 200, stop_again.text
+    restart_rank = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "start_tool", "tool": "rank_order_voting", "activityId": rank0["activity_id"]},
+    )
+    assert restart_rank.status_code == 400
+    assert "in the past" in restart_rank.json()["detail"]
+    next_step = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert next_step.status_code == 200, next_step.text
+    locked_comment = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "start_tool", "tool": "brainstorming", "activityId": comment_id},
+    )
+    assert locked_comment.status_code == 400
+    assert "in the past" in locked_comment.json()["detail"]
 
     # The rank summary surfaces the "Round 1 of 4" progression.
     summary = authenticated_client.get(

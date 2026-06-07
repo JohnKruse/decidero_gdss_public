@@ -459,13 +459,15 @@ def test_archive_and_restore_meeting_dashboard_visibility(
     test_meeting_data: str,
 ):
     """Archived meetings should move off the default dashboard and support restore."""
-
     archive_response = authenticated_client.post(
         f"/api/meetings/{test_meeting_data}/archive"
     )
     assert archive_response.status_code == 200, archive_response.json()
     archived_payload = archive_response.json()
     assert archived_payload["status"] == "archived"
+    snapshot = asyncio.run(meeting_state_manager.snapshot(test_meeting_data))
+    assert snapshot["status"] == "archived"
+    assert snapshot["metadata"]["archived"] is True
 
     active_dashboard = authenticated_client.get("/api/meetings/")
     assert active_dashboard.status_code == 200
@@ -491,6 +493,7 @@ def test_archive_and_restore_meeting_dashboard_visibility(
     assert restore_response.status_code == 200, restore_response.json()
     restored_payload = restore_response.json()
     assert restored_payload["status"] == "completed"
+    assert asyncio.run(meeting_state_manager.snapshot(test_meeting_data)) is None
 
     refreshed_active = authenticated_client.get("/api/meetings/")
     assert refreshed_active.status_code == 200
@@ -503,6 +506,87 @@ def test_archive_and_restore_meeting_dashboard_visibility(
     assert all(
         item["id"] != test_meeting_data for item in refreshed_archived.json()["items"]
     )
+
+
+def test_archive_meeting_does_not_force_connected_clients_to_redirect(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    monkeypatch,
+):
+    """Archiving should not force-navigate meeting pages; clients show a notice."""
+    participant_password = "ParticipantArchived@123!"
+    participant = user_manager_with_admin.add_user(
+        first_name="Archive",
+        last_name="Target",
+        email="archive.target@example.com",
+        hashed_password=get_password_hash(participant_password),
+        role=UserRole.PARTICIPANT.value,
+        login="archive_target",
+    )
+    user_manager_with_admin.db.commit()
+    user_manager_with_admin.db.refresh(participant)
+
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Archive Target Meeting",
+            "description": "Archive should not force websocket redirects.",
+            "agenda_items": ["Discuss"],
+            "participant_ids": [participant.user_id],
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    created = create_response.json()
+    meeting_id = created["id"]
+    personal_messages = []
+
+    async def capture_personal(meeting_id_arg, connection_id, message):
+        personal_messages.append((meeting_id_arg, connection_id, message))
+
+    monkeypatch.setattr(
+        meetings_router.websocket_manager,
+        "send_personal_message",
+        capture_personal,
+    )
+
+    archive_response = authenticated_client.post(f"/api/meetings/{meeting_id}/archive")
+    assert archive_response.status_code == 200, archive_response.json()
+    assert personal_messages == []
+
+
+def test_archive_meeting_broadcasts_meeting_archived_notice(
+    authenticated_client: TestClient,
+    mocker,
+):
+    """Archiving broadcasts a `meeting_archived` envelope so connected clients
+    surface the archived popup (return-to-dashboard) instead of sitting in a
+    dead meeting."""
+    create_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Archive Notice Meeting",
+            "description": "Archiving should notify connected clients.",
+            "agenda_items": ["Discuss"],
+            "participant_ids": [],
+        },
+    )
+    assert create_response.status_code == 200, create_response.text
+    meeting_id = create_response.json()["id"]
+
+    broadcast_mock = mocker.patch(
+        "app.routers.meetings.websocket_manager.broadcast"
+    )
+
+    archive_response = authenticated_client.post(f"/api/meetings/{meeting_id}/archive")
+    assert archive_response.status_code == 200, archive_response.json()
+
+    archived_messages = [
+        call.args[1]
+        for call in broadcast_mock.await_args_list
+        if call.args[1].get("type") == "meeting_archived"
+    ]
+    assert len(archived_messages) == 1, broadcast_mock.await_args_list
+    assert archived_messages[0]["payload"]["meetingId"] == meeting_id
 
 
 def test_save_meeting_as_template_endpoint_strips_runtime_data(

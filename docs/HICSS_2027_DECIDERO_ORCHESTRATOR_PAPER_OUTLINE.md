@@ -241,6 +241,22 @@ it also means the system currently supports only a limited set of flow-control
 patterns. Similarly, AI can assist synthesis and review, but the architecture
 intentionally keeps high-risk decisions reviewable by a facilitator.
 
+Live Delphi testing also exposed a deliberate scope decision about runtime
+control. For the reference orchestration, Decidero should behave as a
+single-threaded method driver: the facilitator starts the current materialized
+activity, stops it when the group is finished, and only then advances the
+orchestrator. Stop is reversible before advancement: a facilitator may restart
+the current activity if they stopped it too soon. Advance is the commitment
+point. Once the orchestrator has advanced beyond an activity, prior activities
+remain inspectable for review and context, but they are not restartable in the
+process timeline. This is a parsimony choice rather than a
+claim that concurrent GDSS work is unimportant. The platform can imagine future
+fork/join patterns where different participant subsets run different activities
+concurrently, but the Delphi reference case intentionally excludes that power
+because concurrent branches would blur the paper's central claim: a compact
+orchestration document can drive a complex method forward one method step at a
+time.
+
 ### 8. Conclusion
 
 The conclusion should be modest and forward looking. Decidero provides the
