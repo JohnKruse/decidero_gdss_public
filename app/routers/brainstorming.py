@@ -285,6 +285,11 @@ async def submit_idea(
     )
     allow_anonymous = _coerce_bool(activity_config.get("allow_anonymous"))
     allow_subcomments = _coerce_bool(activity_config.get("allow_subcomments"))
+    # Generic configurability (used by any method, e.g. a Delphi comment step):
+    #   allow_new_ideas=false   -> comment-only; reject new top-level ideas.
+    #   comment_scope="selected" -> sub-comments only on items flagged commentable.
+    allow_new_ideas = _coerce_bool(activity_config.get("allow_new_ideas", True))
+    comment_scope = str(activity_config.get("comment_scope") or "all").strip().lower()
     idempotency_key = (x_idempotency_key or "").strip()[:128] or None
 
     ideas_manager = IdeasManager()
@@ -303,6 +308,19 @@ async def submit_idea(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Parent idea not found in this activity.",
             )
+        if comment_scope == "selected" and not (
+            (parent_idea.idea_metadata or {}).get("commentable")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This item is not open for comments in this round.",
+            )
+    elif not allow_new_ideas:
+        # Comment-only mode: no new top-level ideas, only sub-comments.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New ideas are not allowed here; you can only comment on the listed items.",
+        )
 
     max_chars = BRAINSTORMING_LIMITS.get("idea_character_limit") or 0
     content = (payload.content or "").strip()

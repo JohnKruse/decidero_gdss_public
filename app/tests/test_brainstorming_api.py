@@ -740,3 +740,99 @@ def test_subcomment_rejected_when_disabled(
 
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_brainstorming_comment_only_and_eligibility_enforced(
+    user_manager_with_admin: UserManager,
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Generic config makes brainstorming a comment-only, selected-items surface:
+    allow_new_ideas=false rejects new ideas; comment_scope=selected restricts
+    sub-comments to items flagged commentable. (No fork — just configuration.)"""
+    from app.models.idea import Idea
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    facilitator = user_manager_with_admin.get_user_by_email(admin_email)
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Comment-only Brainstorm",
+            description="Comment on selected items only.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=60),
+            duration_minutes=60,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Comment on disputed ideas",
+                config={
+                    "allow_new_ideas": False,
+                    "allow_subcomments": True,
+                    "comment_scope": "selected",
+                },
+            ),
+        ],
+    )
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    # Two seeded items: one open for comment, one subdued.
+    eligible = Idea(
+        content="Disputed idea", meeting_id=meeting.meeting_id, activity_id=activity_id,
+        idea_metadata={"commentable": True},
+    )
+    subdued = Idea(
+        content="Agreed idea", meeting_id=meeting.meeting_id, activity_id=activity_id,
+        idea_metadata={"commentable": False},
+    )
+    db_session.add_all([eligible, subdued])
+    db_session.commit()
+    db_session.refresh(eligible)
+    db_session.refresh(subdued)
+
+    try:
+        asyncio.run(
+            meeting_state_manager.apply_patch(
+                meeting.meeting_id,
+                {
+                    "currentActivity": activity_id,
+                    "agendaItemId": activity_id,
+                    "currentTool": "brainstorming",
+                    "status": "in_progress",
+                },
+            )
+        )
+
+        # New top-level ideas are rejected (comment-only).
+        new_idea = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "A brand new idea"},
+        )
+        assert new_idea.status_code == 400
+        assert "only comment" in new_idea.json()["detail"]
+
+        # A comment on the commentable item is accepted.
+        ok = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Here is my reasoning", "parent_id": eligible.id},
+        )
+        assert ok.status_code == 201, ok.json()
+
+        # A comment on the subdued item is rejected.
+        blocked = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/brainstorming/ideas",
+            json={"content": "Should be blocked", "parent_id": subdued.id},
+        )
+        assert blocked.status_code == 400
+        assert "not open for comments" in blocked.json()["detail"]
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
