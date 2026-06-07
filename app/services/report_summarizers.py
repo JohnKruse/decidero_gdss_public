@@ -128,12 +128,56 @@ class DelphiRoundAgreementSummarizer(ReportSummarizer):
         }
 
 
+class KendallsWSummarizer(ReportSummarizer):
+    """Kendall's W (coefficient of concordance) over a round's rankings.
+
+    The canonical Delphi inter-rater agreement statistic: 0 = no agreement, 1 =
+    perfect, rising across rounds as the panel converges. Reads the round's votes
+    (`metadata.votes`: option_id / user_id / rank_position) into a judges x items
+    rank matrix and applies the cited `report_metrics.kendalls_w`.
+
+    Returns the scalar namespace: kendalls_w (float|None), judge_count, item_count.
+    Ranking-paradigm metric — see report_metrics paradigm note.
+    """
+
+    def summarize(self, bundle: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
+        from app.services.report_metrics import kendalls_w
+
+        votes = dict(bundle.get("metadata") or {}).get("votes") or []
+        # ranks_by_user[user][option] = rank_position
+        ranks_by_user: Dict[str, Dict[str, float]] = {}
+        options: List[str] = []
+        seen = set()
+        for v in votes:
+            uid, opt, pos = v.get("user_id"), v.get("option_id"), v.get("rank_position")
+            if uid is None or opt is None or pos is None:
+                continue
+            ranks_by_user.setdefault(str(uid), {})[str(opt)] = float(pos)
+            if str(opt) not in seen:
+                seen.add(str(opt))
+                options.append(str(opt))
+
+        # Complete blocks only: judges who ranked every option.
+        matrix = [
+            [ranks[o] for o in options]
+            for ranks in ranks_by_user.values()
+            if all(o in ranks for o in options)
+        ]
+        w = kendalls_w(matrix) if matrix and len(options) >= 2 else None
+        return {
+            "kendalls_w": None if w is None else round(w, 4),
+            "judge_count": len(matrix),
+            "item_count": len(options),
+        }
+
+
 class ReportSummarizerRegistry:
     """Registry for looking up ReportSummarizer instances by string name."""
 
     def __init__(self) -> None:
         self._summarizers: Dict[str, ReportSummarizer] = {}
         self.register("delphi_round_agreement", DelphiRoundAgreementSummarizer())
+        self.register("kendalls_w", KendallsWSummarizer())
 
     def register(self, name: str, summarizer: ReportSummarizer) -> None:
         self._summarizers[name.strip().lower()] = summarizer

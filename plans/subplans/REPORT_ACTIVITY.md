@@ -185,7 +185,19 @@ Findings that shape the build:
 - TODO: author a small **synthetic** in-repo example payload (`docs/schemas/examples/`)
   as the permanent fixture, since the real-data one is third-party and uncommitted.
 
-### Step 1 — Metrics, report model + renderers (no engine yet)
+### Step 1 — [DONE] Metrics, report model + renderers (no engine yet)
+
+Implemented: `app/services/report_metrics.py` (cited Kendall's W + Spearman rank
+stability + agreement bands), `kendalls_w` registered in the summarizer registry,
+`app/services/report_builder.py` (deterministic round-bundles → canonical
+`report_payload`, rank-order paradigm; full trajectory table, three charts, round
+trace), `app/services/report_renderers.py` (JSON/CSV/Markdown/DOCX + chart PNGs via
+matplotlib Agg; complete tables, no truncation). Tests: `test_report_metrics.py`,
+`test_report_builder.py` (incl. no-truncation guard, W-rises-to-consensus). Builder
+output validated against `report_payload.schema.json`. Deferred to Step 3:
+`render_html` preview (lands with the UI).
+
+Original spec:
 - **Metrics** (registered, cited): add `kendalls_w` and `rank_stability`
   (Spearman/Kendall-τ) to the summarizer registry (`report_summarizers.py`),
   mirroring `delphi_round_agreement`. Each emits flat named scalars; each carries a
