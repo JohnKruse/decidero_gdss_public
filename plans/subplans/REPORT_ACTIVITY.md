@@ -217,12 +217,16 @@ Original spec:
   against any top-N/"…" elision in a downloaded artifact); rows are in final-rank
   order; the insight columns are present.
 
-### Step 2 — `report` activity plugin (Layer 1)
-- `app/plugins/builtin/report_plugin.py` + manifest. Consume-and-synthesize:
-  `open_activity` resolves input bundle(s), builds the model, finalizes it as the
-  output bundle. No per-user submission surface.
-- Mirror loader registration; manifest schema compliance.
-- Tests: plugin builds + finalizes a valid model; rejects nothing (no input UI).
+### Step 2 — [DONE] `report` activity plugin (Layer 1)
+- `app/plugins/builtin/report_plugin.py` + `PLUGIN` instance, registered in
+  `loader.py`. Consume-and-synthesize: `open_activity` resolves the round history
+  (`strategy.round_history`, falling back to the single input bundle for linear
+  meetings), builds the model via `build_report`, and finalizes it as the output
+  bundle (full report in `metadata.report_payload`; headline ranking mirrored as
+  bundle items for export). No per-user submission surface.
+- Test: `test_report_activity.py` drives a synthetic iterate+report doc through two
+  rounds → the report step materializes after the loop concludes and builds a valid
+  report (round_count, method, all section types, consensus winner first).
 
 ### Step 3 — Download + preview API
 - Router `app/routers/report.py`: `GET .../activities/{aid}/report.{json|md|csv|docx}`
@@ -247,7 +251,30 @@ Original spec:
   single-iterate Delphi case). If a future report must target a *specific* one of
   several iterates, add a grammar-visible selector then.
 
-### Step 5 — Wire Delphi's terminal report
+### Step 5 — [BLOCKED] Wire Delphi's terminal report
+
+**Blocker found (2026-06-07): engine completion accounting.** Adding the terminal
+`report` to `delphi.json` exposed that `OrchestrationEngineStrategy.is_complete`
+can return True while the report is still pending. `is_complete` =
+`walker.exhausted and _completed_count >= len(_plan)`, but `_completed_count`
+counts **distinct activity_ids with an output bundle including out-of-band
+facilitator-decision activities**, while `_plan` excludes those decisions. In real
+Delphi the decision output bundles inflate `_completed_count` past `len(_plan)`, so
+the `>=` heuristic reads complete even with an unmaterialized in-plan report step.
+(A synthetic iterate+report doc with no decisions behaves correctly — is_complete
+stays False until the report's output bundle exists — confirming the cause is the
+decision-bundle surplus, not the plugin.) Only one existing test encodes the old
+"conclude = complete" contract: `test_phase6_delphi_synthetic_cohort_end_to_end`.
+
+**Fix direction (do first, separately):** make `_completed_count` count the same
+population `_plan` does — plan-aligned activities only, excluding facilitator/gate
+decision rows (mirror `_materialize_count`'s exclusion) — so `is_complete` is exact:
+True iff every in-plan step has a closed output bundle. Then a terminal report
+correctly holds the method open until it runs. Re-run the single phase6 test and
+update it to the new `conclude → report materializes → report closes → complete`
+flow. Only then add the terminal `report` step to `delphi.json`.
+
+Original spec:
 - Add a terminal `{"type":"activity","tool_type":"report", "config": {…spec…}}`
   after the iterate loop in `orchestrations/delphi.json`: headline converged ranked
   list (median/IQR/agreement band), run summary (incl. final Kendall's W),
