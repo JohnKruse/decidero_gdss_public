@@ -24,6 +24,7 @@ from app.services.meeting_authorization import resolve_meeting_capabilities
 from app.services.report_renderers import (
     render_csv,
     render_docx,
+    render_html,
     render_json,
     render_markdown,
 )
@@ -131,4 +132,47 @@ async def download_report(
         io.BytesIO(body),
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/{meeting_id}/activities/{activity_id}/report/preview")
+async def preview_report(
+    meeting_id: str,
+    activity_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+    db: Session = Depends(get_db),
+):
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+    _assert_report_download_access(meeting, user)
+
+    activity = (
+        db.query(AgendaActivity)
+        .filter(
+            AgendaActivity.meeting_id == meeting_id,
+            AgendaActivity.activity_id == activity_id,
+        )
+        .first()
+    )
+    if activity is None or activity.tool_type != "report":
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report activity not found.",
+        )
+
+    report = _report_payload_from_bundle(
+        ActivityBundleManager(db),
+        meeting_id=meeting_id,
+        activity_id=activity_id,
+    )
+    return StreamingResponse(
+        io.BytesIO(render_html(report).encode("utf-8")),
+        media_type="text/html; charset=utf-8",
     )

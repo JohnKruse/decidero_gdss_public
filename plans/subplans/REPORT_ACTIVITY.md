@@ -6,9 +6,9 @@
 **Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 (see the 2026-06-07 report note)
 
-Status: **IN PROGRESS.** Steps 0, 1, 2, 4, and 5 are done. Step 3 is partially
-done: backend download endpoints are implemented and facilitator-gated; the
-meeting-page HTML preview/panel remains.
+Status: **IMPLEMENTED THROUGH STEP 5.** Steps 0, 1, 2, 3, 4, and 5 are done.
+Remaining belt-and-suspenders work: a live HTTP Delphi conclude-to-report-download
+pass and an optional synthetic in-repo example payload.
 
 ## Why
 
@@ -230,7 +230,7 @@ Original spec:
   rounds → the report step materializes after the loop concludes and builds a valid
   report (round_count, method, all section types, consensus winner first).
 
-### Step 3 — [PARTIAL] Download + preview API
+### Step 3 — [DONE] Download + preview API
 - [DONE] Router `app/routers/report.py`:
   `GET .../activities/{aid}/report.{json|md|csv|docx}` renders the stored
   `metadata.report_payload` via the pure renderers and returns a
@@ -240,10 +240,11 @@ Original spec:
   deliberately broadened.
 - [DONE] Backend tests: `test_report_api.py` covers each format's content type and
   payload, unsupported formats, missing output bundles, and facilitator-only auth.
-- [PENDING] `meeting.js` panel: render the HTML preview + download buttons (mirror
-  the rank-order results modal).
-- [PENDING] `render_html` preview renderer over the same canonical model.
-- [PENDING] Frontend smoke for the panel + buttons; `node --check`.
+- [DONE] `render_html` preview renderer over the same canonical model. Preview may
+  elide long tables; downloaded artifacts remain complete.
+- [DONE] `meeting.js` panel: facilitator-facing terminal report panel with server
+  HTML preview and JSON/Markdown/CSV/DOCX download buttons.
+- [DONE] Frontend smoke for the panel + buttons; `node --check`.
 
 ### Step 4 — [DONE] Engine: multi-bundle input for consuming activities
 - `agenda_strategy.fetch_round_history(db, meeting_id, logical_step_id)`: all

@@ -135,6 +135,21 @@ def test_report_downloads_render_each_supported_format(
     assert docx_response.content.startswith(b"PK")
 
 
+def test_report_preview_returns_html_from_stored_payload(
+    authenticated_client: TestClient,
+    db_session,
+):
+    meeting, activity = _meeting_with_report(db_session)
+
+    response = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/activities/{activity.activity_id}/report/preview"
+    )
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Plainspoken Marmot Report" in response.text
+    assert "Idea A" in response.text
+
+
 def test_report_download_requires_report_output(
     authenticated_client: TestClient,
     db_session,

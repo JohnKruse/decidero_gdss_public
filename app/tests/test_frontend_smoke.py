@@ -35,6 +35,26 @@ def test_meeting_page_includes_categorization_panel_hooks():
     assert "loadCategorizationState" in js
 
 
+def test_meeting_page_includes_report_panel_hooks():
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    assert "data-report-root" in html
+    assert "reportDownloadJson" in html
+    assert "reportPreview" in html
+
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert 'toolType === "report"' in js
+    assert "loadReportPreview" in js
+    assert "/report/preview" in js
+    assert "reportDownloadUrl" in js
+
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+    assert ".report-preview" in css
+    assert ".report-actions" in css
+
+
 def test_meeting_page_includes_outlier_justification_panel_hooks():
     with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
         html = handle.read()

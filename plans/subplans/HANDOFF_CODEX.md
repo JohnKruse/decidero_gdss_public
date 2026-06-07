@@ -53,15 +53,9 @@ Schema: `docs/schemas/report_payload.schema.json`. Paper: HICSS outline §M/§N.
   round-cap paths.
 
 **Left to do:**
-- **Step 3 — preview UI (the user-facing payoff).** Backend download endpoints are
-  now implemented in `app/routers/report.py` for
-  `GET .../activities/{aid}/report.{json|md|csv|docx}`. They load the stored output
-  bundle's `metadata.report_payload`, render from that canonical JSON, and are
-  facilitator-gated in v1. Still add the `meeting.js` panel + `render_html` preview
-  (the only renderer not yet written — Step 1 deferred it here). Revisit
-  participant download rights only as an explicit product decision.
-- **Live HTTP delphi→report e2e.** Pieces are covered by unit/integration tests;
-  a real conclude-Delphi-through-HTTP-then-download pass is belt-and-suspenders.
+- **Live HTTP delphi→report e2e.** Backend downloads and the meeting-page preview
+  panel are implemented. A real conclude-Delphi-through-HTTP-then-download pass is
+  still belt-and-suspenders.
 
 ## Guardrails / decisions (hold these)
 

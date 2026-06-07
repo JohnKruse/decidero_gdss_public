@@ -440,6 +440,27 @@
             </section>
             {% endgrab %}
 
+            {% grab id="meeting-report-panel" %}
+            <section class="content-card activity-panel report-panel" data-report-root hidden>
+                {{ section_header('Final Report', 'Review and download the meeting deliverable.') }}
+                <div class="section-body">
+                    <p id="reportInstructions" class="voting-description">
+                        The report will be available after the method reaches its terminal report step.
+                    </p>
+                    <div class="report-actions" aria-label="Report downloads">
+                        <a class="control-btn sm" id="reportDownloadJson" href="#" download>JSON</a>
+                        <a class="control-btn sm" id="reportDownloadMd" href="#" download>Markdown</a>
+                        <a class="control-btn sm" id="reportDownloadCsv" href="#" download>CSV</a>
+                        <a class="control-btn sm" id="reportDownloadDocx" href="#" download>DOCX</a>
+                    </div>
+                    <div id="reportStatus" class="control-feedback" aria-live="polite"></div>
+                    <div id="reportPreview" class="report-preview">
+                        <div class="report-preview-empty">Report preview is not loaded.</div>
+                    </div>
+                </div>
+            </section>
+            {% endgrab %}
+
             {% grab id="meeting-generic-activity-panel" %}
             <section class="content-card activity-panel generic-activity-panel" data-generic-tool hidden>
                 {{ section_header('Active Activity') }}
@@ -682,5 +703,5 @@
 {% block extra_js %}
 {# Cache-bust to ensure browsers pick up latest meeting scripts #}
 <script src="/static/js/realtime_client.js?v=20241215b"></script>
-<script src="/static/js/meeting.js?v=20260607d"></script>
+<script src="/static/js/meeting.js?v=20260607e"></script>
 {% endblock %}

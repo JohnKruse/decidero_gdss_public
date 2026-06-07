@@ -324,6 +324,18 @@
                 title: document.getElementById("genericToolTitle"),
                 description: document.getElementById("genericToolDescription"),
             },
+            reportPanel: {
+                root: document.querySelector("[data-report-root]"),
+                instructions: document.getElementById("reportInstructions"),
+                status: document.getElementById("reportStatus"),
+                preview: document.getElementById("reportPreview"),
+                downloads: {
+                    json: document.getElementById("reportDownloadJson"),
+                    md: document.getElementById("reportDownloadMd"),
+                    csv: document.getElementById("reportDownloadCsv"),
+                    docx: document.getElementById("reportDownloadDocx"),
+                },
+            },
             facilitatorDecision: {
                 root: document.querySelector("[data-facilitator-decision-root]"),
                 prompt: document.getElementById("facilitatorDecisionPrompt"),
@@ -1030,6 +1042,9 @@
         let categorizationDraggedItemKey = null;
         let categorizationDraggedBucketId = null;
         const categorizationItemOrder = new Map();
+        let reportActivityId = null;
+        let reportPreviewLoadedActivityId = null;
+        let reportPreviewInFlight = false;
         const transferState = {
             donorActivityId: null,
             donorOrderIndex: null,
@@ -7191,7 +7206,7 @@
             if (!ui.genericPanel.root) {
                 return;
             }
-            const useGeneric = Boolean(toolType) && !["brainstorming", "voting", "rank_order_voting", "categorization"].includes(toolType);
+            const useGeneric = Boolean(toolType) && !["brainstorming", "voting", "rank_order_voting", "categorization", "report"].includes(toolType);
             if (!useGeneric) {
                 ui.genericPanel.root.hidden = true;
                 return;
@@ -7206,6 +7221,74 @@
                 (isActive
                     ? `The ${moduleMeta.label || toolType} activity is active. Follow facilitator guidance.`
                     : `This ${moduleMeta.label || toolType} activity is closed. Review details with your facilitator.`);
+        }
+
+        function setReportStatus(message, variant = "info") {
+            const node = ui.reportPanel.status;
+            if (!node) {
+                return;
+            }
+            node.textContent = message || "";
+            node.dataset.variant = message ? variant : "";
+        }
+
+        function reportDownloadUrl(activityId, format) {
+            return `/api/meetings/${encodeURIComponent(context.meetingId)}/activities/${encodeURIComponent(activityId)}/report.${format}`;
+        }
+
+        function setReportDownloadLinks(activityId) {
+            Object.entries(ui.reportPanel.downloads || {}).forEach(([format, link]) => {
+                if (!link) {
+                    return;
+                }
+                if (activityId) {
+                    link.href = reportDownloadUrl(activityId, format);
+                    link.removeAttribute("aria-disabled");
+                    link.tabIndex = 0;
+                } else {
+                    link.href = "#";
+                    link.setAttribute("aria-disabled", "true");
+                    link.tabIndex = -1;
+                }
+            });
+        }
+
+        async function loadReportPreview(activityId) {
+            if (!activityId || !ui.reportPanel.preview || reportPreviewInFlight) {
+                return;
+            }
+            reportPreviewInFlight = true;
+            setReportStatus("Loading report preview...", "info");
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/activities/${encodeURIComponent(activityId)}/report/preview`,
+                    { credentials: "include", cache: "no-store" },
+                );
+                const text = await response.text();
+                if (!response.ok) {
+                    let detail = "";
+                    try {
+                        detail = JSON.parse(text).detail || "";
+                    } catch (_) {
+                        detail = text;
+                    }
+                    throw new Error(detail || "Report preview is not available yet.");
+                }
+                if (reportActivityId === activityId) {
+                    ui.reportPanel.preview.innerHTML = text;
+                    reportPreviewLoadedActivityId = activityId;
+                    setReportStatus("Report preview loaded.", "success");
+                }
+            } catch (error) {
+                if (reportActivityId === activityId) {
+                    ui.reportPanel.preview.innerHTML =
+                        '<div class="report-preview-empty">Report preview is not available yet.</div>';
+                    reportPreviewLoadedActivityId = null;
+                    setReportStatus(error.message || "Unable to load report preview.", "error");
+                }
+            } finally {
+                reportPreviewInFlight = false;
+            }
         }
 
         function setFacilitatorDecisionStatus(message, variant = "info") {
@@ -7700,6 +7783,7 @@
             let showRankOrder = showTool && toolType === "rank_order_voting";
             let showJustification = showTool && toolType === "outlier_justification";
             let showCategorization = showTool && toolType === "categorization";
+            let showReport = showTool && toolType === "report" && state.isFacilitator;
             const showFacilitatorDecision = showTool && toolType === "facilitator_decision" && state.isFacilitator;
             const showTransfer = transferState.active && state.isFacilitator;
             if (showTransfer) {
@@ -7708,6 +7792,7 @@
                 showRankOrder = false;
                 showJustification = false;
                 showCategorization = false;
+                showReport = false;
             }
 
             updateParticipantStatus(eligibility);
@@ -7958,6 +8043,40 @@
                 }
             }
 
+            if (ui.reportPanel.root) {
+                ui.reportPanel.root.hidden = !showReport;
+                if (showReport) {
+                    const newActivityId = eligibility?.activityId || null;
+                    if (reportActivityId !== newActivityId) {
+                        reportActivityId = newActivityId;
+                        reportPreviewLoadedActivityId = null;
+                        if (ui.reportPanel.preview) {
+                            ui.reportPanel.preview.innerHTML =
+                                '<div class="report-preview-empty">Loading report preview...</div>';
+                        }
+                        setReportStatus("");
+                    }
+                    if (ui.reportPanel.instructions) {
+                        ui.reportPanel.instructions.textContent =
+                            instructions ||
+                            "This terminal activity produces the meeting report. Preview it here or download a complete artifact.";
+                    }
+                    setReportDownloadLinks(newActivityId);
+                    if (newActivityId && reportPreviewLoadedActivityId !== newActivityId && !reportPreviewInFlight) {
+                        loadReportPreview(newActivityId);
+                    }
+                } else {
+                    reportActivityId = null;
+                    reportPreviewLoadedActivityId = null;
+                    setReportDownloadLinks(null);
+                    setReportStatus("");
+                    if (ui.reportPanel.preview) {
+                        ui.reportPanel.preview.innerHTML =
+                            '<div class="report-preview-empty">Report preview is not loaded.</div>';
+                    }
+                }
+            }
+
             if (transfer.root) {
                 transfer.root.hidden = !showTransfer;
                 if (showTransfer) {
@@ -7987,7 +8106,7 @@
                 }
             }
 
-            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showJustification && !showCategorization && !showTransfer && !showFacilitatorDecision && toolType;
+            const showGeneric = showTool && !showBrainstorming && !showVoting && !showRankOrder && !showJustification && !showCategorization && !showReport && !showTransfer && !showFacilitatorDecision && toolType;
             showActiveToolPanel(
                 showGeneric ? toolType : null,
                 showGeneric ? activeActivity : null,

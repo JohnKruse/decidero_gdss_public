@@ -16,6 +16,7 @@ may elide.
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 from typing import Any, Dict, List, Optional, Tuple
@@ -142,6 +143,94 @@ def render_markdown(report: Dict[str, Any]) -> str:
                 lines.append(f"- **Round {rd.get('round_number')}**: {rd.get('summary', '')}")
         lines.append("")
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# HTML preview (may elide long tables; downloads remain complete)              #
+# --------------------------------------------------------------------------- #
+def render_html(report: Dict[str, Any], *, max_rows: int = 12) -> str:
+    """Render an on-screen preview of the canonical model.
+
+    Unlike downloaded artifacts, this preview may elide long tabular sections so
+    the meeting page stays scannable. It still reads only the stored model.
+    """
+    parts: List[str] = [
+        '<article class="report-preview-document">',
+        f"<h2>{html.escape(str(report.get('title') or 'Meeting Report'))}</h2>",
+    ]
+    meeting = report.get("meeting") or {}
+    method = meeting.get("method") or {}
+    meta_bits = []
+    if method.get("name"):
+        meta_bits.append(str(method.get("name")))
+    if meeting.get("round_count") is not None:
+        meta_bits.append(f"{meeting.get('round_count')} rounds")
+    if meta_bits:
+        parts.append(f'<p class="report-preview-meta">{html.escape(" | ".join(meta_bits))}</p>')
+
+    for sec in report.get("sections") or []:
+        title = html.escape(str(sec.get("title") or "Section"))
+        section_type = sec.get("type")
+        body = sec.get("body") or {}
+        parts.append(f'<section class="report-preview-section" data-section-type="{html.escape(str(section_type or ""))}">')
+        parts.append(f"<h3>{title}</h3>")
+        if section_type == "narrative":
+            text = str(body.get("markdown") or "")
+            for paragraph in [p.strip() for p in text.split("\n\n") if p.strip()]:
+                parts.append(f"<p>{html.escape(paragraph)}</p>")
+        elif section_type == "key_value":
+            parts.append("<dl>")
+            for pair in body.get("pairs") or []:
+                parts.append(f"<dt>{html.escape(str(pair.get('label') or ''))}</dt>")
+                parts.append(f"<dd>{html.escape(str(pair.get('value') or ''))}</dd>")
+            parts.append("</dl>")
+        elif section_type in _TABULAR:
+            if section_type == "chart":
+                parts.append("<p>Chart preview data:</p>")
+            table = section_to_table(sec)
+            if table is not None:
+                header, rows = table
+                shown = rows[:max_rows]
+                parts.append("<div class=\"report-preview-table-wrap\"><table>")
+                parts.append(
+                    "<thead><tr>"
+                    + "".join(f"<th>{html.escape(str(h))}</th>" for h in header)
+                    + "</tr></thead>"
+                )
+                parts.append("<tbody>")
+                for row in shown:
+                    parts.append(
+                        "<tr>"
+                        + "".join(
+                            f"<td>{'' if value is None else html.escape(str(value))}</td>"
+                            for value in row
+                        )
+                        + "</tr>"
+                    )
+                if len(rows) > len(shown):
+                    parts.append(
+                        f'<tr class="report-preview-elided"><td colspan="{len(header)}">'
+                        f"Showing {len(shown)} of {len(rows)} rows. Download for the complete table."
+                        "</td></tr>"
+                    )
+                parts.append("</tbody></table></div>")
+        elif section_type == "comment_thread":
+            for group in body.get("groups") or []:
+                parts.append(f"<h4>{html.escape(str(group.get('heading') or 'Comments'))}</h4>")
+                parts.append("<ul>")
+                for comment in group.get("comments") or []:
+                    parts.append(f"<li>{html.escape(str(comment.get('text') or ''))}</li>")
+                parts.append("</ul>")
+        elif section_type == "rounds":
+            parts.append("<ol>")
+            for round_info in body.get("rounds") or []:
+                summary = html.escape(str(round_info.get("summary") or ""))
+                number = html.escape(str(round_info.get("round_number") or ""))
+                parts.append(f"<li><strong>Round {number}</strong>: {summary}</li>")
+            parts.append("</ol>")
+        parts.append("</section>")
+    parts.append("</article>")
+    return "\n".join(parts)
 
 
 # --------------------------------------------------------------------------- #

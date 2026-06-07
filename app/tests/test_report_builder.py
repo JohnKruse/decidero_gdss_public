@@ -97,6 +97,16 @@ def test_render_markdown_includes_every_item():
     assert "Final Ranking" in md
 
 
+def test_render_html_preview_escapes_and_may_elide_rows():
+    rep = _two_round_report()
+    rep["title"] = "<script>bad()</script>"
+    html = rr.render_html(rep, max_rows=1)
+    assert "&lt;script&gt;bad()&lt;/script&gt;" in html
+    assert "<script>bad()</script>" not in html
+    assert "Showing 1 of" in html
+    assert "Download for the complete table." in html
+
+
 def test_render_csv_primary_table_full_rows():
     rep = _two_round_report()
     text = rr.render_csv(rep)  # defaults to trajectory table
