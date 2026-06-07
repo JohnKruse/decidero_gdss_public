@@ -26,6 +26,9 @@ engine**. Delphi is just one data file; everything coded is generic.
   — the working design log; "implemented vs future" status lives here.
 - **Active master plan:** `plans/01_MASTER_PLAN.md`; current phase subplan:
   `plans/subplans/PHASE_9.md`.
+- **Latest hand-off (read first):** `plans/subplans/HANDOFF_CODEX.md` (2026-06-07)
+  — current state, how the generic Delphi comment pieces fit, guardrails, and the
+  non-blocking next items.
 - **Recent feature record:** `plans/subplans/DELPHI_GENERIC_COMMENT.md` — **COMPLETE**.
   The Delphi comment flow runs `rank → in-round decision (how many ideas) → comment
   → rerank`, where the comment step is the *generic* brainstorming activity
