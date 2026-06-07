@@ -648,10 +648,10 @@ def _load_delphi_orchestration_metadata() -> Dict[str, Any]:
         for inner in step.get("steps", []) if isinstance(step, dict) else []:
             for sequence in inner.get("steps", []) if isinstance(inner, dict) else []:
                 for activity in sequence.get("steps", []) if isinstance(sequence, dict) else []:
-                    if (
-                        isinstance(activity, dict)
-                        and activity.get("tool_type") == "outlier_justification"
-                    ):
+                    # Find the comment step by the presence of a feedback_policy, not
+                    # by tool_type — the comment step is now the generic brainstorming
+                    # activity configured as a comment surface.
+                    if isinstance(activity, dict):
                         config = activity.get("config") if isinstance(activity.get("config"), dict) else {}
                         candidate = config.get("feedback_policy")
                         if isinstance(candidate, dict):
@@ -720,15 +720,15 @@ def seed_builtin_meeting_templates(db: Session) -> list[MeetingTemplate]:
                 },
                 "comment_selection_strategy": {
                     "default": comment_selection.get("strategy", "adaptive_least_converged"),
-                    "source": "orchestration.outlier_justification.feedback_policy.comment_selection.strategy",
+                    "source": "orchestration.comment_step.feedback_policy.comment_selection.strategy",
                 },
                 "comment_default_fraction": {
                     "default": float(comment_selection.get("default_fraction", 0.25)),
-                    "source": "orchestration.outlier_justification.feedback_policy.comment_selection.default_fraction",
+                    "source": "orchestration.comment_step.feedback_policy.comment_selection.default_fraction",
                 },
                 "comment_max_fraction": {
                     "default": float(comment_selection.get("max_fraction", 0.5)),
-                    "source": "orchestration.outlier_justification.feedback_policy.comment_selection.max_fraction",
+                    "source": "orchestration.comment_step.feedback_policy.comment_selection.max_fraction",
                 },
             },
             orchestration={

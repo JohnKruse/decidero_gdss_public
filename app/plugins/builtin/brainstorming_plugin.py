@@ -137,10 +137,15 @@ class BrainstormingPlugin(ActivityPlugin):
         if not isinstance(policy, dict) or not policy:
             policy = DEFAULT_FEEDBACK_POLICY
 
-        # Disagreement scoring (for agreement bands + the commentable subset).
-        selection = build_delphi_feedback_selection({"items": items}, policy)
-        rows_by_key = {row["item_key"]: row for row in selection.get("items") or []}
-        ordered_by_dispute = [row["item_key"] for row in selection.get("items") or []]
+        # Disagreement scoring drives both the agreement bands and the commentable
+        # subset. Pass the bundle metadata too so the aggregator can derive group
+        # stats from the ranking votes when the items don't already carry them.
+        bundle_metadata = dict(getattr(input_bundle, "bundle_metadata", None) or {})
+        selection = build_delphi_feedback_selection(
+            {"items": items, "metadata": bundle_metadata}, policy
+        )
+        rows = list(selection.get("items") or [])  # disagreement order
+        ordered_by_dispute = [row["item_key"] for row in rows]
 
         # The facilitator's in-round count picks how many disputed items to open.
         orchestration = config.get("_orchestration") or {}
@@ -156,30 +161,19 @@ class BrainstormingPlugin(ActivityPlugin):
         count = max(0, min(count, max_selectable))
         commentable_keys = set(ordered_by_dispute[:count])
 
-        def _option_id(item):
-            meta = item.get("metadata") if isinstance(item, dict) else {}
-            ro = (meta or {}).get("rank_order_voting") if isinstance(meta, dict) else {}
-            return (ro or {}).get("option_id") or item.get("id") or item.get("content")
-
-        def _median(item):
-            meta = item.get("metadata") if isinstance(item, dict) else {}
-            delphi = (meta or {}).get("delphi") if isinstance(meta, dict) else {}
+        def _median_key(row):
             try:
-                return float((delphi or {}).get("median"))
+                return (float(row.get("median")), str(row.get("content") or "").casefold())
             except (TypeError, ValueError):
-                return float("inf")
+                return (float("inf"), str(row.get("content") or "").casefold())
 
-        # Display order = group vote order (best group median first).
-        display = sorted(
-            items,
-            key=lambda it: (_median(it), str(it.get("content") or "").casefold()),
-        )
-        for position, item in enumerate(display, start=1):
-            key = _option_id(item)
-            row = rows_by_key.get(key, {})
+        # Display order = group vote order (best group median first); seed one idea
+        # per ranked item, annotated from the aggregated row.
+        for position, row in enumerate(sorted(rows, key=_median_key), start=1):
+            key = row.get("item_key")
             db.add(
                 Idea(
-                    content=item.get("content") or str(key),
+                    content=row.get("content") or str(key),
                     meeting_id=meeting.meeting_id,
                     activity_id=activity.activity_id,
                     user_id=None,
@@ -208,9 +202,12 @@ class BrainstormingPlugin(ActivityPlugin):
             .all()
         )
         items = [serialize_idea(idea) for idea in ideas]
+        # Mark a seeded comment surface so a following round can read its comments
+        # (sub-comments grouped by the seeded item they reply to).
+        seeded_comment_surface = bool((context.activity.config or {}).get("seed_from_input"))
         bundle = context.finalize_output_bundle(
             items,
-            metadata={"source": "brainstorming"},
+            metadata={"source": "brainstorming", "comment_surface": seeded_comment_surface},
         )
         return {"bundle_id": bundle.bundle_id, "items": bundle.items}
 

@@ -93,7 +93,26 @@ the same way it reads rationales today).
 - Verified by `test_pages.py::test_adaptive_delphi_feedback_end_to_end` (in-round
   flow) + engine/diagram/schema tests. Full regression green.
 
-### Stage B — Generic comment surface on brainstorming
+### Stage B — Generic comment surface on brainstorming — DONE
+
+Implemented as configuration of the single brainstorming activity (no fork):
+- **B1** generic flags + API enforcement: `allow_new_ideas=false` (reject new
+  top-level ideas) and `comment_scope="selected"` (sub-comments only on items
+  flagged `commentable`). Defaults preserve today's behavior.
+- **B2** `brainstorming.open_activity` with `seed_from_input=true` seeds the input
+  bundle's ranked ideas as ordered top-level `Idea` rows, annotated for display
+  (group median/IQR/agreement band/rank) and flagged `commentable` for the
+  facilitator's chosen disputed subset. Scoring + the in-round count lookup live in
+  `delphi_feedback_policy` (a configured strategy); the activity is generic +
+  idempotent. The aggregator receives the bundle's vote metadata so group stats are
+  derived even when the raw items lack them.
+- **B3** the brainstorming panel orders by group rank, shows the agreement band +
+  group median/spread, subdues non-eligible items (no Comment button), relabels
+  Reply → Comment, and hides the new-idea form when `allow_new_ideas=false`.
+- **B4** `delphi.json` comment step is now `tool_type: brainstorming` with
+  `seed_from_input/allow_new_ideas/comment_scope/feedback_policy` config.
+
+### Stage B (original) — Generic comment surface on brainstorming
 
 **Eligibility-location decision (keeps brainstorming generic):** brainstorming
 itself contains *no* Delphi scoring. Its generic contract is "seed items from the
@@ -122,17 +141,20 @@ Original sketch:
 - `delphi.json`: swap the comment step `tool_type` from `outlier_justification` to
   `brainstorming` with the new config.
 
-### Stage C — Cross-round display from generic output
+### Stage C — Cross-round display from generic output — DONE
 - The next round's rank-order summary reads prior comments from the brainstorming
-  sub-comment output bundle (same shape it reads rationales from today), keeping
-  peer-anonymity + the per-viewer `mine` flag.
+  comment bundle (marked `comment_surface`): sub-comments grouped by the seeded item
+  they reply to, keyed by stable option key, peer-anonymous with the viewer's own
+  comment privately flagged (`mine` from the sub-comment's `user_id`). The legacy
+  `outlier_justification` reader remains as a fallback. See
+  `RankOrderVotingManager._comments_from_brainstorming`.
 
-### Stage D — Retire the bespoke path + tests/docs/e2e
-- `delphi.json` no longer references `outlier_justification`; leave the activity in
-  the tree marked deprecated (or remove if nothing else uses it) — decided with you.
-- Update/replace the justification tests with brainstorming-comment-mode tests;
-  refresh the end-to-end Delphi regression; update `DELPHI_VALIDATION.md`, the
-  paper outline, and this plan.
+### Stage D — Retire the bespoke path + tests/docs/e2e — REMAINING
+- `delphi.json` no longer references `outlier_justification` (the swap is done in
+  B4). Remaining: decide whether to delete the `outlier_justification` activity +
+  manager + router + schema + tests, or keep it deprecated. Deferred to Stage D by
+  agreement. Also: refresh the paper outline and prune the now-dead cross-round
+  outlier path once removed.
 
 ## Open question for you
 Stage D disposition of `outlier_justification`: **retire from `delphi.json` but keep

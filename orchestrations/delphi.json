@@ -102,9 +102,14 @@
                 },
                 {
                   "type": "activity",
-                  "tool_type": "outlier_justification",
-                  "title": "Justify Outlier Rankings",
+                  "tool_type": "brainstorming",
+                  "title": "Comment on Disputed Ideas",
                   "config": {
+                    "seed_from_input": true,
+                    "allow_new_ideas": false,
+                    "allow_subcomments": true,
+                    "allow_anonymous": true,
+                    "comment_scope": "selected",
                     "feedback_policy": {
                       "comment_selection": {
                         "strategy": "adaptive_least_converged",

@@ -129,8 +129,13 @@ def test_phase6_delphi_orchestration_loads_and_resolves_registries():
     assert subcycle[0].transform_input == "previous_round_feedback"
     assert isinstance(subcycle[1], FacilitatorDecisionStep)
     assert subcycle[1].report["config"]["feedback_selection"] is True
+    # The comment step is the generic brainstorming activity, configured as a
+    # comment-only, seed-from-input, selected-items surface (no bespoke activity).
     assert isinstance(subcycle[2], ActivityStep)
-    assert subcycle[2].tool_type == "outlier_justification"
+    assert subcycle[2].tool_type == "brainstorming"
+    assert subcycle[2].config["seed_from_input"] is True
+    assert subcycle[2].config["allow_new_ideas"] is False
+    assert subcycle[2].config["comment_scope"] == "selected"
     feedback_policy = subcycle[2].config["feedback_policy"]
     comment_selection = feedback_policy["comment_selection"]
     assert comment_selection["strategy"] == "adaptive_least_converged"
@@ -317,9 +322,10 @@ def _close_justify_step(db_session, meeting, owner, strategy, input_bundle):
     assert decision.tool_type == "facilitator_decision"
     strategy.resume_with_facilitator_decision(meeting, "skip_comments", db=db_session)
     activity = strategy.create_activity(meeting, None, None)
-    assert activity.tool_type == "outlier_justification"
+    # The comment step is the generic brainstorming activity (seed-from-input mode).
+    assert activity.tool_type == "brainstorming"
     context = ActivityContext(db=db_session, meeting=meeting, activity=activity, user=owner)
-    plugin = OutlierJustificationPlugin()
+    plugin = BrainstormingPlugin()
     plugin.open_activity(context, input_bundle=input_bundle)
     plugin.close_activity(context)
     return activity

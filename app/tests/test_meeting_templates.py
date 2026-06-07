@@ -343,19 +343,19 @@ def test_seed_builtin_delphi_template_references_packaged_orchestration(db_sessi
     assert payload["parameters"]["comment_selection_strategy"] == {
         "default": "adaptive_least_converged",
         "source": (
-            "orchestration.outlier_justification.feedback_policy.comment_selection.strategy"
+            "orchestration.comment_step.feedback_policy.comment_selection.strategy"
         ),
     }
     assert payload["parameters"]["comment_default_fraction"] == {
         "default": 0.25,
         "source": (
-            "orchestration.outlier_justification.feedback_policy.comment_selection.default_fraction"
+            "orchestration.comment_step.feedback_policy.comment_selection.default_fraction"
         ),
     }
     assert payload["parameters"]["comment_max_fraction"] == {
         "default": 0.5,
         "source": (
-            "orchestration.outlier_justification.feedback_policy.comment_selection.max_fraction"
+            "orchestration.comment_step.feedback_policy.comment_selection.max_fraction"
         ),
     }
     assert payload["orchestration"] == {

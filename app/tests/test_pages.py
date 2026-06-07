@@ -300,12 +300,13 @@ def test_orchestration_advance_endpoint_materializes_next_round(
         jbody = adv.json()
         assert jbody["status"] == "advanced"
         jact = jbody["activity"]
-        assert jact["tool_type"] == "outlier_justification"
+        # The comment step is the generic brainstorming activity (comment surface).
+        assert jact["tool_type"] == "brainstorming"
         assert jact["config"]["_orchestration"]["round_index"] == expected_round
         jorch = jact["config"]["_orchestration"]
         bm.finalize_output_bundle(
             meeting_id, jact["activity_id"], [],
-            metadata={"source": "outlier_justification"},
+            metadata={"source": "brainstorming", "comment_surface": True},
             logical_step_id=jorch["logical_step_id"], round_index=expected_round,
         )
 
@@ -471,42 +472,46 @@ def test_adaptive_delphi_feedback_end_to_end(
     )
     assert decide.status_code == 200, decide.text
 
-    # Comment step materializes; starting it applies the count (selected_items mode
-    # opens the single most-disputed idea, idea-a, to everyone).
-    just0 = _advance()["activity"]
-    assert just0["tool_type"] == "outlier_justification"
-    just0_id = just0["activity_id"]
+    # Comment step is the generic brainstorming activity; starting it seeds the
+    # ranked ideas and opens the single most-disputed idea (idea-a) for comment.
+    comment_step = _advance()["activity"]
+    assert comment_step["tool_type"] == "brainstorming"
+    comment_id = comment_step["activity_id"]
     start = authenticated_client.post(
         f"/api/meetings/{meeting_id}/control",
-        json={"action": "start_tool", "tool": "outlier_justification", "activityId": just0_id},
+        json={"action": "start_tool", "tool": "brainstorming", "activityId": comment_id},
     )
     assert start.status_code == 200, start.text
-    db_session.expire_all()
-    just0_row = db_session.query(AgendaActivity).filter(
-        AgendaActivity.activity_id == just0_id
-    ).one()
-    assert just0_row.config["comment_scope"] == "selected_items"
-    selected = [e["option_id"] for e in just0_row.config["selected_comment_items"]]
-    assert selected == [f"{rank0['activity_id']}:idea-a"]
 
-    # Every participant sees the same selected idea queued (not an outlier-only set).
-    state = authenticated_client.get(
-        f"/api/meetings/{meeting_id}/justification/state",
-        params={"activity_id": just0_id},
+    # Both ranked ideas are seeded in vote order; only idea-a is commentable.
+    ideas_resp = authenticated_client.get(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas",
+        params={"activity_id": comment_id},
     )
-    assert state.status_code == 200, state.text
-    state_json = state.json()
-    assert state_json["nothing_to_justify"] is False
-    assert [item["option_id"] for item in state_json["items"]] == selected
+    assert ideas_resp.status_code == 200, ideas_resp.text
+    seeded = ideas_resp.json()
+    assert {i["content"] for i in seeded} == {"idea-a", "idea-b"}
+    by_content = {i["content"]: i for i in seeded}
+    assert by_content["idea-a"]["metadata"]["commentable"] is True
+    assert by_content["idea-b"]["metadata"]["commentable"] is False
 
-    # A comment persists through the API.
-    comment = authenticated_client.post(
-        f"/api/meetings/{meeting_id}/justification/rationale",
-        json={"activity_id": just0_id, "option_id": selected[0],
-              "rationale": "Costs were underweighted."},
+    # A comment on the disputed idea persists; a comment on the agreed idea is rejected.
+    ok = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas",
+        json={"content": "Costs were underweighted.", "parent_id": by_content["idea-a"]["id"]},
     )
-    assert comment.status_code == 200, comment.text
-    assert comment.json()["submitted"] is True
+    assert ok.status_code == 201, ok.json()
+    blocked = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas",
+        json={"content": "should fail", "parent_id": by_content["idea-b"]["id"]},
+    )
+    assert blocked.status_code == 400
+    # New top-level ideas are disallowed (comment-only).
+    new_idea = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/brainstorming/ideas",
+        json={"content": "a new idea"},
+    )
+    assert new_idea.status_code == 400
 
     # The rank summary surfaces the "Round 1 of 4" progression.
     summary = authenticated_client.get(

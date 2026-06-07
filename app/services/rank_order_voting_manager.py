@@ -176,6 +176,43 @@ class RankOrderVotingManager:
             for option_id, rank in ranks.items()
         }
 
+    @classmethod
+    def _comments_from_brainstorming(
+        cls, items: List[Dict[str, Any]], user_id: str
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Group a comment-surface brainstorming bundle's sub-comments by the
+        seeded item they reply to, keyed by stable option key.
+
+        Peer-anonymous: only the requesting viewer's own comments are flagged
+        (`mine`), computed live from the sub-comment's `user_id`; no other identity
+        is exposed in the returned payload.
+        """
+        stable_by_parent: Dict[Any, str] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            if item.get("parent_id") is None:
+                meta = item.get("metadata") or {}
+                stable = meta.get("stable_key")
+                if stable is not None and item.get("id") is not None:
+                    stable_by_parent[item["id"]] = str(stable)
+
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            parent_id = item.get("parent_id")
+            if parent_id is None:
+                continue
+            stable = stable_by_parent.get(parent_id)
+            text = (item.get("content") or "").strip()
+            if not stable or not text:
+                continue
+            grouped.setdefault(stable, []).append(
+                {"text": text, "mine": bool(user_id) and item.get("user_id") == user_id}
+            )
+        return grouped
+
     def _own_rationale_texts(
         self, meeting: Meeting, justification_activity_id: str, user_id: str
     ) -> Dict[str, str]:
@@ -423,13 +460,20 @@ class RankOrderVotingManager:
                     )
                     .all()
                 )
-                just_bundle = None
+                comment_bundle = None  # generic brainstorming comment surface
+                just_bundle = None     # legacy bespoke outlier_justification
                 for bundle in prior_bundles:
-                    if dict(bundle.bundle_metadata or {}).get("source") == "outlier_justification":
+                    meta = dict(bundle.bundle_metadata or {})
+                    if meta.get("source") == "brainstorming" and meta.get("comment_surface"):
+                        comment_bundle = bundle
+                    elif meta.get("source") == "outlier_justification":
                         just_bundle = bundle
-                        break
 
-                if just_bundle and just_bundle.items:
+                if comment_bundle and comment_bundle.items:
+                    rationales_by_stable_key = self._comments_from_brainstorming(
+                        comment_bundle.items, user.user_id
+                    )
+                elif just_bundle and just_bundle.items:
                     own_texts = self._own_rationale_texts(
                         meeting, just_bundle.activity_id, user.user_id
                     )

@@ -27,11 +27,12 @@ def test_mermaid_renders_delphi_nested_subcycle():
     assert "Iterate" in mermaid
     assert "iqr_stability" in mermaid
     assert "Sequence (subcycle)" in mermaid
-    # Both leaf activities, in rank-first order.
+    # Both leaf activities, in rank-first order. The comment step is the generic
+    # brainstorming activity configured as a comment surface.
     assert "Rank Delphi Items" in mermaid
-    assert "Justify Outlier Rankings" in mermaid
+    assert "Comment on Disputed Ideas" in mermaid
     assert "rank_order_voting" in mermaid
-    assert "outlier_justification" in mermaid
+    assert "brainstorming" in mermaid
     # The ranking carries the feedback annotation and is the loop-back target.
     assert "feedback" in mermaid
     assert ".-> n0_1_0_0" in mermaid  # dashed loop-back to the ranking step

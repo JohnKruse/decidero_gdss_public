@@ -636,3 +636,60 @@ def test_rank_order_summary_prior_feedback_carries_spread_and_own_rank(
     assert feedback["dispersion"] == 1.5
     # The viewer ranked this item 5th last round (matched by stable key).
     assert feedback["your_prior_rank"] == 5
+
+
+def test_rank_order_summary_reads_brainstorming_comments_cross_round(
+    authenticated_client: TestClient,
+    user_manager_with_admin: UserManager,
+    db_session,
+):
+    """Stage C: the next round's reranking reads prior comments from the generic
+    brainstorming comment surface (sub-comments grouped by the seeded item),
+    peer-anonymous with the viewer's own comment privately flagged."""
+    from app.data.activity_bundle_manager import ActivityBundleManager
+
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@decidero.local")
+    admin_user = user_manager_with_admin.get_user_by_email(admin_email)
+    assert admin_user is not None
+
+    meeting, activity_id = _create_rank_order_meeting(
+        db_session,
+        admin_user,
+        config_override={
+            "_orchestration": {"logical_step_id": "engine:0.1.0.0", "round_index": 1},
+        },
+    )
+    meeting.agenda_strategy = "orchestration"
+    meeting.orchestration_path = "orchestrations/delphi.json"
+    db_session.commit()
+
+    # Prior round (0) brainstorming comment surface: one seeded item with two
+    # sub-comments (one authored by this viewer).
+    bm = ActivityBundleManager(db_session)
+    bm.create_bundle(
+        meeting_id=meeting.meeting_id,
+        activity_id="prev_comment_act",
+        kind="output",
+        items=[
+            {"id": 1, "parent_id": None, "content": "Improve UX",
+             "metadata": {"seeded": True, "stable_key": "improve-ux"}},
+            {"id": 2, "parent_id": 1, "content": "Mine reasoning",
+             "user_id": admin_user.user_id, "metadata": {}},
+            {"id": 3, "parent_id": 1, "content": "Their reasoning",
+             "user_id": "someone-else", "metadata": {}},
+        ],
+        metadata={"source": "brainstorming", "comment_surface": True},
+        logical_step_id="engine:0.1.0.1",
+        round_index=0,
+    )
+
+    response = authenticated_client.get(
+        f"/api/meetings/{meeting.meeting_id}/rank-order-voting/summary",
+        params={"activity_id": activity_id},
+    )
+    assert response.status_code == 200, response.json()
+    opt = next(o for o in response.json()["options"] if "improve-ux" in o["option_id"])
+    assert opt["prior_round_rationales"] == [
+        {"text": "Mine reasoning", "mine": True},
+        {"text": "Their reasoning", "mine": False},
+    ]
