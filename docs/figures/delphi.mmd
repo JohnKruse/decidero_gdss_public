@@ -7,11 +7,13 @@ flowchart TD
             subgraph c0_1_0["Sequence (subcycle)"]
                 direction TB
                 n0_1_0_0["Rank Delphi Items<br/><small>rank_order_voting</small><br/>↩ feedback"]
-                n0_1_0_1["Justify Outlier Rankings<br/><small>outlier_justification</small>"]
+                n0_1_0_1{"These items had the widest spread last round. How many of the least-agreed ideas do you want to open for comment before the group ranks again?<br/><small>facilitator decision</small><br/><small>report: delphi_round_agreement→facilitator</small>"}
+                n0_1_0_2["Comment on Disputed Ideas<br/><small>brainstorming</small>"]
             end
         end
     end
 
     n0_1_0_0 --> n0_1_0_1
-    n0_1_0_1 -. "continue · facilitator gate" .-> n0_1_0_0
+    n0_1_0_1 --> n0_1_0_2
+    n0_1_0_2 -. "continue · facilitator gate" .-> n0_1_0_0
     n0_0 --> n0_1_0_0

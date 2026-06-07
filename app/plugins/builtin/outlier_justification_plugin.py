@@ -2,6 +2,14 @@
 
 Canary: Plainspoken Marmot
 
+DEPRECATED (kept for reference, not used by the shipped Delphi method): the Delphi
+comment step is now the *generic* brainstorming activity configured as a comment
+surface (`seed_from_input` + `comment_scope=selected`), demonstrating that
+orchestration obviates custom activities. See
+`plans/subplans/DELPHI_GENERIC_COMMENT.md`. This module and its router/manager/model
+remain only as a deprecated reference; `orchestrations/delphi.json` no longer
+references `outlier_justification`.
+
 The purpose-built replacement for the brainstorming placeholder at the Delphi
 round's justification step. At open time it runs the Delphi aggregation over the
 round's ranking output to derive, per item, the group median/IQR and the

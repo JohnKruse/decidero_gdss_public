@@ -26,17 +26,17 @@ engine**. Delphi is just one data file; everything coded is generic.
   — the working design log; "implemented vs future" status lives here.
 - **Active master plan:** `plans/01_MASTER_PLAN.md`; current phase subplan:
   `plans/subplans/PHASE_9.md`.
-- **Recent feature record / NEXT HAND-OFF:**
-  `plans/subplans/DELPHI_GENERIC_COMMENT.md` — Phase 9 Step 3A is complete and the
-  Delphi comment flow now runs `rank → in-round decision (how many ideas) → comment
-  → rerank` via a generic facilitator-decision step (**Stage A DONE**). The next
-  increment is **Stage B**: reskin the *generic* brainstorming activity into the
-  comment surface (vote-order display, comment only on the selected subset, others
-  subdued) and swap `delphi.json` to use it — retiring the bespoke
-  `outlier_justification` activity (the paper's "orchestration obviates custom
-  activities" claim). Eligibility-location design is recorded in that plan.
-  Background: `plans/subplans/F1_JUSTIFICATION_ACTIVITY.md` (the bespoke activity
-  being superseded).
+- **Recent feature record:** `plans/subplans/DELPHI_GENERIC_COMMENT.md` — **COMPLETE**.
+  The Delphi comment flow runs `rank → in-round decision (how many ideas) → comment
+  → rerank`, where the comment step is the *generic* brainstorming activity
+  configured as a comment surface (seed-from-input, comment-only, selected subset,
+  vote-order display, subdued non-eligible items) — no bespoke activity. Cross-round
+  anonymized comment display + the viewer's own-comment flag are on the generic
+  path. The bespoke `outlier_justification` activity is **deprecated** (kept in the
+  tree, unused by `orchestrations/delphi.json`). This is the worked example of the
+  paper's "orchestration + configurable activities obviate custom activities" claim.
+  Background: `plans/subplans/F1_JUSTIFICATION_ACTIVITY.md` (the superseded bespoke
+  activity).
 
 ## Key contracts / docs
 - Activity plugin contract: `docs/ACTIVITY_CONTRACT_SPEC.md` (+ `_GUIDE.md`),

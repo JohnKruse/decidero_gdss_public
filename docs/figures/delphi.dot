@@ -10,12 +10,14 @@ digraph "Classical Delphi" {
             subgraph cluster_c0_1_0 {
                 label="sequence (subcycle)"; style="rounded"; color="#888888";
                 "n0_1_0_0" [label="Rank Delphi Items\n(rank_order_voting)\n↩ feedback"];
-                "n0_1_0_1" [label="Justify Outlier Rankings\n(outlier_justification)"];
+                "n0_1_0_1" [shape=diamond, label="These items had the widest spread last round. How many of the least-agreed ideas do you want to open for comment before the group ranks again?\n(facilitator decision)\nreport: delphi_round_agreement→facilitator"];
+                "n0_1_0_2" [label="Comment on Disputed Ideas\n(brainstorming)"];
             }
         }
     }
 
     "n0_1_0_0" -> "n0_1_0_1";
-    "n0_1_0_1" -> "n0_1_0_0" [style=dashed, constraint=false, label="continue · facilitator gate"];
+    "n0_1_0_1" -> "n0_1_0_2";
+    "n0_1_0_2" -> "n0_1_0_0" [style=dashed, constraint=false, label="continue · facilitator gate"];
     "n0_0" -> "n0_1_0_0";
 }

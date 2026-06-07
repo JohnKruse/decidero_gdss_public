@@ -140,9 +140,18 @@ least-converged controlled-feedback pass works in place of the participant-outli
 MVP.
 
 The policy records the testing-driven design revision: select ideas by
-disagreement band, not participants by outlier status. The shipped MVP still has
-the outlier-justification activity; this policy pins the configuration contract
-for the adaptive selected-idea feedback pass.
+disagreement band, not participants by outlier status.
+
+**The comment step is a generic activity, not a bespoke one.** The shipped Delphi
+method's comment step is the **brainstorming** activity configured as a comment
+surface (`seed_from_input`, `allow_new_ideas=false`, `comment_scope=selected`,
+plus this `feedback_policy`). Brainstorming seeds the ranked ideas from its input
+bundle in group-vote order, opens the facilitator-chosen disputed subset for
+comment (others subdued), and collects comments as sub-comments. This is the
+paper's "orchestration obviates custom activities" claim in practice: one generic
+activity, parameterized — no method-specific code. The earlier bespoke
+`outlier_justification` activity is **deprecated** and no longer referenced by
+`orchestrations/delphi.json`. See `plans/subplans/DELPHI_GENERIC_COMMENT.md`.
 
 ### Cross-round comment display (peer-anonymous, own-comment aware)
 

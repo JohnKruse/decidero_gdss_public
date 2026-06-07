@@ -2,6 +2,11 @@
 
 Canary: Plainspoken Marmot
 
+DEPRECATED: the shipped Delphi method now collects comments as brainstorming
+sub-comments on the generic comment surface (see
+`plans/subplans/DELPHI_GENERIC_COMMENT.md`). This table is retained as a deprecated
+reference and is no longer written by the live method.
+
 Classical Delphi asks the *outlier participants themselves* to justify positions
 that diverged from the group. Each rationale is one row keyed by
 (meeting, activity, user, option) so a participant writes at most one rationale

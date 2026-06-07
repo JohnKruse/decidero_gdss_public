@@ -149,12 +149,20 @@ Original sketch:
   `outlier_justification` reader remains as a fallback. See
   `RankOrderVotingManager._comments_from_brainstorming`.
 
-### Stage D — Retire the bespoke path + tests/docs/e2e — REMAINING
-- `delphi.json` no longer references `outlier_justification` (the swap is done in
-  B4). Remaining: decide whether to delete the `outlier_justification` activity +
-  manager + router + schema + tests, or keep it deprecated. Deferred to Stage D by
-  agreement. Also: refresh the paper outline and prune the now-dead cross-round
-  outlier path once removed.
+### Stage D — Retire the bespoke path — DONE (keep-deprecated)
+Decision: **keep `outlier_justification` in the tree, marked deprecated** (lower
+risk; revisit deletion when writing the paper's methods section).
+- `delphi.json` no longer references it (swapped in B4); the live comment step is
+  the generic brainstorming surface.
+- Deprecation notes added to the plugin, manager, router, and `OutlierRationale`
+  model. The rank-manager keeps a fallback reader for the legacy bundle shape.
+- Figures regenerated from `delphi.json` (`scripts/export_orchestration_diagram.py`)
+  and the figures README + `DELPHI_VALIDATION.md` updated to the generic comment
+  surface; paper outline §F.1 noted as superseded.
+
+**This plan is complete.** The Delphi comment flow is `rank → in-round decision →
+comment (generic brainstorming) → rerank`, with cross-round anonymized comment
+display, all on generic activities + Layer-2 config.
 
 ## Open question for you
 Stage D disposition of `outlier_justification`: **retire from `delphi.json` but keep

@@ -2,6 +2,10 @@
 
 Canary: Plainspoken Marmot
 
+DEPRECATED: superseded by the generic brainstorming comment surface (see
+`plans/subplans/DELPHI_GENERIC_COMMENT.md`). The shipped Delphi method no longer
+uses this manager; it is retained as a deprecated reference only.
+
 The justification activity is **one activity with per-viewer content** (the same
 shape as rank_order_voting's per-user ballot), not N activities and not a shared
 list participants sift. By default each participant's queue is the set of items

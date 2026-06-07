@@ -1,3 +1,10 @@
+"""DEPRECATED outlier-justification API.
+
+Superseded by the generic brainstorming comment surface used by the shipped Delphi
+method (see `plans/subplans/DELPHI_GENERIC_COMMENT.md`). Retained as a deprecated
+reference; `orchestrations/delphi.json` no longer materializes this activity.
+"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query

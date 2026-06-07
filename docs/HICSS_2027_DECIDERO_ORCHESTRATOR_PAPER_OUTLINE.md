@@ -515,7 +515,16 @@ applying the selected count before comments open, zero-count skip/advance wiring
 participant-side "your comment" labeling, template instantiation controls, and
 the end-to-end Delphi regression.
 
-#### F.1 Justification activity — design spec [DONE for collection UI/API]
+#### F.1 Justification activity — design spec [SUPERSEDED — see F.1.2]
+
+> **Superseded.** The purpose-built justification activity below was the first
+> implementation. It has since been **replaced by the generic brainstorming
+> activity configured as a comment surface** (`rank → in-round decision → comment →
+> rerank`), so the comment step needs no bespoke activity — the stronger version of
+> the paper's "orchestration obviates custom activities" claim. The bespoke
+> `outlier_justification` activity remains in the tree but is **deprecated** and
+> unused by `orchestrations/delphi.json`. See `plans/subplans/DELPHI_GENERIC_COMMENT.md`
+> and `docs/DELPHI_VALIDATION.md`. The spec below is retained as design history.
 
 Decided 2026-06-04 and implemented 2026-06-05: the shipped Delphi justification
 step now uses a **purpose-built justification activity** rather than the former
