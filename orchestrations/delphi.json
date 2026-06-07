@@ -134,6 +134,12 @@
               ]
             }
           ]
+        },
+        {
+          "type": "activity",
+          "tool_type": "report",
+          "title": "Final Report",
+          "config": {}
         }
       ]
     }

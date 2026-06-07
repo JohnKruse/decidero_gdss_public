@@ -862,16 +862,39 @@ class OrchestrationEngineStrategy(AgendaStrategy):
         return int(count) + 1
 
     def _completed_count(self, meeting: Meeting, db: Session) -> int:
-        """Count plan steps whose activity has an output bundle (closed)."""
-        count = (
-            db.query(func.count(func.distinct(ActivityBundle.activity_id)))
+        """Count plan-aligned activities whose output bundle is finalized (closed).
+
+        Must count the same population `_plan` does. Round-gate decisions are
+        materialized out-of-band (not plan entries) yet finalize an output bundle
+        on resume, so they are excluded here exactly as `_materialize_count`
+        excludes them — otherwise the surplus makes the `>=` check in
+        `is_complete` overshoot, reading "complete" while an in-plan terminal step
+        (e.g. the report) is still pending.
+        """
+        output_ids = {
+            aid
+            for (aid,) in db.query(func.distinct(ActivityBundle.activity_id))
             .filter(
                 ActivityBundle.meeting_id == meeting.meeting_id,
                 ActivityBundle.kind == "output",
             )
-            .scalar()
-        ) or 0
-        return int(count)
+            .all()
+        }
+        if not output_ids:
+            return 0
+        gate_ids = set()
+        for aid, config in (
+            db.query(AgendaActivity.activity_id, AgendaActivity.config)
+            .filter(
+                AgendaActivity.meeting_id == meeting.meeting_id,
+                AgendaActivity.activity_id.in_(output_ids),
+            )
+            .all()
+        ):
+            orchestration = (config or {}).get("_orchestration") or {}
+            if orchestration.get("gate"):
+                gate_ids.add(aid)
+        return len(output_ids - gate_ids)
 
     def rehydrate_from_db(self, meeting: Meeting, db: Optional[Session]) -> None:
         """Deliberate Heron: rebuild per-run in-memory state from persisted rows.

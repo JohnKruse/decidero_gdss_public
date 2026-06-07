@@ -251,7 +251,21 @@ Original spec:
   single-iterate Delphi case). If a future report must target a *specific* one of
   several iterates, add a grammar-visible selector then.
 
-### Step 5 — [BLOCKED] Wire Delphi's terminal report
+### Step 5 — [DONE] Wire Delphi's terminal report
+
+Fixed and wired (2026-06-07). `_completed_count` now counts the plan-aligned
+population (excludes out-of-band gate decision rows, mirroring `_materialize_count`),
+so `is_complete` is exact: a terminal in-plan step holds the method open until its
+output bundle exists. Added the terminal `report` step to `orchestrations/delphi.json`
+(after the iterate). Updated `test_phase6_delphi_synthetic_cohort_end_to_end` for
+both the conclude path and the round-cap (runaway) path to the new
+`conclude/cap → report materializes → report closes → complete` flow. Full suite:
+793 passed, 2 skipped. (A live HTTP delphi-to-report e2e and the round-history
+build through the real plugin in a delphi meeting would be a nice follow-up; the
+pieces are covered by `test_report_activity` + `test_round_history` + the engine
+completion tests.)
+
+#### History (the blocker, now resolved)
 
 **Blocker found (2026-06-07): engine completion accounting.** Adding the terminal
 `report` to `delphi.json` exposed that `OrchestrationEngineStrategy.is_complete`

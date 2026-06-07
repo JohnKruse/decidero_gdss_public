@@ -507,6 +507,15 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
     assert conclude_gate.tool_type == "facilitator_decision"
     assert conclude_gate.config["recommendation"] == "conclude"
     strategy.resume_with_facilitator_decision(meeting, "conclude", db=db_session)
+    # Concluding the loop no longer ends the method: a terminal `report` step
+    # materializes, and the method completes only once the report is closed.
+    assert not strategy.is_complete(meeting)
+    report_activity = strategy.create_activity(meeting, None, None)
+    assert report_activity.tool_type == "report"
+    assert not strategy.is_complete(meeting)
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting.meeting_id, report_activity.activity_id, [], metadata={"report": True}
+    )
     assert strategy.is_complete(meeting)
     with pytest.raises(HTTPException, match="complete"):
         strategy.create_activity(meeting, None, None)
@@ -587,6 +596,14 @@ def test_phase6_delphi_synthetic_cohort_end_to_end(db_session, mocker):
         runaway_rounds.append(activity)
 
     assert [runaway_strategy.iteration_metadata_for(a.activity_id)[1] for a in runaway_rounds] == [0, 1, 2, 3]
+    # The hard round cap pops the loop, but the terminal report still runs before
+    # the method is complete.
+    assert not runaway_strategy.is_complete(runaway_meeting)
+    runaway_report = runaway_strategy.create_activity(runaway_meeting, None, None)
+    assert runaway_report.tool_type == "report"
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        runaway_meeting.meeting_id, runaway_report.activity_id, [], metadata={"report": True}
+    )
     assert runaway_strategy.is_complete(runaway_meeting)
 
     plugin_paths = [
