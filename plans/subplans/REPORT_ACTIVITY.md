@@ -269,7 +269,7 @@ output bundle exists. Added the terminal `report` step to `orchestrations/delphi
 (after the iterate). Updated `test_phase6_delphi_synthetic_cohort_end_to_end` for
 both the conclude path and the round-cap (runaway) path to the new
 `conclude/cap → report materializes → report closes → complete` flow. Full suite:
-793 passed, 2 skipped. (A live HTTP delphi-to-report e2e and the round-history
+800 passed, 2 skipped after Step 3 UI/API work. (A live HTTP delphi-to-report e2e and the round-history
 build through the real plugin in a delphi meeting would be a nice follow-up; the
 pieces are covered by `test_report_activity` + `test_round_history` + the engine
 completion tests.)
