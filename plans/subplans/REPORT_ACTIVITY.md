@@ -6,7 +6,9 @@
 **Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 (see the 2026-06-07 report note)
 
-Status: **PLAN / not started.** Schema drafted; no code yet.
+Status: **IN PROGRESS.** Steps 0, 1, 2, 4, and 5 are done. Step 3 is partially
+done: backend download endpoints are implemented and facilitator-gated; the
+meeting-page HTML preview/panel remains.
 
 ## Why
 
@@ -228,14 +230,20 @@ Original spec:
   rounds → the report step materializes after the loop concludes and builds a valid
   report (round_count, method, all section types, consensus winner first).
 
-### Step 3 — Download + preview API
-- Router `app/routers/report.py`: `GET .../activities/{aid}/report.{json|md|csv|docx}`
-  → render stored model → `StreamingResponse` with `Content-Disposition`
-  (mirror `/api/meetings/{id}/export`, facilitator-gated as appropriate).
-- `meeting.js` panel: render the HTML preview + download buttons (mirror the
-  rank-order results modal). Decide participant vs facilitator download rights.
-- Tests: each format endpoint returns correct content-type + headers; auth gating;
-  frontend smoke for the panel + buttons; `node --check`.
+### Step 3 — [PARTIAL] Download + preview API
+- [DONE] Router `app/routers/report.py`:
+  `GET .../activities/{aid}/report.{json|md|csv|docx}` renders the stored
+  `metadata.report_payload` via the pure renderers and returns a
+  `StreamingResponse` with `Content-Disposition`.
+- [DONE] v1 access rule: report downloads are **facilitator-only** for now,
+  matching the meeting export posture until participant download rights are
+  deliberately broadened.
+- [DONE] Backend tests: `test_report_api.py` covers each format's content type and
+  payload, unsupported formats, missing output bundles, and facilitator-only auth.
+- [PENDING] `meeting.js` panel: render the HTML preview + download buttons (mirror
+  the rank-order results modal).
+- [PENDING] `render_html` preview renderer over the same canonical model.
+- [PENDING] Frontend smoke for the panel + buttons; `node --check`.
 
 ### Step 4 — [DONE] Engine: multi-bundle input for consuming activities
 - `agenda_strategy.fetch_round_history(db, meeting_id, logical_step_id)`: all

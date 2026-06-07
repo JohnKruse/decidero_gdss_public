@@ -27,6 +27,7 @@ from app.routers import voting as voting_router
 from app.routers import rank_order_voting as rank_order_voting_router
 from app.routers import justification as justification_router
 from app.routers import categorization as categorization_router
+from app.routers import report as report_router
 from app.routers import realtime as realtime_router
 from app.routers import meeting_designer as meeting_designer_router
 from app.routers import settings as settings_router
@@ -212,6 +213,7 @@ app.include_router(voting_router.router)
 app.include_router(rank_order_voting_router.router)
 app.include_router(justification_router.router)
 app.include_router(categorization_router.router)
+app.include_router(report_router.router)
 app.include_router(meeting_designer_router.router)
 app.include_router(settings_router.router)
 
