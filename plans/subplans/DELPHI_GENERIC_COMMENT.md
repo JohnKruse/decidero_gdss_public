@@ -74,6 +74,19 @@ the same way it reads rationales today).
   flow) + engine/diagram/schema tests. Full regression green.
 
 ### Stage B — Generic comment surface on brainstorming
+
+**Eligibility-location decision (keeps brainstorming generic):** brainstorming
+itself contains *no* Delphi scoring. Its generic contract is "seed items from the
+input bundle in the given order; allow comments only on items whose metadata says
+`commentable`." The least-converged scoring + the facilitator's count are applied
+*once*, when the in-round decision resolves: the resume persists
+`eligible_stable_keys` (top-N from the report's `feedback_selection.items`) on the
+decision bundle, and the comment step's seeding stamps `commentable` onto exactly
+those seeded items. The Delphi math stays in `delphi_feedback_policy`; brainstorming
+reads booleans. (Same compromise the current `outlier_justification` apply-on-open
+uses, but moved behind a generic flag so no method logic lives in the activity.)
+
+Original sketch:
 - Add generic brainstorming config flags (defaults preserve today's behavior):
   `allow_new_ideas` (default `true`), `seed_from_input` (default `false`),
   `comment_target` (`"all"` default | `"eligible_only"`).
