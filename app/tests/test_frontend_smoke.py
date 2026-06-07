@@ -52,6 +52,21 @@ def test_meeting_page_includes_outlier_justification_panel_hooks():
     assert "justification_update" in js
 
 
+def test_brainstorming_comment_surface_hooks():
+    """Brainstorming can render as a Delphi comment surface via config: ordered by
+    group rank, agreement bands, subdued non-eligible items, comment-only."""
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    with open("app/static/css/meeting.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+    assert "group_rank" in js
+    assert "comment_scope" in js
+    assert "allow_new_ideas" in js
+    assert "brainstorming-agreement" in js
+    assert "brainstorming-idea-subdued" in js
+    assert "brainstorming-idea-subdued" in css
+
+
 def test_rank_order_prior_feedback_uses_agreement_badges():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()

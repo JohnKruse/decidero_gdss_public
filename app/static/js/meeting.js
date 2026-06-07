@@ -2575,7 +2575,23 @@
                 }
             });
 
+            // Seeded comment surfaces order by the group's vote rank; ordinary
+            // brainstorming orders by submission time.
+            const groupRank = (idea) => {
+                const r = idea && idea.metadata && idea.metadata.group_rank;
+                return Number.isFinite(Number(r)) ? Number(r) : null;
+            };
+            const anyRanked = topLevelIdeas.some((idea) => groupRank(idea) !== null);
             topLevelIdeas.sort((a, b) => {
+                if (anyRanked) {
+                    const ar = groupRank(a);
+                    const br = groupRank(b);
+                    if (ar !== null && br !== null && ar !== br) {
+                        return ar - br;
+                    }
+                    if (ar !== null && br === null) return -1;
+                    if (ar === null && br !== null) return 1;
+                }
                 const aTime = new Date(a.timestamp || 0).getTime() || 0;
                 const bTime = new Date(b.timestamp || 0).getTime() || 0;
                 if (aTime !== bTime) {
@@ -2954,11 +2970,42 @@
             textBody.textContent = idea.content || idea.idea_text || "";
             textCell.appendChild(textBody);
 
-            if (coerceConfigBool(activeBrainstormingConfig.allow_subcomments) && brainstormingActive) {
+            // Seeded comment surface (Delphi): show the group's agreement band +
+            // stats; subdue items not opened for comment this round.
+            const meta = idea.metadata || {};
+            const commentScope = String(activeBrainstormingConfig.comment_scope || "all").toLowerCase();
+            const isCommentable = commentScope !== "selected" || meta.commentable === true;
+            if (meta.agreement_band || meta.group_median !== undefined) {
+                const fb = document.createElement("div");
+                fb.className = "brainstorming-agreement";
+                fb.dataset.band = meta.agreement_band || "unknown";
+                const badge = document.createElement("span");
+                badge.className = "rank-order-agreement-badge";
+                badge.textContent = rankOrderAgreementLabel(meta.agreement_band || "unknown");
+                fb.appendChild(badge);
+                if (meta.group_median !== undefined && meta.group_median !== null) {
+                    const detail = document.createElement("span");
+                    detail.className = "brainstorming-agreement-detail";
+                    const spread = (meta.group_iqr === undefined || meta.group_iqr === null)
+                        ? "" : ` · spread ${Number(meta.group_iqr).toFixed(1)}`;
+                    detail.textContent = `Group median rank ${Number(meta.group_median).toFixed(1)}${spread}`;
+                    fb.appendChild(detail);
+                }
+                textCell.appendChild(fb);
+                if (commentScope === "selected" && !isCommentable) {
+                    container.classList.add("brainstorming-idea-subdued");
+                }
+            }
+
+            if (
+                coerceConfigBool(activeBrainstormingConfig.allow_subcomments)
+                && brainstormingActive
+                && isCommentable
+            ) {
                 const replyBtn = document.createElement("button");
                 replyBtn.type = "button";
                 replyBtn.className = "control-btn brainstorming-reply-btn";
-                replyBtn.textContent = "Reply";
+                replyBtn.textContent = "Comment";
                 replyBtn.addEventListener("click", (e) => {
                     e.stopPropagation();
                     showSubcommentForm(ideaId, container);
@@ -6103,6 +6150,16 @@
                 activeBrainstormingConfig = config || {};
             }
             syncBrainstormingAutoJumpToggle();
+            // Comment-only surfaces (allow_new_ideas=false) hide the new-idea form;
+            // participants only comment on the listed items.
+            const allowNewIdeas = activeBrainstormingConfig.allow_new_ideas === undefined
+                ? true
+                : coerceConfigBool(activeBrainstormingConfig.allow_new_ideas);
+            brainstorming.form.hidden = !allowNewIdeas;
+            if (!allowNewIdeas) {
+                updateSubmitButtonState();
+                return;
+            }
             const disabled = !enabled || brainstormingSubmitInFlight;
             if (brainstorming.textarea) {
                 brainstorming.textarea.disabled = disabled;

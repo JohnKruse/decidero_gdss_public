@@ -1471,6 +1471,49 @@
   font-weight: 600;
 }
 
+/* Brainstorming used as a Delphi comment surface: agreement band + subdued rows. */
+.brainstorming-agreement {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 4px;
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.brainstorming-agreement-detail {
+  color: #4f5d75;
+  font-weight: 600;
+}
+
+.brainstorming-agreement[data-band="green"] .rank-order-agreement-badge {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+.brainstorming-agreement[data-band="yellow"] .rank-order-agreement-badge {
+  background: #fff7d6;
+  color: #7c5a00;
+}
+
+.brainstorming-agreement[data-band="red"] .rank-order-agreement-badge {
+  background: #fde7e7;
+  color: #8a1f1f;
+}
+
+.brainstorming-agreement[data-band="unknown"] .rank-order-agreement-badge {
+  background: rgba(148, 163, 184, 0.2);
+  color: #475569;
+}
+
+.brainstorming-idea-row.brainstorming-idea-subdued {
+  opacity: 0.55;
+}
+
+.brainstorming-idea-row.brainstorming-idea-subdued .brainstorming-idea-body {
+  color: #64748b;
+}
+
 .rank-order-prior-yours {
   color: #1d3b6b;
   font-weight: 600;
