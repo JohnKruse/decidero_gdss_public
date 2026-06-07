@@ -27,8 +27,9 @@ engine**. Delphi is just one data file; everything coded is generic.
 - **Active master plan:** `plans/01_MASTER_PLAN.md`; current phase subplan:
   `plans/subplans/PHASE_9.md`.
 - **Latest hand-off (read first):** `plans/subplans/HANDOFF_CODEX.md` (2026-06-07)
-  — current state, how the generic Delphi comment pieces fit, guardrails, and the
-  non-blocking next items.
+  — terminal Report activity (done through Step 5; Delphi now ends with a report)
+  + single-threaded runtime control, guardrails, deps, and what's left (report
+  download UI, branch consolidation).
 - **Recent feature record:** `plans/subplans/DELPHI_GENERIC_COMMENT.md` — **COMPLETE**.
   The Delphi comment flow runs `rank → in-round decision (how many ideas) → comment
   → rerank`, where the comment step is the *generic* brainstorming activity

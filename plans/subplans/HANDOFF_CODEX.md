@@ -1,105 +1,111 @@
-# Hand-off to Codex — 2026-06-07
+# Hand-off to Codex — 2026-06-07 (terminal Report + runtime control)
 
-Written for a cold pick-up. Branch: **`codex/outlier-justification-api`**. Working
-tree clean, all committed. Canary in play: **Plainspoken Marmot** (Phase 9).
+Written for a cold pick-up. Branch: **`report-activity-dev`**, stacked on
+`codex/outlier-justification-api`. Working tree clean, all committed. **73 commits
+ahead of `main`, 0 behind, no PR yet** (see Branch hygiene below). Canaries in play:
+**Plainspoken Marmot** (Phase 9 / report metrics), **Convergent Yak** (multi-bundle
+round-history input).
 
-## TL;DR — what just shipped
+## TL;DR — what shipped this session
 
-The Delphi controlled-feedback loop now runs entirely on **generic, configured
-activities** — the worked proof of the paper claim "orchestration + configurable
-activities obviate custom activities." Flow:
+Two things, both green (full suite **793 passed, 2 skipped**;
+`PYTHONPATH=. ./venv/bin/pytest app/tests/ -q`):
 
-```
-rank_order_voting  →  in-round facilitator-decision (how many ideas to open?)
-                   →  brainstorming (comment surface)  →  rerank  →  round gate
-```
+1. **Single-threaded orchestration runtime + archive notice** (commit `192de98`).
+   Advancing the orchestrator is blocked while an activity is open (409); can't
+   start a second orchestrated activity or restart a past orchestrated step;
+   archiving now broadcasts a `meeting_archived` envelope so participants in an
+   archived meeting get a popup + return-to-dashboard (not a forced redirect).
+   Paper outline gained the single-threaded-driver scope paragraph.
 
-Nothing in the comment path is bespoke. The old `outlier_justification` activity is
-**deprecated but kept** (your call earlier was "keep, deprecated").
+2. **Terminal Report activity** — a generic, reusable `report` brick that is also
+   Delphi's terminal step. Delphi now **ends by producing a report** instead of
+   running out of steps. This is the worked example of "outputs are structured,
+   schema-governed artifacts with derived human renderings" (paper §M/§N).
 
-Full plan + design rationale: `plans/subplans/DELPHI_GENERIC_COMMENT.md` (COMPLETE).
-Validation notes: `docs/DELPHI_VALIDATION.md`. Figures regenerated from the JSON.
+## The Report feature (the bulk of the work)
 
-## Verify
+Plan + full design rationale: **`plans/subplans/REPORT_ACTIVITY.md`** (read first).
+Schema: `docs/schemas/report_payload.schema.json`. Paper: HICSS outline §M/§N.
 
-```bash
-PYTHONPATH=. ./venv/bin/pytest app/tests/ -q          # 765 passed, 2 skipped
-node --check app/static/js/meeting.js
-```
-End-to-end Delphi (real HTTP advance/control flow):
-`app/tests/test_pages.py::test_adaptive_delphi_feedback_end_to_end`.
+**Done (Steps 0,1,2,4,5):**
+- **0 — schema.** `report_payload.schema.json`: canonical, lossless model. Generic
+  section types (narrative/key_value/table/ranked_list/comment_thread/rounds/chart),
+  per-type bodies, source provenance, nullable chart series.
+- **1 — `app/services/report_metrics.py`** (cited Kendall's W w/ tie correction,
+  Spearman rank stability, agreement bands), `kendalls_w` summarizer registered;
+  **`report_builder.py`** (deterministic round-bundles → report_payload, rank-order
+  paradigm, full trajectory table + 3 charts + round trace); **`report_renderers.py`**
+  (JSON/CSV/Markdown/DOCX + chart PNGs via matplotlib Agg). Tests:
+  `test_report_metrics.py`, `test_report_builder.py`.
+- **2 — `app/plugins/builtin/report_plugin.py`** (registered in `loader.py`).
+  Consume-and-synthesize, no participant input: `open_activity` →
+  `strategy.round_history` → `build_report` → finalize output bundle
+  (full model in `metadata.report_payload`, headline ranking mirrored as items).
+  Test: `test_report_activity.py`.
+- **4 — `agenda_strategy.fetch_round_history` + `OrchestrationEngineStrategy.round_history`.**
+  The multi-bundle read: all output bundles of the iterate's round-output series,
+  ascending by round_index, deduped. Test: `test_round_history.py`.
+- **5 — completion fix + Delphi wiring.** `_completed_count` now counts the
+  plan-aligned population (excludes out-of-band gate decision rows) so `is_complete`
+  is exact; terminal `report` step added to `orchestrations/delphi.json`;
+  `test_phase6_delphi_synthetic_cohort_end_to_end` updated for both conclude and
+  round-cap paths.
 
-## How the pieces fit (so you don't re-derive it)
+**Left to do:**
+- **Step 3 — download endpoints + preview UI (the user-facing payoff).** Add a
+  router (mirror `/api/meetings/{id}/export`'s `StreamingResponse` + facilitator
+  gating): `GET .../activities/{aid}/report.{json|md|csv|docx}` → load the stored
+  output bundle's `metadata.report_payload` → call the matching renderer. Add the
+  `meeting.js` panel + `render_html` preview (the only renderer not yet written —
+  Step 1 deferred it here). Decide participant vs facilitator download rights.
+- **Live HTTP delphi→report e2e.** Pieces are covered by unit/integration tests;
+  a real conclude-Delphi-through-HTTP-then-download pass is belt-and-suspenders.
 
-- **In-round decision (engine).** `FacilitatorDecisionStep` placed inside the
-  iterate subcycle in `orchestrations/delphi.json` (between rank and comment),
-  options `["open_comments","skip_comments"]`, report
-  `delphi_round_agreement` with `config.feedback_selection: true`.
-  `OrchestrationEngineStrategy._materialize_facilitator_decision` now inherits the
-  round_index and computes the report (incl. `feedback_selection`) from the same
-  round's just-closed ranking. `_compute_gate_report` only attaches
-  `feedback_selection` when the report opts in, so the **boundary gate stays plain
-  continue/conclude**. `resolve_prior_activity` skips facilitator-decision steps so
-  the comment step still consumes the ranking as its input bundle.
-- **Comment surface = generic brainstorming, configured (NOT forked).** Config:
-  `seed_from_input`, `allow_new_ideas=false`, `comment_scope="selected"`,
-  `feedback_policy`. `brainstorming_plugin.open_activity` seeds the ranked ideas as
-  `Idea` rows in group-vote order with metadata
-  `{seeded, stable_key, group_rank, group_median, group_iqr, agreement_band,
-  commentable}`. The disputed subset = the facilitator's in-round count
-  (`delphi_feedback_policy.selected_comment_count_for_round` +
-  `build_delphi_feedback_selection`). The Delphi scoring lives in
-  `delphi_feedback_policy` (a configured strategy), **never in the activity**.
-  Enforcement is in `app/routers/brainstorming.py::submit_idea`
-  (reject new top-level when `allow_new_ideas=false`; sub-comment only on
-  `commentable` parents when `comment_scope="selected"`).
-- **Cross-round display.** `RankOrderVotingManager._comments_from_brainstorming`
-  reads the prior round's brainstorming bundle (metadata `comment_surface: true`),
-  groups sub-comments by the seeded parent's `stable_key`, returns `{text, mine}`
-  (mine from the sub-comment `user_id`). Legacy `outlier_justification` reader kept
-  as a fallback. Rank summary also returns `delphi_round` ({round_number,
-  max_rounds}) and richer `prior_round_feedback` (median, iqr, dispersion,
-  your_prior_rank).
-- **Frontend.** `app/static/js/meeting.js`: brainstorming panel orders by
-  `group_rank`, shows agreement band + "Group median rank · spread", subdues
-  non-commentable rows, relabels Reply→Comment, hides the new-idea form when
-  `allow_new_ideas=false`. The facilitator-decision count selector renders for any
-  decision whose report carries `feedback_selection` (report div moved out of the
-  gate-only sub-panel in `meeting.html`).
+## Guardrails / decisions (hold these)
 
-## Guardrails (hold these)
+- **JSON is canonical.** The report is built once into `report_payload`; every other
+  format is a *pure function* of the stored model — never recompute. Renderers live
+  in `report_renderers.py`.
+- **Human formats render the COMPLETE sorted dataset — no truncation** (regression-
+  guarded in `test_report_builder.py`). Only `render_html` (preview) may elide.
+- **Deterministic, no AI** in the report. `body.ai_drafted` stays reserved/unused.
+- **Paradigm-aware metrics.** Kendall's W is ranking-specific (Decidero's Delphi);
+  median/IQR/agreement-bands are paradigm-agnostic. On saturated *rating* data W
+  understates consensus — don't lean on it there. (Found via real-data sanity test
+  against a 2-round BLS Delphi dataset, CC BY 4.0.)
+- **`is_complete` is now exact** — `_completed_count` must count the same population
+  `_plan` does. Don't reintroduce counting gate-decision bundles or a terminal
+  activity will be skipped as "complete."
+- **One activity, configured — never fork.** `report` is generic; method shaping is
+  Layer-2 config + the metric/summarizer registries, no `if delphi:`.
 
-- **One activity, configured — never fork.** No `brainstorming_delphi`, no
-  `if delphi:` in activity code. If a behavior can't be a generic flag, add a
-  generic knob to the activity/orchestrator contract instead.
-- Method logic stays in Layer-2 (`delphi.json`) + Layer-3 strategies
-  (`delphi_feedback_policy`, predicate/transform/summarizer/recommender registries).
-- Cross-round comments stay peer-anonymous; `mine` is computed per-viewer, never
-  persisted as identity in a bundle.
+## Gotchas
 
-## Open / next (nothing blocking)
+- **Global gitignore has `*.json`** (`~/.gitignore_global`). Repo schema/orchestration
+  JSON is force-added; new schema files need `git add -f`.
+- **Deps added** (`requirements.in` + recompiled lockfile via `./venv/bin/pip-compile`):
+  `python-docx==1.1.2`, `matplotlib`, and `json-repair` is now a *declared* direct
+  dep (it was previously hand-pasted into the lockfile only).
+- **matplotlib uses the headless `Agg` backend** (`matplotlib.use("Agg")` in
+  `report_renderers.py`). Keep it — no display on the server.
+- Real-data sanity artifacts (the BLS-derived example payload, charts, docx) are
+  **not committed** (third-party CC BY data); regenerable. Step 0 TODO: author a
+  small *synthetic* in-repo example payload as the permanent fixture.
 
-1. **Live drive-through** of "Classical Delphi test 10" — confirm the comment
-   surface (seeded vote order, only disputed ideas commentable / others subdued,
-   the in-round count prompt, Round N of M + spread/your-rank). Logic is covered by
-   automated tests; this is eyeball confirmation since the issues were first caught
-   in-app.
-2. **outlier_justification deletion** — deferred. Currently deprecated-in-place
-   (plugin/manager/router/`OutlierRationale` model + the JS justification panel all
-   still exist). Decide whether to delete when writing the paper's methods section;
-   if so, also drop the rank-manager legacy fallback reader.
-3. **Zero-comment skip** is a soft skip today (empty queue / `skip_comments` →
-   everyone sees nothing, facilitator advances). A true engine auto-advance past an
-   empty comment step is future engine work.
-4. Phase 9 has other pending steps (PHASE_9.md): Step 2 control-point card UI,
-   Step 3 show-it-back views, Step 4 pattern-block canvas, Step 5 AI co-author.
+## Branch hygiene (decide before stacking more)
 
-## Files most worth reading first
+`report-activity-dev` → `codex/outlier-justification-api` (73 ahead of `main`,
+no PR). The whole report feature assumes that base. Land this lineage on `main`
+before it drifts into a deeper stack. (Not done autonomously — owner's call on
+merge strategy / PR.)
 
-- `orchestrations/delphi.json` (the method as data)
-- `app/plugins/builtin/brainstorming_plugin.py` (`_seed_from_input`)
-- `app/services/delphi_feedback_policy.py`
-- `app/services/agenda_strategy.py` (`_materialize_facilitator_decision`,
-  `_compute_gate_report`, `round_progress_for`, `resolve_prior_activity`)
-- `app/services/rank_order_voting_manager.py` (`build_summary`,
-  `_comments_from_brainstorming`, `_own_prior_ranks`)
+## Files worth reading first
+
+- `plans/subplans/REPORT_ACTIVITY.md` (plan + sanity-test findings)
+- `docs/schemas/report_payload.schema.json` (the canonical model)
+- `app/services/report_builder.py`, `report_renderers.py`, `report_metrics.py`
+- `app/plugins/builtin/report_plugin.py`
+- `app/services/agenda_strategy.py` (`fetch_round_history`, `round_history`,
+  `_completed_count`/`is_complete`)
+- `orchestrations/delphi.json` (terminal `report` step)
