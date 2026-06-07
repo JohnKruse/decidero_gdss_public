@@ -22,11 +22,31 @@ This plan moves the Delphi comment step onto **generic activities only**:
 No method-specific activity code. Method logic stays in `delphi.json` + the input
 bundles the engine already passes between steps.
 
+## "Reskin" means configure, not fork
+
+There is exactly **one** brainstorming activity. Stage B does **not** copy it,
+create a `brainstorming_delphi` variant, or add `if delphi:` branches. The only
+code added to the activity is **generic, reusable configuration capability** — new
+flags it honors and the ability to render from its incoming data. That one-time
+investment is what lets Delphi (and any future method) get a bespoke *feel* through
+**config + data alone**:
+- Generic capability added once to the activity: `allow_new_ideas`,
+  `seed_from_input`, comment-scope `all|eligible`, and rendering per-item stats /
+  eligibility / order from its input bundle.
+- Pure config + data for Delphi: `delphi.json` sets the flags and labels; the
+  ranking bundle supplies order + group stats; the in-round decision supplies the
+  eligible subset. No Delphi code in the activity.
+
+If a needed behavior can't be expressed as a generic flag the activity honors,
+that's a signal to add a generic knob to the activity/orchestrator contract — not
+to special-case the method.
+
 ## Design tenets
 
-- **No new activities, no Delphi-specific branches in activity code.** Brainstorming
-  gains *generic, config-driven* behaviors (comment-only, seed-from-input,
-  commentable subset) that any method can use — not `if delphi` logic.
+- **No new activities, no forks, no Delphi-specific branches in activity code.**
+  Brainstorming gains *generic, config-driven* behaviors (comment-only,
+  seed-from-input, commentable subset) that any method can use — not `if delphi`
+  logic.
 - **Display data rides on the input bundle.** Each idea's group rank / median / IQR
   / agreement band comes from the prior `rank_order_voting` output (already
   delivered to the next step as an input bundle). The activity renders what its
