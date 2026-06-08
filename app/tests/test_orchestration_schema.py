@@ -330,6 +330,15 @@ CORRESPONDENCE_CORPUS = [
            {"when": "median_iqr <= 1.0", "recommend": "conclude"},
            {"default": "continue"}]}}],
      True, None),
+    # Plainspoken Marmot: the AI round-gate advisor opt-in (recommender.source).
+    ("recommender_ai_source_accepted",
+     [{"type": "facilitator-decision", "prompt": "?", "options": ["continue", "conclude"],
+       "recommender": {"source": "ai", "rule": [{"default": "continue"}]}}],
+     True, None),
+    ("recommender_invalid_source_rejected",
+     [{"type": "facilitator-decision", "prompt": "?", "options": ["continue", "conclude"],
+       "recommender": {"source": "magic", "rule": [{"default": "continue"}]}}],
+     False, "must be 'rule' or 'ai'"),
 ]
 
 

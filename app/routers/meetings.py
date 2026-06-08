@@ -2400,6 +2400,7 @@ async def get_facilitator_decision_state(
         # Round-gate recommendation/evidence + the grammar-declared report.
         "is_round_gate": bool(orchestration.get("gate")),
         "recommendation": config.get("recommendation"),
+        "recommendation_rationale": config.get("recommendation_rationale"),
         "evidence": config.get("evidence"),
         "report": config.get("report"),
     }
@@ -2686,6 +2687,7 @@ async def advance_orchestration(
                 "options": list(pending.get("options") or []),
                 "is_round_gate": bool(pending.get("gate")),
                 "recommendation": pending.get("recommendation"),
+                "recommendation_rationale": pending.get("recommendation_rationale"),
                 "evidence": pending.get("evidence"),
                 "report": pending.get("report"),
             },
@@ -2734,6 +2736,7 @@ async def advance_orchestration(
                 "options": list(pending_after.get("options") or []),
                 "is_round_gate": bool(pending_after.get("gate")),
                 "recommendation": pending_after.get("recommendation"),
+                "recommendation_rationale": pending_after.get("recommendation_rationale"),
                 "evidence": pending_after.get("evidence"),
                 "report": pending_after.get("report"),
             },

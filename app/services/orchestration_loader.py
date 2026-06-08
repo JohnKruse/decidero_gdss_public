@@ -162,6 +162,13 @@ def _validate_recommender(rec: Any, path: str, errors: List[OrchestrationFieldEr
     if not isinstance(rec, dict):
         errors.append(OrchestrationFieldError(field=path, message=f"'{path}' must be a dictionary."))
         return
+    if "source" in rec:
+        source = rec["source"]
+        if source not in ("rule", "ai"):
+            errors.append(OrchestrationFieldError(
+                field=f"{path}.source",
+                message=f"'{path}.source' must be 'rule' or 'ai'.",
+            ))
     if "metrics" in rec:
         metrics = rec["metrics"]
         if not isinstance(metrics, list):

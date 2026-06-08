@@ -189,7 +189,13 @@ def get_agenda_strategy(meeting: Meeting) -> AgendaStrategy:
         else:
             document = _load_persisted_orchestration_document(path_str)
         if document is not None:
-            strategy = OrchestrationEngineStrategy(document)
+            # Plainspoken Marmot: supply the AI round-gate advisor settings from
+            # config (env→DB→yaml). Only consulted when a gate opts into source "ai".
+            from app.config.loader import get_gate_recommender_settings
+
+            strategy = OrchestrationEngineStrategy(
+                document, ai_settings=get_gate_recommender_settings()
+            )
             # Deliberate Heron: the strategy is rebuilt per request, so restore
             # the iteration map and any paused decision from persisted rows.
             strategy.rehydrate_from_db(meeting, object_session(meeting))
@@ -346,7 +352,7 @@ class _GateContext:
     gate_logical_step_id: str
     round_index: int
     recommendation: Optional[str]  # the resolved recommended option, or None
-    recommendation_source: str  # "recommender" (rule-resolved) or "convergence" (default)
+    recommendation_source: str  # "ai" | "recommender" (rule-resolved) | "convergence" (default)
     round_number: int
     max_rounds: int
     converged: bool
@@ -357,6 +363,9 @@ class _GateContext:
     # round output), or None when the gate declares no report. Computed at the
     # boundary while the round output is in hand; rendered by the gate UI.
     report: Optional[Dict[str, Any]] = None
+    # Plainspoken Marmot: the AI advisor's plain-language rationale for its
+    # recommendation, when recommendation_source == "ai"; None otherwise.
+    recommendation_rationale: Optional[str] = None
 
 
 @dataclass
@@ -395,6 +404,12 @@ class _PlanWalker:
         # Deliberate Heron: bundle lookups must be scoped to this meeting, since
         # logical_step_ids are shared across meetings built from the same document.
         self.meeting_id: Optional[str] = None
+        # Plainspoken Marmot: AI round-gate advisor seam. The strategy sets these
+        # after construction; absent settings/disabled => the gate uses the
+        # computational recommender. `document_name` enriches the AI prompt.
+        self.ai_caller: Optional[Any] = None
+        self.ai_settings: Dict[str, Any] = {}
+        self.document_name: Optional[str] = None
 
     @property
     def exhausted(self) -> bool:
@@ -531,8 +546,13 @@ class _PlanWalker:
                             frame.round_activity_ids = []
                             continue
                         decision_spec = dict(gate.get("decision") or {})
-                        recommended, source = self._resolve_gate_recommendation(
-                            decision_spec, fired, report_output
+                        gate_report = self._compute_gate_report(
+                            decision_spec,
+                            report_output,
+                            self._feedback_policy_for_step(frame.step),
+                        )
+                        recommended, source, rationale = self._resolve_gate_recommendation(
+                            decision_spec, fired, report_output, frame, gate_report
                         )
                         self.needs_gate = _GateContext(
                             gate_logical_step_id=gate_lsid,
@@ -543,11 +563,8 @@ class _PlanWalker:
                             max_rounds=frame.step.max_rounds,
                             converged=fired,
                             decision_spec=decision_spec,
-                            report=self._compute_gate_report(
-                                decision_spec,
-                                report_output,
-                                self._feedback_policy_for_step(frame.step),
-                            ),
+                            report=gate_report,
+                            recommendation_rationale=rationale,
                         )
                         return None
 
@@ -581,23 +598,33 @@ class _PlanWalker:
                 )
         return None
 
-    @staticmethod
     def _resolve_gate_recommendation(
+        self,
         decision_spec: Dict[str, Any],
         converged: bool,
         round_output: Optional[Dict[str, Any]],
-    ) -> Tuple[Optional[str], str]:
+        frame: Optional["_IterateFrame"] = None,
+        gate_report: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[Optional[str], str, Optional[str]]:
         """Plainspoken Marmot: resolve the gate's recommended option (L.3).
 
-        Builds the Layer-A scalar namespace — `converged` (the convergence
-        verdict the walker just computed) is always present; any report
-        summarizers named in the recommender's `metrics` are run over the round
-        output (when available) and merged — then evaluates the Layer-B
-        declarative rule against it. Falls back to the convergence verdict
-        ("conclude" if converged else "continue") when no recommender is
-        declared or the rule yields nothing. Returns (option, source).
+        When the recommender declares `"source": "ai"`, an AI advisor recommends
+        one of the gate's options with a short rationale (advisory only). On any
+        failure it falls back. Otherwise — or as the fallback — it builds the
+        Layer-A scalar namespace (`converged` plus any summarizer `metrics` run
+        over the round output) and evaluates the Layer-B declarative `rule`,
+        falling back to the convergence verdict when no rule yields a choice.
+        Returns (option, source, rationale); rationale is set only for source "ai".
         """
         recommender = decision_spec.get("recommender") or {}
+
+        if str(recommender.get("source") or "").strip().lower() == "ai":
+            ai_option = self._resolve_gate_recommendation_via_ai(
+                decision_spec, converged, frame, gate_report
+            )
+            if ai_option is not None:
+                return ai_option
+
         namespace: Dict[str, Any] = {"converged": bool(converged)}
 
         if round_output:
@@ -621,9 +648,61 @@ class _PlanWalker:
             except RecommenderRuleError:
                 recommended = None
             if recommended is not None:
-                return recommended, "recommender"
+                return recommended, "recommender", None
 
-        return ("conclude" if converged else "continue"), "convergence"
+        return ("conclude" if converged else "continue"), "convergence", None
+
+    def _resolve_gate_recommendation_via_ai(
+        self,
+        decision_spec: Dict[str, Any],
+        converged: bool,
+        frame: Optional["_IterateFrame"],
+        gate_report: Optional[Dict[str, Any]],
+    ) -> Optional[Tuple[str, str, Optional[str]]]:
+        """Ask the AI advisor for a gate recommendation, or None to fall back."""
+        if not self.ai_caller or not self.ai_settings:
+            return None
+        from app.services.ai_gate_recommender import recommend_via_ai
+
+        options = [str(o) for o in (decision_spec.get("options") or ["continue", "conclude"])]
+        round_number = (frame.round_index + 1) if frame is not None else None
+        max_rounds = frame.step.max_rounds if frame is not None else None
+        evidence_lines = []
+        if round_number and max_rounds:
+            evidence_lines.append(f"Round {round_number} of up to {max_rounds} complete.")
+        evidence_lines.append(
+            "The group's responses have stabilized."
+            if converged
+            else "The group's responses are still changing."
+        )
+        report_data = (gate_report or {}).get("data") if isinstance(gate_report, dict) else None
+
+        result = recommend_via_ai(
+            options=options,
+            method_summary=self._method_summary_for_gate(frame),
+            round_evidence="\n".join(evidence_lines),
+            report_data=report_data if isinstance(report_data, dict) else None,
+            ai_caller=self.ai_caller,
+            settings=self.ai_settings,
+        )
+        if result is None:
+            return None
+        return result.recommended_option, "ai", (result.rationale or None)
+
+    def _method_summary_for_gate(self, frame: Optional["_IterateFrame"]) -> str:
+        """One-line plain-language context for the AI prompt (no raw JSON)."""
+        name = self.document_name or "a structured group method"
+        activity_title = None
+        if frame is not None:
+            for child in getattr(frame.step, "steps", []) or []:
+                title = getattr(child, "title", None)
+                tool = getattr(child, "tool_type", None)
+                if title or tool:
+                    activity_title = title or tool
+                    break
+        if activity_title:
+            return f"{name}: repeats '{activity_title}' each round until it converges or hits the round cap."
+        return f"{name}: repeats a round activity until it converges or hits the round cap."
 
     @staticmethod
     def _compute_gate_report(
@@ -817,6 +896,11 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             ai_retry_policy or self.DEFAULT_AI_DECISION_RETRY_POLICY
         )
         self._walker = _PlanWalker(document.steps)
+        # Plainspoken Marmot: hand the AI advisor seam to the walker (used only when
+        # a round-gate recommender declares `"source": "ai"`).
+        self._walker.ai_caller = self._ai_caller
+        self._walker.ai_settings = self._ai_settings
+        self._walker.document_name = getattr(document, "name", None)
         # Eager prefetch: walk until walker requires DB or document is exhausted.
         self._extend_plan(db=None)
 
@@ -963,6 +1047,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                     "context_bundle_keys": list(config.get("context_bundle_keys") or []),
                     "gate": bool(orchestration.get("gate", False)),
                     "recommendation": config.get("recommendation"),
+                    "recommendation_rationale": config.get("recommendation_rationale"),
                     "evidence": config.get("evidence"),
                     "report": config.get("report"),
                 }
@@ -1052,6 +1137,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 "options": list(pending.get("options") or []),
                 "is_round_gate": bool(pending.get("gate")),
                 "recommendation": pending.get("recommendation"),
+                "recommendation_rationale": pending.get("recommendation_rationale"),
                 "evidence": pending.get("evidence"),
                 "report": pending.get("report"),
             }
@@ -1076,6 +1162,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 "options": list(decision_spec.get("options") or ["continue", "conclude"]),
                 "is_round_gate": True,
                 "recommendation": gate.recommendation,
+                "recommendation_rationale": gate.recommendation_rationale,
                 "evidence": {
                     "round_number": gate.round_number,
                     "max_rounds": gate.max_rounds,
@@ -1505,6 +1592,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "options": options,
             "context_bundle_keys": list(spec.get("context_bundle_keys") or []),
             "recommendation": gate.recommendation,
+            "recommendation_rationale": gate.recommendation_rationale,
             "evidence": evidence,
             "_orchestration": {
                 "logical_step_id": gate.gate_logical_step_id,
@@ -1537,6 +1625,7 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             "context_bundle_keys": [],
             "gate": True,
             "recommendation": gate.recommendation,
+            "recommendation_rationale": gate.recommendation_rationale,
             "evidence": evidence,
             "report": gate.report,
         }

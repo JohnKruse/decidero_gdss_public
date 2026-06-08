@@ -752,6 +752,79 @@ def get_meeting_designer_settings() -> Dict[str, Any]:
     }
 
 
+def get_gate_recommender_settings() -> Dict[str, Any]:
+    """Return the AI round-gate advisor settings (orchestration decision support).
+
+    Drives the optional `"source": "ai"` recommender on an orchestration round-gate
+    (e.g. the Classical Delphi gate): the model recommends continue/conclude plus a
+    short rationale, the facilitator decides, and the engine falls back to the
+    computational rule whenever this is disabled or fails.
+
+    Resolution per field: env → DB override → config.yaml → default. The API key
+    fails over across env vars first so a key need never be committed:
+    `DECIDERO_GATE_RECOMMENDER_API_KEY` → `OPENROUTER_API_KEY` → DB
+    (`ai.openrouter.api_key`) → config.yaml. Default provider is OpenRouter. The
+    return shape matches what `ai_provider.chat_complete` consumes, plus the tunable
+    `system_prompt` / `prompt_template`.
+    """
+    config = load_config()
+    section = config.get("gate_recommender_model") or {}
+    provider_defaults = get_ai_provider_defaults()
+
+    provider = str(
+        _db_get("ai.gate_recommender.provider")
+        or section.get("provider")
+        or "openrouter"
+    ).strip().lower()
+
+    # API key: env vars take precedence, then DB, then config.yaml.
+    api_key = (
+        os.getenv("DECIDERO_GATE_RECOMMENDER_API_KEY")
+        or os.getenv("OPENROUTER_API_KEY")
+        or ""
+    ).strip()
+    if not api_key:
+        db_key = _db_get(f"ai.{provider}.api_key") or _db_get("ai.gate_recommender.api_key")
+        api_key = str(db_key).strip() if db_key is not None else ""
+    if not api_key:
+        api_key = str(section.get("api_key") or "").strip()
+
+    db_model = _db_get("ai.gate_recommender.model")
+    model = str(db_model if db_model is not None else section.get("model") or "").strip()
+
+    endpoint_url = str(section.get("endpoint_url") or "").strip()
+    if not endpoint_url:
+        provider_default = provider_defaults.get(provider) or {}
+        endpoint_url = str(
+            provider_default.get("endpoint_url")
+            or provider_default.get("openai_compat_endpoint_url")
+            or ""
+        )
+
+    db_max_tokens = _db_get("ai.gate_recommender.max_tokens")
+    max_tokens = _coerce_positive_int(
+        db_max_tokens if db_max_tokens is not None else section.get("max_tokens"),
+        512,
+    )
+    db_temp = _db_get("ai.gate_recommender.temperature")
+    temperature = _coerce_jitter_ratio(
+        db_temp if db_temp is not None else section.get("temperature"),
+        0.2,
+    )
+
+    return {
+        "enabled": bool(provider and api_key and model),
+        "provider": provider,
+        "api_key": api_key,
+        "endpoint_url": endpoint_url,
+        "model": model,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "system_prompt": str(section.get("system_prompt") or "").strip(),
+        "prompt_template": str(section.get("prompt_template") or "").strip(),
+    }
+
+
 def get_default_user_password() -> str:
     """Return the default password for newly created users.
 

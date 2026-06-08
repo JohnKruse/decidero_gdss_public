@@ -32,7 +32,8 @@ from ..data.meeting_template_manager import (
 )
 from ..services.meeting_authorization import resolve_meeting_capabilities
 from ..services.activity_catalog import get_enriched_activity_catalog
-from ..services.orchestration_authoring import STOP_CONDITIONS
+from ..services.orchestration_authoring import STOP_CONDITIONS, summarize_orchestration
+from ..services.orchestration_flow import build_flow_tree
 from sqlalchemy.orm import Session
 from ..database import get_db
 
@@ -469,6 +470,44 @@ async def meeting_templates(
             "stop_conditions": stop_conditions,
         },
     )
+
+
+@router.get("/meeting/templates/{template_id}/flow")
+async def meeting_template_flow(
+    template_id: str,
+    current_user: User = Depends(get_current_active_user),
+    template_manager: MeetingTemplateManager = Depends(get_meeting_template_manager),
+):
+    """Plainspoken Marmot: the read-only show-it-back views (Phase 9 Step 3).
+
+    Returns the plain-language summary plus a structured flow tree for an
+    orchestration-backed template, so a facilitator can confirm a method (including
+    a just-created fork) without ever seeing JSON.
+    """
+    if current_user is None or current_user.role not in [
+        UserRole.FACILITATOR,
+        UserRole.ADMIN,
+        UserRole.SUPER_ADMIN,
+    ]:
+        raise HTTPException(
+            status_code=403,
+            detail="Only facilitators and administrators can view method flows",
+        )
+
+    template = template_manager.get_template(template_id)
+    if template is None:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    document = template_manager.orchestration_document_dict(template)
+    if document is None:
+        raise HTTPException(
+            status_code=404, detail="This template is not orchestration-backed"
+        )
+
+    return {
+        "summary": summarize_orchestration(document),
+        "flow": build_flow_tree(document),
+    }
 
 
 @router.get("/meeting/templates/{template_id}/start", response_class=HTMLResponse, response_model=None)

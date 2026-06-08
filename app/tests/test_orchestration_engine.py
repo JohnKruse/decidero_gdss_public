@@ -2020,6 +2020,84 @@ def test_round_gate_report_and_summarizer_metrics_resolve(db_session):
     assert gate.config["evidence"]["recommendation_source"] == "recommender"
 
 
+def _ai_gate_doc():
+    """A round-gate whose recommender opts into the AI advisor (source: ai)."""
+    return load_orchestration_data({
+        "name": "ai-gate", "version": "1", "author": "marmot",
+        "citation": "Plainspoken Marmot",
+        "metadata": {
+            "thinklets": ["t"], "collaboration_patterns": ["p"], "deliverables": ["d"],
+            "group_size_range": {"min": 1, "max": 2},
+            "typical_duration_minutes": {"min": 1, "max": 60},
+            "notes": "ai-source gate fixture",
+        },
+        "steps": [{
+            "type": "iterate", "max_rounds": 4,
+            "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 99}},
+            "bundle_transform": {"name": "identity", "config": {}},
+            "round_gate": {"decision": {
+                "prompt": "Continue?",
+                "options": ["continue", "conclude"],
+                "report": {"summarizer": "delphi_round_agreement", "config": {}, "audience": "facilitator"},
+                "recommender": {"source": "ai", "metrics": ["delphi_round_agreement"], "rule": [
+                    {"when": "converged", "recommend": "conclude"},
+                    {"default": "continue"}]},
+            }},
+            "steps": [{"type": "activity", "tool_type": "brainstorming", "title": "round-step"}],
+        }],
+    })
+
+
+def test_round_gate_ai_recommendation_drives_the_suggestion(db_session):
+    """Plainspoken Marmot: with source 'ai' and an enabled advisor, the gate's
+    recommendation + rationale come from the AI (here 'conclude'), distinct from the
+    computational rule which would say 'continue' (fixed_n(99) never fires)."""
+    import json as _json
+
+    def _ai_caller(prompt, settings):
+        assert "continue, conclude" in prompt  # options were rendered into the prompt
+        return _json.dumps({
+            "recommendation": "conclude",
+            "rationale": "The group has said enough; further rounds add little.",
+            "confidence": 0.8,
+        })
+
+    strategy = OrchestrationEngineStrategy(
+        _ai_gate_doc(),
+        ai_caller=_ai_caller,
+        ai_settings={"enabled": True, "provider": "openrouter", "model": "test/model"},
+    )
+    meeting, _ = _seed_engine_meeting(db_session)
+    round0 = strategy.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, round0, strategy)
+
+    gate = strategy.create_activity(meeting, None, None)
+    assert gate.config["recommendation"] == "conclude"
+    assert gate.config["evidence"]["recommendation_source"] == "ai"
+    assert "further rounds add little" in gate.config["recommendation_rationale"]
+
+
+def test_round_gate_ai_failure_falls_back_to_rule(db_session):
+    """The AI advisor is advisory only: when the call fails, the gate falls back to
+    the computational rule (here 'continue') and carries no AI rationale."""
+    def _broken_caller(prompt, settings):
+        raise RuntimeError("provider down")
+
+    strategy = OrchestrationEngineStrategy(
+        _ai_gate_doc(),
+        ai_caller=_broken_caller,
+        ai_settings={"enabled": True, "provider": "openrouter", "model": "test/model"},
+    )
+    meeting, _ = _seed_engine_meeting(db_session)
+    round0 = strategy.create_activity(meeting, None, None)
+    _close_round(db_session, meeting, round0, strategy)
+
+    gate = strategy.create_activity(meeting, None, None)
+    assert gate.config["recommendation"] == "continue"
+    assert gate.config["evidence"]["recommendation_source"] == "recommender"
+    assert gate.config.get("recommendation_rationale") is None
+
+
 def test_round_gate_report_includes_adaptive_feedback_selection(db_session):
     """Adaptive Delphi: the gate report can carry selected-idea comment guidance."""
     feedback_policy = {

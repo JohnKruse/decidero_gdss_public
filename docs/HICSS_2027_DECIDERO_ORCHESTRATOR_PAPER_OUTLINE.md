@@ -41,10 +41,22 @@ The paper likely makes four related contributions.
 3. It uses AI as a facilitation aid inside flow control rather than only as a
    meeting agenda generator. The preferred pattern is that AI proposes and the
    facilitator disposes, especially where judgment or methodological risk is
-   high.
+   high. This is demonstrated, not just designed: the Delphi round-gate can take a
+   live AI recommendation (continue or conclude, with a short plain-language
+   rationale) supplied through the same recommendation seam that the computational
+   convergence rule uses, and the facilitator still decides. The recommendation
+   source is method data (`recommender.source: "ai"`), the provider/model/prompts
+   are config, and the engine falls back to the computational rule whenever the AI
+   is unconfigured or fails — so the advisory role never blocks the method.
 4. It adds a meeting-template layer so reusable method designs can be selected,
    configured, saved, and reused by facilitators who should not need to
-   understand orchestration internals.
+   understand orchestration internals. "Configured" here means what is implemented
+   and facilitator-facing: instantiating a packaged method with safe meeting-language
+   defaults and saving a meeting as a reusable custom template. Deeper authoring —
+   forking/tuning control points and a control-point card — exists only as a
+   backend compiler whose UI is intentionally not exposed; richer authoring surfaces
+   (a pattern-block canvas, an AI co-author) are Future Directions, not claims of
+   this paper.
 
 ## Reader Problem
 
@@ -226,7 +238,18 @@ Implemented evidence includes:
     template-page entry point is intentionally hidden pending pilot/paper review
     of the right authoring surface, so this is implementation support rather than
     usability evidence.
-12. A terminal, exportable report activity for the Delphi reference method.
+12. Read-only "show-it-back" confirmation views for a method (Plainspoken Marmot).
+    Any orchestration-backed template — built-in or a facilitator fork — can be
+    inspected through a plain-language summary ("Repeat ranking up to 4 times,
+    stopping when the group's responses stop changing; you decide each round") and
+    a simple visual flow (phases, the iterate loop, and facilitator/AI/round-gate
+    decision points) rendered as lightweight HTML/CSS from the orchestration
+    document, never as JSON. The flow is generated from the document itself, so a
+    just-created fork's tuned round limit and gate render dynamically. This is the
+    round-trip comprehension surface every authoring path is meant to confirm
+    through; the visible authoring entry points remain gated pending pilot review,
+    so this is implementation support rather than usability evidence.
+13. A terminal, exportable report activity for the Delphi reference method.
     Delphi now ends with a configured `report` activity rather than simply
     exhausting the loop. The activity builds one canonical
     `report_payload.schema.json` model from the persisted round history, stores
@@ -234,13 +257,31 @@ Implemented evidence includes:
     CSV, DOCX, and HTML preview. A live HTTP Delphi conclude-to-report-download
     regression covers the path from round-gate conclusion through report
     materialization and download.
+14. A live AI advisor inside flow control (the demonstrated form of Contribution 3).
+    The Classical Delphi round-gate opts in (`recommender.source: "ai"`); at each
+    round boundary the engine asks the configured provider (default OpenRouter,
+    settings + prompts in `gate_recommender_model` config, API key via env
+    failover) to recommend continue or conclude over the gate's finite options and
+    return a one-or-two-sentence rationale, surfaced beside the recommendation in
+    the facilitator gate panel. The facilitator still decides; the recommendation is
+    resolved through the same `_resolve_gate_recommendation` seam as the
+    computational rule and falls back to that rule when the advisor is disabled,
+    errors, or returns an out-of-set option. Covered by helper tests (validation +
+    fallback), engine tests (AI-sourced recommendation vs rule fallback at a real
+    round boundary), and config-resolution tests; the live provider path is mocked
+    in tests via an injected caller.
 
 Planned or incomplete evidence includes:
 
-1. A pilot or internal dry run that examines whether facilitators understand
-   Start from Template, Design with AI, Design Yourself, and Import Meeting
-   without explanation, and whether the cycle-gate evidence and recommendation
-   make the continue/conclude choice obvious without coaching.
+1. A pilot or internal dry run scoped to the **implemented runtime + comprehension**
+   surfaces: Start from Template, the runtime continue/conclude cycle gate (including
+   the AI recommendation + rationale), the read-only show-it-back summary/flow views,
+   and the terminal report. The question is whether facilitators understand these
+   without coaching, whether the cycle-gate evidence + recommendation make the
+   continue/conclude choice obvious, and whether the AI recommendation reads as
+   advice rather than automation. Facilitator-facing authoring paths (Design with AI,
+   Design Yourself) are out of scope here and are treated as Future Directions, not
+   tested.
 2. Usability evidence about whether templates and decision-support surfaces
    lower the barrier for inexperienced facilitators, and whether the
    orchestration-backed method outline sets accurate expectations at runtime.
@@ -741,9 +782,15 @@ the conference scope.
   validated inline orchestration document. The visible template-page entry point
   is currently hidden pending pilot/paper review.
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
-  data model; the thinkLet authoring/composition tool + curated library; the DAG
-  validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
-  the in-UI DAG visualization.
+  data model; the thinkLet authoring/composition tool + curated library (the
+  pattern-block canvas); an AI co-author that drafts a whole orchestration from a
+  description; the DAG validator + cycle/depth safety; dynamic dispatch (the 3-way
+  facilitator gate); the in-UI DAG visualization. (Facilitator-facing authoring is
+  deliberately frozen for this paper; the AI advisor in §3/§6.14 is runtime decision
+  support, not authoring.)
+- [DONE] a live AI advisor in flow control: the Delphi round-gate's recommendation +
+  rationale can come from a configured AI provider (generic `recommender.source:
+  "ai"`), advisory only, with a computational-rule fallback (section L.3 seam).
 - [DONE] the unified decision primitive (round_gate embeds a facilitator-decision)
   + generic report summarizer registry + two-layer recommender (Layer-A metric
   registry, Layer-B declarative rule), clean-break migration with load-time

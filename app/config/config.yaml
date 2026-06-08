@@ -22,13 +22,12 @@
 #  │  app_settings database table).                                           │
 #  └─────────────────────────────────────────────────────────────────────────┘
 
-
 # ─── SECTION A: Infrastructure ─────────────────────────────────────────────────
 
 data_directory: "data"
-backup_interval_seconds: 300        # Periodicity of data storage
-database_url: "sqlite:///./decidero.db"  # Path to the SQLite database file
-autosave_seconds: 10                # Default activity autosave interval (startup-time)
+backup_interval_seconds: 300 # Periodicity of data storage
+database_url: "sqlite:///./decidero.db" # Path to the SQLite database file
+autosave_seconds: 10 # Default activity autosave interval (startup-time)
 
 sqlite:
   journal_mode: "WAL"
@@ -120,7 +119,6 @@ frontend_reliability:
     max_delay_ms: 1800
     jitter_ratio: 0.2
 
-
 # ─── SECTION B: Operational Defaults ──────────────────────────────────────────
 #
 #  All settings below are overrideable at runtime via the Settings page.
@@ -179,8 +177,8 @@ ai:
 
   prompts:
     meeting_designer:
-      source: "file"                         # file | inline
-      file_path: "prompts/meeting_designer.yaml"  # relative to app/config
+      source: "file" # file | inline
+      file_path: "prompts/meeting_designer.yaml" # relative to app/config
       # Used when source=inline
       system_prefix: ""
       system_suffix: ""
@@ -205,9 +203,52 @@ ai:
 # OpenRouter: set provider: openai_compatible, endpoint_url: https://openrouter.ai/api/v1
 #
 meeting_designer_model:
-  provider: ""          # anthropic | openai | openai_compatible
-  api_key: ""           # Your API key — prefer setting via Settings UI for encrypted storage
-  endpoint_url: ""      # Required for openai_compatible; optional base URL override for openai
-  model: ""             # e.g. claude-opus-4-5, gpt-4o, meta-llama/llama-3.3-70b-instruct
-  max_tokens: 2048      # Maximum tokens per AI response
-  temperature: 0.7      # Sampling temperature (0.0–1.0; lower = more deterministic)
+  provider: "" # anthropic | openai | openai_compatible
+  api_key: "" # Your API key — prefer setting via Settings UI for encrypted storage
+  endpoint_url: "" # Required for openai_compatible; optional base URL override for openai
+  model: "" # e.g. claude-opus-4-5, gpt-4o, meta-llama/llama-3.3-70b-instruct
+  max_tokens: 2048 # Maximum tokens per AI response
+  temperature: 0.7 # Sampling temperature (0.0–1.0; lower = more deterministic)
+
+# ── AI Round-Gate Advisor (orchestration decision support) ─────────────────────
+# Configures the AI model that recommends continue/conclude (plus a short rationale)
+# at an orchestration round-gate, when a method's recommender opts in with
+# `"source": "ai"` (e.g. the Classical Delphi gate). The facilitator always decides;
+# the AI only advises, and the engine falls back to the computational convergence
+# rule whenever this is disabled or the call fails — the gate never breaks.
+#
+# DISABLED until api_key + model are non-empty. Default provider is OpenRouter.
+# API key resolution order (highest first):
+#   1. env  DECIDERO_GATE_RECOMMENDER_API_KEY
+#   2. env  OPENROUTER_API_KEY
+#   3. DB   ai.openrouter.api_key (Settings UI, encrypted)
+#   4. config.yaml  gate_recommender_model.api_key  (below)
+#
+# The prompts are tunable here so a recommendation can be shaped to a given model
+# without code changes. Placeholders substituted at runtime: {method_summary},
+# {round_evidence}, {report}, {options}.
+gate_recommender_model:
+  provider: "openrouter" # openrouter (default) | anthropic | openai | google | openai_compatible
+  api_key: "" # Prefer the env vars above; leave blank here
+  endpoint_url: "" # Blank → provider default (OpenRouter: https://openrouter.ai/api/v1)
+  model: "google/gemini-3-flash-preview" # e.g. anthropic/claude-sonnet-4.5, openai/gpt-4o, meta-llama/llama-3.3-70b-instruct
+  max_tokens: 512 # Recommendations are short
+  temperature: 0.2 # Lower = more consistent advice
+  system_prompt: >-
+    You advise a meeting facilitator running a structured, multi-round group
+    method. At each round boundary you recommend whether to run another round or
+    conclude. You only advise; the facilitator decides. Be concise and neutral.
+  prompt_template: |-
+    Method: {method_summary}
+
+    Current state:
+    {round_evidence}
+
+    Round report (group agreement metrics):
+    {report}
+
+    The facilitator must choose exactly one of these options: {options}.
+
+    Recommend one option and explain in one or two short sentences a facilitator
+    would understand (no statistics jargon). Respond with ONLY a JSON object:
+    {"recommendation": "<one of the options>", "rationale": "<1-2 sentences>", "confidence": <0.0-1.0>}

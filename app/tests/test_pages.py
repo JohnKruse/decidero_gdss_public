@@ -107,6 +107,71 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
     assert "Meeting not found" not in response.text
 
 
+def test_meeting_template_flow_returns_summary_and_flow_tree(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Plainspoken Marmot (Phase 9 Step 3): the show-it-back endpoint returns the
+    plain-language summary plus a structured flow tree, never raw JSON."""
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    response = authenticated_client.get(f"/meeting/templates/{template.template_id}/flow")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert isinstance(payload["summary"], list) and payload["summary"]
+    flow = payload["flow"]
+    assert flow["kind"] == "method"
+    assert isinstance(flow["children"], list) and flow["children"]
+
+
+def test_meeting_template_flow_404_for_non_orchestration_template(
+    authenticated_client: TestClient,
+):
+    meeting_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Plain Template Source",
+            "description": "No orchestration here.",
+            "agenda_items": ["Review"],
+        },
+    )
+    assert meeting_response.status_code == 200, meeting_response.text
+    template_response = authenticated_client.post(
+        f"/api/meetings/{meeting_response.json()['id']}/templates",
+        json={"name": "Plain Custom Template"},
+    )
+    assert template_response.status_code == 200, template_response.text
+    template_id = template_response.json()["template_id"]
+
+    response = authenticated_client.get(f"/meeting/templates/{template_id}/flow")
+    assert response.status_code == 404, response.text
+
+
+def test_meeting_template_flow_rejects_non_facilitator(
+    client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    user_manager_with_admin.add_user(
+        first_name="Pan", last_name="El", email="pan.el@example.com",
+        hashed_password=get_password_hash("PanelPass1!"),
+        role=UserRole.PARTICIPANT.value, login="pan_el",
+    )
+    user_manager_with_admin.db.commit()
+    client.post(
+        "/api/auth/token", json={"username": "pan_el", "password": "PanelPass1!"},
+    )
+
+    response = client.get(f"/meeting/templates/{template.template_id}/flow")
+    assert response.status_code == 403, response.text
+
+
 def test_meeting_templates_page_exposes_custom_template_management(
     authenticated_client: TestClient,
 ):

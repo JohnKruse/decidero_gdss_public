@@ -5,6 +5,28 @@
 **Compile target:** [docs/schemas/orchestration.schema.json](../../docs/schemas/orchestration.schema.json)
 **Paper outline:** [docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md](../../docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md)
 
+## ⛔ SCOPE FREEZE (owner decision, 2026-06-08)
+
+**No further facilitator-facing authoring is being built for the paper.** The
+single goal now is to **ship the HICSS 2027 paper describing the orchestrator work
+as it already stands.** Concretely, until the owner says otherwise:
+
+- **Do not build, re-expose, or extend** any template authoring, forking, or
+  tuning UI. The Step 1 fork-and-tune and Step 2 control-point-card *backends* exist
+  and stay as-is; their visible entry points stay **hidden** (see
+  [[do-not-reexpose-fork-tune]] / `test_..._without_fork_tune`). Do not wire them
+  back in.
+- **Do not build the AI co-author** (Step 5) or the pattern-block canvas (Step 4).
+  Both are **CUT from the paper scope** and reframed as Future Directions — see
+  those steps below.
+- What remains for the paper is **prose + one pilot**, not new features. The
+  orchestrator, the Delphi reference method, the decision/recommender primitives,
+  the show-it-back views (Step 3), and the terminal report are all implemented and
+  are the contribution the paper describes.
+
+Anything an agent surveying this plan is "tempted to finish" is almost certainly
+out of scope. When in doubt, the answer is: write the paper, don't build more.
+
 ## Phase Canary
 
 **Plainspoken Marmot**
@@ -149,6 +171,14 @@ Conclude this step by:
   template authoring page. The backend compile/decompile and fork-persistence
   path exists, but the visible `FORK & TUNE` entry point has been removed from
   the template page pending paper/pilot review of the correct authoring surface.
+
+  > **DO NOT re-expose the `FORK & TUNE` / control-point-card entry point on the
+  > template page.** This is an explicit owner decision (2026-06-08), not an
+  > oversight or a leftover TODO. The backend (compile/decompile, fork persistence)
+  > and the Step 3 show-it-back views exist, so an agent will be tempted to "finish
+  > the loop" by wiring the button back in — don't. It stays hidden until the owner
+  > says otherwise from pilot evidence. Keep `test_frontend_smoke.py::
+  > test_meeting_templates_page_uses_horizontal_cards_without_fork_tune` passing.
 - A facilitator pilot pass on building one control point from the card, with
   findings recorded.
 
@@ -158,18 +188,45 @@ Implementation record:
   tests. It also injects the activity catalog and stop-condition labels needed by
   the future UI.
 
-### Step 3 — [PENDING] Show-It-Back Views
+### Step 3 — [PARTIAL] Show-It-Back Views
 
 Provide the two confirmation views that every surface depends on.
 
 Conclude this step by:
 
-- A plain-language summary renderer for an orchestration document ("Repeat ranking
-  up to 4 times, stopping when rankings stabilize; you decide each round").
-- A simple read-only visual flow of the method (phases, loops, decision points).
-- A dry-run/preview that shows what the next round/step would look like without
-  running a live meeting.
-- Wiring both views into Steps 1 and 2 as the confirmation surface.
+- [DONE] A plain-language summary renderer for an orchestration document ("Repeat
+  ranking up to 4 times, stopping when rankings stabilize; you decide each round").
+  `summarize_orchestration` (`app/services/orchestration_authoring.py`) now also
+  surfaces on the template page (not just the fork API response).
+- [DONE] A simple read-only visual flow of the method (phases, loops, decision
+  points). New `app/services/orchestration_flow.py::build_flow_tree` walks the
+  orchestration **document dict** into a JSON-serializable node tree; the template
+  page renders it as nested plain-language boxes (sequence/iterate containers, an
+  iterate loop-back accent, and decision pills for facilitator/AI/round-gate
+  points). Rendered server-side as lightweight HTML/CSS — no Mermaid.js vendor, no
+  graphviz binary, no committed images — so a just-created **fork** renders
+  dynamically from its inline tuned document. (The paper-figure path remains the
+  separate `to_mermaid`/`to_graphviz` exporter.)
+- [DONE] A dry-run/preview that shows what the next round/step would look like
+  without running a live meeting. For a *running* meeting this is the read-only
+  next-step preview (`/orchestration/preview`, Step 3A advance-preview guardrails).
+  For *authoring*, the static summary + flow above is the dry-run of the whole
+  method.
+- [DONE] Wiring both views into Step 1 as the confirmation surface: the new
+  `GET /meeting/templates/{id}/flow` endpoint returns `{summary, flow}` for any
+  orchestration-backed template (built-in or fork), lazy-loaded behind a "Method
+  flow" disclosure on each card. Step 2's inline card UI re-exposure stays
+  [DEFERRED] (see Step 2); when it returns it confirms through these same views.
+- [PENDING] A facilitator pilot pass on the show-it-back views, with findings
+  recorded (agent-run e2e + UI smoke stand in for now, per the Phase 7/8 handling).
+
+Implementation record:
+- New service `app/services/orchestration_flow.py` + endpoint
+  `app/routers/pages.py::meeting_template_flow` + public accessor
+  `MeetingTemplateManager.orchestration_document_dict`. UI: `meeting_templates.html`
+  (disclosure + inline renderer) and `dashboard.css` (`.flow-node*` styles). Tests:
+  `test_orchestration_flow.py`, flow API tests in `test_pages.py`, hook smoke test
+  in `test_frontend_smoke.py`. Full suite green (816 passed, 2 skipped).
 
 ### Step 3A — [DONE] Adaptive Delphi Controlled-Feedback Pass
 
@@ -303,52 +360,55 @@ Operational UI guardrails added 2026-06-08 (advance preview):
 - The Next Step panel consumes the preview endpoint and disables Advance with
   copy that explains both the immediate requirement and the likely next step.
 
-### Step 4 — [PENDING] Pattern Blocks on a Meeting-Flow Canvas (compose recognized patterns)
+### Step 4 — [CUT — Future Directions] Pattern Blocks on a Meeting-Flow Canvas
 
-For facilitators who want to compose rather than fork, provide a palette of named
-facilitation patterns (thinklets) pre-wired with their control structure, dragged
-onto a meeting-flow canvas and parameterized in meeting language. Scope and shape
-to be re-planned from Steps 1–3 pilot findings.
-
-Conclude this step by:
+**Not being built for the paper** (scope freeze, 2026-06-08). A palette of named
+facilitation patterns (thinklets) dragged onto a meeting-flow canvas was the
+"compose rather than fork" surface. It is reframed as **Future Directions** in the
+paper (the thinkLet composition tool / curated library — already tagged [FUTURE] in
+the HICSS outline §D). Original sketch retained for the post-paper backlog:
 
 - A palette of pattern blocks sourced from the `thinklets`/`collaboration_patterns`
   vocabulary, each compiling to a known-valid orchestration fragment.
 - A canvas that sequences blocks and compiles the whole to a validated document.
 - The control-point card (Step 2) used to parameterize loop/decision blocks.
-- A facilitator pilot pass, with findings recorded.
 
-### Step 5 — [PENDING] AI Co-Author (the on-ramp)
+### Step 5 — [CUT — Future Directions] AI Co-Author (the on-ramp)
 
-Let a facilitator describe a meeting in words and have the AI draft the document,
-confirmed through the show-it-back views. This is the "Design with AI" surface
-Phase 7 named. Scope and shape to be re-planned from earlier pilot findings.
-
-Conclude this step by:
+**Not being built for the paper** (scope freeze, 2026-06-08). Letting a facilitator
+describe a meeting in words and having AI draft the orchestration document is
+reframed as **Future Directions**. The architectural seam exists and is described
+as design, not as a demonstrated feature: the `ai-decision` step type, the
+custom-stop-rubric compile path (Step 2 backend), and the recommender seam that can
+take an AI-supplied `recommended_option` (HICSS outline §L.3) are the paper's
+"AI proposes, facilitator disposes" story — as a *designed seam*, not a running
+co-author. Original sketch retained for the post-paper backlog:
 
 - A describe-your-meeting input that produces a draft orchestration document via the
   compile target, never exposing JSON to the facilitator.
-- Confirmation/correction through the Step 3 summary and flow views, with the
-  pattern blocks / control-point card as the editing fallback.
-- Guardrails: AI output is validated against the schema; the facilitator confirms
-  before anything is saved or run.
-- A facilitator pilot pass, with findings recorded.
+- Confirmation/correction through the Step 3 summary and flow views.
+- Guardrails: AI output validated against the schema; facilitator confirms first.
 
-## Phase Exit Criteria
+## Phase Exit Criteria (revised under the 2026-06-08 scope freeze)
 
-Phase 9 clears only when:
+The original exit criteria assumed a shipped, facilitator-facing authoring UX with
+a pilot per surface. Under the scope freeze, **Phase 9's paper-supporting work is
+considered complete**; the phase does not aim to ship a facilitator authoring UI.
+What "done for the paper" means:
 
-- A non-technical facilitator can instantiate at least one control point (loop +
-  decision gate + recommendation source) without seeing JSON, via fork-and-tune and
-  the control-point card.
-- Both recommendation-source paths are authorable from the same UI slot: a curated
-  computational stop condition, and a plain-prose AI rubric.
-- Every authoring surface confirms changes through a plain-language summary and a
-  visual flow; validation errors are stated in meeting language.
-- All compiled documents validate against `orchestration.schema.json` before save
-  or run; no authoring surface modifies an activity plugin or the bundle format.
-- At least one facilitator pilot pass per shipped surface is recorded, and the plan
-  has been re-tuned from those findings.
+- The control-point primitives (loop + decision gate + recommendation source, both
+  the computational stop condition and the prose AI rubric) are **authorable in the
+  backend compiler** and validate against `orchestration.schema.json` before save or
+  run — implemented (Steps 1–2 backends). No activity plugin or bundle format is
+  modified by the compile path.
+- Every method (built-in or fork) can be **shown back** through a plain-language
+  summary and a read-only visual flow without exposing JSON — implemented (Step 3).
+- The facilitator-facing authoring entry points (fork-and-tune, control-point card,
+  canvas, AI co-author) are **deliberately not exposed**; whether/how to expose them
+  is a post-paper, pilot-driven question, framed in the paper as Future Directions.
+
+Remaining for the paper is **prose + one pilot/dry-run** (HICSS outline §6 item 9),
+not new authoring features.
 
 ## Scope Boundary
 
@@ -359,6 +419,6 @@ This phase does not cover:
   existing schema.
 - New runtime/engine behavior — that is Phase 8.
 - A live LLM advisor inside a running method's gate (Phase 8 seam; deferred there).
+- **Any facilitator-facing authoring UI** — fork/tune, control-point card, pattern
+  canvas, or AI co-author (scope freeze; Steps 1–2 stay backend-only, 4–5 are CUT).
 - Publication-grade evaluation of the authoring UX.
-- A final, locked authoring UX — this phase is explicitly evolutionary and expects
-  re-planning from pilot evidence.

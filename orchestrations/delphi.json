@@ -66,6 +66,7 @@
                 "audience": "facilitator"
               },
               "recommender": {
+                "source": "ai",
                 "metrics": ["delphi_round_agreement"],
                 "rule": [
                   { "when": "converged", "recommend": "conclude" },

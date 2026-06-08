@@ -327,3 +327,52 @@ def test_meeting_designer_prompt_templates_inline_source(monkeypatch, tmp_path):
     assert templates["system_prefix"] == "Inline Prefix {activity_list}"
     assert templates["system_suffix"] == "Inline Suffix"
     assert templates["generate_agenda"] == "Inline Generate"
+
+
+# ── AI round-gate advisor settings (Plainspoken Marmot) ─────────────────────────
+
+_GATE_CONFIG = """
+gate_recommender_model:
+  provider: "openrouter"
+  api_key: ""
+  model: "test/model"
+  max_tokens: 256
+  temperature: 0.1
+  system_prompt: "advise"
+  prompt_template: "Options: {options}"
+"""
+
+
+def test_gate_recommender_defaults_openrouter_disabled_without_key(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path, _GATE_CONFIG)
+    monkeypatch.setattr(loader, "_CONFIG_PATH", config_path)
+    monkeypatch.setattr(loader, "_db_get", lambda key: None)
+    monkeypatch.delenv("DECIDERO_GATE_RECOMMENDER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    settings = loader.get_gate_recommender_settings()
+
+    assert settings["provider"] == "openrouter"
+    assert settings["enabled"] is False  # no api key
+    assert settings["endpoint_url"] == "https://openrouter.ai/api/v1"
+    assert settings["model"] == "test/model"
+    assert settings["prompt_template"] == "Options: {options}"
+    assert settings["system_prompt"] == "advise"
+
+
+def test_gate_recommender_env_key_enables_and_takes_precedence(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.yaml"
+    _write_config(config_path, _GATE_CONFIG)
+    monkeypatch.setattr(loader, "_CONFIG_PATH", config_path)
+    monkeypatch.setattr(loader, "_db_get", lambda key: None)
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key")
+
+    settings = loader.get_gate_recommender_settings()
+    assert settings["enabled"] is True
+    assert settings["api_key"] == "openrouter-key"
+
+    # The dedicated env var takes precedence over OPENROUTER_API_KEY.
+    monkeypatch.setenv("DECIDERO_GATE_RECOMMENDER_API_KEY", "dedicated-key")
+    settings2 = loader.get_gate_recommender_settings()
+    assert settings2["api_key"] == "dedicated-key"

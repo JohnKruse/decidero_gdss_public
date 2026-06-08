@@ -114,6 +114,11 @@
         "rule"
       ],
       "properties": {
+        "source": {
+          "description": "Where the recommended option comes from. 'rule' (default) resolves it from the Layer-B guard rule over the scalar namespace. 'ai' asks the configured AI advisor (gate_recommender_model) for an advisory recommendation + rationale, falling back to the rule when the advisor is disabled or fails. The 'rule' is required either way so a deterministic fallback always exists.",
+          "type": "string",
+          "enum": ["rule", "ai"]
+        },
         "metrics": {
           "type": "array",
           "items": {

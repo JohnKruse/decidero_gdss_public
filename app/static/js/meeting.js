@@ -7609,9 +7609,14 @@
                 ui.facilitatorDecision.gateEvidence.textContent = text.trim();
             }
             if (ui.facilitatorDecision.gateRecommendation) {
-                ui.facilitatorDecision.gateRecommendation.textContent = recommendation
-                    ? `Suggestion: ${recommendation}.`
-                    : "";
+                // Plainspoken Marmot: when the recommendation came from the AI
+                // advisor, append its short plain-language rationale.
+                const rationale = detail && detail.recommendation_rationale;
+                let suggestion = recommendation ? `Suggestion: ${recommendation}.` : "";
+                if (recommendation && rationale) {
+                    suggestion += ` ${rationale}`;
+                }
+                ui.facilitatorDecision.gateRecommendation.textContent = suggestion;
             }
         }
 

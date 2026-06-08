@@ -12,9 +12,6 @@
                 Start from a reusable meeting structure. Templates are clean designs and do not include participant responses or prior meeting history.
             </p>
         </div>
-        <button class="action-btn" type="button" onclick="navigateTo('/meeting/create')">
-            DESIGN YOURSELF
-        </button>
     </div>
 
     {% if template_cards %}
@@ -96,6 +93,20 @@
                                 </ul>
                             </div>
                         {% endif %}
+                        {% if orchestration %}
+                            <div class="meeting-template-flow">
+                                <button
+                                    type="button"
+                                    class="meeting-template-flow__toggle"
+                                    data-template-flow
+                                    data-template-id="{{ template.template_id }}"
+                                    aria-expanded="false"
+                                >
+                                    Method flow
+                                </button>
+                                <div class="meeting-template-flow__panel" data-flow-panel hidden></div>
+                            </div>
+                        {% endif %}
                         {% if card.start_block_reason %}
                             <p class="meeting-template-card__notice">
                                 {{ card.start_block_reason }}
@@ -155,9 +166,6 @@
         <div class="empty-state meeting-templates-empty">
             <h3>No meeting templates yet</h3>
             <p>Template storage is ready, but no built-in or custom templates have been published in this environment.</p>
-            <button class="action-btn" type="button" onclick="navigateTo('/meeting/create')">
-                DESIGN YOURSELF
-            </button>
         </div>
     {% endif %}
 </section>
@@ -231,6 +239,84 @@
                 } catch (error) {
                     feedback(error.message || 'Template update failed.');
                 }
+            });
+        });
+
+        // Plainspoken Marmot: show-it-back flow view (Phase 9 Step 3). Lazy-loads the
+        // plain-language summary + structured flow tree and renders it as nested boxes.
+        function renderFlowNode(node) {
+            const box = document.createElement('div');
+            box.className = `flow-node flow-node--${node.kind || 'step'}`;
+            const label = document.createElement('div');
+            label.className = 'flow-node__label';
+            label.textContent = node.label || '';
+            box.appendChild(label);
+            if (node.detail) {
+                const detail = document.createElement('div');
+                detail.className = 'flow-node__detail';
+                detail.textContent = node.detail;
+                box.appendChild(detail);
+            }
+            if (node.gate) {
+                box.appendChild(renderFlowNode(node.gate));
+            }
+            if (Array.isArray(node.children) && node.children.length) {
+                const kids = document.createElement('div');
+                kids.className = 'flow-node__children';
+                node.children.forEach((child) => kids.appendChild(renderFlowNode(child)));
+                box.appendChild(kids);
+            }
+            return box;
+        }
+        function renderFlowPanel(panel, payload) {
+            panel.innerHTML = '';
+            const summary = Array.isArray(payload.summary) ? payload.summary : [];
+            if (summary.length) {
+                const heading = document.createElement('strong');
+                heading.textContent = 'In plain language';
+                panel.appendChild(heading);
+                const list = document.createElement('ul');
+                list.className = 'meeting-template-flow__summary';
+                summary.forEach((line) => {
+                    const item = document.createElement('li');
+                    item.textContent = line;
+                    list.appendChild(item);
+                });
+                panel.appendChild(list);
+            }
+            if (payload.flow) {
+                const heading = document.createElement('strong');
+                heading.textContent = 'Method flow';
+                panel.appendChild(heading);
+                panel.appendChild(renderFlowNode(payload.flow));
+            }
+        }
+        document.querySelectorAll('[data-template-flow]').forEach((button) => {
+            const panel = button.parentElement.querySelector('[data-flow-panel]');
+            button.addEventListener('click', async () => {
+                if (!panel) return;
+                const isOpen = !panel.hidden;
+                if (isOpen) {
+                    panel.hidden = true;
+                    button.setAttribute('aria-expanded', 'false');
+                    return;
+                }
+                const templateId = button.dataset.templateId;
+                if (!panel.dataset.loaded) {
+                    try {
+                        const payload = await requestJson(
+                            `/meeting/templates/${encodeURIComponent(templateId)}/flow`,
+                            { method: 'GET' },
+                        );
+                        renderFlowPanel(panel, payload);
+                        panel.dataset.loaded = 'true';
+                    } catch (error) {
+                        feedback(error.message || 'Could not load the method flow.');
+                        return;
+                    }
+                }
+                panel.hidden = false;
+                button.setAttribute('aria-expanded', 'true');
             });
         });
     })();

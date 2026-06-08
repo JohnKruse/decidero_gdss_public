@@ -237,6 +237,19 @@ class MeetingTemplateManager:
             status_code=400, detail="Template has no orchestration document to fork."
         )
 
+    def orchestration_document_dict(
+        self, template: MeetingTemplate
+    ) -> Optional[Dict[str, Any]]:
+        """Return the resolved orchestration document for an orchestration-backed
+        template (inline or read from file), or ``None`` if the template carries no
+        orchestration. Read-only; used by the show-it-back flow view (Phase 9 Step 3).
+        """
+        payload = template.template_payload if isinstance(template.template_payload, dict) else {}
+        orchestration = payload.get("orchestration") if isinstance(payload, dict) else None
+        if not isinstance(orchestration, dict) or orchestration.get("kind") != "orchestration_document":
+            return None
+        return self._orchestration_document_dict(orchestration)
+
     @staticmethod
     def _replace_first_iterate_step(
         document: Dict[str, Any], iterate_step: Dict[str, Any]

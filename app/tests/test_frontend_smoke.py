@@ -470,3 +470,27 @@ def test_meeting_templates_page_uses_horizontal_cards_without_fork_tune():
     assert "FORK &amp; TUNE" not in html
     assert 'id="templateForkPanel"' not in html
     assert "grid-template-columns: minmax(0, 1fr) minmax(180px, auto);" in css
+
+
+def test_gate_recommendation_renders_ai_rationale():
+    """Plainspoken Marmot: the round-gate recommendation appends the AI advisor's
+    plain-language rationale when present."""
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+    assert "recommendation_rationale" in js
+    assert "Suggestion: ${recommendation}." in js
+
+
+def test_meeting_templates_page_has_show_it_back_flow_hooks():
+    """Plainspoken Marmot (Phase 9 Step 3): orchestration cards expose the
+    show-it-back method-flow disclosure and lazy-load its renderer."""
+    with open("app/templates/meeting_templates.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    with open("app/static/css/dashboard.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+    assert "data-template-flow" in html
+    assert "data-flow-panel" in html
+    assert "renderFlowNode" in html
+    assert "/meeting/templates/${encodeURIComponent(templateId)}/flow" in html
+    assert ".flow-node--iterate" in css
+    assert ".flow-node--decision" in css
