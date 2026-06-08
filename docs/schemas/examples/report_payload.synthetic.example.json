@@ -1,0 +1,244 @@
+{
+  "report_version": "1.0",
+  "title": "Synthetic Delphi Priorities Report",
+  "meeting": {
+    "meeting_id": "synthetic-report-example",
+    "title": "Synthetic Delphi Priorities",
+    "description": "Small synthetic fixture for report schema and renderer checks.",
+    "method": {
+      "name": "Classical Delphi",
+      "version": "1.0",
+      "citation": "Synthetic example; no participant data."
+    },
+    "facilitator": {
+      "user_id": "facilitator-1",
+      "display_name": "Facilitator One"
+    },
+    "participant_count": 3,
+    "round_count": 2,
+    "started_at": "2026-06-07T09:00:00Z",
+    "ended_at": "2026-06-07T10:00:00Z"
+  },
+  "generated_at": "2026-06-07T10:01:00Z",
+  "generated_by": "system:synthetic-fixture",
+  "sections": [
+    {
+      "id": "overview",
+      "type": "narrative",
+      "title": "Overview",
+      "body": {
+        "markdown": "The group completed two Delphi rounds. Idea A remained first and agreement improved across the second round.",
+        "ai_drafted": false
+      }
+    },
+    {
+      "id": "summary",
+      "type": "key_value",
+      "title": "Run Summary",
+      "body": {
+        "pairs": [
+          {
+            "label": "Participants",
+            "value": 3
+          },
+          {
+            "label": "Rounds",
+            "value": 2
+          },
+          {
+            "label": "Final Kendall's W",
+            "value": 1.0
+          }
+        ]
+      }
+    },
+    {
+      "id": "final_ranking",
+      "type": "ranked_list",
+      "title": "Final Ranking",
+      "source": {
+        "meeting_id": "synthetic-report-example",
+        "activity_id": "rank-r2",
+        "tool_type": "rank_order_voting",
+        "round_index": 1
+      },
+      "body": {
+        "items": [
+          {
+            "rank": 1,
+            "label": "Idea A",
+            "stable_key": "idea-a",
+            "stats": {
+              "median": 1,
+              "iqr": 0,
+              "agreement_band": "green"
+            }
+          },
+          {
+            "rank": 2,
+            "label": "Idea B",
+            "stable_key": "idea-b",
+            "stats": {
+              "median": 2,
+              "iqr": 0,
+              "agreement_band": "green"
+            }
+          },
+          {
+            "rank": 3,
+            "label": "Idea C",
+            "stable_key": "idea-c",
+            "stats": {
+              "median": 3,
+              "iqr": 0,
+              "agreement_band": "green"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "trajectory",
+      "type": "table",
+      "title": "Rank Trajectory",
+      "body": {
+        "columns": [
+          {
+            "key": "final_rank",
+            "label": "Final rank"
+          },
+          {
+            "key": "item",
+            "label": "Item"
+          },
+          {
+            "key": "r1",
+            "label": "Round 1"
+          },
+          {
+            "key": "r2",
+            "label": "Round 2"
+          },
+          {
+            "key": "delta",
+            "label": "Net move"
+          },
+          {
+            "key": "band",
+            "label": "Agreement"
+          }
+        ],
+        "rows": [
+          {
+            "final_rank": 1,
+            "item": "Idea A",
+            "r1": 1,
+            "r2": 1,
+            "delta": 0,
+            "band": "green"
+          },
+          {
+            "final_rank": 2,
+            "item": "Idea B",
+            "r1": 3,
+            "r2": 2,
+            "delta": 1,
+            "band": "green"
+          },
+          {
+            "final_rank": 3,
+            "item": "Idea C",
+            "r1": 2,
+            "r2": 3,
+            "delta": -1,
+            "band": "green"
+          }
+        ]
+      }
+    },
+    {
+      "id": "comments",
+      "type": "comment_thread",
+      "title": "Round Comments",
+      "body": {
+        "groups": [
+          {
+            "heading": "Idea B",
+            "stable_key": "idea-b",
+            "comments": [
+              {
+                "text": "This became clearer after the second round."
+              },
+              {
+                "text": "The group treated implementation cost as manageable."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "round_trace",
+      "type": "rounds",
+      "title": "Round Trace",
+      "body": {
+        "rounds": [
+          {
+            "round_number": 1,
+            "summary": "Idea A led, but Idea B and Idea C were close.",
+            "stats": {
+              "kendalls_w": 0.42,
+              "median_iqr": 1.0
+            }
+          },
+          {
+            "round_number": 2,
+            "summary": "All three participants submitted the same final order.",
+            "stats": {
+              "kendalls_w": 1.0,
+              "median_iqr": 0.0
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "convergence",
+      "type": "chart",
+      "title": "Convergence Curve",
+      "body": {
+        "chart_kind": "line",
+        "x_axis": {
+          "label": "Round",
+          "categories": [
+            "Round 1",
+            "Round 2"
+          ]
+        },
+        "y_axis": {
+          "label": "Score"
+        },
+        "series": [
+          {
+            "name": "Kendall's W",
+            "points": [
+              0.42,
+              1.0
+            ]
+          },
+          {
+            "name": "Median IQR",
+            "points": [
+              1.0,
+              0.0
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "metadata": {
+    "fixture": true,
+    "source": "synthetic"
+  }
+}

@@ -3,9 +3,18 @@
 import csv
 import io
 import json
+from pathlib import Path
 
 from app.services.report_builder import build_report
 from app.services import report_renderers as rr
+
+SYNTHETIC_REPORT_EXAMPLE = (
+    Path(__file__).resolve().parents[2]
+    / "docs"
+    / "schemas"
+    / "examples"
+    / "report_payload.synthetic.example.json"
+)
 
 
 def _round_bundle(activity_id, votes_by_user):
@@ -134,3 +143,26 @@ def test_render_docx_produces_document():
     data = rr.render_docx(rep)
     assert data[:2] == b"PK"  # docx is a zip
     assert len(data) > 1000
+
+
+def test_synthetic_report_payload_example_covers_schema_shapes_and_renderers():
+    report = json.loads(SYNTHETIC_REPORT_EXAMPLE.read_text(encoding="utf-8"))
+    assert report["metadata"]["source"] == "synthetic"
+    section_types = {section["type"] for section in report["sections"]}
+    assert section_types == {
+        "narrative",
+        "key_value",
+        "ranked_list",
+        "table",
+        "comment_thread",
+        "rounds",
+        "chart",
+    }
+
+    assert json.loads(rr.render_json(report)) == report
+    assert "Synthetic Delphi Priorities Report" in rr.render_markdown(report)
+    assert "Idea A" in rr.render_csv(report)
+    assert "Download for the complete table." in rr.render_html(report, max_rows=1)
+    chart = next(section for section in report["sections"] if section["type"] == "chart")
+    assert rr.render_chart_png(chart).startswith(b"\x89PNG\r\n\x1a\n")
+    assert rr.render_docx(report).startswith(b"PK")

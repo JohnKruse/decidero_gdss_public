@@ -7,8 +7,8 @@
 (see the 2026-06-07 report note)
 
 Status: **IMPLEMENTED THROUGH STEP 5.** Steps 0, 1, 2, 3, 4, and 5 are done,
-including the live HTTP Delphi conclude-to-report-download pass. Remaining
-optional cleanup: a synthetic in-repo example payload.
+including the live HTTP Delphi conclude-to-report-download pass and a synthetic
+in-repo example payload.
 
 ## Why
 
@@ -184,8 +184,10 @@ Findings that shape the build:
   source provenance; round trace). Validated as well-formed; round-trips a
   Delphi-style example and a **real two-round Delphi dataset** (see Sanity test).
   **Pressure-test before writing renderers.**
-- TODO: author a small **synthetic** in-repo example payload (`docs/schemas/examples/`)
-  as the permanent fixture, since the real-data one is third-party and uncommitted.
+- Synthetic permanent fixture authored:
+  `docs/schemas/examples/report_payload.synthetic.example.json`. It covers all
+  seven section types and is regression-checked by
+  `test_synthetic_report_payload_example_covers_schema_shapes_and_renderers`.
 
 ### Step 1 — [DONE] Metrics, report model + renderers (no engine yet)
 

@@ -84,8 +84,9 @@ Schema: `docs/schemas/report_payload.schema.json`. Paper: HICSS outline §M/§N.
 - **matplotlib uses the headless `Agg` backend** (`matplotlib.use("Agg")` in
   `report_renderers.py`). Keep it — no display on the server.
 - Real-data sanity artifacts (the BLS-derived example payload, charts, docx) are
-  **not committed** (third-party CC BY data); regenerable. Step 0 TODO: author a
-  small *synthetic* in-repo example payload as the permanent fixture.
+  **not committed** (third-party CC BY data); regenerable. The permanent in-repo
+  fixture is the synthetic
+  `docs/schemas/examples/report_payload.synthetic.example.json`.
 
 ## Branch hygiene (decide before stacking more)
 
