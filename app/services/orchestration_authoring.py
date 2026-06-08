@@ -88,6 +88,63 @@ _PREDICATE_TO_STOP_CONDITION: Dict[str, str] = {
     "fixed_n": "fixed_rounds",
 }
 
+_CUSTOM_STOP_MARKER = "Custom stop-condition rubric:"
+
+
+def _custom_stop_ai_decision_step(custom_text: str) -> Dict[str, Any]:
+    """Return an ai-decision step that evaluates a facilitator-authored rubric."""
+    return {
+        "type": "ai-decision",
+        "prompt_template": (
+            "Evaluate whether this repeated decision process should continue or "
+            "conclude. Use the latest available round evidence supplied by the "
+            "orchestration runtime.\n\n"
+            f"{_CUSTOM_STOP_MARKER}\n{custom_text}\n\n"
+            "Return JSON with recommendation set to either 'continue' or "
+            "'conclude', plus a concise rationale and confidence from 0.0 to 1.0."
+        ),
+        "context_bundle_keys": [],
+        "output_schema": {
+            "type": "object",
+            "required": ["recommendation", "rationale", "confidence"],
+            "properties": {
+                "recommendation": {"type": "string"},
+                "rationale": {"type": "string"},
+                "confidence": {"type": "number"},
+            },
+        },
+        "review_required": False,
+    }
+
+
+def _custom_stop_text_from_ai_decision(step: Dict[str, Any]) -> Optional[str]:
+    if step.get("type") != "ai-decision":
+        return None
+    prompt = step.get("prompt_template")
+    if not isinstance(prompt, str) or _CUSTOM_STOP_MARKER not in prompt:
+        return None
+    _, after = prompt.split(_CUSTOM_STOP_MARKER, 1)
+    custom_text = after.strip().split("\n\n", 1)[0].strip()
+    return custom_text or None
+
+
+def _custom_stop_text_from_iterate(iterate_step: Dict[str, Any]) -> Optional[str]:
+    def _walk(steps: Any) -> Optional[str]:
+        if not isinstance(steps, list):
+            return None
+        for step in steps:
+            if not isinstance(step, dict):
+                continue
+            found = _custom_stop_text_from_ai_decision(step)
+            if found:
+                return found
+            found = _walk(step.get("steps"))
+            if found:
+                return found
+        return None
+
+    return _walk(iterate_step.get("steps"))
+
 
 def _feedback_policy_steps(document: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Activity steps whose config carries a feedback_policy (the comment step)."""
@@ -346,8 +403,15 @@ def compile_control_point_card(card: Dict[str, Any]) -> Dict[str, Any]:
             }
         round_gate = {"decision": decision_body}
 
-    # --- Preserve custom stop-condition text as a note ---
+    # --- Compile custom stop-condition text to an ai-decision rubric ---
     custom_text = (card.get("stop_condition_text") or "").strip()
+    if stop_key == "custom" and not custom_text:
+        raise ValueError("Describe the custom stop condition in your own words.")
+
+    sequence_steps = [activity_step]
+    if stop_key == "custom":
+        activity_step["transform_input"] = "previous_round_feedback"
+        sequence_steps.append(_custom_stop_ai_decision_step(custom_text))
 
     # --- Assemble the iterate step ---
     iterate: Dict[str, Any] = {
@@ -361,14 +425,12 @@ def compile_control_point_card(card: Dict[str, Any]) -> Dict[str, Any]:
         "steps": [
             {
                 "type": "sequence",
-                "steps": [activity_step],
+                "steps": sequence_steps,
             }
         ],
     }
     if round_gate is not None:
         iterate["round_gate"] = round_gate
-    if custom_text:
-        iterate["_custom_stop_description"] = custom_text
 
     return iterate
 
@@ -402,8 +464,7 @@ def decompile_control_point_card(iterate_step: Dict[str, Any]) -> Dict[str, Any]
 
     stop_condition = _PREDICATE_TO_STOP_CONDITION.get(pred_name, "responses_stabilize")
 
-    # If a custom description was stored, treat it as custom.
-    custom_text = (iterate_step.get("_custom_stop_description") or "").strip()
+    custom_text = _custom_stop_text_from_iterate(iterate_step)
     if custom_text:
         stop_condition = "custom"
 
@@ -434,7 +495,7 @@ def decompile_control_point_card(iterate_step: Dict[str, Any]) -> Dict[str, Any]
         "activity_title": activity_title,
         "who_decides": who_decides,
         "stop_condition": stop_condition,
-        "stop_condition_text": custom_text or None,
+        "stop_condition_text": custom_text,
         "max_rounds": max_rounds,
         "threshold": threshold,
     }

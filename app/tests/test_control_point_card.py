@@ -70,16 +70,42 @@ def test_compile_fixed_rounds_maps_to_fixed_n():
     assert pred["config"]["max_rounds"] == 3
 
 
-def test_compile_custom_stop_condition_records_text():
+def test_compile_custom_stop_condition_adds_ai_decision_rubric():
     step = compile_control_point_card(
         _base_card(
             stop_condition="custom",
             stop_condition_text="When the facilitator is satisfied with convergence.",
         )
     )
-    assert step["_custom_stop_description"] == (
-        "When the facilitator is satisfied with convergence."
+    sequence_steps = step["steps"][0]["steps"]
+    assert [item["type"] for item in sequence_steps] == ["activity", "ai-decision"]
+    assert sequence_steps[0]["transform_input"] == "previous_round_feedback"
+    ai_step = sequence_steps[1]
+    assert "When the facilitator is satisfied with convergence." in ai_step["prompt_template"]
+    assert ai_step["review_required"] is False
+    assert ai_step["context_bundle_keys"] == []
+    assert ai_step["output_schema"]["required"] == [
+        "recommendation",
+        "rationale",
+        "confidence",
+    ]
+    assert "_custom_stop_description" not in step
+
+
+def test_compile_custom_stop_condition_validates_against_loader():
+    from app.services.orchestration_loader import load_orchestration_data
+
+    delphi = _delphi_dict()
+    step = compile_control_point_card(
+        _base_card(
+            stop_condition="custom",
+            stop_condition_text="Conclude once the top three options are stable enough to report.",
+        )
     )
+    delphi["steps"][0]["steps"][1] = step
+    doc = load_orchestration_data(delphi)
+    iterate = doc.steps[0].steps[1]
+    assert iterate.steps[0].steps[1].type == "ai-decision"
 
 
 def test_compile_output_validates_against_loader():
@@ -101,6 +127,17 @@ def test_decompile_round_trips_all_modes():
         assert card_out["who_decides"] == mode
         assert card_out["max_rounds"] == card_in["max_rounds"]
         assert card_out["activity_tool_type"] == card_in["activity_tool_type"]
+
+
+def test_decompile_custom_stop_condition_round_trips_ai_rubric():
+    card_in = _base_card(
+        stop_condition="custom",
+        stop_condition_text="Conclude when comments no longer change the shortlist.",
+    )
+    step = compile_control_point_card(card_in)
+    card_out = decompile_control_point_card(step)
+    assert card_out["stop_condition"] == "custom"
+    assert card_out["stop_condition_text"] == card_in["stop_condition_text"]
 
 
 def test_decompile_delphi_iterate():

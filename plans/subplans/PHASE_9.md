@@ -135,10 +135,12 @@ Conclude this step by:
 
 - [DONE] Mapping "who decides" to the Phase 8 gate mode and common stop-condition
   options to named computational predicates for the v1 supported modes.
-- [PENDING] Mapping "describe it in your own words" to an `ai-decision` rubric
-  (prompt + output schema generated behind the scenes). Current implementation
-  preserves the custom text as metadata and still compiles through the existing
-  `iqr_stability` predicate.
+- [DONE] Mapping "describe it in your own words" to an `ai-decision` rubric
+  (prompt + output schema generated behind the scenes). The compiled iterate
+  sequence now runs the selected activity and then a schema-governed AI rubric
+  verdict while retaining the existing convergence predicate as the hard fallback
+  / round-cap guardrail; decompile reads the custom text back from the rubric
+  instead of private metadata.
 - [DONE] Compiling the card to the iterate + gate structure and round-tripping it
   back into the card when editing an existing method, via
   `app/services/orchestration_authoring.py` and the stateless template control
