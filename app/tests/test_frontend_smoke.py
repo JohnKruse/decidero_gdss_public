@@ -267,9 +267,32 @@ def test_orchestrated_controls_require_stop_before_advance():
     assert "function updateOrchestrationAdvanceAvailability()" in js
     assert "Stop ${label} before advancing to the next step." in js
     assert "function isPastOrchestratedActivity(item)" in js
+    assert "function isLockedOrchestratedStep(item)" in js
     assert "This orchestrated step is in the past and cannot be restarted." in js
     assert "hasOpenOtherActivity" in js
+    assert "selectedIsPastOrchestrated" in js
     assert "gateReportSignature" in js
+
+
+def test_orchestrated_agenda_hides_transfer_controls():
+    with open("app/templates/meeting.html", "r", encoding="utf-8") as handle:
+        html = handle.read()
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+
+    assert "data-meeting-is-orchestration" in html
+    assert "function isOrchestrationMeeting()" in js
+    assert "if (!isOrchestrationMeeting()) {" in js
+    assert "transferState.active && state.isFacilitator && !isOrchestrationMeeting()" in js
+    assert "if (!transfer.root || !activity || isOrchestrationMeeting())" in js
+
+
+def test_brainstorming_selected_comment_surface_has_specific_empty_state():
+    with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
+        js = handle.read()
+
+    assert "const selectedCommentSurface =" in js
+    assert "No selected ideas are open for comment in this step yet." in js
 
 
 def test_facilitator_feedback_decision_panel_stays_open_while_editing():

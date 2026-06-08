@@ -17,6 +17,7 @@
     data-meeting-can-delete="{{ 'true' if meeting_capabilities.can_delete else 'false' }}"
     data-meeting-is-facilitator="{{ 'true' if meeting_capabilities.is_facilitator else 'false' }}"
     data-meeting-is-participant="{{ 'true' if meeting_capabilities.is_participant else 'false' }}"
+    data-meeting-is-orchestration="{{ 'true' if orchestration_template or meeting.agenda_strategy == 'orchestration' else 'false' }}"
     data-view-mode="{{ 'facilitator' if can_manage_meeting else 'participant' }}"
     data-brainstorm-max-length="{{ brainstorming_limits.idea_character_limit | default(500) }}"
     data-brainstorm-max-ideas="{{ brainstorming_limits.max_ideas_per_user | default(0) }}"

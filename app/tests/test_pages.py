@@ -758,6 +758,7 @@ def test_orchestration_meeting_page_sets_facilitator_expectations(
 
     page = authenticated_client.get(f"/meeting/{create_response.json()['id']}")
     assert page.status_code == 200
+    assert 'data-meeting-is-orchestration="true"' in page.text
     assert "Orchestrated Method" in page.text
     assert "Decidero will create later rounds and decision points only when this method reaches them." in page.text
     assert "Method outline" in page.text

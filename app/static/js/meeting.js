@@ -17,6 +17,7 @@
             userLogin: root.dataset.userLogin || null,
             userId: root.dataset.userId || null,
             userRole: (root.dataset.userRole || "participant").toLowerCase(),
+            isOrchestrationMeeting: String(root.dataset.meetingIsOrchestration || "").toLowerCase() === "true",
         };
         const parseBool = (value, fallback = false) => {
             if (value === undefined || value === null || value === "") {
@@ -597,6 +598,14 @@
             return Boolean(item?.config && typeof item.config._orchestration === "object");
         }
 
+        function isOrchestrationMeeting() {
+            return Boolean(
+                context.isOrchestrationMeeting ||
+                state.meeting?.agenda_strategy === "orchestration" ||
+                state.agenda.some((item) => isOrchestratedActivity(item)),
+            );
+        }
+
         function latestOrchestratedOrder() {
             const orders = state.agenda
                 .filter((item) => isOrchestratedActivity(item))
@@ -609,6 +618,10 @@
             const latestOrder = latestOrchestratedOrder();
             const order = Number(item?.order_index);
             return isOrchestratedActivity(item) && Number.isFinite(order) && latestOrder !== null && order < latestOrder;
+        }
+
+        function isLockedOrchestratedStep(item) {
+            return isOrchestrationMeeting() && isPastOrchestratedActivity(item);
         }
 
         function updateOrchestrationAdvanceAvailability() {
@@ -2652,7 +2665,12 @@
             row.className = "brainstorming-empty-row";
             const cell = document.createElement("td");
             cell.colSpan = 5;
-            cell.textContent = "No ideas yet. Be the first to share!";
+            const selectedCommentSurface =
+                activeBrainstormingConfig.allow_new_ideas === false &&
+                String(activeBrainstormingConfig.comment_scope || "").toLowerCase() === "selected";
+            cell.textContent = selectedCommentSurface
+                ? "No selected ideas are open for comment in this step yet."
+                : "No ideas yet. Be the first to share!";
             row.appendChild(cell);
             brainstorming.ideasBody.appendChild(row);
         }
@@ -3903,7 +3921,7 @@
         }
 
         async function openTransferModal(activity) {
-            if (!transfer.root || !activity) {
+            if (!transfer.root || !activity || isOrchestrationMeeting()) {
                 return;
             }
             resetTransferState();
@@ -6790,8 +6808,7 @@
                 const isPaused = status === "paused";
                 const isActive = isRunning || isPaused || state.latestState?.currentActivity === item.activity_id;
                 const elapsed = activityState?.elapsedTime || item.elapsed_duration || 0;
-                const isOrchestrated = isOrchestratedActivity(item);
-                const isPastOrchestrated = isPastOrchestratedActivity(item);
+                const isLockedOrchestrated = isLockedOrchestratedStep(item);
                 const hasOpenOtherActivity = getOpenActivities(item.activity_id).length > 0;
 
                 const statusContainer = document.createElement("div");
@@ -6858,11 +6875,11 @@
                     startBtn.disabled =
                         isRunning ||
                         hasOpenOtherActivity ||
-                        (isOrchestrated && isPastOrchestrated);
+                        isLockedOrchestrated;
                     startBtn.title = isPaused ? "Resume Activity" : "Start Activity";
                     if (hasOpenOtherActivity) {
                         startBtn.title = "Stop the open activity before starting another.";
-                    } else if (isOrchestrated && isPastOrchestrated) {
+                    } else if (isLockedOrchestrated) {
                         startBtn.title = "This orchestrated step is in the past and cannot be restarted.";
                     }
 
@@ -6921,31 +6938,33 @@
                     });
                     actions.appendChild(participantsBtn);
 
-                    const transferCount = Number(item.transfer_count ?? item.transferable_count ?? 0);
-                    const hasTransferItems = Number.isFinite(transferCount) && transferCount > 0;
-                    const transferBtn = document.createElement("button");
-                    transferBtn.type = "button";
-                    transferBtn.className = "control-btn transfer-ideas-btn";
-                    transferBtn.textContent = hasTransferItems
-                        ? `Transfer Ideas (${transferCount})`
-                        : "Transfer Ideas";
-                    transferBtn.disabled = isRunning || !hasTransferItems;
-                    if (isRunning) {
-                        transferBtn.title = "Stop the activity before transferring ideas.";
-                    } else if (!hasTransferItems) {
-                        transferBtn.title = item.transfer_reason || "No ideas to transfer yet.";
-                    } else {
-                        transferBtn.title = "Transfer ideas to a new activity.";
-                    }
-                    transferBtn.addEventListener("click", (e) => {
-                        e.stopPropagation();
-                        if (transferBtn.disabled) {
-                            return;
+                    if (!isOrchestrationMeeting()) {
+                        const transferCount = Number(item.transfer_count ?? item.transferable_count ?? 0);
+                        const hasTransferItems = Number.isFinite(transferCount) && transferCount > 0;
+                        const transferBtn = document.createElement("button");
+                        transferBtn.type = "button";
+                        transferBtn.className = "control-btn transfer-ideas-btn";
+                        transferBtn.textContent = hasTransferItems
+                            ? `Transfer Ideas (${transferCount})`
+                            : "Transfer Ideas";
+                        transferBtn.disabled = isRunning || !hasTransferItems;
+                        if (isRunning) {
+                            transferBtn.title = "Stop the activity before transferring ideas.";
+                        } else if (!hasTransferItems) {
+                            transferBtn.title = item.transfer_reason || "No ideas to transfer yet.";
+                        } else {
+                            transferBtn.title = "Transfer ideas to a new activity.";
                         }
-                        selectAgendaItem(item.activity_id, { source: "user" });
-                        openTransferModal(item);
-                    });
-                    actions.appendChild(transferBtn);
+                        transferBtn.addEventListener("click", (e) => {
+                            e.stopPropagation();
+                            if (transferBtn.disabled) {
+                                return;
+                            }
+                            selectAgendaItem(item.activity_id, { source: "user" });
+                            openTransferModal(item);
+                        });
+                        actions.appendChild(transferBtn);
+                    }
                 }
 
                 // Add delete button for facilitators
@@ -7066,8 +7085,15 @@
         function applyActiveActivity(activityId) {
             state.activeActivityId = activityId || null;
             // Auto-follow the active activity unless the user explicitly selected another
-            if (!state.selectedActivityId || state.selectionMode === "auto") {
+            const selectedActivity = state.selectedActivityId
+                ? state.agendaMap.get(state.selectedActivityId)
+                : null;
+            const selectedIsPastOrchestrated = selectedActivity && isLockedOrchestratedStep(selectedActivity);
+            if (!state.selectedActivityId || state.selectionMode === "auto" || selectedIsPastOrchestrated) {
                 state.selectedActivityId = activityId || state.selectedActivityId;
+                if (selectedIsPastOrchestrated && activityId) {
+                    state.selectionMode = "auto";
+                }
             }
             highlightAgenda();
             renderActivityParticipantSection(activityId);
@@ -7785,7 +7811,7 @@
             let showCategorization = showTool && toolType === "categorization";
             let showReport = showTool && toolType === "report" && state.isFacilitator;
             const showFacilitatorDecision = showTool && toolType === "facilitator_decision" && state.isFacilitator;
-            const showTransfer = transferState.active && state.isFacilitator;
+            const showTransfer = transferState.active && state.isFacilitator && !isOrchestrationMeeting();
             if (showTransfer) {
                 showBrainstorming = false;
                 showVoting = false;

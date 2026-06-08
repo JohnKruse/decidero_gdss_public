@@ -276,6 +276,22 @@ own-comment labeling, group-ordered reranking with round progression, fork-time
 workload tuning, and the e2e regression). Future engine work (not blocking): a
 true auto-advance past a zero-comment step instead of the current soft skip.
 
+Operational UI guardrails added 2026-06-08:
+- Orchestrated meetings now carry an explicit `data-meeting-is-orchestration`
+  context flag into the meeting page.
+- Past orchestrated agenda steps lock their Start buttons after the engine advances
+  beyond them, while still allowing the current stopped step to restart before
+  advance.
+- Manual "Transfer Ideas" controls are hidden and the transfer panel is suppressed
+  for orchestrated meetings, preserving transfer as a facilitator-driven linear
+  meeting affordance rather than a templated-method control.
+- If a facilitator is still selected on a past orchestration row, live state
+  updates now auto-follow the current engine activity; this prevents the Delphi
+  selected-comment phase from appearing as an empty/wrong facilitator panel.
+- The generic brainstorming selected-comment surface now has a specific empty
+  state for "no selected ideas open" to distinguish a real zero-comment decision
+  from a loading or selection problem.
+
 ### Step 4 — [PENDING] Pattern Blocks on a Meeting-Flow Canvas (compose recognized patterns)
 
 For facilitators who want to compose rather than fork, provide a palette of named
