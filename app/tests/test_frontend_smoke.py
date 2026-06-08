@@ -265,7 +265,11 @@ def test_orchestrated_controls_require_stop_before_advance():
     with open("app/static/js/meeting.js", "r", encoding="utf-8") as handle:
         js = handle.read()
     assert "function updateOrchestrationAdvanceAvailability()" in js
+    assert "function refreshOrchestrationAdvancePreview()" in js
+    assert "/orchestration/preview" in js
     assert "Stop ${label} before advancing to the next step." in js
+    assert "Run and stop ${blockedTitle} before advancing." in js
+    assert "Next likely step:" in js
     assert "function isPastOrchestratedActivity(item)" in js
     assert "function isLockedOrchestratedStep(item)" in js
     assert "This orchestrated step is in the past and cannot be restarted." in js

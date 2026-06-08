@@ -57,6 +57,7 @@ from app.utils.security import get_password_hash
 from fastapi import Request
 from typing import Any, List, Optional, Literal, Iterable, Set, Dict
 from sqlalchemy import func
+from sqlalchemy.orm import object_session
 from datetime import datetime, timezone
 from pathlib import Path
 import re
@@ -2520,6 +2521,116 @@ async def respond_facilitator_decision(
     }
 
 
+def _latest_unclosed_orchestrated_activity(
+    meeting: Meeting,
+) -> Optional[AgendaActivity]:
+    """Return the latest non-decision orchestration row lacking an output bundle."""
+    db = object_session(meeting)
+    if getattr(meeting, "agenda_activities", None):
+        first = meeting.agenda_activities[0]
+        db = db or object_session(first)
+    if db is None:
+        return None
+
+    agenda = sorted(
+        list(getattr(meeting, "agenda_activities", []) or []),
+        key=lambda item: int(getattr(item, "order_index", 0) or 0),
+    )
+    for activity in reversed(agenda):
+        if str(activity.tool_type or "").lower() == "facilitator_decision":
+            continue
+        output_exists = (
+            db.query(ActivityBundle.bundle_id)
+            .filter(
+                ActivityBundle.meeting_id == activity.meeting_id,
+                ActivityBundle.activity_id == activity.activity_id,
+                ActivityBundle.kind == "output",
+            )
+            .first()
+            is not None
+        )
+        if not output_exists:
+            return activity
+        return None
+    return None
+
+
+@router.get("/{meeting_id}/orchestration/preview")
+async def preview_orchestration_next_step(
+    meeting_id: str,
+    current_user: str = Depends(get_current_user),
+    user_manager: UserManager = Depends(get_user_manager),
+    meeting_manager: MeetingManager = Depends(get_meeting_manager),
+):
+    user = user_manager.get_user_by_login(current_user)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    meeting = meeting_manager.get_meeting(meeting_id)
+    if not meeting:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Meeting not found")
+
+    capabilities = resolve_meeting_capabilities(meeting, user)
+    if not capabilities["can_manage"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only facilitators can preview orchestration advancement.",
+        )
+
+    strategy = get_agenda_strategy(meeting)
+    if not isinstance(strategy, OrchestrationEngineStrategy):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This meeting is not orchestration-backed.",
+        )
+
+    current_meeting_state = await meeting_state_manager.snapshot(meeting_id)
+    open_entries = _active_runtime_entries(current_meeting_state)
+    if open_entries:
+        open_entry = open_entries[0]
+        open_activity_id = open_entry.get("activityId") or open_entry.get("activity_id")
+        activity = next(
+            (
+                item
+                for item in getattr(meeting, "agenda_activities", []) or []
+                if item.activity_id == open_activity_id
+            ),
+            None,
+        )
+        return {
+            "meeting_id": meeting_id,
+            "can_advance": False,
+            "blocked_reason": "active_activity",
+            "blocked_activity": {
+                "activity_id": getattr(activity, "activity_id", None) or open_activity_id,
+                "title": getattr(activity, "title", None),
+                "tool_type": getattr(activity, "tool_type", None) or open_entry.get("tool"),
+            },
+            "next_step": strategy.preview_next_step(meeting),
+        }
+
+    unclosed = _latest_unclosed_orchestrated_activity(meeting)
+    if unclosed is not None:
+        return {
+            "meeting_id": meeting_id,
+            "can_advance": False,
+            "blocked_reason": "current_activity_not_closed",
+            "blocked_activity": AgendaActivityResponse.model_validate(unclosed).model_dump(),
+            "next_step": strategy.preview_next_step(meeting),
+        }
+
+    preview = strategy.preview_next_step(meeting)
+    return {
+        "meeting_id": meeting_id,
+        "can_advance": preview.get("status") not in {
+            "complete",
+            "unavailable",
+            "waiting_for_current_output",
+        },
+        "blocked_reason": None,
+        "next_step": preview,
+    }
+
+
 @router.post("/{meeting_id}/orchestration/advance")
 async def advance_orchestration(
     meeting_id: str,
@@ -2582,6 +2693,16 @@ async def advance_orchestration(
 
     if strategy.is_complete(meeting):
         return {"meeting_id": meeting_id, "status": "complete"}
+
+    unclosed = _latest_unclosed_orchestrated_activity(meeting)
+    if unclosed is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Start and stop {unclosed.title or unclosed.activity_id} before "
+                "advancing the orchestrated method."
+            ),
+        )
 
     try:
         activity = strategy.create_activity(meeting, None, meeting_manager)

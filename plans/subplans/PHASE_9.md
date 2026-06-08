@@ -292,6 +292,17 @@ Operational UI guardrails added 2026-06-08:
   state for "no selected ideas open" to distinguish a real zero-comment decision
   from a loading or selection problem.
 
+Operational UI guardrails added 2026-06-08 (advance preview):
+- The orchestration strategy exposes a read-only next-step preview so the
+  facilitator sees the likely upcoming activity or decision before clicking
+  Advance.
+- The Advance endpoint now rejects attempts to skip a materialized orchestration
+  activity that has not produced an output bundle. In practice: Start/Stop the
+  current activity first; it may be restarted while stopped until Advance is
+  actually pressed.
+- The Next Step panel consumes the preview endpoint and disables Advance with
+  copy that explains both the immediate requirement and the likely next step.
+
 ### Step 4 — [PENDING] Pattern Blocks on a Meeting-Flow Canvas (compose recognized patterns)
 
 For facilitators who want to compose rather than fork, provide a palette of named

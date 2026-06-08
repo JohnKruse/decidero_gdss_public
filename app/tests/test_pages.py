@@ -398,6 +398,51 @@ def test_orchestration_advance_endpoint_materializes_next_round(
     assert len(input_bundle.items) >= 1
 
 
+def test_orchestration_preview_blocks_unclosed_first_step(
+    authenticated_client: TestClient,
+    db_session,
+):
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+    create = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={
+            "title": "Fresh Delphi Guard",
+            "description": "Do not skip the first activity.",
+            "participant_ids": [],
+        },
+    )
+    assert create.status_code == 200, create.text
+    meeting_id = create.json()["meeting_id"]
+    brainstorm = create.json()["agenda"][0]
+
+    preview = authenticated_client.get(f"/api/meetings/{meeting_id}/orchestration/preview")
+    assert preview.status_code == 200, preview.text
+    preview_body = preview.json()
+    assert preview_body["can_advance"] is False
+    assert preview_body["blocked_reason"] == "current_activity_not_closed"
+    assert preview_body["blocked_activity"]["activity_id"] == brainstorm["activity_id"]
+    assert preview_body["next_step"]["kind"] == "activity"
+    assert preview_body["next_step"]["tool_type"] == "rank_order_voting"
+
+    blocked = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert blocked.status_code == 409
+    assert "Start and stop" in blocked.json()["detail"]
+
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting_id,
+        brainstorm["activity_id"],
+        [{"content": "idea-a"}, {"content": "idea-b"}],
+        metadata={"source": "test"},
+    )
+    ready = authenticated_client.get(f"/api/meetings/{meeting_id}/orchestration/preview")
+    assert ready.status_code == 200, ready.text
+    assert ready.json()["can_advance"] is True
+    assert ready.json()["next_step"]["tool_type"] == "rank_order_voting"
+
+
 def test_delphi_http_conclude_materializes_report_and_downloads(
     authenticated_client: TestClient,
     db_session,

@@ -1028,6 +1028,101 @@ class OrchestrationEngineStrategy(AgendaStrategy):
             self._plan
         )
 
+    def preview_next_step(self, meeting: Meeting) -> Dict[str, Any]:
+        """Return a read-only preview of the next orchestration transition.
+
+        This drives facilitator copy before the Advance button mutates the agenda.
+        It deliberately walks only the per-request strategy instance; it does not
+        create agenda rows or bundles.
+        """
+        from app.services.orchestration_loader import (
+            ActivityStep,
+            AIDecisionStep,
+            FacilitatorDecisionStep,
+        )
+
+        pending = self.pending_decision()
+        if pending is not None:
+            return {
+                "status": "paused",
+                "kind": "facilitator_decision",
+                "activity_id": pending.get("activity_id"),
+                "title": pending.get("prompt") or "Facilitator decision",
+                "prompt": pending.get("prompt"),
+                "options": list(pending.get("options") or []),
+                "is_round_gate": bool(pending.get("gate")),
+                "recommendation": pending.get("recommendation"),
+                "evidence": pending.get("evidence"),
+                "report": pending.get("report"),
+            }
+
+        db = object_session(meeting)
+        if db is None:
+            return {"status": "unavailable"}
+
+        self._walker.meeting_id = meeting.meeting_id
+        step_index = self._materialize_count(meeting, db)
+        if step_index >= len(self._plan):
+            self._extend_plan(db)
+
+        if step_index >= len(self._plan) and self._walker.needs_gate is not None:
+            gate = self._walker.needs_gate
+            decision_spec = dict(gate.decision_spec or {})
+            return {
+                "status": "ready",
+                "kind": "facilitator_decision",
+                "title": decision_spec.get("prompt") or "Round decision",
+                "prompt": decision_spec.get("prompt") or "Continue to another round?",
+                "options": list(decision_spec.get("options") or ["continue", "conclude"]),
+                "is_round_gate": True,
+                "recommendation": gate.recommendation,
+                "evidence": {
+                    "round_number": gate.round_number,
+                    "max_rounds": gate.max_rounds,
+                    "converged": gate.converged,
+                    "recommendation_source": gate.recommendation_source,
+                },
+                "report": gate.report,
+            }
+
+        if step_index >= len(self._plan):
+            if self.is_complete(meeting):
+                return {"status": "complete"}
+            return {"status": "waiting_for_current_output"}
+
+        logical_step_id, step, round_index, _iterate_frame = self._plan[step_index]
+        if isinstance(step, ActivityStep):
+            return {
+                "status": "ready",
+                "kind": "activity",
+                "logical_step_id": logical_step_id,
+                "round_index": round_index,
+                "tool_type": step.tool_type,
+                "title": step.title,
+            }
+        if isinstance(step, FacilitatorDecisionStep):
+            return {
+                "status": "ready",
+                "kind": "facilitator_decision",
+                "logical_step_id": logical_step_id,
+                "round_index": round_index,
+                "title": step.prompt or "Facilitator decision",
+                "prompt": step.prompt,
+                "options": list(step.options or []),
+                "is_round_gate": False,
+                "report": step.report,
+            }
+        if isinstance(step, AIDecisionStep):
+            return {
+                "status": "ready",
+                "kind": "ai_decision",
+                "logical_step_id": logical_step_id,
+                "round_index": round_index,
+                "title": "AI decision review" if step.review_required else "AI decision",
+                "review_required": bool(step.review_required),
+            }
+        return {"status": "unavailable"}
+
     def iteration_metadata_for(self, activity_id: str) -> Tuple[Optional[str], int]:
         """Return the (logical_step_id, round_index) recorded for an activity.
 

@@ -478,6 +478,9 @@
 
         const orchestrationAdvanceState = {
             busy: false,
+            loadingPreview: false,
+            preview: null,
+            previewRequestId: 0,
         };
 
         const participants = new Map();
@@ -624,12 +627,119 @@
             return isOrchestrationMeeting() && isPastOrchestratedActivity(item);
         }
 
+        function shouldShowOrchestrationAdvancePanel() {
+            return Boolean(ui.orchestrationAdvance.button && state.isFacilitator && isOrchestrationMeeting());
+        }
+
+        function describeOrchestrationPreviewStep(step) {
+            if (!step || typeof step !== "object") {
+                return "the next method step";
+            }
+            if (step.status === "complete") {
+                return "method completion";
+            }
+            if (step.kind === "facilitator_decision") {
+                const options = Array.isArray(step.options) && step.options.length > 0
+                    ? ` Options: ${step.options.join(" / ")}.`
+                    : "";
+                return `${step.title || step.prompt || "a facilitator decision"}.${options}`;
+            }
+            if (step.kind === "ai_decision") {
+                return step.title || "an AI-supported decision";
+            }
+            return step.title || step.tool_type || "the next activity";
+        }
+
+        function buildOrchestrationAdvanceMessage(preview) {
+            if (!preview || typeof preview !== "object") {
+                return { message: "Checking the next method step...", variant: "info", title: "" };
+            }
+            const nextLabel = describeOrchestrationPreviewStep(preview.next_step);
+            const blocked = preview.blocked_activity || {};
+            const blockedTitle = blocked.title || blocked.activity_id || "the current activity";
+            if (preview.blocked_reason === "active_activity") {
+                return {
+                    message: `Next likely step: ${nextLabel} Stop ${blockedTitle} before advancing.`,
+                    variant: "info",
+                    title: `Stop ${blockedTitle} before advancing.`,
+                };
+            }
+            if (preview.blocked_reason === "current_activity_not_closed") {
+                return {
+                    message: `Run and stop ${blockedTitle} before advancing. Next likely step after that: ${nextLabel}`,
+                    variant: "info",
+                    title: `Run and stop ${blockedTitle} before advancing.`,
+                };
+            }
+            if (preview.next_step?.status === "complete") {
+                return {
+                    message: "The method is complete. No further steps.",
+                    variant: "success",
+                    title: "",
+                };
+            }
+            if (!preview.can_advance) {
+                return {
+                    message: `Next likely step: ${nextLabel}`,
+                    variant: "info",
+                    title: "The method is not ready to advance yet.",
+                };
+            }
+            return {
+                message: `Ready to advance. Next likely step: ${nextLabel}`,
+                variant: "success",
+                title: "",
+            };
+        }
+
         function updateOrchestrationAdvanceAvailability() {
             if (!ui.orchestrationAdvance.button) {
                 return;
             }
             if (orchestrationAdvanceState.busy) {
                 ui.orchestrationAdvance.button.disabled = true;
+                return;
+            }
+            if (shouldShowOrchestrationAdvancePanel()) {
+                const openActivities = getOpenActivities();
+                if (openActivities.length > 0) {
+                    const open = openActivities[0];
+                    const activity = state.agendaMap.get(open.id);
+                    const fallbackPreview = orchestrationAdvanceState.preview || {
+                        can_advance: false,
+                        blocked_reason: "active_activity",
+                        blocked_activity: {
+                            activity_id: open.id,
+                            title: activity?.title || open.id,
+                            tool_type: activity?.tool_type,
+                        },
+                        next_step: { status: "unavailable" },
+                    };
+                    const summary = buildOrchestrationAdvanceMessage({
+                        ...fallbackPreview,
+                        can_advance: false,
+                        blocked_reason: "active_activity",
+                        blocked_activity: {
+                            activity_id: open.id,
+                            title: activity?.title || open.id,
+                            tool_type: activity?.tool_type,
+                        },
+                    });
+                    ui.orchestrationAdvance.button.disabled = true;
+                    ui.orchestrationAdvance.button.title = summary.title;
+                    setOrchestrationAdvanceStatus(summary.message, summary.variant);
+                    return;
+                }
+                if (!orchestrationAdvanceState.preview) {
+                    ui.orchestrationAdvance.button.disabled = true;
+                    ui.orchestrationAdvance.button.title = "Checking the next method step.";
+                    setOrchestrationAdvanceStatus("Checking the next method step...", "info");
+                    return;
+                }
+                const summary = buildOrchestrationAdvanceMessage(orchestrationAdvanceState.preview);
+                ui.orchestrationAdvance.button.disabled = !orchestrationAdvanceState.preview.can_advance;
+                ui.orchestrationAdvance.button.title = summary.title;
+                setOrchestrationAdvanceStatus(summary.message, summary.variant);
                 return;
             }
             const openActivities = getOpenActivities();
@@ -644,6 +754,46 @@
             }
             ui.orchestrationAdvance.button.disabled = false;
             ui.orchestrationAdvance.button.title = "";
+        }
+
+        async function refreshOrchestrationAdvancePreview() {
+            if (!shouldShowOrchestrationAdvancePanel()) {
+                return;
+            }
+            const requestId = orchestrationAdvanceState.previewRequestId + 1;
+            orchestrationAdvanceState.previewRequestId = requestId;
+            orchestrationAdvanceState.loadingPreview = true;
+            if (!orchestrationAdvanceState.preview) {
+                updateOrchestrationAdvanceAvailability();
+            }
+            try {
+                const response = await fetch(
+                    `/api/meetings/${encodeURIComponent(context.meetingId)}/orchestration/preview`,
+                    { credentials: "include", cache: "no-store" },
+                );
+                const data = await response.json().catch(() => ({}));
+                if (requestId !== orchestrationAdvanceState.previewRequestId) {
+                    return;
+                }
+                if (!response.ok) {
+                    throw new Error(typeof data.detail === "string" ? data.detail : "Unable to preview next step.");
+                }
+                orchestrationAdvanceState.preview = data;
+            } catch (error) {
+                if (requestId === orchestrationAdvanceState.previewRequestId) {
+                    orchestrationAdvanceState.preview = {
+                        can_advance: false,
+                        blocked_reason: "preview_error",
+                        next_step: { status: "unavailable" },
+                    };
+                    setOrchestrationAdvanceStatus(error.message || "Unable to preview next step.", "error");
+                }
+            } finally {
+                if (requestId === orchestrationAdvanceState.previewRequestId) {
+                    orchestrationAdvanceState.loadingPreview = false;
+                    updateOrchestrationAdvanceAvailability();
+                }
+            }
         }
 
         function resolveViewerCapabilities(meeting) {
@@ -7006,6 +7156,7 @@
             highlightAgenda();
             updateAgendaSummary();
             updateOrchestrationAdvanceAvailability();
+            refreshOrchestrationAdvancePreview();
         }
 
         function getDragAfterElement(container, y) {
@@ -7770,6 +7921,7 @@
                         `Next activity ready: ${data.activity.title || data.activity.tool_type}.`,
                         "success",
                     );
+                    await refreshOrchestrationAdvancePreview();
                 } else if (data.status === "paused" && data.pending_decision) {
                     const decisionId = data.pending_decision.activity_id;
                     selectAgendaItem(decisionId, { source: "engine" });
@@ -7780,8 +7932,10 @@
                         loadFacilitatorDecisionDetail(activity);
                     }
                     setOrchestrationAdvanceStatus("A facilitator decision is required.", "info");
+                    await refreshOrchestrationAdvancePreview();
                 } else if (data.status === "complete") {
                     setOrchestrationAdvanceStatus("The method is complete. No further steps.", "success");
+                    await refreshOrchestrationAdvancePreview();
                 }
             } catch (error) {
                 setOrchestrationAdvanceStatus(error.message || "Unable to advance.", "error");
