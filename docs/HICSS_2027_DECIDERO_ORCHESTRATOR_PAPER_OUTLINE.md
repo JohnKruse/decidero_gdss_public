@@ -216,6 +216,24 @@ Implemented evidence includes:
     holds across the stateless web request boundary. Covered by per-request
     rehydration tests, round-gate steering tests, and an end-to-end Classical
     Delphi run driven through the gate.
+11. A v1 facilitator-shaped authoring surface for control points. The
+    orchestration-backed template fork path now opens a plain-language
+    control-point card: the facilitator chooses the repeated activity, who
+    decides after each round, a computational stop condition or a prose AI
+    rubric, and a hard round cap. The card compiles to a validated `iterate`
+    block with the appropriate facilitator gate, recommender, convergence
+    predicate, or `ai-decision` rubric, then stores the result on the forked
+    inline orchestration document. This is the first implemented evidence for
+    the template-layer claim that facilitators can configure flow control
+    without seeing JSON.
+12. A terminal, exportable report activity for the Delphi reference method.
+    Delphi now ends with a configured `report` activity rather than simply
+    exhausting the loop. The activity builds one canonical
+    `report_payload.schema.json` model from the persisted round history, stores
+    it in the output bundle, and re-renders that stored model as JSON, Markdown,
+    CSV, DOCX, and HTML preview. A live HTTP Delphi conclude-to-report-download
+    regression covers the path from round-gate conclusion through report
+    materialization and download.
 
 Planned or incomplete evidence includes:
 
@@ -226,6 +244,10 @@ Planned or incomplete evidence includes:
 2. Usability evidence about whether templates and decision-support surfaces
    lower the barrier for inexperienced facilitators, and whether the
    orchestration-backed method outline sets accurate expectations at runtime.
+3. Observational evidence that the new control-point card is understandable as
+   a meeting-language authoring surface, especially whether facilitators
+   distinguish computational stop conditions from the custom AI-rubric path and
+   understand that the AI verdict is advisory.
 
 ### 7. Discussion
 
@@ -264,17 +286,22 @@ beginnings of an executable collaboration-engineering environment in which
 activities, flow controls, AI assistance, and templates can be composed into
 reusable meeting methods. Delphi provides the first substantive reference case.
 The template layer — including the orchestration-backed Classical Delphi path,
-save-as-template reuse, and the v1 management surface — is now implemented. The
-remaining gap is pilot evidence: whether facilitators understand the four
-creation paths without training, and whether the orchestration guidance at
-runtime sets accurate expectations. That evidence, when collected, can
-strengthen the claim that such methods are not only executable but also usable
-by facilitators who do not have deep collaboration-engineering training.
+save-as-template reuse, the v1 management surface, and the plain-language
+control-point card — is now implemented. The Delphi reference method also now has
+a configured terminal report, so execution produces a structured artifact rather
+than ending at the last runtime bundle. The remaining gap is pilot evidence:
+whether facilitators understand the creation paths without training, whether the
+control-point card makes flow control understandable, and whether the
+orchestration guidance at runtime sets accurate expectations. That evidence, when
+collected, can strengthen the claim that such methods are not only executable but
+also usable by facilitators who do not have deep collaboration-engineering
+training.
 
 ## Implementation Work That Supports the Paper
 
 Items 1–6 below are complete as of Phase 7 (Copper Compass). The remaining
-work is the pilot.
+paper-supporting implementation items now add the Phase 9 control-point card and
+the terminal report. The remaining work is the pilot.
 
 1. ~~Replace the current hardcoded Delphi-like template with a template that
    references or instantiates the packaged Delphi orchestration.~~ Done.
@@ -286,12 +313,18 @@ work is the pilot.
    not as fully pre-filled final agendas.~~ Done.
 5. ~~Finish save-as-template and custom-template management for the reuse claim.~~ Done.
 6. ~~Update the pilot guide so observations map to the paper claims.~~ Done.
+7. ~~Add a plain-language control-point card on the orchestration template fork
+   path, compiling facilitator choices to a validated `iterate` block without
+   exposing JSON.~~ Done.
+8. ~~Add a generic terminal `report` activity and wire Delphi to end with a
+   structured, exportable report payload.~~ Done.
 
 Remaining:
 
-7. Run a pilot or internal dry run using the session guide in
+9. Run a pilot or internal dry run using the session guide in
    `docs/USER_TESTING_GUIDE.md`. Record findings against the template path and
-   the paper claims. Fix any blockers before a wider session.
+   the paper claims, including the control-point card and terminal report
+   surfaces. Fix any blockers before a wider session.
 
 ## Terms To Keep Stable
 
@@ -317,13 +350,17 @@ The orchestration bridge risk is resolved: the Classical Delphi built-in
 template now instantiates the packaged orchestration rather than a hand-authored
 Delphi-like agenda. The template and orchestration paths are tested and the
 meeting page shows the facilitator the planned method outline and runtime gates.
+The first authoring-surface risk is also reduced: the fork path can now create a
+custom orchestration template from a control-point card rather than from hidden
+JSON or developer-authored documents.
 
 The remaining risk is in the UI and in the pilot. A complex flow is partly
-preplanned and partly contingent. The UI should show the planned method and its
-control logic, while making clear that later activities are materialized by the
-engine as the meeting unfolds. If observational pilot findings show that
-facilitators misread the orchestration guidance as a fixed final agenda, that is
-a bug to fix before broader testing.
+preplanned and partly contingent. The UI should show the planned method, its
+control logic, and its terminal deliverable while making clear that later
+activities are materialized by the engine as the meeting unfolds. If observational
+pilot findings show that facilitators misread the orchestration guidance as a
+fixed final agenda, or misread the AI-rubric stop condition as automation rather
+than advice, that is a bug to fix before broader testing.
 
 A second remaining risk is the evidence gap. The paper's usability claim rests
 on pilot observation that the template and orchestration surfaces lower the
@@ -514,22 +551,21 @@ Implementation status: the adaptive policy defaults now live in
 `orchestrations/delphi.json` as the comment activity's `feedback_policy`, the
 built-in Classical Delphi template exposes the strategy/default/cap as template
 parameters, and `app/services/delphi_feedback_policy.py` computes item bands,
-suggested counts, caps, and selected item keys. The round-gate report now carries
+suggested counts, caps, and selected item keys. The round-gate report carries
 `feedback_selection`, and both orchestration advance plus facilitator-decision
-state expose it for the facilitator UI. The justification activity now has a
-selected-item backend/API mode (`comment_scope: "selected_items"`) that opens the
-same facilitator-selected ideas to every participant while preserving the
-outlier-only mode as a backward-compatible variant. The facilitator round-gate
-report now renders and persists a selected-comment count control from the
-adaptive feedback recommendation, with max-count validation. The rank-order summary
-backend now implements the first part of group-ordered reranking: unsubmitted
-Round 2+ Delphi items are ordered by prior group median/IQR for all participants,
-rather than by each participant's private/random order. The ranking UI now
-replaces verbose prior stats with green/yellow/red agreement badges and compact
-group-rank text. Remaining implementation work is facilitator selection UI,
-applying the selected count before comments open, zero-count skip/advance wiring,
-participant-side "your comment" labeling, template instantiation controls, and
-the end-to-end Delphi regression.
+state expose it for the facilitator UI. The generic brainstorming activity now
+runs as the comment-only selected-ideas surface (`comment_scope:
+"selected_items"`), opening the same facilitator-selected ideas to every
+participant while preserving peer anonymity and the viewer's own-comment flag.
+The facilitator round-gate report renders and persists the selected-comment count
+control from the adaptive feedback recommendation, with max-count validation. The
+selected count is applied before comments open, and Round 2+ ranking is ordered by
+the prior group result for all participants, with green/yellow/red agreement
+badges, compact group-rank text, and round progression. The end-to-end Delphi HTTP
+regression drives the full path: rank with disagreement, choose N
+least-converged ideas, comment, rerank with controlled feedback, and
+continue/conclude. Future engine work only: a true auto-advance past a
+zero-comment step instead of the current soft skip.
 
 #### F.1 Justification activity — design spec [SUPERSEDED — see F.1.2]
 
@@ -691,15 +727,21 @@ the conference scope.
   premature-"complete" gate bug fixed; dashboard focus-refresh; the
   AST→Mermaid/Graphviz figure exporter (generates the recursion figure from the
   real document).
+- [DONE] adaptive controlled-feedback comments over least-converged ideas
+  (section F.0): policy scoring, facilitator report payloads, selected-item
+  comment backend/API, selected-count UI and persistence, selected-count
+  apply-on-open, private own-comment labeling, group-ordered reranking,
+  agreement badges, template workload controls, and the end-to-end HTTP
+  regression are in place. Future engine work only: true zero-comment
+  auto-advance.
+- [DONE] v1 facilitator-shaped authoring of control points: the template fork
+  path now exposes a plain-language card that compiles the loop, decision gate,
+  computational stop condition or AI rubric, and round cap into a validated
+  inline orchestration document.
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);
   the in-UI DAG visualization.
-- [PARTIAL] adaptive controlled-feedback comments over least-converged ideas
-  (section F.0): policy scoring, facilitator report payloads, selected-item
-  comment backend/API, group-ordered reranking, and agreement badges are in place;
-  facilitator selection UI, skip wiring, template controls, and the end-to-end
-  regression remain.
 - [DONE] the unified decision primitive (round_gate embeds a facilitator-decision)
   + generic report summarizer registry + two-layer recommender (Layer-A metric
   registry, Layer-B declarative rule), clean-break migration with load-time
@@ -901,21 +943,25 @@ method lives in Layer-2 data, not code.
 
 ## Session Design Notes — 2026-06-07 (terminal report as a deliverable)
 
-Status: **PLAN / FUTURE.** Designed this session; not yet built. Full plan:
-[plans/subplans/REPORT_ACTIVITY.md](../../plans/subplans/REPORT_ACTIVITY.md). Data
-shape pinned first: [docs/schemas/report_payload.schema.json](schemas/report_payload.schema.json).
+Status: **DONE for the Delphi reference path.** Built after the 2026-06-07 design
+note; full implementation record:
+[plans/subplans/REPORT_ACTIVITY.md](../plans/subplans/REPORT_ACTIVITY.md). Data
+shape: [docs/schemas/report_payload.schema.json](schemas/report_payload.schema.json);
+synthetic fixture:
+[docs/schemas/examples/report_payload.synthetic.example.json](schemas/examples/report_payload.synthetic.example.json).
 
 ### M. The method's ending is a configured step, and its output is a structured artifact
 
-Two gaps surfaced. (1) Decidero has no general **report/deliverable** activity —
-a facilitator cannot yet hand participants something useful to carry forward.
-(2) The Delphi reference method has **no designed ending**: when the facilitator
-concludes (or the round cap hits), the iterate loop simply exhausts and the
-meeting is "complete"; the de-facto deliverable is the last ranking bundle, with
-no consolidated results surface. Both are the same missing piece.
+Two gaps originally surfaced. (1) Decidero had no general
+**report/deliverable** activity — a facilitator could run a method but not hand
+participants a structured artifact to carry forward. (2) The Delphi reference
+method had **no designed ending**: when the facilitator concluded (or the round
+cap hit), the iterate loop simply exhausted and the meeting became "complete";
+the de-facto deliverable was the last ranking bundle, with no consolidated
+results surface. Both were the same missing piece.
 
-The fix is a single generic **`report` activity (Layer 1), configured by Layer-2**
-— not a Delphi-specific results screen, and not engine code. It is a
+The implemented fix is a single generic **`report` activity (Layer 1), configured
+by Layer-2** — not a Delphi-specific results screen, and not engine code. It is a
 *consume-and-synthesize* activity (no participant input): it reads upstream output
 bundles and emits a report. Delphi gets a terminal `report` step appended to its
 document, so **the method's conclusion becomes another configured step rather than
