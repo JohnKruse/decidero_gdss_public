@@ -216,16 +216,16 @@ Implemented evidence includes:
     holds across the stateless web request boundary. Covered by per-request
     rehydration tests, round-gate steering tests, and an end-to-end Classical
     Delphi run driven through the gate.
-11. A v1 facilitator-shaped authoring surface for control points. The
-    orchestration-backed template fork path now opens a plain-language
-    control-point card: the facilitator chooses the repeated activity, who
-    decides after each round, a computational stop condition or a prose AI
-    rubric, and a hard round cap. The card compiles to a validated `iterate`
-    block with the appropriate facilitator gate, recommender, convergence
-    predicate, or `ai-decision` rubric, then stores the result on the forked
-    inline orchestration document. This is the first implemented evidence for
-    the template-layer claim that facilitators can configure flow control
-    without seeing JSON.
+11. A backend-ready facilitator-shaped authoring path for control points. The
+    control-point card compiler lets a facilitator's meeting-language choices
+    describe the repeated activity, who decides after each round, a computational
+    stop condition or prose AI rubric, and a hard round cap. The card compiles to
+    a validated `iterate` block with the appropriate facilitator gate,
+    recommender, convergence predicate, or `ai-decision` rubric, and the fork
+    endpoint can store the result on an inline orchestration document. The visible
+    template-page entry point is intentionally hidden pending pilot/paper review
+    of the right authoring surface, so this is implementation support rather than
+    usability evidence.
 12. A terminal, exportable report activity for the Delphi reference method.
     Delphi now ends with a configured `report` activity rather than simply
     exhausting the loop. The activity builds one canonical
@@ -244,10 +244,10 @@ Planned or incomplete evidence includes:
 2. Usability evidence about whether templates and decision-support surfaces
    lower the barrier for inexperienced facilitators, and whether the
    orchestration-backed method outline sets accurate expectations at runtime.
-3. Observational evidence that the new control-point card is understandable as
-   a meeting-language authoring surface, especially whether facilitators
-   distinguish computational stop conditions from the custom AI-rubric path and
-   understand that the AI verdict is advisory.
+3. Observational evidence about whether and when a control-point card should be
+   exposed as a meeting-language authoring surface, especially whether
+   facilitators distinguish computational stop conditions from the custom
+   AI-rubric path and understand that the AI verdict is advisory.
 
 ### 7. Discussion
 
@@ -286,22 +286,22 @@ beginnings of an executable collaboration-engineering environment in which
 activities, flow controls, AI assistance, and templates can be composed into
 reusable meeting methods. Delphi provides the first substantive reference case.
 The template layer — including the orchestration-backed Classical Delphi path,
-save-as-template reuse, the v1 management surface, and the plain-language
-control-point card — is now implemented. The Delphi reference method also now has
-a configured terminal report, so execution produces a structured artifact rather
-than ending at the last runtime bundle. The remaining gap is pilot evidence:
-whether facilitators understand the creation paths without training, whether the
-control-point card makes flow control understandable, and whether the
-orchestration guidance at runtime sets accurate expectations. That evidence, when
-collected, can strengthen the claim that such methods are not only executable but
-also usable by facilitators who do not have deep collaboration-engineering
-training.
+save-as-template reuse, and the v1 management surface — is implemented. The
+control-point card compiler is backend-ready but not currently exposed as a
+template-page action. The Delphi reference method also now has a configured
+terminal report, so execution produces a structured artifact rather than ending
+at the last runtime bundle. The remaining gap is pilot evidence: whether
+facilitators understand the creation paths without training, what authoring
+surface should expose control-point tuning, and whether the orchestration
+guidance at runtime sets accurate expectations. That evidence, when collected,
+can strengthen the claim that such methods are not only executable but also
+usable by facilitators who do not have deep collaboration-engineering training.
 
 ## Implementation Work That Supports the Paper
 
 Items 1–6 below are complete as of Phase 7 (Copper Compass). The remaining
-paper-supporting implementation items now add the Phase 9 control-point card and
-the terminal report. The remaining work is the pilot.
+paper-supporting implementation items now add the Phase 9 control-point compiler
+and the terminal report. The remaining work is the pilot.
 
 1. ~~Replace the current hardcoded Delphi-like template with a template that
    references or instantiates the packaged Delphi orchestration.~~ Done.
@@ -313,9 +313,9 @@ the terminal report. The remaining work is the pilot.
    not as fully pre-filled final agendas.~~ Done.
 5. ~~Finish save-as-template and custom-template management for the reuse claim.~~ Done.
 6. ~~Update the pilot guide so observations map to the paper claims.~~ Done.
-7. ~~Add a plain-language control-point card on the orchestration template fork
-   path, compiling facilitator choices to a validated `iterate` block without
-   exposing JSON.~~ Done.
+7. ~~Add the backend compile/persist path for a plain-language control-point card,
+   compiling facilitator choices to a validated `iterate` block without exposing
+   JSON.~~ Done. The visible template-page entry point is deferred.
 8. ~~Add a generic terminal `report` activity and wire Delphi to end with a
    structured, exportable report payload.~~ Done.
 
@@ -323,8 +323,8 @@ Remaining:
 
 9. Run a pilot or internal dry run using the session guide in
    `docs/USER_TESTING_GUIDE.md`. Record findings against the template path and
-   the paper claims, including the control-point card and terminal report
-   surfaces. Fix any blockers before a wider session.
+   the paper claims, including whether/where to expose the control-point card and
+   the terminal report surface. Fix any blockers before a wider session.
 
 ## Terms To Keep Stable
 
@@ -350,9 +350,10 @@ The orchestration bridge risk is resolved: the Classical Delphi built-in
 template now instantiates the packaged orchestration rather than a hand-authored
 Delphi-like agenda. The template and orchestration paths are tested and the
 meeting page shows the facilitator the planned method outline and runtime gates.
-The first authoring-surface risk is also reduced: the fork path can now create a
-custom orchestration template from a control-point card rather than from hidden
-JSON or developer-authored documents.
+The first authoring-surface implementation risk is also reduced: the backend can
+now create a custom orchestration template from a control-point card rather than
+from hidden JSON or developer-authored documents. The visible UI entry point is
+deferred pending a better paper/pilot-driven surface decision.
 
 The remaining risk is in the UI and in the pilot. A complex flow is partly
 preplanned and partly contingent. The UI should show the planned method, its
@@ -734,10 +735,11 @@ the conference scope.
   agreement badges, template workload controls, and the end-to-end HTTP
   regression are in place. Future engine work only: true zero-comment
   auto-advance.
-- [DONE] v1 facilitator-shaped authoring of control points: the template fork
-  path now exposes a plain-language card that compiles the loop, decision gate,
-  computational stop condition or AI rubric, and round cap into a validated
-  inline orchestration document.
+- [DONE backend / UI deferred] v1 facilitator-shaped authoring of control
+  points: the control-point compiler and fork persistence path can turn the loop,
+  decision gate, computational stop condition or AI rubric, and round cap into a
+  validated inline orchestration document. The visible template-page entry point
+  is currently hidden pending pilot/paper review.
 - [FUTURE / Future Directions] nested iterate-in-iterate; the general I/O-contract
   data model; the thinkLet authoring/composition tool + curated library; the DAG
   validator + cycle/depth safety; dynamic dispatch (the 3-way facilitator gate);

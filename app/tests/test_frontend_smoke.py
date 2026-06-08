@@ -433,16 +433,13 @@ def test_meeting_page_includes_orchestration_advance_and_gate_hooks():
     assert "You ranked it" in js
 
 
-def test_meeting_templates_page_has_fork_and_tune_hooks():
-    """Plainspoken Marmot: orchestration templates expose a fork-and-tune action."""
+def test_meeting_templates_page_uses_horizontal_cards_without_fork_tune():
+    """Meeting templates are browsed as horizontal cards; fork/tune stays hidden."""
     with open("app/templates/meeting_templates.html", "r", encoding="utf-8") as handle:
         html = handle.read()
-    assert 'data-template-action="fork"' in html
-    assert "FORK &amp; TUNE" in html
-    assert 'id="templateForkPanel"' in html
-    assert 'name="stop_condition"' in html
-    assert 'value="custom"' in html
-    assert "/api/meetings/templates/control-point/compile" in html
-    assert "control_point: readControlPointCard()" in html
-    assert "/fork" in html
-    assert "What this method will do" in html
+    with open("app/static/css/dashboard.css", "r", encoding="utf-8") as handle:
+        css = handle.read()
+    assert 'data-template-action="fork"' not in html
+    assert "FORK &amp; TUNE" not in html
+    assert 'id="templateForkPanel"' not in html
+    assert "grid-template-columns: minmax(0, 1fr) minmax(180px, auto);" in css
