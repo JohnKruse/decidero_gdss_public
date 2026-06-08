@@ -1386,6 +1386,15 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                 "logical_step_id": logical_step_id,
                 "round_index": round_index,
             }
+        else:
+            # Single-threaded driver: tag EVERY engine-materialized activity as
+            # orchestrated, even those outside an iterate (e.g. Delphi's opening
+            # generate step and its terminal report). Without this tag the runtime
+            # restart guard and the UI fail to lock these as "past" once Advance
+            # moves beyond them, so their Start buttons stay live — the chaos a
+            # chauffeured orchestration must prevent. No `logical_step_id` here, so
+            # they never enter the iterate feedback map (`_activity_iteration`).
+            config["_orchestration"] = {"round_index": round_index}
         plugin = get_activity_registry().get_plugin(step.tool_type)
         validated_config = plugin.validate_config(config) if plugin else config
 

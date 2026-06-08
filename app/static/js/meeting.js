@@ -610,17 +610,29 @@
         }
 
         function latestOrchestratedOrder() {
-            const orders = state.agenda
-                .filter((item) => isOrchestratedActivity(item))
+            // In a chauffeured orchestration every agenda row is engine-materialized,
+            // so the single eligible activity is the bottom-most (highest order_index).
+            // Compute "latest" over ALL rows in that case so the invariant never
+            // depends on per-item tagging (a missing _orchestration tag must not
+            // silently re-open a past step's Start button).
+            const rows = isOrchestrationMeeting()
+                ? state.agenda
+                : state.agenda.filter((item) => isOrchestratedActivity(item));
+            const orders = rows
                 .map((item) => Number(item.order_index))
                 .filter((order) => Number.isFinite(order));
             return orders.length ? Math.max(...orders) : null;
         }
 
         function isPastOrchestratedActivity(item) {
+            if (!isOrchestrationMeeting()) {
+                return false;
+            }
             const latestOrder = latestOrchestratedOrder();
             const order = Number(item?.order_index);
-            return isOrchestratedActivity(item) && Number.isFinite(order) && latestOrder !== null && order < latestOrder;
+            // Anything above the bottom-most row is "past" and locked — once Advance
+            // is pressed, the door closes on going backwards.
+            return Number.isFinite(order) && latestOrder !== null && order < latestOrder;
         }
 
         function isLockedOrchestratedStep(item) {

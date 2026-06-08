@@ -107,6 +107,48 @@ def test_meeting_templates_page_lists_builtin_delphi_template(
     assert "Meeting not found" not in response.text
 
 
+def test_orchestration_locks_past_top_level_activity_after_advance(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Single-threaded driver: once Advance moves beyond a step, that step is locked
+    — including the top-level (non-iterate) opening activity. Regression for the bug
+    where Delphi's opening 'Generate' step kept a live Start button after advancing
+    to ranking (it was untagged because it sits outside the iterate)."""
+    from app.data.activity_bundle_manager import ActivityBundleManager
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [template] = seed_builtin_meeting_templates(db_session)
+    create = authenticated_client.post(
+        f"/api/meetings/templates/{template.template_id}/meetings",
+        json={"title": "Lock Past Step", "description": "x", "participant_ids": []},
+    )
+    assert create.status_code == 200, create.text
+    meeting_id = create.json()["meeting_id"]
+    generate = create.json()["agenda"][0]
+    generate_id = generate["activity_id"]
+
+    # The opening generate step is now tagged orchestrated even though it is
+    # outside the iterate, so the runtime + UI can treat it as a method step.
+    assert isinstance(generate["config"].get("_orchestration"), dict)
+
+    # Close round 0 and advance to ranking; generate is now a *past* step.
+    ActivityBundleManager(db_session).finalize_output_bundle(
+        meeting_id, generate_id, [{"content": "Idea A"}], metadata={"source": "test"}
+    )
+    adv = authenticated_client.post(f"/api/meetings/{meeting_id}/orchestration/advance")
+    assert adv.status_code == 200, adv.text
+    assert adv.json()["activity"]["tool_type"] == "rank_order_voting"
+
+    # Starting the past top-level activity must be refused server-side.
+    blocked = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={"action": "start_tool", "tool": "brainstorming", "activityId": generate_id},
+    )
+    assert blocked.status_code == 400, blocked.text
+    assert "in the past" in blocked.json()["detail"].lower()
+
+
 def test_meeting_template_flow_returns_summary_and_flow_tree(
     authenticated_client: TestClient,
     db_session,
