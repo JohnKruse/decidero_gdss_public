@@ -237,6 +237,24 @@ class MeetingTemplateManager:
             status_code=400, detail="Template has no orchestration document to fork."
         )
 
+    @staticmethod
+    def _replace_first_iterate_step(
+        document: Dict[str, Any], iterate_step: Dict[str, Any]
+    ) -> bool:
+        """Replace the first iterate block in document order."""
+        steps = document.get("steps")
+        if not isinstance(steps, list):
+            return False
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            if step.get("type") == "iterate":
+                steps[index] = deepcopy(iterate_step)
+                return True
+            if MeetingTemplateManager._replace_first_iterate_step(step, iterate_step):
+                return True
+        return False
+
     def fork_orchestration_template(
         self,
         *,
@@ -248,6 +266,7 @@ class MeetingTemplateManager:
         who_decides: Optional[str] = None,
         comment_default_fraction: Optional[float] = None,
         comment_max_fraction: Optional[float] = None,
+        control_point: Optional[Dict[str, Any]] = None,
         purpose: Optional[str] = None,
         tags: Optional[Iterable[str]] = None,
     ) -> tuple[MeetingTemplate, list[str]]:
@@ -257,7 +276,11 @@ class MeetingTemplateManager:
         decides each round) into a new orchestration document stored inline on a
         custom template, and returns the template plus its plain-language summary.
         """
-        from ..services.orchestration_authoring import apply_tuning, summarize_orchestration
+        from ..services.orchestration_authoring import (
+            apply_tuning,
+            compile_control_point_card,
+            summarize_orchestration,
+        )
         from ..services.orchestration_loader import OrchestrationValidationError
 
         base = self.get_template(base_template_id)
@@ -285,6 +308,13 @@ class MeetingTemplateManager:
                 comment_default_fraction=comment_default_fraction,
                 comment_max_fraction=comment_max_fraction,
             )
+            if control_point is not None:
+                compiled_iterate = compile_control_point_card(dict(control_point))
+                if not self._replace_first_iterate_step(tuned, compiled_iterate):
+                    raise ValueError("This method has no control point to tune.")
+                from ..services.orchestration_loader import load_orchestration_data
+
+                load_orchestration_data(tuned)
         except (ValueError, OrchestrationValidationError) as exc:
             raise HTTPException(
                 status_code=400, detail=f"Could not build the tuned method: {exc}"

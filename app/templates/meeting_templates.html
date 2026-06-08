@@ -121,7 +121,6 @@
                                 data-template-action="fork"
                                 data-template-id="{{ template.template_id }}"
                                 data-template-name="{{ template.name }}"
-                                style="display: none;"
                             >
                                 FORK &amp; TUNE
                             </button>
@@ -173,12 +172,93 @@
         </div>
     {% endif %}
 </section>
+
+<div class="template-fork-panel" id="templateForkPanel" hidden>
+    <div class="template-fork-panel__scrim" data-fork-close></div>
+    <section class="template-fork-card control-point-card" role="dialog" aria-modal="true" aria-labelledby="templateForkTitle">
+        <div class="control-point-card__header">
+            <div>
+                <p class="section-kicker">Plainspoken Marmot</p>
+                <h3 id="templateForkTitle">Fork &amp; Tune</h3>
+            </div>
+            <button type="button" class="control-point-card__close" data-fork-close aria-label="Close">&times;</button>
+        </div>
+        <form id="templateForkForm" class="template-fork-form">
+            <input type="hidden" name="template_id">
+            <label>
+                New template name
+                <input type="text" name="name" maxlength="200" required>
+            </label>
+            <fieldset>
+                <legend>Repeated activity</legend>
+                <label>
+                    Activity
+                    <select name="activity_tool_type">
+                        <option value="rank_order_voting">Rank-order voting</option>
+                        <option value="brainstorming">Brainstorming</option>
+                        <option value="voting">Voting</option>
+                        <option value="categorization">Categorization</option>
+                    </select>
+                </label>
+                <label>
+                    Activity title
+                    <input type="text" name="activity_title" maxlength="200" value="Rank Options">
+                </label>
+            </fieldset>
+            <fieldset>
+                <legend>Round control</legend>
+                <label>
+                    Who decides after each round?
+                    <select name="who_decides">
+                        <option value="assisted">I'll decide, show me a suggestion</option>
+                        <option value="facilitator">I'll decide</option>
+                        <option value="auto">Decide automatically</option>
+                    </select>
+                </label>
+                <label>
+                    Base the suggestion on
+                    <select name="stop_condition" id="forkStopCondition">
+                        <option value="responses_stabilize">Whether people's rankings have stopped changing</option>
+                        <option value="agreement">Whether most people now agree</option>
+                        <option value="fixed_rounds">A fixed number of rounds</option>
+                        <option value="custom">Describe it in your own words</option>
+                    </select>
+                </label>
+                <label class="template-fork-form__custom" id="forkCustomStopWrap" hidden>
+                    Custom stopping rubric
+                    <textarea name="stop_condition_text" rows="3" maxlength="2000"></textarea>
+                </label>
+                <div class="template-fork-form__row">
+                    <label>
+                        Stop no matter what after
+                        <input type="number" name="max_rounds" min="1" max="50" value="4" required>
+                    </label>
+                    <label>
+                        Stability threshold
+                        <input type="number" name="threshold" min="0" step="0.01" value="0.15">
+                    </label>
+                </div>
+            </fieldset>
+            <div class="template-fork-summary" id="templateForkSummary" aria-live="polite"></div>
+            <div class="control-point-card__actions">
+                <button type="button" class="meeting-template-manage-btn" id="templateForkPreview">PREVIEW</button>
+                <button type="submit" class="action-btn">CREATE TUNED TEMPLATE</button>
+            </div>
+        </form>
+    </section>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
     (() => {
         const buttons = document.querySelectorAll('[data-template-action]');
+        const forkPanel = document.getElementById('templateForkPanel');
+        const forkForm = document.getElementById('templateForkForm');
+        const forkSummary = document.getElementById('templateForkSummary');
+        const forkPreview = document.getElementById('templateForkPreview');
+        const forkStopCondition = document.getElementById('forkStopCondition');
+        const forkCustomStopWrap = document.getElementById('forkCustomStopWrap');
         const feedback = (message) => {
             if (message) {
                 window.alert(message);
@@ -198,6 +278,101 @@
                 throw new Error(payload.detail || 'Template update failed.');
             }
             return payload;
+        }
+        function setForkSummary(lines, tone = 'info') {
+            if (!forkSummary) return;
+            forkSummary.dataset.tone = tone;
+            const safeLines = Array.isArray(lines) ? lines : [String(lines || '')];
+            forkSummary.textContent = '';
+            safeLines.filter(Boolean).forEach((line) => {
+                const item = document.createElement('p');
+                item.textContent = line;
+                forkSummary.appendChild(item);
+            });
+        }
+        function updateCustomStopVisibility() {
+            if (!forkStopCondition || !forkCustomStopWrap) return;
+            forkCustomStopWrap.hidden = forkStopCondition.value !== 'custom';
+        }
+        function openForkPanel(button) {
+            if (!forkPanel || !forkForm) return;
+            forkForm.reset();
+            forkForm.elements.template_id.value = button.dataset.templateId || '';
+            forkForm.elements.name.value = `${button.dataset.templateName || 'Template'} (tuned)`;
+            forkForm.elements.activity_tool_type.value = 'rank_order_voting';
+            forkForm.elements.activity_title.value = 'Rank Options';
+            forkForm.elements.who_decides.value = 'assisted';
+            forkForm.elements.stop_condition.value = 'responses_stabilize';
+            forkForm.elements.max_rounds.value = '4';
+            forkForm.elements.threshold.value = '0.15';
+            setForkSummary(['Preview the card to confirm the method summary before creating the tuned template.']);
+            updateCustomStopVisibility();
+            forkPanel.hidden = false;
+        }
+        function closeForkPanel() {
+            if (forkPanel) forkPanel.hidden = true;
+        }
+        function readControlPointCard() {
+            const thresholdRaw = forkForm.elements.threshold.value;
+            const card = {
+                activity_tool_type: forkForm.elements.activity_tool_type.value,
+                activity_title: forkForm.elements.activity_title.value.trim(),
+                who_decides: forkForm.elements.who_decides.value,
+                stop_condition: forkForm.elements.stop_condition.value,
+                stop_condition_text: forkForm.elements.stop_condition_text.value.trim() || null,
+                max_rounds: parseInt(forkForm.elements.max_rounds.value, 10),
+            };
+            const threshold = parseFloat(thresholdRaw);
+            if (!Number.isNaN(threshold)) {
+                card.threshold = threshold;
+            }
+            return card;
+        }
+        async function previewForkCard() {
+            const payload = await requestJson('/api/meetings/templates/control-point/compile', {
+                method: 'POST',
+                body: JSON.stringify(readControlPointCard()),
+            });
+            setForkSummary(payload.summary || []);
+            return payload;
+        }
+        if (forkStopCondition) {
+            forkStopCondition.addEventListener('change', updateCustomStopVisibility);
+        }
+        document.querySelectorAll('[data-fork-close]').forEach((button) => {
+            button.addEventListener('click', closeForkPanel);
+        });
+        if (forkPreview) {
+            forkPreview.addEventListener('click', async () => {
+                try {
+                    await previewForkCard();
+                } catch (error) {
+                    setForkSummary([error.message || 'Could not compile the control point.'], 'error');
+                }
+            });
+        }
+        if (forkForm) {
+            forkForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const templateId = forkForm.elements.template_id.value;
+                const name = forkForm.elements.name.value.trim();
+                if (!templateId || !name) return;
+                try {
+                    const preview = await previewForkCard();
+                    const result = await requestJson(`/api/meetings/templates/${encodeURIComponent(templateId)}/fork`, {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            name,
+                            control_point: readControlPointCard(),
+                        }),
+                    });
+                    const summary = (result.summary || preview.summary || []).join('\n');
+                    window.alert('Created "' + name + '".\n\nWhat this method will do:\n\n' + summary);
+                    window.location.reload();
+                } catch (error) {
+                    setForkSummary([error.message || 'Could not create the tuned template.'], 'error');
+                }
+            });
         }
         buttons.forEach((button) => {
             button.addEventListener('click', async () => {
@@ -224,26 +399,7 @@
                         return;
                     }
                     if (action === 'fork') {
-                        // Plainspoken Marmot: plain-language fork-and-tune (v1 uses prompts).
-                        const name = window.prompt('Name for the new tuned method', (button.dataset.templateName || '') + ' (tuned)');
-                        if (name === null || !name.trim()) return;
-                        const roundsRaw = window.prompt('Maximum number of rounds (leave blank to keep the current limit)', '');
-                        if (roundsRaw === null) return;
-                        const whoDecides = window.confirm('After each round, should the facilitator decide whether to continue?\n\nOK = facilitator decides each round.\nCancel = the method decides automatically.')
-                            ? 'facilitator'
-                            : 'automatic';
-                        const body = { name: name.trim(), who_decides: whoDecides };
-                        const rounds = parseInt(roundsRaw, 10);
-                        if (!Number.isNaN(rounds)) {
-                            body.max_rounds = rounds;
-                        }
-                        const result = await requestJson(`/api/meetings/templates/${encodeURIComponent(templateId)}/fork`, {
-                            method: 'POST',
-                            body: JSON.stringify(body),
-                        });
-                        const summary = (result.summary || []).join('\n');
-                        window.alert('Created "' + name.trim() + '".\n\nWhat this method will do:\n\n' + summary);
-                        window.location.reload();
+                        openForkPanel(button);
                         return;
                     }
                     if (action === 'archive') {

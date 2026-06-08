@@ -908,3 +908,37 @@ def test_fork_orchestration_template_api_returns_summary(
     )
     assert start.status_code == 200, start.text
     assert start.json()["agenda_strategy"] == "orchestration"
+
+
+def test_fork_orchestration_template_api_accepts_control_point_card(
+    authenticated_client: TestClient,
+    db_session,
+):
+    """Plainspoken Marmot: the fork route persists the inline card-authored
+    control point on the custom template document."""
+    from app.data.meeting_template_manager import seed_builtin_meeting_templates
+
+    [delphi] = seed_builtin_meeting_templates(db_session)
+    response = authenticated_client.post(
+        f"/api/meetings/templates/{delphi.template_id}/fork",
+        json={
+            "name": "Card Delphi",
+            "control_point": {
+                "activity_tool_type": "rank_order_voting",
+                "activity_title": "Rank Options",
+                "who_decides": "assisted",
+                "stop_condition": "custom",
+                "stop_condition_text": "Conclude when the decision is complete enough.",
+                "max_rounds": 3,
+                "threshold": 0.2,
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    document = body["template"]["template_payload"]["orchestration"]["document"]
+    iterate = document["steps"][0]["steps"][1]
+    sequence_steps = iterate["steps"][0]["steps"]
+    assert [step["type"] for step in sequence_steps] == ["activity", "ai-decision"]
+    assert "complete enough" in sequence_steps[1]["prompt_template"]
+    assert "Custom criteria" in " ".join(body["summary"])

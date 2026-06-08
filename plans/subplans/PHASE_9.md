@@ -145,9 +145,11 @@ Conclude this step by:
   back into the card when editing an existing method, via
   `app/services/orchestration_authoring.py` and the stateless template control
   point API.
-- [PENDING] Full inline card UI and meeting-language validation surfaced on the
-  authoring page. The server-side compile/decompile path and schema tests exist;
-  the facilitator-facing edit surface remains to be completed.
+- [DONE] Full inline card UI and meeting-language validation surfaced on the
+  template authoring page for the v1 fork path. `FORK & TUNE` now opens a
+  control-point card, previews through the stateless compile endpoint, and
+  persists the compiled loop/gate/recommendation block on the forked inline
+  orchestration document.
 - A facilitator pilot pass on building one control point from the card, with
   findings recorded.
 

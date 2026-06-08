@@ -436,6 +436,103 @@ body {
     background: rgba(176, 0, 32, 0.08);
 }
 
+.template-fork-panel[hidden] {
+    display: none;
+}
+
+.template-fork-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+}
+
+.template-fork-panel__scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(8, 26, 58, 0.42);
+}
+
+.template-fork-card {
+    position: relative;
+    z-index: 1;
+    width: min(720px, 100%);
+    max-height: min(88vh, 760px);
+    overflow: auto;
+}
+
+.template-fork-form {
+    display: grid;
+    gap: 0.9rem;
+}
+
+.template-fork-form fieldset {
+    display: grid;
+    gap: 0.75rem;
+    margin: 0;
+    padding: 0.85rem;
+    border: 1px solid rgba(11, 61, 145, 0.16);
+    border-radius: 8px;
+}
+
+.template-fork-form legend,
+.template-fork-form label {
+    color: rgba(11, 61, 145, 0.78);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.template-fork-form label {
+    display: grid;
+    gap: 0.35rem;
+}
+
+.template-fork-form input,
+.template-fork-form select,
+.template-fork-form textarea {
+    width: 100%;
+    border: 1px solid rgba(11, 61, 145, 0.22);
+    border-radius: 6px;
+    padding: 0.55rem 0.65rem;
+    color: var(--navy-blue);
+    font: inherit;
+}
+
+.template-fork-form textarea {
+    resize: vertical;
+}
+
+.template-fork-form__row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.template-fork-form__custom[hidden] {
+    display: none;
+}
+
+.template-fork-summary {
+    min-height: 2.5rem;
+    padding: 0.7rem;
+    border-left: 3px solid rgba(11, 61, 145, 0.34);
+    background: rgba(11, 61, 145, 0.05);
+    color: rgba(11, 61, 145, 0.78);
+    font-size: 0.88rem;
+}
+
+.template-fork-summary[data-tone="error"] {
+    border-left-color: rgba(176, 0, 32, 0.48);
+    background: rgba(176, 0, 32, 0.08);
+    color: #7f1d1d;
+}
+
+.template-fork-summary p {
+    margin: 0.2rem 0;
+}
+
 .meeting-templates-empty {
     display: grid;
     justify-items: start;
@@ -731,6 +828,14 @@ body {
 
     .meeting-template-meta {
         grid-template-columns: 1fr;
+    }
+
+    .template-fork-form__row {
+        grid-template-columns: 1fr;
+    }
+
+    .template-fork-card .control-point-card__actions {
+        display: grid;
     }
 
     .template-start-header,

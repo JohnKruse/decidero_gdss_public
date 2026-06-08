@@ -554,6 +554,41 @@ def test_fork_orchestration_template_tunes_comment_workload(db_session):
     assert "most-disputed ideas are opened for comment" in text
 
 
+def test_fork_orchestration_template_persists_control_point_card(db_session):
+    """Plainspoken Marmot: the inline card can author a loop/gate/recommendation
+    control point without storing private compiler metadata."""
+    owner = _user("forkcard", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+    [delphi] = seed_builtin_meeting_templates(db_session)
+
+    manager = MeetingTemplateManager(db_session)
+    forked, summary = manager.fork_orchestration_template(
+        base_template_id=delphi.template_id,
+        name="Rubric-guided Delphi",
+        created_by_user_id=owner.user_id,
+        control_point={
+            "activity_tool_type": "rank_order_voting",
+            "activity_title": "Rank Options",
+            "who_decides": "assisted",
+            "stop_condition": "custom",
+            "stop_condition_text": "Conclude when the shortlist is complete enough to report.",
+            "max_rounds": 3,
+            "threshold": 0.2,
+        },
+    )
+
+    document = forked.template_payload["orchestration"]["document"]
+    iterate = document["steps"][0]["steps"][1]
+    sequence_steps = iterate["steps"][0]["steps"]
+    assert iterate["max_rounds"] == 3
+    assert "round_gate" in iterate
+    assert "_custom_stop_description" not in iterate
+    assert [step["type"] for step in sequence_steps] == ["activity", "ai-decision"]
+    assert "complete enough to report" in sequence_steps[1]["prompt_template"]
+    assert "Custom criteria" in " ".join(summary)
+
+
 def test_meeting_created_from_forked_template_resolves_inline_document(db_session):
     """Plainspoken Marmot: a meeting from a forked template binds to the inline
     document via a template:// path and the engine materializes its first step."""

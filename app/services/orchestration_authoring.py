@@ -278,6 +278,9 @@ def apply_tuning(
 
 
 def _stop_condition_phrase(iterate: Dict[str, Any]) -> str:
+    custom_text = _custom_stop_text_from_iterate(iterate)
+    if custom_text:
+        return "the facilitator's custom criteria are met"
     name = str((iterate.get("convergence_predicate") or {}).get("name") or "")
     for spec in STOP_CONDITIONS.values():
         if spec["predicate"] == name:
@@ -307,6 +310,9 @@ def summarize_orchestration(document: Dict[str, Any]) -> List[str]:
         lines.append(
             f"Then repeat {inner_title} {cap}, stopping when {_stop_condition_phrase(iterate)}."
         )
+        custom_text = _custom_stop_text_from_iterate(iterate)
+        if custom_text:
+            lines.append(f'Custom criteria: "{custom_text}"')
         gate = iterate.get("round_gate")
         if isinstance(gate, dict) and isinstance(gate.get("decision"), dict):
             lines.append("After each round you decide whether to run another round or conclude.")

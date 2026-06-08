@@ -55,7 +55,7 @@ from app.config.loader import get_guest_join_enabled, get_secure_cookies_enabled
 from app.schemas.schemas import Permission
 from app.utils.security import get_password_hash
 from fastapi import Request
-from typing import List, Optional, Literal, Iterable, Set, Dict
+from typing import Any, List, Optional, Literal, Iterable, Set, Dict
 from sqlalchemy import func
 from datetime import datetime, timezone
 from pathlib import Path
@@ -134,6 +134,7 @@ class ForkOrchestrationTemplatePayload(BaseModel):
     # Adaptive controlled-feedback comment workload (fractions of the ideas).
     comment_default_fraction: Optional[float] = Field(None, ge=0.0, le=1.0)
     comment_max_fraction: Optional[float] = Field(None, ge=0.0, le=1.0)
+    control_point: Optional[Dict[str, Any]] = None
 
 
 class UpdateMeetingTemplatePayload(BaseModel):
@@ -1103,6 +1104,7 @@ async def fork_meeting_template(
         who_decides=payload.who_decides,
         comment_default_fraction=payload.comment_default_fraction,
         comment_max_fraction=payload.comment_max_fraction,
+        control_point=payload.control_point,
         purpose=payload.purpose,
         tags=payload.tags,
     )

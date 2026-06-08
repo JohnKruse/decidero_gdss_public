@@ -439,5 +439,10 @@ def test_meeting_templates_page_has_fork_and_tune_hooks():
         html = handle.read()
     assert 'data-template-action="fork"' in html
     assert "FORK &amp; TUNE" in html
+    assert 'id="templateForkPanel"' in html
+    assert 'name="stop_condition"' in html
+    assert 'value="custom"' in html
+    assert "/api/meetings/templates/control-point/compile" in html
+    assert "control_point: readControlPointCard()" in html
     assert "/fork" in html
     assert "What this method will do" in html
