@@ -55,5 +55,6 @@ flowchart TD
 For the paper's anchor figure, pair this diagram with the corresponding
 `orchestrations/delphi.json` block (the `iterate → sequence → [rank, decision,
 comment]` nesting), color-keyed node-to-JSON, so the reader sees the declared
-recursion and its visual form together. See section H of
-`docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md`.
+recursion and its visual form together. See section H of the paper outline
+(relocated to the HICSS research repo: `dev_record/source/PAPER_OUTLINE.md`; see
+[../../plans/RELOCATED.md](../../plans/RELOCATED.md)).

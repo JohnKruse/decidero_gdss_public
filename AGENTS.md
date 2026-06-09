@@ -22,25 +22,26 @@ Method logic and control points live in **Layer-2 data, never in activities or t
 engine**. Delphi is just one data file; everything coded is generic.
 
 ## Start here
-- **Paper (north star):** `docs/HICSS_2027_DECIDERO_ORCHESTRATOR_PAPER_OUTLINE.md`
-  — the working design log; "implemented vs future" status lives here.
-- **Active master plan:** `plans/01_MASTER_PLAN.md`; current phase subplan:
-  `plans/subplans/PHASE_9.md`.
-- **Latest hand-off (read first):** `plans/subplans/HANDOFF_CODEX.md` (2026-06-07)
-  — terminal Report activity (done through Step 5; Delphi now ends with a report)
-  + single-threaded runtime control, guardrails, deps, and what's left (report
-  download UI, branch consolidation).
-- **Recent feature record:** `plans/subplans/DELPHI_GENERIC_COMMENT.md` — **COMPLETE**.
-  The Delphi comment flow runs `rank → in-round decision (how many ideas) → comment
-  → rerank`, where the comment step is the *generic* brainstorming activity
-  configured as a comment surface (seed-from-input, comment-only, selected subset,
-  vote-order display, subdued non-eligible items) — no bespoke activity. Cross-round
-  anonymized comment display + the viewer's own-comment flag are on the generic
-  path. The bespoke `outlier_justification` activity is **deprecated** (kept in the
-  tree, unused by `orchestrations/delphi.json`). This is the worked example of the
-  paper's "orchestration + configurable activities obviate custom activities" claim.
-  Background: `plans/subplans/F1_JUSTIFICATION_ACTIVITY.md` (the superseded bespoke
-  activity).
+The paper draft and the full planning / development record have **moved out of this
+repo** into the separate HICSS research repo (kept apart so the OSS code isn't
+muddied with draft paper material):
+`~/Documents/Research/HICSS_2027_GDSS_Orchestrator/dev_record/`. There,
+`DEVELOPMENT_RECORD.md` is the consolidated engineering narrative, and `source/`
+holds the former `HICSS_..._OUTLINE.md` (working design log + "implemented vs
+future" status), `01_MASTER_PLAN.md`, and the Phase 7–9 subplans / Codex hand-off.
+
+Engine/code work is **complete and frozen for the paper** (owner decision
+2026-06-08): the orchestrator, the Delphi reference method, the
+decision/recommender primitives, the show-it-back views, and the terminal report
+are all implemented and tested. **Do not build new authoring UI.** Current branch:
+`report-activity-dev`.
+
+The orchestration claim, distilled: the Delphi comment flow runs `rank → in-round
+decision → comment → rerank`, where the comment step is the *generic* brainstorming
+activity configured as a comment surface — no bespoke activity. The bespoke
+`outlier_justification` activity is **deprecated** (kept in the tree, unused by
+`orchestrations/delphi.json`). This is the worked example of "orchestration +
+configurable activities obviate custom activities."
 
 ## Key contracts / docs
 - Activity plugin contract: `docs/ACTIVITY_CONTRACT_SPEC.md` (+ `_GUIDE.md`),
@@ -53,8 +54,9 @@ engine**. Delphi is just one data file; everything coded is generic.
 
 ## Conventions
 - **Tests must pass before a change is done.** Regression command (the agreed
-  suite) is recorded in the project memory / `plans/01_MASTER_PLAN.md`; run with
-  `PYTHONPATH=. ./venv/bin/pytest <files> -v`. Add new test files for new modules.
+  suite) is recorded in project memory; run with
+  `PYTHONPATH=. ./venv/bin/pytest app/tests/ -q` (or `<files> -v` for a subset).
+  Add new test files for new modules.
 - Mirror the nearest existing implementation rather than inventing patterns
   (e.g. new per-user activity → mirror `rank_order_voting`: plugin + manager +
   `app/routers/rank_order_voting.py` + `app/schemas/` + the `meeting.js` panel).
@@ -69,4 +71,5 @@ engine**. Delphi is just one data file; everything coded is generic.
 - `app/plugins/builtin/` activities · `app/services/` engine + managers ·
   `app/routers/` HTTP · `app/schemas/` request/response · `app/models/` ORM ·
   `app/templates/` + `app/static/` UI · `app/tests/` · `orchestrations/` methods ·
-  `docs/` contracts + paper · `plans/` roadmap.
+  `docs/` contracts · `plans/` archived roadmaps (active record moved — see Start
+  here).

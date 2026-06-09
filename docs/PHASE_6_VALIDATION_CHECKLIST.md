@@ -71,8 +71,9 @@ Phase 6 Step 3 verifies the full-surface consistency boundary under the `Lobster
 Phase 6 `Lobster Teacup` is auditable only if all of the following stay aligned:
 
 - this checklist,
-- `plans/archive/orchestration_engine/subplans/PHASE_6.md`,
-- `plans/archive/orchestration_engine/01_MASTER_PLAN.md`,
+- `PHASE_6.md` and `01_MASTER_PLAN.md` from the archived engine build (relocated to
+  the HICSS research repo under `dev_record/source/plans/archive/orchestration_engine/`;
+  see [../plans/RELOCATED.md](../plans/RELOCATED.md)),
 - the full-suite pytest result,
 - and the final merge-readiness notes produced later in Phase 6.
 
@@ -91,5 +92,8 @@ Phase 6 Step 5 locks the terminal exit boundary under the `Lobster Teacup` canar
 
 - Terminal command: `PYTHONPATH=. ./venv/bin/pytest app/tests/ -v`
 - Required result: the command must reach `[100%]` with zero failures. Guest-join feature-flag tests may report `SKIPPED` when the guest entry flag is disabled.
-- Documentation state: this checklist and `plans/archive/orchestration_engine/subplans/PHASE_6.md` must both record the final command, failure-mode proof, residue result, merge-readiness notes, and final completion boundary.
+- Documentation state: this checklist and the archived `PHASE_6.md` (now in the
+  HICSS research repo, see [../plans/RELOCATED.md](../plans/RELOCATED.md)) must both
+  record the final command, failure-mode proof, residue result, merge-readiness
+  notes, and final completion boundary.
 - Completion state: Phase 6 may be marked `[COMPLETE]` only after Step 5 is `[DONE]`, documentation assertion coverage is updated, and the full-suite command passes 100%.

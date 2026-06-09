@@ -151,7 +151,9 @@ comment (others subdued), and collects comments as sub-comments. This is the
 paper's "orchestration obviates custom activities" claim in practice: one generic
 activity, parameterized — no method-specific code. The earlier bespoke
 `outlier_justification` activity is **deprecated** and no longer referenced by
-`orchestrations/delphi.json`. See `plans/subplans/DELPHI_GENERIC_COMMENT.md`.
+`orchestrations/delphi.json`. See `DELPHI_GENERIC_COMMENT.md`, relocated to the
+HICSS research repo under `dev_record/source/plans/subplans/` (see
+[../plans/RELOCATED.md](../plans/RELOCATED.md)).
 
 ### Cross-round comment display (peer-anonymous, own-comment aware)
 
