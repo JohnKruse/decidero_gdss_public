@@ -75,7 +75,7 @@ the aggregate statistics do. The run is reproducible with
 The Classical Delphi meeting is created from a built-in template — a reusable,
 runtime-free design. No agenda authoring is required.
 
-![Dashboard listing the Classical Delphi — Demo meeting](delphi_demo/01-dashboard.png)
+![Dashboard listing the Classical Delphi — Demo meeting](delphi_demo/fig-1-dashboard.png)
 
 ### 2. The orchestrated method
 
@@ -84,21 +84,21 @@ runtime gates. The engine materializes later rounds and decision points **only
 when the method reaches them** — the agenda is built one step at a time, not
 pre-expanded.
 
-![Meeting overview: orchestrated method, method outline, and runtime gates](delphi_demo/02-meeting-overview.png)
+![Meeting overview: orchestrated method, method outline, and runtime gates](delphi_demo/fig-2-meeting-overview.png)
 
 ### 3. Round 1 — generate items (anonymous brainstorming)
 
 Participants contribute candidate factors anonymously through the standard
 brainstorming activity.
 
-![Round 1 brainstorming with five anonymous candidate items](delphi_demo/03-brainstorming.png)
+![Round 1 brainstorming with five anonymous candidate items](delphi_demo/fig-3-brainstorming.png)
 
 ### 4. Rank-order voting
 
 The generated items flow into `rank_order_voting`. This is a generic activity —
 nothing about it is Delphi-specific.
 
-![Rank-order voting on the five items, Round 1 of 4](delphi_demo/04-rank-order-voting.png)
+![Rank-order voting on the five items, Round 1 of 4](delphi_demo/fig-4-rank-order-voting.png)
 
 ### 5. Statistical feedback and the in-round decision
 
@@ -108,7 +108,7 @@ many least-agreed items to open for comment. In this run the group is
 **6 participants**, and the engine **suggests opening 2** items. The facilitator
 retains authority to open more, fewer, or none.
 
-![Facilitator decision: divergent, median spread 2.25, 5 ranked / 3 contested, suggest opening 2](delphi_demo/05-agreement-gate.png)
+![Facilitator decision: divergent, median spread 2.25, 5 ranked / 3 contested, suggest opening 2](delphi_demo/fig-5-agreement-gate.png)
 
 ### 6. Comment on disputed ideas
 
@@ -118,7 +118,7 @@ health and technical sustainability*, both flagged **high disagreement**) are
 open for comment; converged items are shown for context. Participants add brief
 anonymous rationales, which nest under the item they address.
 
-![Comment step: disputed items open with anonymous rationales nested beneath them](delphi_demo/06-comment-on-disputed.png)
+![Comment step: disputed items open with anonymous rationales nested beneath them](delphi_demo/fig-6-comment-on-disputed.png)
 
 ### 7. The final report
 
@@ -127,7 +127,7 @@ Concluding at the round gate materializes the terminal report. It renders the
 **item trajectory**, and the **convergence (Kendall's W) by round**, and offers
 the deliverable as **JSON, Markdown, CSV, or DOCX**.
 
-![Final report: ranking, item trajectory, convergence, and download formats](delphi_demo/07-final-report.png)
+![Final report: ranking, item trajectory, convergence, and download formats](delphi_demo/fig-7-final-report.png)
 
 ---
 
