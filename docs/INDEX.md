@@ -50,6 +50,7 @@ If you are new to activity development, start with the first link below. It expl
 ## Reference Evaluations
 
 1. Delphi synthetic validation: `docs/DELPHI_VALIDATION.md`
+2. Classical Delphi demonstration: `docs/delphi.md`
 
 ## Other References
 
