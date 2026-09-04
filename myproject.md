@@ -47,6 +47,7 @@
 - [ ] **Investigate and fix the authentication middleware redirection failure.**
 
 - [ ] Address `pytest` errors from `pytest.txt`.
+- [ ] **Brainstorming: display the question/prompt being brainstormed** at the top of the brainstorming activity view (facilitator + participant). Unclear whether this was ever built; surface the meeting/activity decision question so participants see what they're generating ideas about. (Noted 2026-09-04.)
 
 ## API Updates
 
