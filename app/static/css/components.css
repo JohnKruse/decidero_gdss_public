@@ -1,5 +1,16 @@
 /* Shared UI components styles */
 
+/* The `hidden` attribute only hides via the user agent's low-specificity
+   `[hidden] { display: none }`, so any class rule that sets `display` silently
+   overrides it and the element renders anyway — usually empty, with its JS
+   `el.hidden = true` appearing to do nothing. That bit us twice (the activity
+   guidance interstitial and the dead AI-proposal box) and had already been
+   patched per-class in ten places. This makes `hidden` mean hidden everywhere.
+   Show an element by removing the attribute, not by setting `style.display`. */
+[hidden] {
+  display: none !important;
+}
+
 /* Error banner shown via page_utils.showBanner */
 .error-banner {
   position: fixed;
