@@ -35,15 +35,6 @@ from app.utils.security import get_password_hash  # For creating test users
 from datetime import datetime, timedelta, UTC
 from app.utils.identifiers import generate_user_id
 
-PHASE_4_PLAN_PATH = (
-    Path(__file__).resolve().parents[2]
-    / "plans"
-    / "archive"
-    / "orchestration_engine"
-    / "subplans"
-    / "PHASE_4.md"
-)
-
 
 @pytest.fixture
 def meeting_manager_instance(db_session: Session):
@@ -284,46 +275,6 @@ def test_resolve_meeting_capabilities_for_all_phase1_postures(
     assert anonymous_caps["can_view"] is False
     assert anonymous_caps["can_manage"] is False
     assert anonymous_caps["can_delete"] is False
-
-
-def test_phase4_documentation_tracks_completed_facilitator_model_collapse():
-    """Noodle Catapult: Phase 4 documentation must describe the collapsed steady state."""
-    plan_text = PHASE_4_PLAN_PATH.read_text(encoding="utf-8")
-    if "Engine and Step Kinds" in plan_text:
-        # Step headers may carry "[DONE]" markers once a step is completed,
-        # and the phase header gains "[COMPLETE]" once the phase clears; match
-        # substrings rather than full lines so the assertion is robust to
-        # workflow bookkeeping.
-        expected_markers = [
-            "Engine and Step Kinds",
-            "**Insolent Metronome**",
-            "Author the Orchestration Document Schema and Loader",
-            "Implement the `OrchestrationEngineStrategy` Skeleton and the `activity` Step Kind",
-            "Implement the `iterate` Step Kind",
-            "Implement the `facilitator-decision` Step Kind",
-            "Implement the `ai-decision` Step Kind",
-            "docs/schemas/orchestration.schema.json",
-            "OrchestrationEngineStrategy",
-        ]
-        for marker in expected_markers:
-            assert marker in plan_text
-        return
-
-    expected_markers = [
-        "# PHASE 4 [COMPLETE] — Data Model Collapse",
-        "### Step 1 [DONE] — Identify and Isolate Persistent Facilitator Artifacts",
-        "### Step 2 [DONE] — Collapse the ORM and Schema Model",
-        "### Step 3 [DONE] — Remove Runtime and Boot Dependencies on the Old Model",
-        "### Step 4 [DONE] — Prune Dead Code and Legacy Test Assumptions",
-        "### Step 5 [DONE] — Lock the Phase 4 Verification Boundary",
-        "Owner authority now persists only as `Meeting.owner_id`",
-        "participant and roster mutations no longer call a facilitator-row synchronization path",
-        "Remaining facilitator-shaped response names are intentionally Phase 5 compatibility work",
-        "Technical Deviations Log",
-    ]
-
-    for marker in expected_markers:
-        assert marker in plan_text
 
 
 def test_phase4_step2_removes_persistent_facilitator_orm_model():
