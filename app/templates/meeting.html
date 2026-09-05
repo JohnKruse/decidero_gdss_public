@@ -213,10 +213,14 @@
             {% grab id="meeting-brainstorming-panel" %}
             <section class="content-card activity-panel brainstorming-panel" data-brainstorming-root hidden>
                 <div class="section-header">
-                    <h2 id="brainstormingHeaderTitle">Brainstorming</h2>
+                    <div class="brainstorming-header-title-group">
+                        <h2 id="brainstormingHeaderTitle">Brainstorming</h2>
+                        <span id="brainstormingStatusChip"></span>
+                    </div>
                     <div class="overview-subtitle">Capture ideas quickly and surface them to the group.</div>
                 </div>
                 <div class="section-body">
+                    <p id="brainstormingQuestion" class="brainstorming-question" hidden></p>
                     <p id="brainstormingDescription" class="brainstorming-description">
                         The session facilitator will start the brainstorming activity.
                     </p>

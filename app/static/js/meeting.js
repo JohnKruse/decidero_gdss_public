@@ -370,6 +370,8 @@
         const brainstorming = {
             root: document.querySelector("[data-brainstorming-root]"),
             title: document.getElementById("brainstormingHeaderTitle"),
+            statusChip: document.getElementById("brainstormingStatusChip"),
+            question: document.getElementById("brainstormingQuestion"),
             description: document.getElementById("brainstormingDescription"),
             form: document.querySelector("[data-brainstorming-form]"),
             textarea: document.getElementById("brainstormingIdeaInput"),
@@ -966,6 +968,22 @@
             }
         }
 
+        function buildStatusChip(isActive) {
+            const chip = document.createElement("span");
+            chip.className = "activity-status-chip";
+            chip.dataset.state = isActive ? "live" : "stopped";
+
+            const dot = document.createElement("span");
+            dot.className = "activity-status-chip-dot";
+
+            const label = document.createElement("span");
+            label.className = "activity-status-chip-label";
+            label.textContent = isActive ? "Live" : "Stopped";
+
+            chip.append(dot, label);
+            return chip;
+        }
+
         function getActivityAccessState(item, activityState, isActive) {
             if (state.isFacilitator) {
                 const toolType = String(item?.tool_type || item?.tool || "").toLowerCase();
@@ -974,18 +992,38 @@
                     isOpen: Boolean(isActive),
                     canEnter: isFacilitatorDecision ? Boolean(isActive) : true,
                     title: isActive ? "Open to participants now" : "Not running yet",
+                    eligible: true,
+                    reason: "facilitator",
                 };
             }
             const userId = context.userId ? String(context.userId) : "";
             const allowed = new Set(getActivityParticipantIds(item, activityState));
             const isEligible = !userId || allowed.size === 0 || allowed.has(userId);
             if (!isActive) {
-                return { isOpen: false, canEnter: false, title: "Not running yet" };
+                return {
+                    isOpen: false,
+                    canEnter: false,
+                    title: "Not running yet",
+                    eligible: true,
+                    reason: "not_running",
+                };
             }
             if (!isEligible) {
-                return { isOpen: false, canEnter: false, title: "Not assigned to you" };
+                return {
+                    isOpen: false,
+                    canEnter: false,
+                    title: "Not assigned to you",
+                    eligible: false,
+                    reason: "not_assigned",
+                };
             }
-            return { isOpen: true, canEnter: true, title: "Open to you now" };
+            return {
+                isOpen: true,
+                canEnter: true,
+                title: "Open to you now",
+                eligible: true,
+                reason: "running",
+            };
         }
 
         let meetingSocket = null;
@@ -6991,7 +7029,8 @@
                 timeDisplay.dataset.startedAt = activityState?.startedAt || statusSource?.startedAt || "";
                 timeDisplay.textContent = formatDuration(elapsed);
 
-                statusContainer.append(statusIcon, timeDisplay);
+                const statusChip = buildStatusChip(isActive);
+                statusContainer.append(statusIcon, timeDisplay, statusChip);
                 badges.appendChild(statusContainer);
 
                 const rosterSummary = getActivityRosterSummary(item.activity_id);
@@ -7014,12 +7053,16 @@
                 const accessState = getActivityAccessState(item, activityState, isActive);
                 li.dataset.access = accessState.isOpen ? "open" : "closed";
                 li.dataset.enterable = accessState.canEnter ? "true" : "false";
-                const accessBadge = document.createElement("span");
-                accessBadge.className = "agenda-item-access";
-                accessBadge.dataset.state = accessState.isOpen ? "open" : "closed";
-                accessBadge.textContent = accessState.isOpen ? "Open" : "Closed";
-                accessBadge.title = accessState.title || (accessState.isOpen ? "Open to you now" : "Closed to you");
-                badges.appendChild(accessBadge);
+                const isNonFacilitatorExcluded = !state.isFacilitator && accessState.eligible === false;
+                li.dataset.eligible = isNonFacilitatorExcluded ? "false" : "true";
+                if (isNonFacilitatorExcluded) {
+                    const accessBadge = document.createElement("span");
+                    accessBadge.className = "agenda-item-access";
+                    accessBadge.dataset.state = "not-assigned";
+                    accessBadge.textContent = "Not in this round";
+                    accessBadge.title = accessState.title || "Not assigned to you in this round";
+                    badges.appendChild(accessBadge);
+                }
 
                 // Facilitator-only steps (e.g. the orchestration round gate) have no
                 // participant session, roster, or transferable output, so the run
@@ -8004,6 +8047,10 @@
 
             if (brainstorming.root) {
                 brainstorming.root.hidden = !showBrainstorming;
+                if (brainstorming.statusChip) {
+                    brainstorming.statusChip.innerHTML = "";
+                    brainstorming.statusChip.appendChild(buildStatusChip(isActive));
+                }
                 if (showBrainstorming) {
                     // Detect activity change and clear ideas if switching to different activity
                     const newActivityId = eligibility?.activityId || null;
@@ -8019,13 +8066,19 @@
                         const activityTitle = activeActivity?.title || "Brainstorming";
                         brainstorming.title.textContent = `${activityTitle} - BRAINSTORMING`;
                     }
+                    if (brainstorming.question) {
+                        if (instructions) {
+                            brainstorming.question.textContent = instructions;
+                            brainstorming.question.hidden = false;
+                        } else {
+                            brainstorming.question.textContent = "";
+                            brainstorming.question.hidden = true;
+                        }
+                    }
                     if (brainstorming.description) {
-                        brainstorming.description.textContent =
-                            instructions ||
-                            prompt ||
-                            (isActive
-                                ? "Brainstorming is live. Share your ideas with the group."
-                                : "This brainstorming activity is closed. Review the ideas below.");
+                        brainstorming.description.textContent = isActive
+                            ? "Brainstorming is live. Share your ideas with the group."
+                            : "This brainstorming activity is stopped. Review the ideas below.";
                     }
                     setBrainstormingFormEnabled(Boolean(isActive && canEnter), activityConfig);
                     ensureReplyButtons();
@@ -8037,12 +8090,21 @@
                         : eligibility?.restricted
                             ? "You're not in this brainstorming round. We'll bring you in when it is your turn."
                             : state.isFacilitator
-                                ? "This brainstorming activity is closed. Select another agenda item to continue."
+                                ? "This brainstorming activity is stopped. Select another agenda item to continue."
                                 : "The facilitator will open the brainstorming board when ready.";
                     activeBrainstormingConfig = {};
                     if (brainstorming.title) {
                         const activityTitle = activeActivity?.title || "Brainstorming";
                         brainstorming.title.textContent = `${activityTitle} - BRAINSTORMING`;
+                    }
+                    if (brainstorming.question) {
+                        if (instructions) {
+                            brainstorming.question.textContent = instructions;
+                            brainstorming.question.hidden = false;
+                        } else {
+                            brainstorming.question.textContent = "";
+                            brainstorming.question.hidden = true;
+                        }
                     }
                     if (brainstorming.description) {
                         brainstorming.description.textContent = waitingCopy;
