@@ -33,8 +33,9 @@ future" status), `01_MASTER_PLAN.md`, and the Phase 7–9 subplans / Codex hand-
 Engine/code work is **complete and frozen for the paper** (owner decision
 2026-06-08): the orchestrator, the Delphi reference method, the
 decision/recommender primitives, the show-it-back views, and the terminal report
-are all implemented and tested. **Do not build new authoring UI.** Current branch:
-`report-activity-dev`.
+are all implemented and tested. **Do not build new authoring UI.** Branches change;
+use `git status --short --branch` instead of relying on a branch name recorded in
+documentation.
 
 The orchestration claim, distilled: the Delphi comment flow runs `rank → in-round
 decision → comment → rerank`, where the comment step is the *generic* brainstorming

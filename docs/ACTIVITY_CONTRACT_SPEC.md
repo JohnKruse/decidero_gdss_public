@@ -58,7 +58,11 @@ tool. That makes DP4 reusable by future server-driven step kinds, including
 engine steps that need the same "retry only under declared conditions" behavior
 without inventing a parallel policy shape.
 
-Under Phase 3, this principle is extended to the server: [run_with_retry](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/reliable_writes.py) provides the server-side execution analogue to `runReliableWriteAction`, enforcing the same normalized policies, jittered backoffs, and idempotency guarantees for server-driven actions (such as LLM calls).
+Under Phase 3, this principle is extended to the server:
+[`run_with_retry`](../app/services/reliable_writes.py) provides the server-side
+execution analogue to `runReliableWriteAction`, enforcing the same normalized
+policies, jittered backoffs, and idempotency guarantees for server-driven actions
+(such as LLM calls).
 
 ### DP5 - ThinkLet Claims Are Auditable
 
@@ -192,15 +196,15 @@ available through `ActivityBundleManager.list_bundles_for_step`.
 
 `BundleTransform` is an abstract interface for data transformations between activity iterations.
 The canonical implementations are:
-- `IdentityBundleTransform` at [IdentityBundleTransform](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/bundle_transforms.py): Returns the input bundle unchanged.
-- `DelphiStatisticalAggregationTransform` at [DelphiStatisticalAggregationTransform](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/bundle_transforms.py): Consumes rank-order-voting output bundles (including individual voter rankings in the bundle metadata) and computes item-level median, IQR, standard deviation, and participant outlier flags.
+- `IdentityBundleTransform` in [`bundle_transforms.py`](../app/services/bundle_transforms.py): Returns the input bundle unchanged.
+- `DelphiStatisticalAggregationTransform` in [`bundle_transforms.py`](../app/services/bundle_transforms.py): Consumes rank-order-voting output bundles (including individual voter rankings in the bundle metadata) and computes item-level median, IQR, standard deviation, and participant outlier flags.
 
 ### Convergence Predicate Seam
 
 `ConvergencePredicate` is an abstract interface that evaluates the iteration history to decide if execution should terminate.
 The canonical implementations are:
-- `FixedNPredicate` at [FixedNPredicate](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/convergence_predicates.py): Fires after a set number of rounds.
-- `IQRStabilityPredicate` at [IQRStabilityPredicate](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/convergence_predicates.py): Fires when the change in median IQR across items between two consecutive rounds is less than or equal to a threshold.
+- `FixedNPredicate` in [`convergence_predicates.py`](../app/services/convergence_predicates.py): Fires after a set number of rounds.
+- `IQRStabilityPredicate` in [`convergence_predicates.py`](../app/services/convergence_predicates.py): Fires when the change in median IQR across items between two consecutive rounds is less than or equal to a threshold.
 
 ### Phase 3 Substrate Composition
 
@@ -211,13 +215,17 @@ The executable witness for this composition is the test `app/tests/test_activity
 
 ### Orchestration Document Schema
 
-The orchestration document grammar (governed by the Phase 4 `Insolent Metronome` canary) is formally specified at [orchestration.schema.json](file:///Users/john/Documents/Python/decidero_gdss_public/docs/schemas/orchestration.schema.json). It mandates:
+The orchestration document grammar (governed by the Phase 4 `Insolent Metronome`
+canary) is formally specified in
+[`orchestration.schema.json`](schemas/orchestration.schema.json). It mandates:
 - Top-level metadata describing the collaboration process.
 - A sequential step list, where each step can represent a closed control-flow block (`sequence`, `iterate`, and reserved `conditional`) or a primitive step kind (`activity`, `facilitator-decision`, `ai-decision`).
 
 ### Loader and Parser
 
-The process orchestration document loader at [orchestration_loader.py](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/orchestration_loader.py) is the exclusive entry point for loading process configurations. It performs:
+The process orchestration document loader in
+[`orchestration_loader.py`](../app/services/orchestration_loader.py) is the
+exclusive entry point for loading process configurations. It performs:
 - Schema validation against all mandatory structure and type rules.
 - Structural checking for review-required AI decision step pairing (requiring an immediately following facilitator approval step).
 - AST construction returning typed in-memory representations (`SequenceStep`, `IterateStep`, `ActivityStep`, etc.) for engine execution.
@@ -228,7 +236,7 @@ These contracts are recorded now so Phase 4 Steps 4 and 5 land against
 explicit expectations rather than re-deriving them at implementation time.
 
 **ai-decision retry contract.** Phase 4 Step 5 reuses `run_with_retry` from
-[reliable_writes.py](file:///Users/john/Documents/Python/decidero_gdss_public/app/services/reliable_writes.py)
+[`reliable_writes.py`](../app/services/reliable_writes.py)
 to retry malformed AI responses. The default `should_retry_result` and
 `should_retry_exception` inspect HTTP-style status fields only and will not
 treat schema-validation failures as retryable on their own. The `ai-decision`

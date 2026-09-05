@@ -42,7 +42,9 @@ Facilitators can see all current values but cannot modify Admin-only sections.  
 
 ### Tab 1 — AI Configuration
 
-Configures the AI model powering the **AI Meeting Designer** (`/meeting/design`).
+Configures the active AI provider and model used by the **AI Meeting Designer**
+(`/meeting/design`) and, when an orchestration method opts into AI advice, the
+**AI round-gate advisor**.
 
 | Field | Description | Default |
 |---|---|---|
@@ -108,6 +110,35 @@ API keys entered via the Settings UI are:
 The encryption key is stored in `data/.settings_key` (auto-generated on first use, unique per deployment).
 
 API keys should not be committed to `config.yaml` or prompt template files.
+
+#### AI round-gate advisor
+
+An orchestration document can request an AI recommendation at a round boundary
+(for example, continue or conclude in Classical Delphi). The AI only advises: the
+facilitator retains the decision, and the engine falls back to its computational
+convergence rule if AI configuration is incomplete or the provider call fails.
+
+The Settings page does not expose a second, independent advisor form. Saving the
+active provider, that provider's API key, and its model on the AI Configuration
+tab also makes those values available to the round-gate advisor. Deployments that
+need gate-specific overrides can use `gate_recommender_model` in
+`app/config/config.yaml`; API keys should instead be supplied through the Settings
+page or environment variables.
+
+Gate-advisor API-key precedence is:
+
+```text
+DECIDERO_GATE_RECOMMENDER_API_KEY
+→ OPENROUTER_API_KEY
+→ active provider key saved by Settings
+→ gate-specific database key
+→ gate_recommender_model.api_key in config.yaml
+```
+
+The provider and model saved by Settings take precedence over the corresponding
+`gate_recommender_model` defaults unless gate-specific database overrides exist.
+The gate-specific prompt, token limit, and temperature remain tunable in
+`config.yaml`.
 
 ---
 

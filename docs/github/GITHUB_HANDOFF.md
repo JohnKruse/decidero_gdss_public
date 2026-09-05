@@ -1,7 +1,11 @@
 # GitHub Handoff Plan
 
-This repo is now the public working copy:
-- `/Users/john/Documents/Python/decidero_gdss_public`
+# GitHub Handoff Record
+
+This historical note records how the repository was prepared for its initial
+public GitHub handoff. The repository is now public; the local path and one-time
+migration seed files used during that handoff are not part of the portable
+project documentation.
 
 ## 1) Create public GitHub repository
 
@@ -16,11 +20,8 @@ git push -u origin main
 
 ## 2) Migrate pending Task Master work to GitHub Issues
 
-Seed files:
-- `docs/github/taskmaster_pending_to_github_issues.md`
-- `docs/github/taskmaster_pending_to_github_issues.json`
-
-Recommended:
+The original local Task Master export is no longer tracked. The migration process
+was:
 1. Create one issue per top-level TM task (`53`, `56`, `81`, `82`).
 2. Paste each section from the markdown seed as the issue body.
 3. Apply labels (`priority:*`, `type:feature`, `area:*`).

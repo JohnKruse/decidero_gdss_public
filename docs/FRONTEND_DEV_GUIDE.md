@@ -393,6 +393,34 @@ facilitator-inserted activity contributes to orchestration bundle history,
 convergence, or provenance; those richer hybrid semantics are intentionally
 post-HICSS product work.
 
+### Run state, participant access, and pre-start curation
+
+Agenda rows deliberately present run state and viewer access as separate concepts:
+
+- `Live` means the activity is currently running. The chip is deliberately coarse:
+  `buildStatusChip` renders `Live` for `in_progress`, for `paused`, and also when
+  the row is the meeting's `currentActivity` regardless of its own status.
+- `Stopped` means the activity is not currently running, including an activity
+  that has not started yet.
+- Paused is not invisible — it is carried by the adjacent status icon, not the
+  chip. The agenda renderer sets that icon to `▶` / `⏸` / `■` with a matching
+  `title` from the activity's own status, so a paused row reads as `⏸` + `Live`.
+- `Not in this round` means the current participant is excluded by that activity's
+  roster. It does not imply that the activity is stopped for assigned participants.
+
+Keep those labels distinct when changing `getActivityAccessState`,
+`buildStatusChip`, or the agenda renderer. The `data-access`, `data-enterable`, and
+`data-eligible` attributes support behavior and styling, but the user-facing copy
+must not collapse run state back into the retired `Open`/`Closed` wording.
+
+Facilitators can use **Edit Ideas** to curate the idea package of a future activity.
+The client enables the control only when the activity is not running, has never
+started or stopped, has no accumulated run time, contains no participant data, and
+is not explicitly marked ineligible. Because realtime payloads can omit richer
+eligibility fields, the renderer derives `everRun` from timestamps and elapsed time
+and fails closed. This is a usability guard only: `_assert_transfer_eligible` in
+`app/routers/transfer.py` is the authoritative server-side enforcement boundary.
+
 ### Facilitator decision review surface
 
 Phase 5 Step 3 (Loquacious Pelican) adds a facilitator-only decision panel to

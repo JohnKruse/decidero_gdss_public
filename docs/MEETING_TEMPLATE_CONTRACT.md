@@ -40,7 +40,7 @@ Required shape:
     {
       "tool_type": "brainstorming",
       "title": "Activity title",
-      "instructions": "Facilitator-facing instructions",
+      "instructions": "Prompt or instructions shown to participants",
       "order_index": 1,
       "duration_minutes": 10,
       "config": {}
@@ -54,7 +54,16 @@ Required shape:
 }
 ```
 
-The agenda stores reusable structure: activity order, activity type, titles, instructions, duration defaults, and configuration defaults. Future orchestration-backed templates can store orchestration metadata in `orchestration` or in activity config under an `orchestration` object.
+The agenda stores reusable structure: activity order, activity type, titles,
+participant-facing instructions, duration defaults, and configuration defaults.
+For orchestration-backed templates, `orchestration` identifies the Layer-2 method
+document; runtime orchestration metadata may also appear in activity config.
+
+When a facilitator starts an orchestration-backed template, the start form requires
+a new session name and a question for the group. These values are not silently
+prefilled from the reusable template defaults. The group question becomes the
+meeting description and is also supplied to the first brainstorming activity as
+its participant-facing prompt.
 
 ## Runtime Stripping Boundary
 
