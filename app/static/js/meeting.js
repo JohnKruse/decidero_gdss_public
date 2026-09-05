@@ -8506,7 +8506,7 @@
                 ).toLowerCase();
                 if (
                     activityId &&
-                    (requestedTool === "voting" || requestedTool === "rank_order_voting" || requestedTool === "outlier_justification") &&
+                    (requestedTool === "voting" || requestedTool === "rank_order_voting" || requestedTool === "outlier_justification" || requestedTool === "brainstorming") &&
                     (action === "start_tool" || action === "resume_tool")
                 ) {
                     if (requestedTool === "voting") {
@@ -8514,6 +8514,13 @@
                         loadVotingOptions(activityId, state.agendaMap.get(activityId)?.config || activeVotingConfig || {});
                     } else if (requestedTool === "rank_order_voting") {
                         loadRankOrderSummary(activityId, state.agendaMap.get(activityId)?.config || activeRankOrderConfig || {}, { force: true });
+                    } else if (requestedTool === "brainstorming") {
+                        // Starting a brainstorming activity can seed its ideas server-side
+                        // (the Delphi comment surface seeds from the prior ranking), so the
+                        // one-shot load latch must be dropped or the panel keeps showing the
+                        // empty list it fetched before the activity was opened.
+                        brainstormingIdeasLoaded = false;
+                        loadBrainstormingIdeas(activityId, state.agendaMap.get(activityId)?.config || activeBrainstormingConfig || {});
                     } else {
                         loadJustificationState(activityId, { force: true });
                     }
