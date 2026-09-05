@@ -771,8 +771,12 @@ def get_gate_recommender_settings() -> Dict[str, Any]:
     section = config.get("gate_recommender_model") or {}
     provider_defaults = get_ai_provider_defaults()
 
+    # `ai.active_provider` / `ai.<provider>.model` are what the Settings page
+    # writes. Honour them so configuring AI in the UI also configures this
+    # advisor; the gate-specific keys stay available as an explicit override.
     provider = str(
         _db_get("ai.gate_recommender.provider")
+        or _db_get("ai.active_provider")
         or section.get("provider")
         or "openrouter"
     ).strip().lower()
@@ -790,6 +794,8 @@ def get_gate_recommender_settings() -> Dict[str, Any]:
         api_key = str(section.get("api_key") or "").strip()
 
     db_model = _db_get("ai.gate_recommender.model")
+    if db_model is None:
+        db_model = _db_get(f"ai.{provider}.model")
     model = str(db_model if db_model is not None else section.get("model") or "").strip()
 
     endpoint_url = str(section.get("endpoint_url") or "").strip()
