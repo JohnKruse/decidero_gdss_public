@@ -469,6 +469,15 @@ class MeetingTemplateManager:
         strategy = get_agenda_strategy(meeting)
         strategy.create_activity(meeting, payload=None, manager=manager)
         self.db.refresh(meeting)
+        question = (meeting.description or "").strip()
+        if question:
+            activities = sorted(meeting.agenda_activities or [], key=lambda a: a.order_index or 0)
+            first_brainstorm = next((a for a in activities if a.tool_type == "brainstorming"), None)
+            if first_brainstorm is not None and not (first_brainstorm.instructions or "").strip():
+                first_brainstorm.instructions = question
+                self.db.add(first_brainstorm)
+                self.db.commit()
+                self.db.refresh(meeting)
         return meeting
 
     def extract_payload_from_meeting(self, meeting: Meeting) -> MeetingTemplatePayload:

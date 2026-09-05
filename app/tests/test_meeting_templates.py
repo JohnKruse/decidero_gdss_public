@@ -442,6 +442,32 @@ def test_create_meeting_from_orchestration_template_materializes_first_step_only
     assert "rank_order_voting" not in [item.tool_type for item in meeting.agenda_activities]
 
 
+def test_create_delphi_meeting_from_template_transfers_group_question_to_brainstorming(db_session):
+    """Brainstorming question choreography: group question transfers to first brainstorming instructions."""
+    owner = _user("delphi_choreography_owner", "facilitator")
+    db_session.add(owner)
+    db_session.commit()
+    [template] = seed_builtin_meeting_templates(db_session)
+
+    distinctive_question = "Which factors should guide our 2027 roadmap?"
+    meeting = MeetingTemplateManager(db_session).create_meeting_from_template(
+        template_id=template.template_id,
+        facilitator_id=owner.user_id,
+        meeting_data=MeetingCreate(
+            title="Roadmap Delphi Session",
+            description=distinctive_question,
+            duration_minutes=90,
+            publicity=PublicityType.PRIVATE,
+            owner_id=owner.user_id,
+        ),
+    )
+
+    activities = sorted(meeting.agenda_activities or [], key=lambda a: a.order_index or 0)
+    first_brainstorm = next((a for a in activities if a.tool_type == "brainstorming"), None)
+    assert first_brainstorm is not None
+    assert first_brainstorm.instructions == distinctive_question
+
+
 def test_activity_context_persists_orchestration_iteration_metadata(db_session):
     """Copper Compass: activity close can survive request-bound orchestration state."""
     owner = _user("bundleowner", "facilitator")
