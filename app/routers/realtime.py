@@ -42,6 +42,9 @@ def _format_agenda_activity(activity: AgendaActivity) -> JSONCompatibleDict:
         "config": activity.config,
         "started_at": activity.started_at.isoformat() if activity.started_at else None,
         "stopped_at": activity.stopped_at.isoformat() if activity.stopped_at else None,
+        # Carried so the client can tell an activity that has already been run from
+        # one that has never opened, without waiting for the richer REST payload.
+        "elapsed_duration": int(activity.elapsed_duration or 0),
     }
 
 
