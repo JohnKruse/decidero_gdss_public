@@ -199,16 +199,6 @@
             {% endgrab %}
             {% endif %}
 
-            <!-- Per-phase guidance: explains what the participant should do in the
-                 current step (review feedback, justify, re-rank). Shown once per
-                 activity until dismissed. -->
-            <div id="activityInterstitial" class="activity-interstitial" hidden role="note" aria-live="polite">
-                <div class="activity-interstitial__body">
-                    <strong id="activityInterstitialTitle" class="activity-interstitial__title"></strong>
-                    <p id="activityInterstitialText" class="activity-interstitial__text"></p>
-                </div>
-                <button type="button" class="control-btn sm primary" id="activityInterstitialDismiss">Got it</button>
-            </div>
 
             {% grab id="meeting-brainstorming-panel" %}
             <section class="content-card activity-panel brainstorming-panel" data-brainstorming-root hidden>

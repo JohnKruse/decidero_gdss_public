@@ -1471,36 +1471,6 @@
 }
 
 /* Per-phase guidance interstitial shown above the active activity. */
-.activity-interstitial {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  justify-content: space-between;
-  margin: 0 0 16px;
-  padding: 12px 16px;
-  border: 1px solid #c5d6f2;
-  border-left: 4px solid #2b4c8c;
-  background: #eef3fb;
-  border-radius: 8px;
-}
-
-.activity-interstitial__title {
-  display: block;
-  color: #1d3a6e;
-  font-size: 0.95rem;
-}
-
-.activity-interstitial__text {
-  margin: 2px 0 0;
-  color: #33415c;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.activity-interstitial__body {
-  min-width: 0;
-}
-
 /* Delphi controlled feedback: prior-round group median/spread per item. */
 .rank-order-item .rank-order-prior-feedback {
   margin-top: 4px;
@@ -2620,16 +2590,6 @@
   border-radius: 4px;
 }
 
-.agenda-item-active-count {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  background: rgba(16, 185, 129, 0.18);
-  color: #0f5132;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
 
 .agenda-item-access {
   display: inline-flex;

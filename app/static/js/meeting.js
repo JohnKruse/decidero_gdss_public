@@ -353,13 +353,6 @@
                 button: document.querySelector("[data-orchestration-advance]"),
                 status: document.getElementById("orchestrationAdvanceStatus"),
             },
-            // Per-phase guidance interstitial
-            activityInterstitial: {
-                root: document.getElementById("activityInterstitial"),
-                title: document.getElementById("activityInterstitialTitle"),
-                text: document.getElementById("activityInterstitialText"),
-                dismiss: document.getElementById("activityInterstitialDismiss"),
-            },
             // Collision Modal
             collisionModal: document.getElementById("collisionModal"),
             closeCollisionModal: document.getElementById("closeCollisionModal"),
@@ -879,12 +872,17 @@
                     (state.meeting?.participant_ids || []).length ||
                     0;
 
+            const activeStatus = String(activeEntry?.status || "").toLowerCase();
+            const isLive = Boolean(activeEntry && (activeStatus === "in_progress" || activeStatus === "paused"));
+
             return {
                 text:
                     mode === "custom"
                         ? `Custom • ${total} selected`
                         : `All participants${total ? ` • ${total}` : ""}`,
-                isLive: Boolean(activeEntry),
+                isLive,
+                total,
+                mode,
             };
         }
 
@@ -907,6 +905,8 @@
 
         function getActiveParticipantCount(item, activityState) {
             if (!activityState) return null;
+            const status = String(activityState.status || "").toLowerCase();
+            if (status !== "in_progress" && status !== "paused") return null;
             const active = normalizeIdList(state.latestState?.participants || []);
             if (active.length === 0) return 0;
             const allowed = new Set(getActivityParticipantIds(item, activityState));
@@ -1078,7 +1078,6 @@
         let votingCommittedVotes = new Map();
         let activeVotingConfig = {};
         // Activity ids whose per-phase guidance the user has dismissed this session.
-        const dismissedInterstitials = new Set();
         let rankOrderSummary = null;
         let rankOrderActivityId = null;
         let rankOrderRequestInFlight = false;
@@ -7035,19 +7034,23 @@
 
                 const rosterSummary = getActivityRosterSummary(item.activity_id);
                 if (rosterSummary) {
+                    const activeCount = getActiveParticipantCount(item, activityState);
+                    const total = rosterSummary.total ?? 0;
+                    const liveCount = activeCount !== null ? activeCount : 0;
+                    let label = isActive
+                        ? `${liveCount} of ${total} active`
+                        : `${total} participants`;
+                    if (rosterSummary.mode === "custom") {
+                        label += " · custom roster";
+                    }
+
                     const rosterBadge = document.createElement("span");
                     rosterBadge.className = "agenda-item-roster";
                     rosterBadge.dataset.live = rosterSummary.isLive ? "true" : "false";
-                    rosterBadge.textContent = rosterSummary.text;
+                    rosterBadge.textContent = label;
+                    rosterBadge.title = "Participants currently connected to the meeting, of those assigned to this activity" +
+                        (rosterSummary.mode === "custom" ? " (custom roster)" : "");
                     badges.appendChild(rosterBadge);
-                }
-
-                const activeCount = getActiveParticipantCount(item, activityState);
-                if (activeCount !== null) {
-                    const activeBadge = document.createElement("span");
-                    activeBadge.className = "agenda-item-active-count";
-                    activeBadge.textContent = `Active now • ${activeCount}`;
-                    badges.appendChild(activeBadge);
                 }
 
                 const accessState = getActivityAccessState(item, activityState, isActive);
@@ -8371,59 +8374,9 @@
                 showGeneric ? activeActivity : null,
                 { isActive },
             );
-            updateActivityInterstitial(activeActivity, toolType, { showTool, showTransfer });
             updateSubmitButtonState();
         }
 
-        // Per-phase guidance: the participant's task changes across the Delphi
-        // subcycle (justify → re-rank), so each step gets a short explainer the
-        // participant acknowledges once. Returns null for steps that need none.
-        function interstitialContentFor(activity, toolType) {
-            if (!activity) {
-                return null;
-            }
-            const orchestration = (activity.config || {})._orchestration || null;
-            const roundIndex = orchestration ? Number(orchestration.round_index || 0) : null;
-            const inDelphiLoop = Boolean(orchestration);
-            if (toolType === "rank_order_voting") {
-                if (inDelphiLoop && roundIndex >= 1) {
-                    return {
-                        title: "Re-rank with the group's feedback",
-                        text: "Each item shows the group's median rank and spread (IQR) from the last round. Reconsider in light of where the group landed, then drag the items into your new order and submit.",
-                    };
-                }
-                return {
-                    title: "Rank the items",
-                    text: "Drag the items into your preferred order, most preferred at the top, then submit.",
-                };
-            }
-            if (toolType === "brainstorming" && inDelphiLoop) {
-                return {
-                    title: "Explain your ranking",
-                    text: "You've just ranked the items. Share your reasoning — especially for any you rated much higher or lower than you think the group did. Your notes are visible to the group and inform the next round.",
-                };
-            }
-            return null;
-        }
-
-        function updateActivityInterstitial(activity, toolType, { showTool, showTransfer } = {}) {
-            const ui_ = ui.activityInterstitial;
-            if (!ui_ || !ui_.root) {
-                return;
-            }
-            const content = (showTool && !showTransfer)
-                ? interstitialContentFor(activity, toolType)
-                : null;
-            const activityId = activity ? activity.activity_id : null;
-            if (!content || !activityId || dismissedInterstitials.has(activityId)) {
-                ui_.root.hidden = true;
-                return;
-            }
-            if (ui_.title) ui_.title.textContent = content.title;
-            if (ui_.text) ui_.text.textContent = content.text;
-            ui_.root.dataset.activityId = activityId;
-            ui_.root.hidden = false;
-        }
 
 
 
@@ -9479,15 +9432,6 @@
             if (ui.orchestrationAdvance.button) {
                 ui.orchestrationAdvance.button.addEventListener("click", () => {
                     advanceOrchestration();
-                });
-            }
-            if (ui.activityInterstitial && ui.activityInterstitial.dismiss) {
-                ui.activityInterstitial.dismiss.addEventListener("click", () => {
-                    const activityId = ui.activityInterstitial.root?.dataset.activityId;
-                    if (activityId) {
-                        dismissedInterstitials.add(activityId);
-                    }
-                    ui.activityInterstitial.root.hidden = true;
                 });
             }
             if (new URLSearchParams(window.location.search || "").get("roster") === "1") {
