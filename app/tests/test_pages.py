@@ -1095,3 +1095,82 @@ def test_fork_orchestration_template_api_accepts_control_point_card(
     assert [step["type"] for step in sequence_steps] == ["activity", "ai-decision"]
     assert "complete enough" in sequence_steps[1]["prompt_template"]
     assert "Custom criteria" in " ".join(body["summary"])
+
+
+def test_stopped_activity_retains_elapsed_time_and_allows_subsequent_activity(
+    authenticated_client: TestClient,
+):
+    """Verify STOP_TOOL emits a full stopped entry with non-None elapsedTime and does not block starting next activity."""
+    from app.routers.meetings import _active_runtime_entries
+
+    meeting_response = authenticated_client.post(
+        "/api/meetings/",
+        json={
+            "title": "Stop Tool Timer Test",
+            "description": "Ensure stopped activity retains elapsed time and allows subsequent activity.",
+            "agenda_items": ["Brainstorming 1", "Brainstorming 2"],
+            "participant_ids": [],
+        },
+    )
+    assert meeting_response.status_code == 200, meeting_response.text
+    meeting_data = meeting_response.json()
+    meeting_id = meeting_data["id"]
+    activity1_id = meeting_data["agenda"][0]["activity_id"]
+    activity2_id = meeting_data["agenda"][1]["activity_id"]
+
+    # 1. Start the first activity
+    start1 = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={
+            "action": "start_tool",
+            "tool": "brainstorming",
+            "activityId": activity1_id,
+        },
+    )
+    assert start1.status_code == 200, start1.text
+
+    # 2. Stop the first activity
+    stop1 = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={
+            "action": "stop_tool",
+            "activityId": activity1_id,
+        },
+    )
+    assert stop1.status_code == 200, stop1.text
+    stop_state = stop1.json()["state"]
+
+    # 3. Assert activeActivities contains a real entry (not None) with status="stopped" and int elapsedTime >= 0
+    active_activities = stop_state.get("activeActivities") or []
+    if isinstance(active_activities, dict):
+        stopped_entry = active_activities.get(activity1_id)
+    else:
+        stopped_entry = next(
+            (item for item in active_activities if item.get("activityId") == activity1_id),
+            None,
+        )
+    assert stopped_entry is not None, f"stopped entry for {activity1_id} in activeActivities must not be None (got {active_activities})"
+    assert stopped_entry.get("status") == "stopped"
+    assert isinstance(stopped_entry.get("elapsedTime"), int)
+    assert stopped_entry.get("elapsedTime") >= 0
+
+    # 4. Assert lingering "stopped" entry does not fool the open-activity guard
+    assert _active_runtime_entries(stop_state) == [], "Stopped entry should not be counted as active"
+
+    # And verify another activity can be started normally
+    start2 = authenticated_client.post(
+        f"/api/meetings/{meeting_id}/control",
+        json={
+            "action": "start_tool",
+            "tool": "brainstorming",
+            "activityId": activity2_id,
+        },
+    )
+    assert start2.status_code == 200, start2.text
+    start2_state = start2.json()["state"]
+    assert start2_state["currentActivity"] == activity2_id
+    assert start2_state["status"] == "in_progress"
+    active_entries = _active_runtime_entries(start2_state)
+    assert len(active_entries) == 1
+    assert active_entries[0]["activityId"] == activity2_id
+

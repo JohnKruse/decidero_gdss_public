@@ -3161,7 +3161,21 @@ async def control_meeting(
                             activity_to_control.tool_type,
                             exc,
                         )
-                patch["activeActivities"] = {activity_id_to_stop: None}
+                participant_scope_ids = _resolve_participant_ids_for_activity(
+                    activity_to_control
+                )
+                patch["activeActivities"] = {
+                    activity_to_control.activity_id: {
+                        "activityId": activity_to_control.activity_id,
+                        "tool": control.tool or activity_to_control.tool_type,
+                        "status": "stopped",
+                        "metadata": dict(metadata_patch),
+                        "participantIds": participant_scope_ids,
+                        "startedAt": None,
+                        "stoppedAt": current_time_utc.isoformat(),
+                        "elapsedTime": activity_to_control.elapsed_duration,
+                    }
+                }
             stop_autosave(activity_id_to_stop)
 
         # Clear any lingering participant scope metadata on stop

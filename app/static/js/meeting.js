@@ -7114,7 +7114,7 @@
                     // Stop Button
                     const stopBtn = document.createElement("button");
                     stopBtn.type = "button";
-                    stopBtn.className = "control-btn sm destructive";
+                    stopBtn.className = "control-btn sm";
                     stopBtn.textContent = "Stop";
                     stopBtn.disabled = !isRunning && !isPaused; // Only enabled if running or paused
 
