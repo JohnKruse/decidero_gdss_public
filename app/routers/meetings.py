@@ -717,6 +717,11 @@ def _apply_transfer_counts(
         )
         setattr(item, "transfer_count", int(count or 0))
         setattr(item, "transfer_source", source)
+        setattr(
+            item,
+            "has_output",
+            bool(bundle_counts.get(getattr(item, "activity_id", None), 0) > 0),
+        )
         if count <= 0:
             tool_type = (getattr(item, "tool_type", "") or "").lower()
             reason = (

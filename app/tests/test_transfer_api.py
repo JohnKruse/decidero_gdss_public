@@ -1,4 +1,5 @@
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timedelta, UTC
 
 from fastapi.testclient import TestClient
@@ -9,6 +10,7 @@ from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
 from app.models.categorization import CategorizationItem
 from app.models.idea import Idea
+from app.models.meeting import AgendaActivity
 from app.models.user import UserRole
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, MeetingCreate, PublicityType
@@ -2847,3 +2849,166 @@ def test_transfer_commit_to_voting_resets_stale_state(
         )
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_commit_curated_package_to_orchestrated_activity_preserves_stable_key_and_donor(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Curated Package Preservation Test",
+            description="Commit curated package to orchestrated activity preserves stable_key and donor bundle.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(
+                tool_type="brainstorming",
+                title="Donor Brainstorming",
+            ),
+            AgendaActivityCreate(
+                tool_type="rank_order_voting",
+                title="Orchestrated Ranking Target",
+                config={
+                    "_orchestration": {"round_index": 1},
+                    "ideas": [
+                        {
+                            "id": "old-idea-id",
+                            "content": "Old idea",
+                            "metadata": {"stable_key": "old-key"},
+                        }
+                    ],
+                },
+            ),
+        ],
+    )
+    donor_activity = meeting.agenda_activities[0]
+    target_activity = meeting.agenda_activities[1]
+
+    # Seed donor output bundle
+    bundle_manager = ActivityBundleManager(db_session)
+    donor_items = [
+        {
+            "id": "donor-item-1",
+            "content": "Original text 1",
+            "submitted_name": "Alice",
+            "parent_id": None,
+            "metadata": {"stable_key": "donor-key-1", "origin": "brainstorming"},
+            "source": {"original_id": "donor-item-1"},
+        },
+        {
+            "id": "donor-item-2",
+            "content": "Original text 2",
+            "submitted_name": "Bob",
+            "parent_id": None,
+            "metadata": {"stable_key": "donor-key-2", "origin": "brainstorming"},
+            "source": {"original_id": "donor-item-2"},
+        },
+    ]
+    donor_bundle = bundle_manager.create_bundle(
+        meeting.meeting_id,
+        donor_activity.activity_id,
+        "output",
+        donor_items,
+        metadata={"source": "brainstorming_output", "total_items": 2},
+    )
+    db_session.commit()
+
+    # Capture donor bundle before state
+    donor_items_before = deepcopy(donor_bundle.items)
+    donor_metadata_before = deepcopy(donor_bundle.bundle_metadata)
+    donor_updated_at_before = donor_bundle.updated_at
+
+    try:
+        # Curate items: rename donor-key-1, omit donor-key-2, add a brand-new item
+        curated_items = [
+            {
+                "id": "donor-item-1",
+                "content": "Renamed text 1",
+                "submitted_name": "Alice",
+                "parent_id": None,
+                "metadata": {"stable_key": "donor-key-1", "origin": "brainstorming"},
+                "source": {"original_id": "donor-item-1"},
+            },
+            {
+                "id": None,
+                "content": "Brand new item added by facilitator",
+                "submitted_name": "Facilitator",
+                "parent_id": None,
+                "metadata": {},
+                "source": {},
+            },
+        ]
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": donor_activity.activity_id,
+                "include_comments": False,
+                "items": curated_items,
+                "metadata": {},
+                "target_activity": {
+                    "activity_id": target_activity.activity_id,
+                    "tool_type": "rank_order_voting",
+                },
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        # Refresh objects from DB
+        db_session.expire_all()
+        reloaded_target = (
+            db_session.query(AgendaActivity)
+            .filter(AgendaActivity.activity_id == target_activity.activity_id)
+            .one()
+        )
+        reloaded_donor_bundle = (
+            db_session.query(ActivityBundle)
+            .filter(ActivityBundle.bundle_id == donor_bundle.bundle_id)
+            .one()
+        )
+
+        # (a) Target activity's config items are replaced
+        target_ideas = reloaded_target.config.get("ideas", [])
+        assert len(target_ideas) == 2
+        contents = [idea["content"] for idea in target_ideas]
+        assert "Old idea" not in contents
+        assert "Renamed text 1" in contents
+        assert "Brand new item added by facilitator" in contents
+        # Preserves orchestration settings on target
+        assert reloaded_target.config.get("_orchestration") == {"round_index": 1}
+
+        # (b) Donor activity's output bundle is byte-identical
+        assert reloaded_donor_bundle.items == donor_items_before
+        assert reloaded_donor_bundle.bundle_metadata == donor_metadata_before
+        assert reloaded_donor_bundle.updated_at == donor_updated_at_before
+
+        # (c) stable_key is preserved on edited item and generated for new item
+        edited_idea = next(i for i in target_ideas if i["content"] == "Renamed text 1")
+        assert edited_idea["metadata"].get("stable_key") == "donor-key-1"
+        assert edited_idea["metadata"].get("origin") == "brainstorming"
+
+        new_idea = next(
+            i for i in target_ideas if i["content"] == "Brand new item added by facilitator"
+        )
+        new_key = new_idea["metadata"].get("stable_key")
+        assert new_key is not None
+        assert len(new_key) > 0
+        assert new_key != "donor-key-1"
+        assert new_key != "old-key"
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+

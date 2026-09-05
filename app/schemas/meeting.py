@@ -189,6 +189,7 @@ class AgendaActivityResponse(AgendaActivityBase):
     transfer_count: int = 0
     transfer_source: Optional[str] = None
     transfer_reason: Optional[str] = None
+    has_output: bool = False
 
     model_config = {"from_attributes": True}
 

@@ -9,6 +9,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 import logging
+import re
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
@@ -25,6 +27,7 @@ from app.models.categorization import (
 )
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
+from app.models.rank_order_voting import RankOrderVote
 from app.models.user import User, UserRole
 from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
@@ -115,7 +118,7 @@ def _normalize_items(items: List[TransferBundleItem]) -> List[Dict[str, Any]]:
                 "activity_id": entry.activity_id,
                 "user_id": entry.user_id,
                 "user_color": entry.user_color,
-                "metadata": entry.metadata or {},
+                "metadata": dict(entry.metadata or {}),
                 "source": entry.source or {},
             }
         )
@@ -364,6 +367,13 @@ async def _assert_transfer_eligible(
         )
         .first()
         is not None
+        or meeting_manager.db.query(RankOrderVote.rank_vote_id)
+        .filter(
+            RankOrderVote.meeting_id == meeting_id,
+            RankOrderVote.activity_id == target.activity_id,
+        )
+        .first()
+        is not None
     )
     if has_participant_data:
         raise HTTPException(
@@ -483,13 +493,17 @@ def _map_transfer_config(
                     continue
                 if include_comments and comments_by_parent:
                     content = _append_comments_to_content(entry, comments_by_parent)
+                entry_metadata = dict(entry.get("metadata") or {})
+                if not entry_metadata.get("stable_key"):
+                    slug = re.sub(r"[^a-zA-Z0-9]+", "-", content.strip().lower()).strip("-")
+                    entry_metadata["stable_key"] = slug or f"item-{uuid.uuid4().hex[:8]}"
                 mapped_entry = {
                     "id": entry.get("id"),
                     "content": content,
                     "submitted_name": entry.get("submitted_name"),
                     "parent_id": None,
                     "created_at": entry.get("timestamp") or entry.get("created_at"),
-                    "metadata": dict(entry.get("metadata") or {}),
+                    "metadata": entry_metadata,
                     "source": dict(entry.get("source") or {}),
                 }
                 mapped_ideas.append(mapped_entry)
