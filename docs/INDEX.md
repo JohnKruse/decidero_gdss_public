@@ -8,8 +8,10 @@ Use this page as the entry point for all project docs.
 2. Admin/facilitator hosting modes: `docs/ADMIN_HOSTING_GUIDE.md`
 3. Production server/domain setup: `docs/SERVER_HOSTING_GUIDE.md`
 4. SQLite 100-concurrency reliability plan: `docs/RELIABILITY_100_CONCURRENCY_PLAN.md`
-5. Local/VPS load testing + burst rehearsal: `docs/LOAD_TESTING_PLAN_LOCAL.md`
-6. Reliability rehearsal report template: `docs/RELIABILITY_REHEARSAL_REPORT_TEMPLATE.md`
+5. Reliability rehearsal report template: `docs/RELIABILITY_REHEARSAL_REPORT_TEMPLATE.md`
+
+The operator-specific local/VPS load-testing plan is intentionally not tracked in
+the public repository. The k6 scenarios themselves remain at the repository root.
 
 ## Runtime Configuration
 
@@ -46,6 +48,7 @@ If you are new to activity development, start with the first link below. It expl
 ## Activity Specs
 
 1. Categorization production spec: `docs/CATEGORIZATION_ACTIVITY_SPEC.md`
+2. Meeting template contract: `docs/MEETING_TEMPLATE_CONTRACT.md`
 
 ## Reference Evaluations
 
@@ -59,3 +62,6 @@ If you are new to activity development, start with the first link below. It expl
 3. Legacy VPS redirect note: `docs/VPS_HOSTING_GUIDE.md`
 4. Phase 6 validation checklist: `docs/PHASE_6_VALIDATION_CHECKLIST.md`
 5. User testing guide: `docs/USER_TESTING_GUIDE.md`
+6. AI configuration refactor record: `docs/AI_CONFIG_REFACTOR_PLAN.md`
+7. Copper Compass pilot findings: `docs/PILOT_FINDINGS_COPPER_COMPASS.md`
+8. Orchestration figure sources: `docs/figures/README.md`
