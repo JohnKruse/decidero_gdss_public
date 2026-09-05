@@ -397,10 +397,14 @@ post-HICSS product work.
 
 Agenda rows deliberately present run state and viewer access as separate concepts:
 
-- `Live` means the activity is currently running. Paused activities also render
-  as `Live`; the participant UI does not expose a separate paused label.
+- `Live` means the activity is currently running. The chip is deliberately coarse:
+  `buildStatusChip` renders `Live` for `in_progress`, for `paused`, and also when
+  the row is the meeting's `currentActivity` regardless of its own status.
 - `Stopped` means the activity is not currently running, including an activity
   that has not started yet.
+- Paused is not invisible — it is carried by the adjacent status icon, not the
+  chip. The agenda renderer sets that icon to `▶` / `⏸` / `■` with a matching
+  `title` from the activity's own status, so a paused row reads as `⏸` + `Live`.
 - `Not in this round` means the current participant is excluded by that activity's
   roster. It does not imply that the activity is stopped for assigned participants.
 
