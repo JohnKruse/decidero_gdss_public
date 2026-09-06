@@ -3493,3 +3493,253 @@ def test_transfer_target_empty_exposed_on_rest_and_realtime_agenda(
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
+
+def test_transfer_intent_edit_self_donor_target_succeeds(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """intent='edit' where donor_activity_id == target_activity.activity_id succeeds and writes package_edited."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Self Edit Succeeds Test",
+            description="intent='edit' where donor == target succeeds and writes package_edited.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Brainstorming 1"),
+        ],
+    )
+    act_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        idea = Idea(
+            meeting_id=meeting.meeting_id,
+            activity_id=act_id,
+            content="Initial Idea",
+            user_id=facilitator.user_id,
+        )
+        db_session.add(idea)
+        db_session.commit()
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": act_id,
+                "include_comments": False,
+                "items": [{"content": "Initial Idea Edited"}],
+                "metadata": {},
+                "target_activity": {"activity_id": act_id},
+                "intent": "edit",
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        event = (
+            db_session.query(FacilitatorEditEvent)
+            .filter(
+                FacilitatorEditEvent.meeting_id == meeting.meeting_id,
+                FacilitatorEditEvent.activity_id == act_id,
+            )
+            .first()
+        )
+        assert event is not None
+        assert event.event_type == "package_edited"
+        assert event.donor_activity_id == act_id
+        assert event.actor_user_id == facilitator.user_id
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_transfer_intent_transfer_self_donor_target_rejected_422(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """intent='transfer' where donor == target is still rejected 422."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Self Transfer Rejected Test",
+            description="intent='transfer' where donor == target is rejected 422.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Brainstorming 1"),
+        ],
+    )
+    act_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": act_id,
+                "include_comments": False,
+                "items": [{"content": "Some Idea"}],
+                "metadata": {},
+                "target_activity": {"activity_id": act_id},
+                "intent": "transfer",
+            },
+        )
+        assert commit_resp.status_code == 422, commit_resp.json()
+        assert "donor activity itself" in commit_resp.json().get("detail", "")
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_self_edit_first_activity_brainstorming_end_to_end(
+    authenticated_client: TestClient,
+    user_manager_with_admin,
+    db_session,
+):
+    """End-to-end on a meeting whose first activity is brainstorming with ideas:
+    a self-edit renaming one idea succeeds, preserves Idea.id and user_id for the unchanged ones,
+    and records the change."""
+    facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert facilitator is not None
+
+    participant = user_manager_with_admin.add_user(
+        first_name="Participant",
+        last_name="E2E",
+        email="part_e2e@example.com",
+        hashed_password=get_password_hash("Password123!"),
+        role=UserRole.PARTICIPANT.value,
+        login="part_e2e",
+    )
+    db_session.commit()
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="First Activity Brainstorming Self Edit E2E",
+            description="First agenda activity is brainstorming with ideas; self-edit renames one idea.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=facilitator.user_id,
+            participant_ids=[participant.user_id],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=facilitator.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Initial Brainstorming"),
+        ],
+    )
+    act_id = meeting.agenda_activities[0].activity_id
+
+    try:
+        idea1 = Idea(
+            meeting_id=meeting.meeting_id,
+            activity_id=act_id,
+            content="Unchanged Idea",
+            user_id=facilitator.user_id,
+            idea_metadata={"stable_key": "key_alpha"},
+        )
+        idea2 = Idea(
+            meeting_id=meeting.meeting_id,
+            activity_id=act_id,
+            content="Idea To Rename",
+            user_id=participant.user_id,
+            idea_metadata={"stable_key": "key_beta"},
+        )
+        db_session.add_all([idea1, idea2])
+        db_session.commit()
+        db_session.refresh(idea1)
+        db_session.refresh(idea2)
+
+        idea1_id = idea1.id
+        idea2_id = idea2.id
+
+        bundles_resp = authenticated_client.get(
+            f"/api/meetings/{meeting.meeting_id}/transfer/bundles",
+            params={"activity_id": act_id, "include_comments": "false"},
+        )
+        assert bundles_resp.status_code == 200, bundles_resp.json()
+        bundle_items = bundles_resp.json()["input"]["items"]
+        assert len(bundle_items) == 2
+
+        for item in bundle_items:
+            if item.get("metadata", {}).get("stable_key") == "key_beta":
+                item["content"] = "Renamed Idea"
+
+        commit_resp = authenticated_client.post(
+            f"/api/meetings/{meeting.meeting_id}/transfer/commit",
+            json={
+                "donor_activity_id": act_id,
+                "include_comments": False,
+                "items": bundle_items,
+                "metadata": {},
+                "target_activity": {"activity_id": act_id},
+                "intent": "edit",
+            },
+        )
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        db_ideas = (
+            db_session.query(Idea)
+            .filter(
+                Idea.meeting_id == meeting.meeting_id,
+                Idea.activity_id == act_id,
+            )
+            .order_by(Idea.id)
+            .all()
+        )
+        assert len(db_ideas) == 2
+
+        db_idea1 = next(i for i in db_ideas if i.idea_metadata.get("stable_key") == "key_alpha")
+        db_idea2 = next(i for i in db_ideas if i.idea_metadata.get("stable_key") == "key_beta")
+
+        assert db_idea1.id == idea1_id
+        assert db_idea1.user_id == facilitator.user_id
+        assert db_idea1.content == "Unchanged Idea"
+
+        assert db_idea2.id == idea2_id
+        assert db_idea2.user_id == participant.user_id
+        assert db_idea2.content == "Renamed Idea"
+
+        event = (
+            db_session.query(FacilitatorEditEvent)
+            .filter(
+                FacilitatorEditEvent.meeting_id == meeting.meeting_id,
+                FacilitatorEditEvent.activity_id == act_id,
+            )
+            .first()
+        )
+        assert event is not None
+        assert event.event_type == "package_edited"
+        assert event.actor_user_id == facilitator.user_id
+        assert event.payload is not None
+        assert len(event.payload.get("changed", [])) == 1
+        change = event.payload["changed"][0]
+        assert change["before"]["content"] == "Idea To Rename"
+        assert change["after"]["content"] == "Renamed Idea"
+    finally:
+        asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+

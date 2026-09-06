@@ -51,7 +51,7 @@ class TransferCommit(BaseModel):
     items: List[TransferBundleItem] = Field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
     target_activity: TransferTargetActivity
-    intent: Literal["edit", "transfer"] = "edit"
+    intent: Optional[Literal["edit", "transfer"]] = None
 
 
 class TransferCommitResponse(BaseModel):

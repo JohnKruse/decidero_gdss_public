@@ -3856,10 +3856,7 @@
                     transfer.headerTitle.textContent = `Edit Ideas — ${activityTitle}`;
                 }
                 if (transfer.donorTitle) {
-                    const donor = resolveUpstreamDonor(transferState.openedActivity);
-                    transfer.donorTitle.textContent = donor
-                        ? `Source: ${donor.title || donor.activity_id} (auto-resolved)`
-                        : "No preceding activity found";
+                    transfer.donorTitle.textContent = "Source: this activity";
                 }
             } else if (transferState.destination === "new") {
                 if (transfer.headerTitle) {
@@ -4370,6 +4367,11 @@
                         donor.tool_type || donor.toolType || "",
                     ).toLowerCase();
                     transferState.donorTitle = donor.title || donor.activity_id || null;
+                } else {
+                    transferState.donorActivityId = transferState.openedActivityId;
+                    transferState.donorOrderIndex = activity.order_index || null;
+                    transferState.donorToolType = transferState.targetToolType;
+                    transferState.donorTitle = activity.title || "this activity";
                 }
             } else {
                 transferState.donorActivityId = transferState.openedActivityId;

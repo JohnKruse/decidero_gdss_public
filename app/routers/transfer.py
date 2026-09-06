@@ -287,16 +287,17 @@ async def _assert_transfer_eligible(
     donor_activity_id: str,
     meeting_id: str,
     meeting_manager: MeetingManager,
+    intent: str = "transfer",
 ) -> None:
     """
     Validate whether a target activity can receive a transfer under the facilitator edit policy.
 
     The facilitator is trusted to edit any activity that is not currently running.
     Rejects:
-    - 422 if target is the donor activity itself
+    - 422 if target is the donor activity itself and intent != "edit"
     - 409 if target is currently running (delegated to `_ensure_not_running`)
     """
-    if target.activity_id == donor_activity_id:
+    if intent != "edit" and target.activity_id == donor_activity_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Cannot transfer into the donor activity itself.",
@@ -962,13 +963,22 @@ async def commit_transfer(
 
     target = payload.target_activity
     existing_target_mode = bool(target.activity_id)
+    resolved_intent = payload.intent or (
+        "transfer"
+        if target.activity_id and target.activity_id == payload.donor_activity_id
+        else "edit"
+    )
     prior_content: list = []
     if target.activity_id:
         existing_target = _resolve_activity(meeting, target.activity_id)
         await _assert_transfer_eligible(
-            existing_target, payload.donor_activity_id, meeting_id, meeting_manager
+            existing_target,
+            payload.donor_activity_id,
+            meeting_id,
+            meeting_manager,
+            intent=resolved_intent,
         )
-        if payload.intent == "transfer":
+        if resolved_intent == "transfer":
             _assert_target_activity_empty(existing_target, meeting_id, db)
         target_tool = (existing_target.tool_type or "").strip().lower()
         # Crimson Narwhal: existing-activity commit path — replaces content config, preserves settings.
@@ -1112,7 +1122,7 @@ async def commit_transfer(
     else:
         diff = diff_packages(before=prior_content, after=ideas)
 
-    event_type = "package_edited" if payload.intent == "edit" else "package_transferred"
+    event_type = "package_edited" if resolved_intent == "edit" else "package_transferred"
     record_edit(
         db=db,
         meeting_id=meeting_id,
