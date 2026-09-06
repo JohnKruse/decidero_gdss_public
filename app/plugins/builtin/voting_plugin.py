@@ -8,6 +8,10 @@ from typing import Any, Dict, Optional
 
 from app.models.meeting import AgendaActivity, Meeting
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
+from app.services.activity_catalog import (
+    CONTENT_CONFIG_KEYS,
+    is_activity_content_config_empty,
+)
 from app.services.voting_manager import VotingManager
 
 
@@ -73,12 +77,24 @@ class VotingPlugin(ActivityPlugin):
         ),
     )
 
+    def prepare_package(self, context, input_bundle=None) -> None:
+        self._bind_input_bundle(context, input_bundle)
+        return None
+
     def open_activity(self, context, input_bundle=None) -> None:
+        bound = self._bind_input_bundle(context, input_bundle)
+        if bound:
+            VotingManager(context.db).reset_activity_state(
+                context.meeting.meeting_id, context.activity.activity_id, clear_bundles=True
+            )
+        return None
+
+    def _bind_input_bundle(self, context, input_bundle=None) -> bool:
         if not input_bundle:
-            return None
+            return False
         config = dict(context.activity.config or {})
-        if config.get("options"):
-            return None
+        if not is_activity_content_config_empty("voting", config):
+            return False
         items = input_bundle.items or []
         options = [
             entry
@@ -86,7 +102,7 @@ class VotingPlugin(ActivityPlugin):
             if isinstance(entry, dict) and str(entry.get("content", "")).strip()
         ]
         if not options:
-            return None
+            return False
 
         sanitized_options = []
         for entry in options:
@@ -94,16 +110,14 @@ class VotingPlugin(ActivityPlugin):
             if sanitized:
                 sanitized_options.append(sanitized)
         if not sanitized_options:
-            return None
+            return False
 
-        VotingManager(context.db).reset_activity_state(
-            context.meeting.meeting_id, context.activity.activity_id, clear_bundles=True
-        )
-        config["options"] = sanitized_options
+        content_key = CONTENT_CONFIG_KEYS["voting"]
+        config[content_key] = sanitized_options
         context.activity.config = config
         context.db.add(context.activity)
         context.db.commit()
-        return None
+        return True
 
     @staticmethod
     def _sanitize_option_entry(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:

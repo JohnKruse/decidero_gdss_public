@@ -4290,6 +4290,11 @@
             setTransferButtonsState();
         }
 
+        function isExcludedDonorToolType(toolType) {
+            const normalised = String(toolType || "").trim().toLowerCase();
+            return normalised === "facilitator_decision" || normalised === "report";
+        }
+
         function resolveUpstreamDonor(targetActivity) {
             const rawAgenda = state.latestState?.agenda || state.agenda || [];
             const agenda = Array.from(rawAgenda).sort(
@@ -4312,6 +4317,9 @@
             const preceding = agenda.slice(0, position);
             for (let i = preceding.length - 1; i >= 0; i--) {
                 const previous = preceding[i];
+                if (isExcludedDonorToolType(previous.tool_type || previous.toolType)) {
+                    continue;
+                }
                 if (
                     previous.has_output === true ||
                     previous.has_output_bundle === true ||
@@ -4323,11 +4331,11 @@
             }
             for (let i = preceding.length - 1; i >= 0; i--) {
                 const prev = preceding[i];
-                if (String(prev.tool_type || "").toLowerCase() !== "facilitator_decision") {
+                if (!isExcludedDonorToolType(prev.tool_type || prev.toolType)) {
                     return prev;
                 }
             }
-            return preceding.length ? preceding[preceding.length - 1] : null;
+            return null;
         }
 
         async function openTransferModal(activity, { asTarget = false } = {}) {
@@ -4462,48 +4470,116 @@
                     Boolean(draftItems && draftItems.length > 0) &&
                     (!selectedProfile || draftProfile === selectedProfile);
                 let bundle = useDraft ? data.draft : (data.input || data.draft || {});
-                const targetConfigIdeas = transferState.targetActivity?.config?.ideas;
-                if (
-                    transferState.destination === "self" &&
-                    !useDraft &&
-                    Array.isArray(targetConfigIdeas) &&
-                    targetConfigIdeas.length > 0
-                ) {
-                    bundle = {
-                        items: targetConfigIdeas,
-                        metadata: bundle.metadata || {},
-                    };
-                }
-                transferState.items = Array.isArray(bundle.items)
-                    ? bundle.items.map((item) => normalizeTransferItem(item))
-                    : [];
-                if (!transferState.items.length) {
-                    const ideasUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(transferState.donorActivityId)}`;
-                    const ideaResponse = await fetch(
-                        ideasUrl,
-                        { credentials: "include" },
-                    );
-                    const ideaData = await ideaResponse.json().catch(() => ([]));
-                    if (ideaResponse.ok && Array.isArray(ideaData)) {
-                        transferState.items = ideaData.map((idea) => normalizeTransferItem({
-                            id: idea.id,
-                            content: idea.content,
-                            submitted_name: idea.submitted_name,
-                            parent_id: idea.parent_id,
-                            timestamp: idea.timestamp || idea.created_at,
-                            user_id: idea.user_id,
-                            user_color: idea.user_color,
-                            user_avatar_key: idea.user_avatar_key,
-                            user_avatar_icon_path: idea.user_avatar_icon_path,
-                            metadata: idea.metadata || {},
-                            source: {
-                                original_id: idea.id,
-                                created_at: idea.created_at || idea.timestamp,
-                            },
-                        }));
-                        console.info("transfer fallback ideas loaded", { ideasUrl, count: transferState.items.length });
+                let targetOwnItems = null;
+
+                if (transferState.destination === "self" && !useDraft) {
+                    const target =
+                        (transferState.targetActivityId && state.agendaMap?.get(transferState.targetActivityId)) ||
+                        transferState.targetActivity ||
+                        transferState.openedActivity;
+                    const targetId =
+                        target?.activity_id ||
+                        target?.activityId ||
+                        target?.id ||
+                        transferState.targetActivityId ||
+                        transferState.openedActivityId;
+                    const targetToolType = String(
+                        target?.tool_type || target?.toolType || transferState.targetToolType || "",
+                    ).toLowerCase();
+
+                    if (targetToolType === "brainstorming" && targetId) {
+                        const targetIdeasUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(targetId)}`;
+                        try {
+                            const ideaResponse = await fetch(targetIdeasUrl, { credentials: "include" });
+                            const ideaData = await ideaResponse.json().catch(() => ([]));
+                            if (ideaResponse.ok && Array.isArray(ideaData) && ideaData.length > 0) {
+                                targetOwnItems = ideaData.map((idea) => normalizeTransferItem({
+                                    id: idea.id,
+                                    content: idea.content,
+                                    submitted_name: idea.submitted_name,
+                                    parent_id: idea.parent_id,
+                                    timestamp: idea.timestamp || idea.created_at,
+                                    user_id: idea.user_id,
+                                    user_color: idea.user_color,
+                                    user_avatar_key: idea.user_avatar_key,
+                                    user_avatar_icon_path: idea.user_avatar_icon_path,
+                                    metadata: idea.metadata || {},
+                                    source: {
+                                        original_id: idea.id,
+                                        created_at: idea.created_at || idea.timestamp,
+                                    },
+                                }));
+                                console.info("target own brainstorming ideas loaded", { targetIdeasUrl, count: targetOwnItems.length });
+                            }
+                        } catch (err) {
+                            console.warn("failed loading target own brainstorming ideas", err);
+                        }
                     } else {
-                        console.warn("transfer fallback ideas failed", { ideasUrl, status: ideaResponse.status, ideaData });
+                        const contentConfigKeyMap = {
+                            voting: "options",
+                            categorization: "items",
+                            rank_order_voting: "ideas",
+                        };
+                        const contentKey = contentConfigKeyMap[targetToolType];
+                        const targetConfigItems = contentKey && target?.config ? target.config[contentKey] : null;
+                        if (Array.isArray(targetConfigItems) && targetConfigItems.length > 0) {
+                            const isPlaceholder = (items) => {
+                                if (targetToolType === "voting" && items.length === 1) {
+                                    const first = String(typeof items[0] === "string" ? items[0] : (items[0]?.content || "")).trim().toLowerCase();
+                                    if (first === "edit vote option here" || first === "edit option here") return true;
+                                }
+                                if (targetToolType === "categorization" && items.length === 1) {
+                                    const first = String(typeof items[0] === "string" ? items[0] : (items[0]?.content || "")).trim().toLowerCase();
+                                    if (first === "edit item here" || first === "one idea per line.") return true;
+                                }
+                                return false;
+                            };
+                            if (!isPlaceholder(targetConfigItems)) {
+                                targetOwnItems = targetConfigItems.map((item) => {
+                                    if (typeof item === "string") {
+                                        return normalizeTransferItem({ content: item });
+                                    }
+                                    return normalizeTransferItem(item);
+                                });
+                            }
+                        }
+                    }
+                }
+
+                if (targetOwnItems && targetOwnItems.length > 0) {
+                    transferState.items = targetOwnItems;
+                } else {
+                    transferState.items = Array.isArray(bundle.items)
+                        ? bundle.items.map((item) => normalizeTransferItem(item))
+                        : [];
+                    if (!transferState.items.length && transferState.donorActivityId) {
+                        const ideasUrl = `/api/meetings/${encodeURIComponent(context.meetingId)}/brainstorming/ideas?activity_id=${encodeURIComponent(transferState.donorActivityId)}`;
+                        const ideaResponse = await fetch(
+                            ideasUrl,
+                            { credentials: "include" },
+                        );
+                        const ideaData = await ideaResponse.json().catch(() => ([]));
+                        if (ideaResponse.ok && Array.isArray(ideaData)) {
+                            transferState.items = ideaData.map((idea) => normalizeTransferItem({
+                                id: idea.id,
+                                content: idea.content,
+                                submitted_name: idea.submitted_name,
+                                parent_id: idea.parent_id,
+                                timestamp: idea.timestamp || idea.created_at,
+                                user_id: idea.user_id,
+                                user_color: idea.user_color,
+                                user_avatar_key: idea.user_avatar_key,
+                                user_avatar_icon_path: idea.user_avatar_icon_path,
+                                metadata: idea.metadata || {},
+                                source: {
+                                    original_id: idea.id,
+                                    created_at: idea.created_at || idea.timestamp,
+                                },
+                            }));
+                            console.info("transfer fallback ideas loaded", { ideasUrl, count: transferState.items.length });
+                        } else {
+                            console.warn("transfer fallback ideas failed", { ideasUrl, status: ideaResponse.status, ideaData });
+                        }
                     }
                 }
                 transferState.items.forEach((item) => {

@@ -19,6 +19,7 @@ practical checklist.
    - `open_activity(context, input_bundle)`
    - `close_activity(context)`
    - optional `snapshot_activity(context)`
+   - optional `prepare_package(context, input_bundle)`
 5. Preserve transfer provenance and metadata from input to output items.
 6. Keep emitted IDs deterministic and scoped to the current `activity_id`.
 7. Run the contract matrix before merging.
@@ -54,6 +55,12 @@ autosave for the plugin.
 
 Finalize transfer-compatible output through `ActivityContext` or
 `ActivityBundleManager`.
+
+### `prepare_package(context, input_bundle)`
+
+Optional lifecycle hook with a default no-op. Binds an incoming package into
+the activity so it is inspectable before start. Must be idempotent and free
+of side effects beyond binding: no state resets, no report generation, no timers.
 
 ## ActivityContext Methods
 

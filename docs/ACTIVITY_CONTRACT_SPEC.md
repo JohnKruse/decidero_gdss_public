@@ -41,6 +41,11 @@ activity restarts, and future engine replay. Built-in plugins must either make
 `open_activity` a no-op when state is already seeded, or use unique persisted
 keys so reseeding skips existing rows.
 
+Similarly, `prepare_package(context, input_bundle)` is an optional lifecycle hook
+with a default no-op that binds an incoming package into an activity so it is
+inspectable before start. It must be idempotent and free of side effects beyond
+binding (no state resets, no report generation, no timers).
+
 ### DP4 - Reliability Policy as Manifest Contract Surface
 
 Reliability policy is part of the plugin manifest, normalized by the server,
@@ -126,6 +131,9 @@ Instead of hardcoded exit conditions, iterative processes evaluate their history
    `app/services/activity_catalog.py` before clients consume it.
 7. Transfer source/count methods fail soft by returning empty results or zero
    counts rather than breaking meeting or agenda payloads.
+8. `prepare_package(context, input_bundle)` is an optional lifecycle hook with a
+   default no-op. It binds incoming packages for pre-start inspection and must
+   be idempotent and free of side effects (no state resets, report generation, or timers).
 
 ## Related Implementer Docs
 

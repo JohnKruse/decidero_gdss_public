@@ -50,6 +50,14 @@ class ActivityPlugin(ABC):
     def open_activity(self, context, input_bundle=None) -> None:
         """Initialize the activity when it starts."""
 
+    def prepare_package(self, context, input_bundle=None) -> None:
+        """Bind an incoming package into this activity so it is inspectable before start.
+
+        Must be idempotent and free of side effects beyond that binding: no state
+        resets, no report generation, no timers. Default: no-op.
+        """
+        return None
+
     @abstractmethod
     def close_activity(self, context) -> Optional[Dict[str, Any]]:
         """Finalize the activity and return an output bundle payload."""
