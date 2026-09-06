@@ -89,6 +89,7 @@ class ReportPlugin(ActivityPlugin):
     def _build_report_payload(self, context, input_bundle) -> Dict[str, Any]:
         from app.services.agenda_strategy import get_agenda_strategy
         from app.services.report_builder import build_report
+        from app.models.facilitator_edit import FacilitatorEditEvent
 
         meeting, db = context.meeting, context.db
         strategy = get_agenda_strategy(meeting)
@@ -112,6 +113,22 @@ class ReportPlugin(ActivityPlugin):
             "method": self._method_meta(strategy),
             "participant_count": self._participant_count(history),
         }
+        edit_events = (
+            db.query(FacilitatorEditEvent)
+            .filter(FacilitatorEditEvent.meeting_id == meeting.meeting_id)
+            .order_by(FacilitatorEditEvent.created_at.desc())
+            .all()
+        )
+        if edit_events:
+            n = len(edit_events)
+            m = len({e.activity_id for e in edit_events if e.activity_id})
+            last_created = edit_events[0].created_at
+            last_at = last_created.isoformat() if last_created else None
+            meeting_meta["facilitator_edits"] = {
+                "count": n,
+                "activity_count": m,
+                "last_at": last_at,
+            }
         spec = dict((context.activity.config or {}).get("report_spec") or {})
 
         if not history:

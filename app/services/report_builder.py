@@ -330,6 +330,27 @@ def build_report(
         }
     )
 
+    facilitator_edits = meeting.get("facilitator_edits")
+    if facilitator_edits:
+        count = facilitator_edits.get("count", 0)
+        activity_count = facilitator_edits.get("activity_count", 0)
+        last_at = facilitator_edits.get("last_at") or "unknown"
+        sections.append(
+            {
+                "id": "facilitator_edits",
+                "type": "narrative",
+                "title": "Facilitator edits",
+                "body": {
+                    "markdown": (
+                        f"The facilitator edited the item set during this meeting "
+                        f"({count} edits across {activity_count} activities, most recently {last_at}). "
+                        f"Individual changes are retained in the meeting's audit record."
+                    ),
+                    "ai_drafted": False,
+                },
+            }
+        )
+
     method = meeting.get("method")
     return {
         "report_version": REPORT_VERSION,
