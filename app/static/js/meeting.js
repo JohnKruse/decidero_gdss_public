@@ -448,7 +448,9 @@
             error: document.getElementById("transferError"),
             donorTitle: document.getElementById("transferDonorTitle"),
             includeComments: document.getElementById("transferIncludeComments"),
+            destinationMode: document.getElementById("transferDestinationMode"),
             targetToolType: document.getElementById("transferTargetToolType"),
+            targetActivity: document.getElementById("transferTargetActivity"),
             transformProfile: document.getElementById("transferTransformProfile"),
             addIdea: document.getElementById("transferAddIdea"),
             ideasList: document.getElementById("transferIdeasList"),
@@ -1262,7 +1264,10 @@
             donorActivityId: null,
             donorOrderIndex: null,
             donorToolType: null,
-            isPackageEdit: false,
+            donorTitle: null,
+            openedActivity: null,
+            openedActivityId: null,
+            destination: "self",
             targetActivity: null,
             targetActivityId: null,
             targetToolType: null,
@@ -3582,11 +3587,26 @@
 
         function setTransferButtonsState() {
             const disabled = transferState.loading || transferState.saving || transferState.committing;
+            if (transfer.destinationMode) {
+                transfer.destinationMode.disabled = disabled;
+            }
             if (transfer.includeComments) {
                 transfer.includeComments.disabled = disabled;
             }
             if (transfer.targetToolType) {
                 transfer.targetToolType.disabled = disabled;
+            }
+            if (transfer.targetActivity) {
+                if (transferState.destination === "existing") {
+                    const rawAgenda = state.latestState?.agenda || state.agenda || [];
+                    const qualifying = rawAgenda.filter((item) => {
+                        const id = item.activity_id || item.activityId || item.id;
+                        return id && id !== transferState.donorActivityId && id !== transferState.openedActivityId && item.transfer_target_empty === true;
+                    });
+                    transfer.targetActivity.disabled = disabled || qualifying.length === 0;
+                } else {
+                    transfer.targetActivity.disabled = disabled;
+                }
             }
             if (transfer.transformProfile) {
                 transfer.transformProfile.disabled = disabled;
@@ -3598,7 +3618,13 @@
                 transfer.saveDraft.disabled = disabled || !transferState.dirty;
             }
             if (transfer.commit) {
-                transfer.commit.disabled = disabled;
+                let commitBlocked = false;
+                if (transferState.destination === "existing" && !transferState.targetActivityId) {
+                    commitBlocked = true;
+                } else if (transferState.destination === "new" && !transfer.targetToolType?.value) {
+                    commitBlocked = true;
+                }
+                transfer.commit.disabled = disabled || commitBlocked;
             }
         }
 
@@ -3813,9 +3839,134 @@
             if (!transfer.commit) {
                 return;
             }
-            transfer.commit.textContent = transferState.isPackageEdit
-                ? "Save Changes"
-                : "Create Next Activity";
+            if (transferState.destination === "self") {
+                transfer.commit.textContent = "Save Changes";
+            } else if (transferState.destination === "new") {
+                transfer.commit.textContent = "Create Next Activity";
+            } else if (transferState.destination === "existing") {
+                const targetTitle = transferState.targetActivity?.title || "Activity";
+                transfer.commit.textContent = `Transfer to ${targetTitle}`;
+            }
+        }
+
+        function updateTransferHeaderAndLabels() {
+            if (transferState.destination === "self") {
+                const activityTitle = transferState.openedActivity?.title || "Activity";
+                if (transfer.headerTitle) {
+                    transfer.headerTitle.textContent = `Edit Ideas — ${activityTitle}`;
+                }
+                if (transfer.donorTitle) {
+                    const donor = resolveUpstreamDonor(transferState.openedActivity);
+                    transfer.donorTitle.textContent = donor
+                        ? `Source: ${donor.title || donor.activity_id} (auto-resolved)`
+                        : "No preceding activity found";
+                }
+            } else if (transferState.destination === "new") {
+                if (transfer.headerTitle) {
+                    transfer.headerTitle.textContent = "Transfer Ideas";
+                }
+                if (transfer.donorTitle) {
+                    transfer.donorTitle.textContent = transferState.donorTitle || "Selected activity";
+                }
+            } else if (transferState.destination === "existing") {
+                if (transfer.headerTitle) {
+                    transfer.headerTitle.textContent = "Transfer Ideas";
+                }
+                if (transfer.donorTitle) {
+                    transfer.donorTitle.textContent = transferState.donorTitle || "Selected activity";
+                }
+            }
+            updateTransferCommitButtonText();
+        }
+
+        function populateTransferTargetActivityOptions() {
+            if (!transfer.targetActivity) {
+                return;
+            }
+            transfer.targetActivity.innerHTML = "";
+            const rawAgenda = state.latestState?.agenda || state.agenda || [];
+            const qualifying = rawAgenda.filter((item) => {
+                const id = item.activity_id || item.activityId || item.id;
+                if (!id) {
+                    return false;
+                }
+                if (id === transferState.donorActivityId) {
+                    return false;
+                }
+                if (id === transferState.openedActivityId) {
+                    return false;
+                }
+                return item.transfer_target_empty === true;
+            });
+            if (qualifying.length === 0) {
+                const placeholder = document.createElement("option");
+                placeholder.value = "";
+                placeholder.textContent = "No empty activities available to receive this package.";
+                placeholder.disabled = true;
+                placeholder.selected = true;
+                transfer.targetActivity.appendChild(placeholder);
+                transfer.targetActivity.disabled = true;
+                transferState.targetActivityId = null;
+                transferState.targetActivity = null;
+                transferState.targetToolType = null;
+            } else {
+                transfer.targetActivity.disabled = false;
+                qualifying.forEach((item, index) => {
+                    const option = document.createElement("option");
+                    const id = item.activity_id || item.activityId || item.id;
+                    option.value = id;
+                    option.textContent = item.title || item.tool_type || id;
+                    if (index === 0) {
+                        option.selected = true;
+                        transferState.targetActivityId = id;
+                        transferState.targetActivity = item;
+                        transferState.targetToolType = String(item.tool_type || "").toLowerCase();
+                    }
+                    transfer.targetActivity.appendChild(option);
+                });
+            }
+        }
+
+        function setTransferDestination(dest) {
+            transferState.destination = dest;
+            if (transfer.destinationMode && transfer.destinationMode.value !== dest) {
+                transfer.destinationMode.value = dest;
+            }
+            if (dest === "self") {
+                transferState.targetActivity = transferState.openedActivity;
+                transferState.targetActivityId = transferState.openedActivityId;
+                transferState.targetToolType = String(
+                    transferState.openedActivity?.tool_type ||
+                    transferState.openedActivity?.toolType ||
+                    "",
+                ).toLowerCase();
+                if (transfer.targetToolType) {
+                    transfer.targetToolType.hidden = true;
+                }
+                if (transfer.targetActivity) {
+                    transfer.targetActivity.hidden = true;
+                }
+            } else if (dest === "new") {
+                transferState.targetActivity = null;
+                transferState.targetActivityId = null;
+                transferState.targetToolType = transfer.targetToolType?.value || null;
+                if (transfer.targetToolType) {
+                    transfer.targetToolType.hidden = false;
+                }
+                if (transfer.targetActivity) {
+                    transfer.targetActivity.hidden = true;
+                }
+            } else if (dest === "existing") {
+                if (transfer.targetToolType) {
+                    transfer.targetToolType.hidden = true;
+                }
+                if (transfer.targetActivity) {
+                    transfer.targetActivity.hidden = false;
+                }
+                populateTransferTargetActivityOptions();
+            }
+            updateTransferHeaderAndLabels();
+            setTransferButtonsState();
         }
 
         function getTransferProfileOptions(toolType) {
@@ -4094,7 +4245,10 @@
             transferState.donorActivityId = null;
             transferState.donorOrderIndex = null;
             transferState.donorToolType = null;
-            transferState.isPackageEdit = false;
+            transferState.donorTitle = null;
+            transferState.openedActivity = null;
+            transferState.openedActivityId = null;
+            transferState.destination = "self";
             transferState.targetActivity = null;
             transferState.targetActivityId = null;
             transferState.targetToolType = null;
@@ -4126,6 +4280,9 @@
             }
             if (transfer.targetToolType) {
                 transfer.targetToolType.hidden = false;
+            }
+            if (transfer.targetActivity) {
+                transfer.targetActivity.hidden = true;
             }
             updateTransferCommitButtonText();
             setTransferStatus("");
@@ -4184,11 +4341,14 @@
                 }
             }
             resetTransferState();
+
+            transferState.openedActivity = activity;
+            transferState.openedActivityId =
+                activity.activity_id || activity.activityId || activity.id || null;
+
             if (asTarget) {
-                transferState.isPackageEdit = true;
                 transferState.targetActivity = activity;
-                transferState.targetActivityId =
-                    activity.activity_id || activity.activityId || activity.id || null;
+                transferState.targetActivityId = transferState.openedActivityId;
                 transferState.targetToolType = String(
                     activity.tool_type || activity.toolType || "",
                 ).toLowerCase();
@@ -4201,46 +4361,38 @@
                     transferState.donorToolType = String(
                         donor.tool_type || donor.toolType || "",
                     ).toLowerCase();
-                }
-
-                if (transfer.headerTitle) {
-                    transfer.headerTitle.textContent = `Edit Ideas — ${activity.title || "Activity"}`;
-                }
-                if (transfer.donorTitle) {
-                    transfer.donorTitle.textContent = donor
-                        ? `Source: ${donor.title || donor.activity_id} (auto-resolved)`
-                        : "No preceding activity found";
-                }
-                if (transfer.targetToolType) {
-                    transfer.targetToolType.hidden = true;
-                }
-                if (transfer.commit) {
-                    transfer.commit.textContent = "Save Changes";
+                    transferState.donorTitle = donor.title || donor.activity_id || null;
                 }
             } else {
-                transferState.isPackageEdit = false;
-                transferState.targetActivity = null;
-                transferState.targetActivityId = null;
-                transferState.targetToolType = null;
-
-                transferState.donorActivityId =
-                    activity.activity_id || activity.activityId || activity.id || null;
+                transferState.donorActivityId = transferState.openedActivityId;
                 transferState.donorOrderIndex = activity.order_index || null;
                 transferState.donorToolType = String(
                     activity.tool_type || activity.toolType || "",
                 ).toLowerCase();
-
-                if (transfer.headerTitle) {
-                    transfer.headerTitle.textContent = "Transfer Ideas";
-                }
-                if (transfer.donorTitle) {
-                    transfer.donorTitle.textContent = activity.title || "Selected activity";
-                }
-                if (transfer.targetToolType) {
-                    transfer.targetToolType.hidden = false;
-                }
-                updateTransferCommitButtonText();
+                transferState.donorTitle = activity.title || "Selected activity";
             }
+
+            // Configure destination mode options depending on orchestration
+            if (transfer.destinationMode) {
+                transfer.destinationMode.innerHTML = "";
+                const selfOpt = document.createElement("option");
+                selfOpt.value = "self";
+                selfOpt.textContent = "This activity";
+                transfer.destinationMode.appendChild(selfOpt);
+                if (!isOrchestrationMeeting()) {
+                    const newOpt = document.createElement("option");
+                    newOpt.value = "new";
+                    newOpt.textContent = "New activity";
+                    transfer.destinationMode.appendChild(newOpt);
+
+                    const existOpt = document.createElement("option");
+                    existOpt.value = "existing";
+                    existOpt.textContent = "Existing activity";
+                    transfer.destinationMode.appendChild(existOpt);
+                }
+            }
+
+            setTransferDestination(asTarget ? "self" : "new");
 
             configureTransferProfileSelector(transferState.donorToolType, null);
             if (transfer.includeComments) {
@@ -4256,7 +4408,7 @@
             setTransferStatus(`Opening transfer for ${transferState.donorActivityId}...`, "info");
             console.info("transfer open", {
                 activityId: transferState.donorActivityId,
-                isPackageEdit: transferState.isPackageEdit,
+                destination: transferState.destination,
             });
             await loadTransferBundles();
             try {
@@ -4312,7 +4464,7 @@
                 let bundle = useDraft ? data.draft : (data.input || data.draft || {});
                 const targetConfigIdeas = transferState.targetActivity?.config?.ideas;
                 if (
-                    transferState.isPackageEdit &&
+                    transferState.destination === "self" &&
                     !useDraft &&
                     Array.isArray(targetConfigIdeas) &&
                     targetConfigIdeas.length > 0
@@ -4428,11 +4580,9 @@
                 renderTransferIdeas();
                 setTransferStatus("Draft saved.", "success");
             } catch (error) {
-                console.error("Transfer save failed:", error);
+                console.error("Transfer draft save failed:", error);
                 setTransferError(error.message || "Unable to save draft.");
-                if (!silent) {
-                    setTransferStatus("Draft not saved.", "error");
-                }
+                setTransferStatus("Draft save failed.", "error");
             } finally {
                 transferState.saving = false;
                 setTransferButtonsState();
@@ -4446,27 +4596,39 @@
             transferState.committing = true;
             setTransferButtonsState();
             setTransferError("");
-            setTransferStatus(
-                transferState.isPackageEdit ? "Saving ideas..." : "Creating next activity...",
-                "info",
-            );
+
+            let initialStatus = "Creating next activity...";
+            if (transferState.destination === "self") {
+                initialStatus = "Saving ideas...";
+            } else if (transferState.destination === "existing") {
+                initialStatus = "Transferring ideas...";
+            }
+            setTransferStatus(initialStatus, "info");
+
             try {
-                const targetTool = transferState.isPackageEdit
-                    ? transferState.targetToolType
-                    : transfer.targetToolType?.value;
-                if (!targetTool) {
+                const targetTool = transferState.destination === "new"
+                    ? transfer.targetToolType?.value
+                    : transferState.targetToolType;
+                if (transferState.destination === "new" && !targetTool) {
                     throw new Error("Select a next activity type.");
                 }
+                if (transferState.destination === "existing" && !transferState.targetActivityId) {
+                    throw new Error("Select an existing activity to receive this package.");
+                }
+
                 const commitPayload = {
                     donor_activity_id: transferState.donorActivityId,
                     include_comments: transfer.includeComments?.checked ?? true,
                     items: buildTransferPayloadItems(),
                     metadata: transferState.metadata,
+                    intent: transferState.destination === "self" ? "edit" : "transfer",
                     target_activity: { tool_type: targetTool },
                 };
-                if (transferState.isPackageEdit && transferState.targetActivityId) {
-                    commitPayload.target_activity.activity_id = transferState.targetActivityId;
+                if (transferState.destination !== "new") {
+                    const chosenTargetId = transferState.targetActivityId;
+                    commitPayload.target_activity = { activity_id: chosenTargetId };
                 }
+
                 const response = await fetch(
                     `/api/meetings/${encodeURIComponent(context.meetingId)}/transfer/commit`,
                     {
@@ -4478,12 +4640,13 @@
                 );
                 const data = await response.json().catch(() => ({}));
                 if (!response.ok) {
-                    throw new Error(
-                        data.detail ||
-                            (transferState.isPackageEdit
-                                ? "Unable to save ideas."
-                                : "Unable to create next activity."),
-                    );
+                    let fallbackError = "Unable to create next activity.";
+                    if (transferState.destination === "self") {
+                        fallbackError = "Unable to save ideas.";
+                    } else if (transferState.destination === "existing") {
+                        fallbackError = "Unable to transfer ideas.";
+                    }
+                    throw new Error(data.detail || fallbackError);
                 }
                 if (Array.isArray(data.agenda)) {
                     renderAgenda(data.agenda);
@@ -4498,13 +4661,17 @@
                         targetId,
                     );
                 }
-                setTransferStatus(
-                    transferState.isPackageEdit ? "Ideas saved." : "Next activity created.",
-                    "success",
-                );
-                const wasPackageEdit = transferState.isPackageEdit;
+                let successStatus = "Next activity created.";
+                if (transferState.destination === "self") {
+                    successStatus = "Ideas saved.";
+                } else if (transferState.destination === "existing") {
+                    successStatus = "Ideas transferred.";
+                }
+                setTransferStatus(successStatus, "success");
+
+                const wasNewActivity = transferState.destination === "new";
                 closeTransferModal();
-                if (!wasPackageEdit) {
+                if (wasNewActivity) {
                     const settingsUrl = `/meeting/${encodeURIComponent(context.meetingId)}/settings`;
                     if (targetId) {
                         window.location.href = `${settingsUrl}?activity_id=${encodeURIComponent(targetId)}`;
@@ -4514,12 +4681,13 @@
                 }
             } catch (error) {
                 console.error("Transfer commit failed:", error);
-                setTransferError(
-                    error.message ||
-                        (transferState.isPackageEdit
-                            ? "Unable to save ideas."
-                            : "Unable to create next activity."),
-                );
+                let fallbackError = "Unable to create next activity.";
+                if (transferState.destination === "self") {
+                    fallbackError = "Unable to save ideas.";
+                } else if (transferState.destination === "existing") {
+                    fallbackError = "Unable to transfer ideas.";
+                }
+                setTransferError(error.message || fallbackError);
                 setTransferStatus("Transfer failed.", "error");
             } finally {
                 transferState.committing = false;
@@ -8201,7 +8369,7 @@
             let showCategorization = showTool && toolType === "categorization";
             let showReport = showTool && toolType === "report" && state.isFacilitator;
             const showFacilitatorDecision = showTool && toolType === "facilitator_decision" && state.isFacilitator;
-            const showTransfer = (transferState.active && state.isFacilitator && !isOrchestrationMeeting()) || (transferState.active && state.isFacilitator && Boolean(transferState.isPackageEdit));
+            const showTransfer = (transferState.active && state.isFacilitator && !isOrchestrationMeeting()) || (transferState.active && state.isFacilitator && transferState.destination === "self");
             if (showTransfer) {
                 showBrainstorming = false;
                 showVoting = false;
@@ -9772,9 +9940,32 @@
                     scheduleTransferAutosave();
                 });
             }
+            if (transfer.destinationMode) {
+                transfer.destinationMode.addEventListener("change", () => {
+                    setTransferDestination(transfer.destinationMode.value);
+                });
+            }
+            if (transfer.targetActivity) {
+                transfer.targetActivity.addEventListener("change", () => {
+                    const val = transfer.targetActivity.value;
+                    const rawAgenda = state.latestState?.agenda || state.agenda || [];
+                    const item = rawAgenda.find((a) => (a.activity_id || a.activityId || a.id) === val);
+                    transferState.targetActivityId = val || null;
+                    transferState.targetActivity = item || null;
+                    transferState.targetToolType = String(item?.tool_type || "").toLowerCase();
+                    updateTransferHeaderAndLabels();
+                    setTransferButtonsState();
+                });
+            }
             if (transfer.targetToolType) {
                 buildTransferTargetOptions();
-                transfer.targetToolType.addEventListener("change", updateTransferCommitButtonText);
+                transfer.targetToolType.addEventListener("change", () => {
+                    if (transferState.destination === "new") {
+                        transferState.targetToolType = transfer.targetToolType.value || null;
+                    }
+                    updateTransferCommitButtonText();
+                    setTransferButtonsState();
+                });
             }
             if (transfer.transformProfile) {
                 transfer.transformProfile.addEventListener("change", async () => {

@@ -16,6 +16,7 @@ from app.data.meeting_manager import MeetingManager, get_meeting_manager
 from app.services import meeting_state_manager
 from app.utils.websocket_manager import ConnectionInfo, websocket_manager
 from app.models.meeting import AgendaActivity
+from app.services.activity_catalog import is_activity_content_config_empty
 from app.services.agenda_strategy import get_agenda_strategy
 from app.services.meeting_state import JSONCompatibleDict
 
@@ -33,6 +34,18 @@ def _serialize_connection(connection: ConnectionInfo) -> Dict[str, str]:
 
 
 def _format_agenda_activity(activity: AgendaActivity) -> JSONCompatibleDict:
+    if hasattr(activity, "transfer_target_empty"):
+        transfer_target_empty = bool(getattr(activity, "transfer_target_empty"))
+    else:
+        is_pristine = (
+            activity.started_at is None
+            and activity.stopped_at is None
+            and (activity.elapsed_duration or 0) == 0
+        )
+        transfer_target_empty = is_pristine and is_activity_content_config_empty(
+            activity.tool_type, activity.config
+        )
+
     return {
         "activity_id": activity.activity_id,
         "order_index": activity.order_index,
@@ -45,6 +58,7 @@ def _format_agenda_activity(activity: AgendaActivity) -> JSONCompatibleDict:
         # Carried so the client can tell an activity that has already been run from
         # one that has never opened, without waiting for the richer REST payload.
         "elapsed_duration": int(activity.elapsed_duration or 0),
+        "transfer_target_empty": transfer_target_empty,
     }
 
 
@@ -64,9 +78,12 @@ async def meeting_socket(
         return
 
     # Smug Otter: realtime initial state uses the strategy's canonical agenda.
+    raw_agenda = get_agenda_strategy(meeting).list_agenda(meeting)
+    from app.routers.meetings import _apply_activity_lock_metadata
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, raw_agenda)
     formatted_agenda = [
         _format_agenda_activity(a)
-        for a in get_agenda_strategy(meeting).list_agenda(meeting)
+        for a in raw_agenda
     ]
 
     client_hint = websocket.query_params.get("clientId") or websocket.query_params.get(

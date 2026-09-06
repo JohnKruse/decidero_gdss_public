@@ -156,3 +156,38 @@ def get_activity_definition(tool_type: str) -> Optional[Dict[str, Any]]:
     enriched = dict(entry)
     enriched["stem"] = derive_activity_prefix(normalised)
     return enriched
+
+
+CONTENT_CONFIG_KEYS: Dict[str, str] = {
+    "voting": "options",
+    "categorization": "items",
+    "rank_order_voting": "ideas",
+}
+
+
+def is_activity_content_config_empty(
+    tool_type: Optional[str], config: Optional[Dict[str, Any]]
+) -> bool:
+    """Return True if the content config key for the given tool type is absent or empty."""
+    if not config or not isinstance(config, dict):
+        return True
+    normalised_tool = str(tool_type or "").strip().lower()
+    content_key = CONTENT_CONFIG_KEYS.get(normalised_tool)
+    if not content_key or content_key not in config:
+        return True
+    val = config.get(content_key)
+    if val is None:
+        return True
+    if isinstance(val, (list, tuple, set, dict, str)):
+        if len(val) == 0:
+            return True
+        if normalised_tool == "voting" and isinstance(val, list):
+            normalized = [str(x).strip().lower() for x in val if str(x).strip()]
+            if normalized in (["edit vote option here"], ["edit option here"]):
+                return True
+        if normalised_tool == "categorization" and isinstance(val, list):
+            normalized = [str(x).strip().lower() for x in val if str(x).strip()]
+            if normalized in (["edit item here"], ["one idea per line."]):
+                return True
+        return False
+    return not bool(val)

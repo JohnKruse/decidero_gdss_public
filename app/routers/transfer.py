@@ -20,6 +20,13 @@ from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager, get_meeting_manager
 from app.database import get_db
 from app.models.idea import Idea
+from app.models.voting import VotingVote
+from app.models.rank_order_voting import RankOrderVote
+from app.models.categorization import (
+    CategorizationAssignment,
+    CategorizationBallot,
+    CategorizationFinalAssignment,
+)
 from app.models.meeting import AgendaActivity, Meeting
 from app.models.user import User, UserRole
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
@@ -30,7 +37,11 @@ from app.schemas.transfer import (
     TransferBundleItem,
 )
 from app.services import meeting_state_manager
-from app.services.activity_catalog import get_activity_definition
+from app.services.activity_catalog import (
+    CONTENT_CONFIG_KEYS,
+    get_activity_definition,
+    is_activity_content_config_empty,
+)
 from app.services.agenda_strategy import get_agenda_strategy
 from app.services.transfer_source import build_transfer_items
 from app.services.transfer_transforms import apply_transfer_transform
@@ -293,12 +304,120 @@ async def _assert_transfer_eligible(
     await _ensure_not_running(meeting_id, target.activity_id)
 
 
+def _assert_target_activity_empty(
+    target: AgendaActivity,
+    meeting_id: str,
+    db: Session,
+) -> None:
+    """
+    Validate that an existing activity is empty when receiving a transfer (intent='transfer').
+    Rejects 422 if:
+    - the activity has participant data (Idea, VotingVote, RankOrderVote, CategorizationBallot,
+      CategorizationFinalAssignment, or non-unsorted CategorizationAssignment).
+    - its content config key is present and non-empty (options for voting, items for categorization,
+      ideas for rank_order_voting).
+    """
+    act_id = target.activity_id
+
+    # Check participant data
+    has_ideas = (
+        db.query(Idea.id)
+        .filter(Idea.meeting_id == meeting_id, Idea.activity_id == act_id)
+        .first()
+        is not None
+    )
+    if has_ideas:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity contains participant data (ideas).",
+        )
+
+    has_voting_votes = (
+        db.query(VotingVote.vote_id)
+        .filter(VotingVote.meeting_id == meeting_id, VotingVote.activity_id == act_id)
+        .first()
+        is not None
+    )
+    if has_voting_votes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity contains participant data (votes).",
+        )
+
+    has_rank_votes = (
+        db.query(RankOrderVote.rank_vote_id)
+        .filter(RankOrderVote.meeting_id == meeting_id, RankOrderVote.activity_id == act_id)
+        .first()
+        is not None
+    )
+    if has_rank_votes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity contains participant data (rank votes).",
+        )
+
+    has_cat_ballots = (
+        db.query(CategorizationBallot.ballot_id)
+        .filter(CategorizationBallot.meeting_id == meeting_id, CategorizationBallot.activity_id == act_id)
+        .first()
+        is not None
+    )
+    if has_cat_ballots:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity contains participant data (categorization ballots).",
+        )
+
+    has_cat_finals = (
+        db.query(CategorizationFinalAssignment.final_assignment_id)
+        .filter(
+            CategorizationFinalAssignment.meeting_id == meeting_id,
+            CategorizationFinalAssignment.activity_id == act_id,
+        )
+        .first()
+        is not None
+    )
+    if has_cat_finals:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity contains participant data (categorization final assignments).",
+        )
+
+    has_cat_assignments = (
+        db.query(CategorizationAssignment.assignment_id)
+        .filter(
+            CategorizationAssignment.meeting_id == meeting_id,
+            CategorizationAssignment.activity_id == act_id,
+            CategorizationAssignment.is_unsorted.is_(False),
+        )
+        .first()
+        is not None
+    )
+    if has_cat_assignments:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Target activity contains participant data (categorization assignments).",
+        )
+
+    # Check content config key
+    tool_type = str(target.tool_type or "").strip().lower()
+    config = target.config or {}
+    if not is_activity_content_config_empty(tool_type, config):
+        content_key = CONTENT_CONFIG_KEYS.get(tool_type, "content")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Target activity content config '{content_key}' is already populated.",
+        )
+
+
 async def _broadcast_agenda_update(
     meeting_id: str,
     initiator_id: str,
     meeting_manager: MeetingManager,
 ) -> None:
     updated_agenda_items = meeting_manager.list_agenda(meeting_id)
+    from app.routers.meetings import _apply_activity_lock_metadata
+    _apply_activity_lock_metadata(meeting_id, meeting_manager, updated_agenda_items)
     payload = [
         AgendaActivityResponse.model_validate(item).model_dump()
         for item in updated_agenda_items
@@ -849,6 +968,8 @@ async def commit_transfer(
         await _assert_transfer_eligible(
             existing_target, payload.donor_activity_id, meeting_id, meeting_manager
         )
+        if payload.intent == "transfer":
+            _assert_target_activity_empty(existing_target, meeting_id, db)
         target_tool = (existing_target.tool_type or "").strip().lower()
         # Crimson Narwhal: existing-activity commit path — replaces content config, preserves settings.
         config = dict(existing_target.config or {})
@@ -991,7 +1112,7 @@ async def commit_transfer(
     else:
         diff = diff_packages(before=prior_content, after=ideas)
 
-    event_type = "package_edited" if existing_target_mode else "package_transferred"
+    event_type = "package_edited" if payload.intent == "edit" else "package_transferred"
     record_edit(
         db=db,
         meeting_id=meeting_id,
