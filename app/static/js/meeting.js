@@ -7304,37 +7304,11 @@
                     editIdeasBtn.type = "button";
                     editIdeasBtn.className = "control-btn sm edit-ideas-btn";
                     editIdeasBtn.textContent = "Edit Ideas";
-                    const hasParticipantData = Boolean(
-                        item.has_data || item.has_votes || item.has_submitted_ballots,
-                    );
-                    // The realtime agenda payload omits the richer eligibility flags, so
-                    // they read as undefined here. Decide from the fields that are always
-                    // present — an activity that has ever been opened carries a start or
-                    // stop timestamp, or accumulated time — and fail closed rather than
-                    // open. The server still refuses an ineligible commit regardless.
-                    const everRun = Boolean(
-                        item.started_at ||
-                        item.stopped_at ||
-                        Number(item.elapsed_duration || 0) > 0,
-                    );
-                    const isEditEligible =
-                        !isRunning &&
-                        !everRun &&
-                        item.transfer_target_eligible !== false &&
-                        !hasParticipantData;
+                    const isEditEligible = !isRunning;
                     editIdeasBtn.disabled = !isEditEligible;
-                    if (isRunning) {
-                        editIdeasBtn.title = "Stop the activity before editing ideas.";
-                    } else if (everRun) {
-                        editIdeasBtn.title =
-                            "This activity has already been run, so its ideas can no longer be edited.";
-                    } else if (hasParticipantData || item.transfer_target_eligible === false) {
-                        editIdeasBtn.title =
-                            item.transfer_target_reason ||
-                            "This activity already has participant data.";
-                    } else {
-                        editIdeasBtn.title = "Edit the ideas package for this activity.";
-                    }
+                    editIdeasBtn.title = isRunning
+                        ? "Stop the activity before editing ideas."
+                        : "Edit the ideas package for this activity.";
                     editIdeasBtn.addEventListener("click", (e) => {
                         e.stopPropagation();
                         if (editIdeasBtn.disabled) {

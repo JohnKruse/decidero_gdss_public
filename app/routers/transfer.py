@@ -19,17 +19,9 @@ from app.auth import get_current_active_user
 from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager, get_meeting_manager
 from app.database import get_db
-from app.models.categorization import (
-    CategorizationAssignment,
-    CategorizationAuditEvent,
-    CategorizationBallot,
-    CategorizationFinalAssignment,
-)
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity, Meeting
-from app.models.rank_order_voting import RankOrderVote
 from app.models.user import User, UserRole
-from app.models.voting import VotingVote
 from app.schemas.meeting import AgendaActivityCreate, AgendaActivityResponse
 from app.schemas.transfer import (
     TransferCommit,
@@ -46,6 +38,7 @@ from app.services.voting_manager import VotingManager
 from app.services.categorization_manager import CategorizationManager
 from app.services.rank_order_voting_manager import RankOrderVotingManager
 from app.services.meeting_authorization import resolve_meeting_capabilities
+from app.services.facilitator_edit_log import diff_packages, record_edit
 from app.utils.transfer_metadata import append_transfer_history, ensure_transfer_metadata
 from app.utils.websocket_manager import websocket_manager
 
@@ -143,6 +136,11 @@ def _dedupe_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen.add(key)
         deduped.append(entry)
     return deduped
+
+
+def _generate_stable_key(content: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", (content or "").strip().lower()).strip("-")
+    return slug or f"item-{uuid.uuid4().hex[:8]}"
 
 
 def _parse_iso_timestamp(value: Optional[str]) -> Optional[datetime]:
@@ -280,105 +278,17 @@ async def _assert_transfer_eligible(
     meeting_manager: MeetingManager,
 ) -> None:
     """
-    Validate whether a target activity can receive a transfer.
+    Validate whether a target activity can receive a transfer under the facilitator edit policy.
 
-    Checks are evaluated in order and raise:
-    - 422 if target is the donor activity
-    - 422 if target has started_at set
-    - 422 if target has stopped_at set
-    - 422 if target has positive elapsed_duration
-    - 422 if target already has participant data
+    The facilitator is trusted to edit any activity that is not currently running.
+    Rejects:
+    - 422 if target is the donor activity itself
     - 409 if target is currently running (delegated to `_ensure_not_running`)
     """
     if target.activity_id == donor_activity_id:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Cannot transfer into the donor activity itself.",
-        )
-    if target.started_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Target activity has already been started.",
-        )
-    if target.stopped_at is not None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Target activity has already been stopped.",
-        )
-    if (target.elapsed_duration or 0) > 0:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Target activity has accumulated run time.",
-        )
-    has_participant_data = (
-        meeting_manager.db.query(Idea.id)
-        .filter(
-            Idea.meeting_id == meeting_id,
-            Idea.activity_id == target.activity_id,
-        )
-        .first()
-        is not None
-        or meeting_manager.db.query(VotingVote.vote_id)
-        .filter(
-            VotingVote.meeting_id == meeting_id,
-            VotingVote.activity_id == target.activity_id,
-        )
-        .first()
-        is not None
-        or meeting_manager.db.query(CategorizationBallot.ballot_id)
-        .filter(
-            CategorizationBallot.meeting_id == meeting_id,
-            CategorizationBallot.activity_id == target.activity_id,
-        )
-        .first()
-        is not None
-        or meeting_manager.db.query(CategorizationFinalAssignment.final_assignment_id)
-        .filter(
-            CategorizationFinalAssignment.meeting_id == meeting_id,
-            CategorizationFinalAssignment.activity_id == target.activity_id,
-        )
-        .first()
-        is not None
-        or meeting_manager.db.query(CategorizationAssignment.assignment_id)
-        .filter(
-            CategorizationAssignment.meeting_id == meeting_id,
-            CategorizationAssignment.activity_id == target.activity_id,
-            CategorizationAssignment.is_unsorted.is_(False),
-        )
-        .first()
-        is not None
-        or meeting_manager.db.query(CategorizationAuditEvent.event_id)
-        .filter(
-            CategorizationAuditEvent.meeting_id == meeting_id,
-            CategorizationAuditEvent.activity_id == target.activity_id,
-            CategorizationAuditEvent.actor_user_id.isnot(None),
-            CategorizationAuditEvent.event_type.in_(
-                [
-                    "bucket_created",
-                    "bucket_updated",
-                    "bucket_deleted",
-                    "bucket_reordered",
-                    "item_moved",
-                    "ballot_submitted",
-                    "ballot_unsubmitted",
-                    "final_assignment_set",
-                ]
-            ),
-        )
-        .first()
-        is not None
-        or meeting_manager.db.query(RankOrderVote.rank_vote_id)
-        .filter(
-            RankOrderVote.meeting_id == meeting_id,
-            RankOrderVote.activity_id == target.activity_id,
-        )
-        .first()
-        is not None
-    )
-    if has_participant_data:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Target activity already has participant data.",
         )
     await _ensure_not_running(meeting_id, target.activity_id)
 
@@ -495,8 +405,7 @@ def _map_transfer_config(
                     content = _append_comments_to_content(entry, comments_by_parent)
                 entry_metadata = dict(entry.get("metadata") or {})
                 if not entry_metadata.get("stable_key"):
-                    slug = re.sub(r"[^a-zA-Z0-9]+", "-", content.strip().lower()).strip("-")
-                    entry_metadata["stable_key"] = slug or f"item-{uuid.uuid4().hex[:8]}"
+                    entry_metadata["stable_key"] = _generate_stable_key(content)
                 mapped_entry = {
                     "id": entry.get("id"),
                     "content": content,
@@ -527,40 +436,133 @@ def _seed_brainstorming_ideas(
     activity_id: str,
     ideas: list,
     comments_by_parent: dict,
-) -> None:
-    """Delete any existing ideas for the activity and insert transferred ideas and comments as Idea rows."""
+) -> Dict[str, Any]:
+    """Reconcile transferred ideas and comments as Idea rows, keyed on stable_key."""
+    # 1. Ensure every incoming item has metadata["stable_key"]
+    synthesized_keys: set[str] = set()
+    for idea_entry in ideas:
+        entry_meta = dict(idea_entry.get("metadata") or {})
+        if not entry_meta.get("stable_key"):
+            key = _generate_stable_key(str(idea_entry.get("content") or ""))
+            entry_meta["stable_key"] = key
+            synthesized_keys.add(key)
+            idea_entry["metadata"] = entry_meta
+
+    # 2. Index existing top-level rows (parent_id is None) for the activity by idea_metadata.get("stable_key")
+    existing_rows = (
+        db.query(Idea)
+        .filter(
+            Idea.meeting_id == meeting_id,
+            Idea.activity_id == activity_id,
+            Idea.parent_id.is_(None),
+        )
+        .all()
+    )
+    existing_by_key: Dict[str, Idea] = {}
+    for row in existing_rows:
+        row_meta = row.idea_metadata if isinstance(row.idea_metadata, dict) else {}
+        key = row_meta.get("stable_key")
+        if not key:
+            key = _generate_stable_key(row.content or "")
+        if key not in existing_by_key:
+            existing_by_key[key] = row
+
+    matched_keys: set[str] = set()
+    added: List[Dict[str, Any]] = []
+    removed: List[Dict[str, Any]] = []
+    changed: List[Dict[str, Any]] = []
+    idea_map: Dict[str, int] = {}
+
+    # 3. Matched -> update in place: set content, submitted_name, merge idea_metadata.
+    #    Preserve id, user_id, and timestamp.
+    # 4. Unmatched incoming -> insert, carrying user_id from the item (entry.get("user_id"))
+    #    alongside the existing fields.
+    for idea_entry in ideas:
+        entry_meta = dict(idea_entry.get("metadata") or {})
+        key = entry_meta["stable_key"]
+        content = str(idea_entry.get("content") or "").strip()
+        submitted_name = idea_entry.get("submitted_name")
+        incoming_user_id = idea_entry.get("user_id")
+
+        existing_idea = existing_by_key.pop(key, None)
+        if existing_idea is not None:
+            matched_keys.add(key)
+            if existing_idea.content != content:
+                changed.append({
+                    "before": {
+                        "stable_key": key,
+                        "content": existing_idea.content,
+                        "user_id": existing_idea.user_id,
+                    },
+                    "after": {
+                        "stable_key": key,
+                        "content": content,
+                        "user_id": existing_idea.user_id,
+                    },
+                })
+            existing_idea.content = content
+            if submitted_name is not None:
+                existing_idea.submitted_name = submitted_name
+            merged_meta = dict(existing_idea.idea_metadata or {})
+            incoming_meta = dict(entry_meta)
+            if key in synthesized_keys and "stable_key" not in (existing_idea.idea_metadata or {}):
+                incoming_meta.pop("stable_key", None)
+            merged_meta.update(incoming_meta)
+            existing_idea.idea_metadata = merged_meta
+            db.add(existing_idea)
+            db.flush()
+            target_id = existing_idea.id
+        else:
+            new_meta = dict(entry_meta)
+            if key in synthesized_keys:
+                new_meta.pop("stable_key", None)
+            new_idea = Idea(
+                meeting_id=meeting_id,
+                activity_id=activity_id,
+                content=content,
+                submitted_name=submitted_name,
+                parent_id=None,
+                idea_metadata=new_meta,
+                user_id=incoming_user_id,
+            )
+            timestamp = _parse_iso_timestamp(
+                idea_entry.get("timestamp") or idea_entry.get("created_at")
+            )
+            if timestamp:
+                new_idea.timestamp = timestamp
+            db.add(new_idea)
+            db.flush()
+            target_id = new_idea.id
+            added.append({
+                "stable_key": key,
+                "content": content,
+                "user_id": incoming_user_id,
+            })
+
+        if idea_entry.get("id") is not None:
+            idea_map[str(idea_entry.get("id"))] = target_id
+        idea_map[key] = target_id
+
+    # 5. Existing rows with no incoming match -> delete, but only after their
+    #    {stable_key, content, user_id, submitted_name} has been collected for the caller.
+    for key, remaining_row in existing_by_key.items():
+        removed.append({
+            "stable_key": key,
+            "content": remaining_row.content,
+            "user_id": remaining_row.user_id,
+            "submitted_name": remaining_row.submitted_name,
+        })
+        db.delete(remaining_row)
+    db.flush()
+
+    # 6. Comments (parent_id not null) keep current rebuild-from-comments_by_parent behaviour,
+    #    but must also carry user_id on insert.
     db.query(Idea).filter(
         Idea.meeting_id == meeting_id,
         Idea.activity_id == activity_id,
+        Idea.parent_id.isnot(None),
     ).delete(synchronize_session=False)
     db.flush()
-    if not ideas:
-        logger.warning(
-            "transfer commit has no ideas to seed meeting=%s activity=%s",
-            meeting_id,
-            activity_id,
-        )
-        return
-
-    idea_map: Dict[str, int] = {}
-    for idea_entry in ideas:
-        idea = Idea(
-            meeting_id=meeting_id,
-            activity_id=activity_id,
-            content=idea_entry.get("content"),
-            submitted_name=idea_entry.get("submitted_name"),
-            parent_id=None,
-            idea_metadata=idea_entry.get("metadata") or {},
-        )
-        timestamp = _parse_iso_timestamp(
-            idea_entry.get("timestamp") or idea_entry.get("created_at")
-        )
-        if timestamp:
-            idea.timestamp = timestamp
-        db.add(idea)
-        db.flush()
-        if idea_entry.get("id") is not None:
-            idea_map[str(idea_entry.get("id"))] = idea.id
 
     for parent_key, comment_entries in comments_by_parent.items():
         parent_id = idea_map.get(str(parent_key))
@@ -574,6 +576,7 @@ def _seed_brainstorming_ideas(
                 submitted_name=comment_entry.get("submitted_name"),
                 parent_id=parent_id,
                 idea_metadata=comment_entry.get("metadata") or {},
+                user_id=comment_entry.get("user_id"),
             )
             timestamp = _parse_iso_timestamp(
                 comment_entry.get("timestamp") or comment_entry.get("created_at")
@@ -581,7 +584,8 @@ def _seed_brainstorming_ideas(
             if timestamp:
                 comment.timestamp = timestamp
             db.add(comment)
-    db.commit()
+    db.flush()
+
     seeded_count = (
         db.query(Idea)
         .filter(
@@ -598,6 +602,13 @@ def _seed_brainstorming_ideas(
         sum(len(entries) for entries in comments_by_parent.values()),
         seeded_count,
     )
+    # 7. Return a diff dict: {"added": [...], "removed": [...], "changed": [{"before","after"}]},
+    #    each entry {stable_key, content, user_id}. Step 3 consumes it.
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+    }
 
 
 @transfer_router.get("/bundles")
@@ -780,6 +791,7 @@ async def commit_transfer(
 
     target = payload.target_activity
     existing_target_mode = bool(target.activity_id)
+    prior_content: list = []
     if target.activity_id:
         existing_target = _resolve_activity(meeting, target.activity_id)
         await _assert_transfer_eligible(
@@ -788,6 +800,10 @@ async def commit_transfer(
         target_tool = (existing_target.tool_type or "").strip().lower()
         # Crimson Narwhal: existing-activity commit path — replaces content config, preserves settings.
         config = dict(existing_target.config or {})
+        for content_key in ("options", "items", "ideas"):
+            if content_key in config and isinstance(config[content_key], list):
+                prior_content = list(config[content_key])
+                break
         for content_key in ("options", "items", "ideas"):
             config.pop(content_key, None)
         config = _map_transfer_config(
@@ -911,14 +927,29 @@ async def commit_transfer(
     input_bundle = bundle_manager.create_bundle(
         meeting_id, created.activity_id, "input", ideas, bundle_metadata
     )
+    diff = None
     if target_tool == "brainstorming":
-        _seed_brainstorming_ideas(
+        diff = _seed_brainstorming_ideas(
             db=db,
             meeting_id=meeting_id,
             activity_id=created.activity_id,
             ideas=ideas,
             comments_by_parent=comments_by_parent,
         )
+    else:
+        diff = diff_packages(before=prior_content, after=ideas)
+
+    event_type = "package_edited" if existing_target_mode else "package_transferred"
+    record_edit(
+        db=db,
+        meeting_id=meeting_id,
+        activity_id=created.activity_id,
+        donor_activity_id=payload.donor_activity_id,
+        actor_user_id=current_user.user_id,
+        event_type=event_type,
+        diff=diff,
+    )
+    db.commit()
 
     await _broadcast_agenda_update(meeting_id, current_user.user_id, meeting_manager)
     await meeting_state_manager.apply_patch(

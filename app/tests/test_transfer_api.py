@@ -9,6 +9,7 @@ from app.data.activity_bundle_manager import ActivityBundleManager
 from app.data.meeting_manager import MeetingManager
 from app.models.activity_bundle import ActivityBundle
 from app.models.categorization import CategorizationItem
+from app.models.facilitator_edit import FacilitatorEditEvent
 from app.models.idea import Idea
 from app.models.meeting import AgendaActivity
 from app.models.user import UserRole
@@ -266,13 +267,13 @@ def test_transfer_eligible_rejects_self_transfer(
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
-def test_transfer_eligible_rejects_started_activity(
+def test_transfer_allows_started_activity_and_records_edit(
     authenticated_client: TestClient,
     user_manager_with_admin,
     db_session,
     mocker,
 ):
-    """Smug Otter: transfer target resolution preserves behavior through AgendaStrategy."""
+    """Facilitator edit policy: started target is allowed and audit event is recorded."""
     facilitator = user_manager_with_admin.get_user_by_email("admin@decidero.local")
     assert facilitator is not None
 
@@ -281,7 +282,7 @@ def test_transfer_eligible_rejects_started_activity(
     meeting = meeting_manager.create_meeting(
         meeting_data=MeetingCreate(
             title="Transfer Started Eligibility Test",
-            description="Started target must be rejected.",
+            description="Started target is allowed and records audit.",
             start_time=start_time,
             end_time=start_time + timedelta(minutes=30),
             duration_minutes=30,
@@ -340,14 +341,25 @@ def test_transfer_eligible_rejects_started_activity(
                 "target_activity": {"activity_id": target_id},
             },
         )
-        assert commit_resp.status_code == 422, commit_resp.json()
-        assert "already been started" in commit_resp.json().get("detail", "")
+        assert commit_resp.status_code == 200, commit_resp.json()
         assert strategy_spy.call_count >= 1
+
+        event = (
+            db_session.query(FacilitatorEditEvent)
+            .filter(
+                FacilitatorEditEvent.meeting_id == meeting.meeting_id,
+                FacilitatorEditEvent.activity_id == target_id,
+            )
+            .first()
+        )
+        assert event is not None
+        assert event.actor_user_id == facilitator.user_id
+        assert event.event_type == "package_edited"
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
 
-def test_transfer_eligible_rejects_activity_with_data(
+def test_transfer_allows_activity_with_data_and_records_edit(
     authenticated_client: TestClient,
     user_manager_with_admin,
     db_session,
@@ -360,7 +372,7 @@ def test_transfer_eligible_rejects_activity_with_data(
     meeting = meeting_manager.create_meeting(
         meeting_data=MeetingCreate(
             title="Transfer Target Data Eligibility Test",
-            description="Target with participant data must be rejected.",
+            description="Target with participant data is allowed and records audit.",
             start_time=start_time,
             end_time=start_time + timedelta(minutes=30),
             duration_minutes=30,
@@ -430,8 +442,19 @@ def test_transfer_eligible_rejects_activity_with_data(
                 "target_activity": {"activity_id": target_id},
             },
         )
-        assert commit_resp.status_code == 422, commit_resp.json()
-        assert "participant data" in commit_resp.json().get("detail", "")
+        assert commit_resp.status_code == 200, commit_resp.json()
+
+        event = (
+            db_session.query(FacilitatorEditEvent)
+            .filter(
+                FacilitatorEditEvent.meeting_id == meeting.meeting_id,
+                FacilitatorEditEvent.activity_id == target_id,
+            )
+            .first()
+        )
+        assert event is not None
+        assert event.actor_user_id == facilitator.user_id
+        assert event.event_type == "package_edited"
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
 
@@ -3011,4 +3034,101 @@ def test_commit_curated_package_to_orchestrated_activity_preserves_stable_key_an
         assert new_key != "old-key"
     finally:
         asyncio.run(meeting_state_manager.reset(meeting.meeting_id))
+
+
+def test_seed_brainstorming_ideas_preserves_id_and_user_id_for_unchanged_item(
+    user_manager_with_admin,
+    db_session,
+):
+    admin = user_manager_with_admin.get_user_by_email("admin@decidero.local")
+    assert admin is not None
+
+    author = user_manager_with_admin.add_user(
+        first_name="Original",
+        last_name="Author",
+        email="original.author@example.com",
+        hashed_password=get_password_hash("AuthorPass123!"),
+        role=UserRole.PARTICIPANT.value,
+        login="orig_author",
+    )
+    db_session.commit()
+    db_session.refresh(author)
+
+    meeting_manager = MeetingManager(db_session)
+    start_time = datetime.now(UTC) + timedelta(minutes=5)
+    meeting = meeting_manager.create_meeting(
+        meeting_data=MeetingCreate(
+            title="Reconcile Test Meeting",
+            description="Test brainstorming seeder reconcile.",
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=30),
+            duration_minutes=30,
+            publicity=PublicityType.PRIVATE,
+            owner_id=admin.user_id,
+            participant_ids=[author.user_id],
+            additional_facilitator_ids=[],
+        ),
+        facilitator_id=admin.user_id,
+        agenda_items=[
+            AgendaActivityCreate(tool_type="brainstorming", title="Brainstorm Target"),
+        ],
+    )
+    activity_id = meeting.agenda_activities[0].activity_id
+
+    initial_idea = Idea(
+        meeting_id=meeting.meeting_id,
+        activity_id=activity_id,
+        content="Preserved idea content",
+        user_id=author.user_id,
+        submitted_name="Alice",
+        idea_metadata={"stable_key": "preserved-idea-content"},
+    )
+    db_session.add(initial_idea)
+    db_session.commit()
+    db_session.refresh(initial_idea)
+    original_id = initial_idea.id
+    original_timestamp = initial_idea.timestamp
+
+    incoming_ideas = [
+        {
+            "id": original_id,
+            "content": "Preserved idea content",
+            "submitted_name": "Alice Updated",
+            "user_id": admin.user_id,
+            "metadata": {"stable_key": "preserved-idea-content"},
+        },
+        {
+            "content": "Newly added idea",
+            "user_id": admin.user_id,
+            "metadata": {"stable_key": "newly-added-idea"},
+        },
+    ]
+
+    diff = transfer_router_module._seed_brainstorming_ideas(
+        db=db_session,
+        meeting_id=meeting.meeting_id,
+        activity_id=activity_id,
+        ideas=incoming_ideas,
+        comments_by_parent={},
+    )
+
+    rows = (
+        db_session.query(Idea)
+        .filter(Idea.meeting_id == meeting.meeting_id, Idea.activity_id == activity_id)
+        .all()
+    )
+    assert len(rows) == 2
+    unchanged_row = next(r for r in rows if r.content == "Preserved idea content")
+    assert unchanged_row.id == original_id
+    assert unchanged_row.user_id == author.user_id
+    assert unchanged_row.timestamp == original_timestamp
+
+    new_row = next(r for r in rows if r.content == "Newly added idea")
+    assert new_row.user_id == admin.user_id
+
+    assert len(diff["added"]) == 1
+    assert diff["added"][0]["stable_key"] == "newly-added-idea"
+    assert diff["added"][0]["user_id"] == admin.user_id
+    assert len(diff["removed"]) == 0
+    assert len(diff["changed"]) == 0
 
