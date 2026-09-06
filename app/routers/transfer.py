@@ -6,7 +6,7 @@ eligibility and commits use the bound strategy's canonical agenda view.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime
 import logging
 import re
@@ -467,10 +467,21 @@ def _seed_brainstorming_ideas(
         if key not in existing_by_key:
             existing_by_key[key] = row
 
+    existing_comment_rows = (
+        db.query(Idea)
+        .filter(
+            Idea.meeting_id == meeting_id,
+            Idea.activity_id == activity_id,
+            Idea.parent_id.isnot(None),
+        )
+        .all()
+    )
+
     matched_keys: set[str] = set()
     added: List[Dict[str, Any]] = []
     removed: List[Dict[str, Any]] = []
     changed: List[Dict[str, Any]] = []
+    removed_comments: List[Dict[str, Any]] = []
     idea_map: Dict[str, int] = {}
 
     # 3. Matched -> update in place: set content, submitted_name, merge idea_metadata.
@@ -542,9 +553,12 @@ def _seed_brainstorming_ideas(
         if idea_entry.get("id") is not None:
             idea_map[str(idea_entry.get("id"))] = target_id
         idea_map[key] = target_id
+        idea_map[str(target_id)] = target_id
 
     # 5. Existing rows with no incoming match -> delete, but only after their
-    #    {stable_key, content, user_id, submitted_name} has been collected for the caller.
+    #    {stable_key, content, user_id, submitted_name} has been collected for the caller,
+    #    and their child comment rows have been collected and explicitly deleted.
+    deleted_parent_ids: set[int] = set()
     for key, remaining_row in existing_by_key.items():
         removed.append({
             "stable_key": key,
@@ -552,38 +566,75 @@ def _seed_brainstorming_ideas(
             "user_id": remaining_row.user_id,
             "submitted_name": remaining_row.submitted_name,
         })
+        deleted_parent_ids.add(remaining_row.id)
+        child_comments = [c for c in existing_comment_rows if c.parent_id == remaining_row.id]
+        for child in child_comments:
+            c_meta = child.idea_metadata if isinstance(child.idea_metadata, dict) else {}
+            c_key = c_meta.get("stable_key")
+            if not c_key:
+                c_key = _generate_stable_key(child.content or "")
+            removed_comments.append({
+                "stable_key": c_key,
+                "content": child.content,
+                "user_id": child.user_id,
+                "parent_stable_key": key,
+            })
+            db.delete(child)
         db.delete(remaining_row)
     db.flush()
 
-    # 6. Comments (parent_id not null) keep current rebuild-from-comments_by_parent behaviour,
-    #    but must also carry user_id on insert.
-    db.query(Idea).filter(
-        Idea.meeting_id == meeting_id,
-        Idea.activity_id == activity_id,
-        Idea.parent_id.isnot(None),
-    ).delete(synchronize_session=False)
-    db.flush()
+    # 6. Reconcile comments for surviving ideas.
+    #    Surviving comments are indexed by (parent_id, stable_key).
+    surviving_comment_rows = [
+        c for c in existing_comment_rows if c.parent_id not in deleted_parent_ids
+    ]
+    existing_comments_by_key: Dict[Tuple[int, str], List[Idea]] = {}
+    for crow in surviving_comment_rows:
+        cmeta = crow.idea_metadata if isinstance(crow.idea_metadata, dict) else {}
+        ckey = cmeta.get("stable_key")
+        if not ckey:
+            ckey = _generate_stable_key(crow.content or "")
+        k = (int(crow.parent_id), ckey)
+        existing_comments_by_key.setdefault(k, []).append(crow)
 
-    for parent_key, comment_entries in comments_by_parent.items():
-        parent_id = idea_map.get(str(parent_key))
+    for parent_key, comment_entries in (comments_by_parent or {}).items():
+        parent_id = idea_map.get(str(parent_key)) or idea_map.get(parent_key)
         if not parent_id:
             continue
         for comment_entry in comment_entries:
-            comment = Idea(
-                meeting_id=meeting_id,
-                activity_id=activity_id,
-                content=comment_entry.get("content"),
-                submitted_name=comment_entry.get("submitted_name"),
-                parent_id=parent_id,
-                idea_metadata=comment_entry.get("metadata") or {},
-                user_id=comment_entry.get("user_id"),
-            )
-            timestamp = _parse_iso_timestamp(
-                comment_entry.get("timestamp") or comment_entry.get("created_at")
-            )
-            if timestamp:
-                comment.timestamp = timestamp
-            db.add(comment)
+            c_meta = dict(comment_entry.get("metadata") or {})
+            c_key = c_meta.get("stable_key")
+            if not c_key:
+                c_key = _generate_stable_key(str(comment_entry.get("content") or ""))
+            k = (int(parent_id), c_key)
+            matches = existing_comments_by_key.get(k)
+            if matches:
+                existing_comment = matches.pop(0)
+                incoming_content = comment_entry.get("content")
+                if incoming_content is not None:
+                    existing_comment.content = incoming_content
+                if comment_entry.get("submitted_name") is not None:
+                    existing_comment.submitted_name = comment_entry.get("submitted_name")
+                merged_meta = dict(existing_comment.idea_metadata or {})
+                merged_meta.update(c_meta)
+                existing_comment.idea_metadata = merged_meta
+                db.add(existing_comment)
+            else:
+                comment = Idea(
+                    meeting_id=meeting_id,
+                    activity_id=activity_id,
+                    content=comment_entry.get("content"),
+                    submitted_name=comment_entry.get("submitted_name"),
+                    parent_id=int(parent_id),
+                    idea_metadata=c_meta,
+                    user_id=comment_entry.get("user_id"),
+                )
+                timestamp = _parse_iso_timestamp(
+                    comment_entry.get("timestamp") or comment_entry.get("created_at")
+                )
+                if timestamp:
+                    comment.timestamp = timestamp
+                db.add(comment)
     db.flush()
 
     seeded_count = (
@@ -599,15 +650,16 @@ def _seed_brainstorming_ideas(
         meeting_id,
         activity_id,
         len(ideas),
-        sum(len(entries) for entries in comments_by_parent.values()),
+        sum(len(entries) for entries in (comments_by_parent or {}).values()),
         seeded_count,
     )
-    # 7. Return a diff dict: {"added": [...], "removed": [...], "changed": [{"before","after"}]},
-    #    each entry {stable_key, content, user_id}. Step 3 consumes it.
+    # 7. Return a diff dict: {"added": [...], "removed": [...], "changed": [{"before","after"}], "removed_comments": [...]},
+    #    each entry {stable_key, content, user_id}.
     return {
         "added": added,
         "removed": removed,
         "changed": changed,
+        "removed_comments": removed_comments,
     }
 
 

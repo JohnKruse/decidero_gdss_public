@@ -106,6 +106,7 @@ def diff_packages(before: Optional[List[Any]], after: Optional[List[Any]]) -> Di
         "added": added,
         "removed": removed,
         "changed": changed,
+        "removed_comments": [],
     }
 
 
@@ -123,7 +124,10 @@ def record_edit(
     if not diff:
         return None
     has_changes = bool(
-        diff.get("added") or diff.get("removed") or diff.get("changed")
+        diff.get("added")
+        or diff.get("removed")
+        or diff.get("changed")
+        or diff.get("removed_comments")
     )
     if not has_changes:
         return None
