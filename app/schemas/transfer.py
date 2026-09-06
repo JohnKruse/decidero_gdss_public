@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -51,6 +51,7 @@ class TransferCommit(BaseModel):
     items: List[TransferBundleItem] = Field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
     target_activity: TransferTargetActivity
+    intent: Optional[Literal["edit", "transfer"]] = None
 
 
 class TransferCommitResponse(BaseModel):

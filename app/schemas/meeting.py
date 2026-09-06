@@ -185,6 +185,10 @@ class AgendaActivityResponse(AgendaActivityBase):
         default=False,
         description="Whether this activity can receive transferred ideas (never started, no user data).",
     )
+    transfer_target_empty: bool = Field(
+        default=False,
+        description="Whether this activity is eligible and has an absent or empty content config key.",
+    )
     locked_config_keys: List[str] = Field(default_factory=list)
     transfer_count: int = 0
     transfer_source: Optional[str] = None

@@ -90,12 +90,26 @@ class RankOrderVotingPlugin(ActivityPlugin):
         ),
     )
 
+    def prepare_package(self, context, input_bundle=None) -> None:
+        self._bind_input_bundle(context, input_bundle)
+        return None
+
     def open_activity(self, context, input_bundle=None) -> None:
+        bound = self._bind_input_bundle(context, input_bundle)
+        if bound:
+            RankOrderVotingManager(context.db).reset_activity_state(
+                context.meeting.meeting_id,
+                context.activity.activity_id,
+                clear_bundles=True,
+            )
+        return None
+
+    def _bind_input_bundle(self, context, input_bundle=None) -> bool:
         if not input_bundle:
-            return None
+            return False
         config = dict(context.activity.config or {})
         if config.get("ideas"):
-            return None
+            return False
 
         items = input_bundle.items or []
         ideas: List[Dict[str, Any]] = []
@@ -104,18 +118,13 @@ class RankOrderVotingPlugin(ActivityPlugin):
             if sanitized:
                 ideas.append(sanitized)
         if not ideas:
-            return None
+            return False
 
-        RankOrderVotingManager(context.db).reset_activity_state(
-            context.meeting.meeting_id,
-            context.activity.activity_id,
-            clear_bundles=True,
-        )
         config["ideas"] = ideas
         context.activity.config = config
         context.db.add(context.activity)
         context.db.commit()
-        return None
+        return True
 
     @staticmethod
     def _sanitize_idea_entry(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:

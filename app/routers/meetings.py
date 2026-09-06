@@ -72,6 +72,7 @@ from app.services.activity_pipeline import ActivityPipeline
 from app.services.agenda_strategy import get_agenda_strategy, OrchestrationEngineStrategy
 from app.services.orchestration_realtime import broadcast_engine_agenda_mutation
 from app.services.transfer_source import get_transfer_count
+from app.services.activity_catalog import is_activity_content_config_empty
 from app.plugins.autosave import start_autosave, stop_autosave
 from app.utils.websocket_manager import websocket_manager
 from app.utils.user_colors import get_user_color
@@ -777,10 +778,15 @@ def _apply_activity_lock_metadata(
             and (item.elapsed_duration or 0) == 0
             and not has_live_data
         )
+        transfer_target_empty = (
+            transfer_target_eligible
+            and is_activity_content_config_empty(tool_type, getattr(item, "config", None))
+        )
         setattr(item, "has_data", has_live_data)
         setattr(item, "has_votes", has_votes)
         setattr(item, "has_submitted_ballots", has_submitted_ballots)
         setattr(item, "transfer_target_eligible", transfer_target_eligible)
+        setattr(item, "transfer_target_empty", transfer_target_empty)
         setattr(item, "locked_config_keys", deduped)
 
 

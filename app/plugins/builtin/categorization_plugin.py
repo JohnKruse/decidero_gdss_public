@@ -7,6 +7,10 @@ from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from app.plugins.base import ActivityPlugin, ActivityPluginManifest, TransferSourceResult
+from app.services.activity_catalog import (
+    CONTENT_CONFIG_KEYS,
+    is_activity_content_config_empty,
+)
 from app.services.categorization_manager import CategorizationManager
 
 
@@ -70,17 +74,12 @@ class CategorizationPlugin(ActivityPlugin):
         ),
     )
 
+    def prepare_package(self, context, input_bundle=None) -> None:
+        self._bind_input_bundle(context, input_bundle)
+        return None
+
     def open_activity(self, context, input_bundle=None) -> None:
-        config = dict(context.activity.config or {})
-        seeded_from_bundle = False
-
-        existing_items = config.get("items")
-        if input_bundle and not (isinstance(existing_items, list) and existing_items):
-            seeded_items = self._seed_items_from_bundle(input_bundle)
-            if seeded_items:
-                config["items"] = seeded_items
-                seeded_from_bundle = True
-
+        seeded_from_bundle = self._bind_input_bundle(context, input_bundle)
         if seeded_from_bundle:
             CategorizationManager(context.db).reset_activity_state(
                 context.meeting.meeting_id,
@@ -88,17 +87,31 @@ class CategorizationPlugin(ActivityPlugin):
                 clear_bundles=True,
             )
 
-        context.activity.config = config
-        context.db.add(context.activity)
-        context.db.commit()
-        context.db.refresh(context.activity)
-
         CategorizationManager(context.db).seed_activity(
             meeting_id=context.meeting.meeting_id,
             activity=context.activity,
             actor_user_id=getattr(getattr(context, "user", None), "user_id", None),
         )
         return None
+
+    def _bind_input_bundle(self, context, input_bundle=None) -> bool:
+        if not input_bundle:
+            return False
+        config = dict(context.activity.config or {})
+        if not is_activity_content_config_empty("categorization", config):
+            return False
+
+        seeded_items = self._seed_items_from_bundle(input_bundle)
+        if not seeded_items:
+            return False
+
+        content_key = CONTENT_CONFIG_KEYS["categorization"]
+        config[content_key] = seeded_items
+        context.activity.config = config
+        context.db.add(context.activity)
+        context.db.commit()
+        context.db.refresh(context.activity)
+        return True
 
     def close_activity(self, context) -> Optional[Dict[str, Any]]:
         manager = CategorizationManager(context.db)

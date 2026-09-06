@@ -83,6 +83,10 @@ class BrainstormingPlugin(ActivityPlugin):
         ),
     )
 
+    def prepare_package(self, context, input_bundle=None) -> None:
+        self._bind_input_bundle(context, input_bundle)
+        return None
+
     def open_activity(self, context, input_bundle=None) -> None:
         """Brainstorming needs no setup by default. When configured with
         ``seed_from_input`` it instead seeds its idea list from the input bundle —
@@ -91,6 +95,10 @@ class BrainstormingPlugin(ActivityPlugin):
 
         All behavior is config-driven; there is no method-specific logic here.
         """
+        self._bind_input_bundle(context, input_bundle)
+        return None
+
+    def _bind_input_bundle(self, context, input_bundle=None) -> None:
         config = dict(context.activity.config or {})
         if not config.get("seed_from_input"):
             return None

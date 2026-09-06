@@ -26,8 +26,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -1477,6 +1480,29 @@ class OrchestrationEngineStrategy(AgendaStrategy):
                     metadata=input_metadata,
                     logical_step_id=logical_step_id,
                     round_index=round_index,
+                )
+
+        if plugin:
+            try:
+                from app.plugins.context import ActivityContext
+                from app.services.activity_pipeline import ActivityPipeline
+
+                pipeline = ActivityPipeline(db)
+                input_bundle = pipeline.ensure_input_bundle(meeting, activity)
+                if input_bundle is not None:
+                    context = ActivityContext(
+                        db=db,
+                        meeting=meeting,
+                        activity=activity,
+                        user=getattr(meeting, "owner", None),
+                        logger=logger,
+                    )
+                    plugin.prepare_package(context, input_bundle)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "Failed to prepare package for activity plugin %s: %s",
+                    activity.tool_type,
+                    exc,
                 )
         return activity
 

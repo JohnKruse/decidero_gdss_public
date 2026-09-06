@@ -266,7 +266,13 @@
                             brainstorming activity.</div>
                     </div>
                     <div class="transfer-actions">
+                        <select id="transferDestinationMode" class="form-select transfer-target-select">
+                            <option value="self">This activity</option>
+                            <option value="new">New activity</option>
+                            <option value="existing">Existing activity</option>
+                        </select>
                         <select id="transferTargetToolType" class="form-select transfer-target-select"></select>
+                        <select id="transferTargetActivity" class="form-select transfer-target-select" hidden></select>
                         <select id="transferTransformProfile" class="form-select transfer-target-select" hidden></select>
                         <label class="transfer-toggle">
                             <input type="checkbox" id="transferIncludeComments" checked>

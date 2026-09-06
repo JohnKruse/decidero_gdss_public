@@ -166,3 +166,39 @@ def test_synthetic_report_payload_example_covers_schema_shapes_and_renderers():
     chart = next(section for section in report["sections"] if section["type"] == "chart")
     assert rr.render_chart_png(chart).startswith(b"\x89PNG\r\n\x1a\n")
     assert rr.render_docx(report).startswith(b"PK")
+
+
+def test_facilitator_edits_section_when_edits_present_and_absent():
+    r1 = _round_bundle("act1", {"u1": {"A": 1, "B": 2}})
+    meeting_no_edits = {
+        "meeting_id": "m_no_edits",
+        "title": "Clean Delphi",
+        "method": {"name": "Classical Delphi", "version": "1.0"},
+        "participant_count": 1,
+    }
+    rep_clean = build_report([r1], meeting_no_edits)
+    assert not any(s["id"] == "facilitator_edits" for s in rep_clean["sections"])
+
+    meeting_with_edits = {
+        "meeting_id": "m_with_edits",
+        "title": "Edited Delphi",
+        "method": {"name": "Classical Delphi", "version": "1.0"},
+        "participant_count": 1,
+        "facilitator_edits": {
+            "count": 3,
+            "activity_count": 2,
+            "last_at": "2026-09-06T12:00:00Z",
+        },
+    }
+    rep_edited = build_report([r1], meeting_with_edits)
+    edit_section = next((s for s in rep_edited["sections"] if s["id"] == "facilitator_edits"), None)
+    assert edit_section is not None
+    assert edit_section["type"] == "narrative"
+    assert edit_section["title"] == "Facilitator edits"
+    assert edit_section["body"]["ai_drafted"] is False
+    expected_text = (
+        "The facilitator edited the item set during this meeting "
+        "(3 edits across 2 activities, most recently 2026-09-06T12:00:00Z). "
+        "Individual changes are retained in the meeting's audit record."
+    )
+    assert edit_section["body"]["markdown"] == expected_text

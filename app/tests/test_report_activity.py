@@ -107,3 +107,63 @@ def test_report_activity_materializes_and_builds(db_session, user_manager_with_a
     assert ranked["body"]["items"][0]["label"] == "Idea A"  # consensus winner
     # bundle items mirror the headline ranking for export
     assert out.items[0]["content"] == "Idea A"
+    assert not any(s["id"] == "facilitator_edits" for s in report["sections"])
+
+
+def test_report_activity_includes_facilitator_edits_narrative(
+    db_session, user_manager_with_admin, mocker
+):
+    from app.models.facilitator_edit import FacilitatorEditEvent
+
+    meeting = _meeting(db_session)
+    admin = db_session.query(User).filter(User.role == UserRole.ADMIN.value).first()
+
+    edit_event = FacilitatorEditEvent(
+        meeting_id=meeting.meeting_id,
+        activity_id="act-prior",
+        actor_user_id=admin.user_id,
+        event_type="package_edited",
+        payload={"diff": {"changed": [{"before": "A", "after": "A+"}]}},
+    )
+    db_session.add(edit_event)
+    db_session.commit()
+
+    doc = load_orchestration_data({
+        "name": "Classical Delphi", "version": "1.0", "author": "t", "citation": "c",
+        "metadata": _META,
+        "steps": [{"type": "sequence", "steps": [
+            {"type": "iterate", "max_rounds": 3,
+             "convergence_predicate": {"name": "fixed_n", "config": {"max_rounds": 1}},
+             "bundle_transform": {"name": "identity", "config": {}},
+             "steps": [{"type": "activity", "tool_type": "rank_order_voting",
+                        "title": "Rank", "transform_input": "previous_round_feedback",
+                        "config": {"ideas": []}}]},
+            {"type": "activity", "tool_type": "report", "title": "Final Report",
+             "config": {}},
+        ]}],
+    })
+    strategy = OrchestrationEngineStrategy(doc)
+    bm = ActivityBundleManager(db_session)
+
+    activity = strategy.create_activity(meeting, None, None)
+    lsid, ridx = strategy.iteration_metadata_for(activity.activity_id)
+    items, meta = _round_output(activity.activity_id, "r0", {"u1": {"A": 1, "B": 2}})
+    bm.finalize_output_bundle(meeting.meeting_id, activity.activity_id, items,
+                              metadata=meta, logical_step_id=lsid, round_index=ridx)
+
+    report_activity = strategy.create_activity(meeting, None, None)
+    mocker.patch(
+        "app.services.agenda_strategy.get_agenda_strategy", return_value=strategy
+    )
+    ctx = ActivityContext(db=db_session, meeting=meeting, activity=report_activity)
+    ReportPlugin().open_activity(ctx)
+
+    out = bm.get_latest_bundle(meeting.meeting_id, report_activity.activity_id, "output")
+    assert out is not None
+    report = out.bundle_metadata["report_payload"]
+    edit_section = next((s for s in report["sections"] if s["id"] == "facilitator_edits"), None)
+    assert edit_section is not None
+    assert edit_section["type"] == "narrative"
+    assert edit_section["title"] == "Facilitator edits"
+    assert "The facilitator edited the item set during this meeting (1 edits across 1 activities" in edit_section["body"]["markdown"]
+
